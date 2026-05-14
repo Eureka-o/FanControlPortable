@@ -41,16 +41,11 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\fan.png" />
-    <Content Include="Resources\assets\Figure.png">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
-    </Content>
     <Content Include="Resources\assets\PawnIO_setup.exe" Condition="'$(LightweightPackage)' == 'true' and '$(IncludePawnIoInstaller)' == 'true'">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
     </Content>
-    <Content Include="Resources\assets\**\*.*" Exclude="Resources\assets\Figure.png" Condition="'$(LightweightPackage)' != 'true'">
+    <Content Include="Resources\assets\**\*.*" Condition="'$(LightweightPackage)' != 'true'">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
