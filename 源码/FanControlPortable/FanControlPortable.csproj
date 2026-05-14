@@ -43,6 +43,10 @@
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>
+    <Content Include="Resources\assets\PawnIO_setup.exe" Condition="'$(LightweightPackage)' == 'true'">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
     <Content Include="Resources\assets\**\*.*" Exclude="Resources\assets\bs2pro.png" Condition="'$(LightweightPackage)' != 'true'">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
