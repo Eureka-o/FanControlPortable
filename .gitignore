@@ -9,6 +9,7 @@
 
 # Packaged artifacts
 /FanControlPortable.exe
+/FanControlPortable.locked-*.exe
 /*.zip
 /Resources/
 /Microsoft.Web.WebView2.Core.xml
