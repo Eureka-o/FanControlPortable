@@ -1,5 +1,4 @@
 ﻿using System.Net.Http;
-using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -101,7 +100,7 @@ public sealed class FanControlService : IDisposable
         float? controlTemp = SelectControlTemperature(cpuTemp, gpuTemp);
         if (controlTemp.HasValue)
         {
-            var alpha = Math.Clamp(_cfg.FanControlSmoothingAlpha, 0.05, 1.0);
+            var alpha = PlatformCompat.Clamp(_cfg.FanControlSmoothingAlpha, 0.05, 1.0);
             _smoothedTemperature = _smoothedTemperature.HasValue
                 ? (float)(alpha * controlTemp.Value + (1.0 - alpha) * _smoothedTemperature.Value)
                 : controlTemp.Value;
@@ -176,7 +175,8 @@ public sealed class FanControlService : IDisposable
     private CoolerState ReadCoolerState()
     {
         var baseUrl = GetBaseUrl();
-        var data = _http.GetFromJsonAsync<CoolerData>($"{baseUrl}/api/data").GetAwaiter().GetResult()
+        var body = _http.GetStringAsync($"{baseUrl}/api/data").GetAwaiter().GetResult();
+        var data = JsonSerializer.Deserialize<CoolerData>(body)
             ?? throw new InvalidOperationException("empty response");
         return new CoolerState(true, data.Speed, data.Temperature, data.Power, data.WifiControl, data.WifiTargetSpeed, data.ControlMode, null);
     }
@@ -285,7 +285,7 @@ public sealed class FanControlService : IDisposable
 
     private static float? SanitizeTemperature(float? value) => value is > -20 and < 130 ? value : null;
     public static string NormalizeMode(string? mode) => (mode ?? "monitor").ToLowerInvariant() is var m && (m is "auto" or "manual" or "off") ? m : "monitor";
-    public static int Clamp(int speed) => Math.Clamp(speed, 0, 100);
+    public static int Clamp(int speed) => PlatformCompat.Clamp(speed, 0, 100);
 
     public static List<(int Temp, int Speed)> ParseCurve(string? text)
     {
@@ -299,12 +299,13 @@ public sealed class FanControlService : IDisposable
     private static List<(int Temp, int Speed)> ParseCurveCore(string? text)
     {
         var result = new List<(int Temp, int Speed)>();
-        foreach (var raw in (text ?? AppSettings.DefaultCurve).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var rawValue in (text ?? AppSettings.DefaultCurve).Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
         {
-            var parts = raw.Split(':', StringSplitOptions.TrimEntries);
+            var raw = rawValue.Trim();
+            var parts = raw.Split(new[] { ':' }, StringSplitOptions.None);
             if (parts.Length != 2 || !int.TryParse(parts[0], out var temp) || !int.TryParse(parts[1], out var speed))
                 continue;
-            result.Add((Math.Clamp(temp, 0, 120), Clamp(speed)));
+            result.Add((PlatformCompat.Clamp(temp, 0, 120), Clamp(speed)));
         }
         return result.GroupBy(p => p.Temp).Select(g => g.Last()).OrderBy(p => p.Temp).ToList();
     }
@@ -327,7 +328,7 @@ public sealed class FanControlService : IDisposable
     {
         points = points.OrderBy(p => p.Temp).ToList();
         if (temp <= points[0].Temp) return points[0].Speed;
-        if (temp >= points[^1].Temp) return points[^1].Speed;
+        if (temp >= points[points.Count - 1].Temp) return points[points.Count - 1].Speed;
         for (var i = 0; i < points.Count - 1; i++)
         {
             var a = points[i];
@@ -336,7 +337,7 @@ public sealed class FanControlService : IDisposable
             var ratio = (temp - a.Temp) / Math.Max(1.0, b.Temp - a.Temp);
             return Clamp((int)Math.Round(a.Speed + ratio * (b.Speed - a.Speed)));
         }
-        return points[^1].Speed;
+        return points[points.Count - 1].Speed;
     }
 
     public void Dispose() => _http.Dispose();

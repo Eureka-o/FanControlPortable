@@ -106,9 +106,9 @@ public sealed class AppSettings
         UiNavigationPlacement = UiNavigationPlacement == "side" ? "side" : "top";
         FanControlManualSpeed = FanControlService.Clamp(FanControlManualSpeed);
         FanControlMinimumAutoSpeed = FanControlService.Clamp(FanControlMinimumAutoSpeed);
-        FanControlMinSpeedDelta = Math.Clamp(FanControlMinSpeedDelta, 1, 100);
-        FanControlMinSendIntervalSeconds = Math.Clamp(FanControlMinSendIntervalSeconds, 0, 120);
-        FanControlSmoothingAlpha = Math.Clamp(FanControlSmoothingAlpha, 0.05, 1.0);
+        FanControlMinSpeedDelta = PlatformCompat.Clamp(FanControlMinSpeedDelta, 1, 100);
+        FanControlMinSendIntervalSeconds = PlatformCompat.Clamp(FanControlMinSendIntervalSeconds, 0, 120);
+        FanControlSmoothingAlpha = PlatformCompat.Clamp(FanControlSmoothingAlpha, 0.05, 1.0);
         SpeedControlBehavior = SpeedControlBehavior == "switchToManual" ? "switchToManual" : "manualOnly";
         if (FanControlCurvePresets == null)
             FanControlCurvePresets = new List<FanCurvePreset>();
@@ -120,7 +120,7 @@ public sealed class AppSettings
     private static string NormalizeSensorId(string? sensorId)
     {
         sensorId = sensorId?.Trim();
-        return string.IsNullOrWhiteSpace(sensorId) ? "auto" : sensorId;
+        return string.IsNullOrWhiteSpace(sensorId) ? "auto" : sensorId!;
     }
 
     private void Migrate()

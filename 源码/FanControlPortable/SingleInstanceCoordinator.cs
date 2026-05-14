@@ -115,7 +115,7 @@ public sealed class SingleInstanceCoordinator : IDisposable
     private static void KillExistingProcesses()
     {
         var current = Process.GetCurrentProcess();
-        var currentDirectory = NormalizeDirectory(Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory);
+        var currentDirectory = NormalizeDirectory(Path.GetDirectoryName(PlatformCompat.CurrentProcessPath()) ?? AppContext.BaseDirectory);
 
         foreach (var process in Process.GetProcesses())
         {

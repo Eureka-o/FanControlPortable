@@ -351,7 +351,7 @@ public partial class MainWindow : Window
 
     private async Task SetManualSpeedAsync(int speed, bool forceMode)
     {
-        _settings.FanControlManualSpeed = Math.Clamp(speed, 0, 100);
+        _settings.FanControlManualSpeed = PlatformCompat.Clamp(speed, 0, 100);
         if (forceMode)
             _settings.FanControlMode = "manual";
         _settings.Save();
@@ -456,7 +456,7 @@ public partial class MainWindow : Window
 
     private void SetTemperatureSensor(string? sensorKind, string? sensorId)
     {
-        sensorId = string.IsNullOrWhiteSpace(sensorId) ? "auto" : sensorId.Trim();
+        sensorId = string.IsNullOrWhiteSpace(sensorId) ? "auto" : sensorId!.Trim();
         if (string.Equals(sensorKind, "gpu", StringComparison.OrdinalIgnoreCase))
         {
             _settings.FanControlGpuTemperatureSensorId = sensorId;
@@ -601,7 +601,7 @@ public partial class MainWindow : Window
 
     private static Drawing.Icon LoadTrayIcon()
     {
-        var processPath = Environment.ProcessPath;
+        var processPath = PlatformCompat.CurrentProcessPath();
         if (!string.IsNullOrWhiteSpace(processPath))
         {
             var icon = Drawing.Icon.ExtractAssociatedIcon(processPath);
@@ -614,7 +614,7 @@ public partial class MainWindow : Window
     private void SetTrayToolTip(string text)
     {
         if (_trayIcon == null) return;
-        _trayIcon.Text = text.Length <= 63 ? text : text[..60] + "...";
+        _trayIcon.Text = text.Length <= 63 ? text : text.Substring(0, 60) + "...";
     }
 
     private void UpdateTrayModeItems(string? mode)
@@ -706,9 +706,10 @@ public partial class MainWindow : Window
         if (File.Exists(appPath))
             return Path.GetFullPath(appPath);
 
-        return string.IsNullOrWhiteSpace(Environment.ProcessPath)
+        var processPath = PlatformCompat.CurrentProcessPath();
+        return string.IsNullOrWhiteSpace(processPath)
             ? Path.GetFullPath(appPath)
-            : Path.GetFullPath(Environment.ProcessPath);
+            : Path.GetFullPath(processPath);
     }
 
     private static string QuoteCommandPath(string path) => "\"" + path + "\"";
@@ -716,14 +717,14 @@ public partial class MainWindow : Window
     private static string TranslateStatus(string? message)
     {
         if (string.IsNullOrWhiteSpace(message)) return "\u51c6\u5907\u5c31\u7eea";
-        return message switch
+        return message! switch
         {
             "OK" => "\u72b6\u6001\u6b63\u5e38",
             "Speed command sent" => "\u8f6c\u901f\u547d\u4ee4\u5df2\u4e0b\u53d1",
             "Device connected" => "\u8bbe\u5907\u5df2\u8fde\u63a5",
             "Waiting for temperature data" => "\u7b49\u5f85\u6e29\u5ea6\u6570\u636e",
             "Fan control disabled" => "\u98ce\u6247\u63a7\u5236\u672a\u542f\u7528",
-            _ => message
+            _ => message!
         };
     }
 

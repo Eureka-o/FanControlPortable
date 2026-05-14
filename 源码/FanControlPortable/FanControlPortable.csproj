@@ -1,12 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework Condition="'$(LightweightPackage)' != 'true'">net8.0-windows</TargetFramework>
+    <TargetFramework Condition="'$(LightweightPackage)' == 'true'">net48</TargetFramework>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
     <PlatformTarget>x64</PlatformTarget>
     <ApplicationIcon>Resources\fan.ico</ApplicationIcon>
     <DebugType>none</DebugType>
@@ -15,31 +17,43 @@
     <Version>1.0.0</Version>
     <FileVersion>1.0.0.0</FileVersion>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' and '$(LightweightPackage)' != 'true'">
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(LightweightPackage)' == 'true'">
+    <SelfContained>false</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
     <PackageReference Include="System.Text.Json" Version="9.0.10" />
   </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\fan.png" />
-    <Content Include="Resources\assets\**\*.*">
+    <Content Include="Resources\assets\bs2pro.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>
-    <None Include="Resources\assets\PawnIO_setup.exe">
+    <Content Include="Resources\assets\**\*.*" Exclude="Resources\assets\bs2pro.png" Condition="'$(LightweightPackage)' != 'true'">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+    <None Include="Resources\assets\PawnIO_setup.exe" Condition="'$(LightweightPackage)' != 'true'">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
     </None>
   </ItemGroup>
-  <Target Name="CopyPawnIoInstallerToPublishDir" AfterTargets="Publish">
+  <Target Name="CopyPawnIoInstallerToPublishDir" AfterTargets="Publish" Condition="'$(LightweightPackage)' != 'true'">
     <MakeDir Directories="$(PublishDir)Resources\assets" />
     <Copy SourceFiles="Resources\assets\PawnIO_setup.exe" DestinationFiles="$(PublishDir)Resources\assets\PawnIO_setup.exe" SkipUnchangedFiles="true" Condition="Exists('Resources\assets\PawnIO_setup.exe')" />
   </Target>
@@ -49,5 +63,12 @@
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Filename)%(ResolvedFileToPublish.Extension)' == 'Microsoft.Web.WebView2.Wpf.xml'" />
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Filename)%(ResolvedFileToPublish.Extension)' == 'Microsoft.Web.WebView2.WinForms.xml'" />
     </ItemGroup>
+  </Target>
+  <Target Name="RemoveLightweightPublishExtras" AfterTargets="Publish" Condition="'$(LightweightPackage)' == 'true'">
+    <Delete Files="$(PublishDir)Microsoft.Web.WebView2.WinForms.dll" />
+    <Delete Files="$(PublishDir)runtimes\win-x64\native\WebView2Loader.dll" />
+    <RemoveDir Directories="$(PublishDir)runtimes\win-x64\native" />
+    <RemoveDir Directories="$(PublishDir)runtimes\win-x64" />
+    <RemoveDir Directories="$(PublishDir)runtimes" />
   </Target>
 </Project>

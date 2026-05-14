@@ -18,7 +18,7 @@ public partial class App : System.Windows.Application
             {
                 Process.Start(new ProcessStartInfo
                 {
-                    FileName = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? "",
+                    FileName = PlatformCompat.CurrentProcessPath(),
                     UseShellExecute = true,
                     Verb = "runas",
                     WorkingDirectory = AppContext.BaseDirectory
