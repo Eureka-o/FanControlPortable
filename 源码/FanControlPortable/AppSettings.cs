@@ -22,6 +22,7 @@ public sealed class AppSettings
     public double FanControlSmoothingAlpha { get; set; } = 0.22;
     public string FanControlCurve { get; set; } = DefaultCurve;
     public List<FanCurvePreset> FanControlCurvePresets { get; set; } = new();
+    public string SpeedControlBehavior { get; set; } = "manualOnly";
     public bool StartMinimized { get; set; } = false;
     public bool StartWithWindows { get; set; } = false;
     public bool CloseToTray { get; set; } = true;
@@ -85,6 +86,7 @@ public sealed class AppSettings
         FanControlSmoothingAlpha = other.FanControlSmoothingAlpha;
         FanControlCurve = string.IsNullOrWhiteSpace(other.FanControlCurve) ? DefaultCurve : other.FanControlCurve;
         FanControlCurvePresets = other.FanControlCurvePresets ?? new List<FanCurvePreset>();
+        SpeedControlBehavior = other.SpeedControlBehavior;
         StartMinimized = other.StartMinimized;
         StartWithWindows = other.StartWithWindows;
         CloseToTray = other.CloseToTray;
@@ -107,6 +109,7 @@ public sealed class AppSettings
         FanControlMinSpeedDelta = Math.Clamp(FanControlMinSpeedDelta, 1, 100);
         FanControlMinSendIntervalSeconds = Math.Clamp(FanControlMinSendIntervalSeconds, 0, 120);
         FanControlSmoothingAlpha = Math.Clamp(FanControlSmoothingAlpha, 0.05, 1.0);
+        SpeedControlBehavior = SpeedControlBehavior == "switchToManual" ? "switchToManual" : "manualOnly";
         if (FanControlCurvePresets == null)
             FanControlCurvePresets = new List<FanCurvePreset>();
         FanControlCurve = FanControlService.TryNormalizeCurve(FanControlCurve, out var normalizedCurve, out _)

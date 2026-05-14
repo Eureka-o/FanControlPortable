@@ -81,14 +81,19 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .card-body{padding:22px;display:grid;gap:18px}
 .mode-row,.quick-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 .source-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
-.nav-choice{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.nav-choice,.behavior-choice{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .btn.wide{width:100%}
+.btn:disabled{cursor:default;opacity:.48;background:var(--surface);border-color:var(--border);color:var(--muted);box-shadow:none}
 .speed-preset.active{background:var(--primary);border-color:var(--primary);color:#fff;box-shadow:0 10px 22px var(--primary-soft)}
-.speed-card{border:1px solid var(--border);border-radius:16px;background:var(--surface);padding:18px;display:grid;gap:16px}
+.speed-card{border:1px solid var(--border);border-radius:16px;background:var(--surface);padding:18px;display:grid;gap:14px}
+.speed-card.locked{border-color:rgba(251,191,36,.42)}
 .speed-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .speed-head span{color:var(--muted);font-size:12px;font-weight:900}
 .speed-value{width:92px;border:0;background:transparent;color:var(--primary);font-size:27px;font-weight:950;text-align:right;outline:0}
+.speed-value:disabled{color:var(--muted)}
 .range{width:100%;height:26px;accent-color:var(--primary)}
+.range:disabled{accent-color:#64748b;opacity:.58}
+.speed-lock-note{min-height:18px;color:var(--muted);font-size:12px;line-height:18px}
 .mini-list{display:grid;gap:13px}
 .mini-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;min-height:32px}
 .mini-row span:first-child{color:var(--muted);font-size:12px;font-weight:900}
@@ -137,7 +142,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   .app.nav-side .nav-btn{width:auto;justify-content:center}
 }
 @media (max-width:680px){
-  .wrap{padding:16px;gap:18px}.page.active{gap:18px}.stats{grid-template-columns:1fr 1fr}.mode-row,.quick-row,.source-row,.nav-choice,.sensor-grid{grid-template-columns:1fr}
+  .wrap{padding:16px;gap:18px}.page.active{gap:18px}.stats{grid-template-columns:1fr 1fr}.mode-row,.quick-row,.source-row,.nav-choice,.behavior-choice,.sensor-grid{grid-template-columns:1fr}
   .hero h1{font-size:22px}.top-actions{display:grid;grid-template-columns:1fr 1fr}.top-actions .btn{width:100%}.ip-field{width:100%;grid-column:1/-1}
   .nav{padding:9px 12px}.nav-btn{min-width:72px;padding:0 10px}
 }
@@ -222,12 +227,13 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
               <button id="mode-auto" class="btn" onclick="setMode('auto')">自动</button>
               <button id="mode-off" class="btn danger" onclick="setMode('off')">关闭</button>
             </div>
-            <div class="speed-card">
+            <div id="speedCard" class="speed-card">
               <div class="speed-head">
                 <span>手动转速</span>
                 <input id="speedText" class="speed-value" type="number" min="0" max="100" onchange="setSpeed(this.value,true)">
               </div>
-              <input id="speed" class="range" type="range" min="0" max="100" oninput="syncSpeed(this.value)" onchange="setSpeed(this.value,true)">
+              <input id="speed" class="range" type="range" min="0" max="100" oninput="beginSpeedDrag();syncSpeed(this.value)" onchange="endSpeedDrag(this.value,true)">
+              <div id="speedLockText" class="speed-lock-note">--</div>
             </div>
             <div class="quick-row">
               <button id="speedPreset20" class="btn speed-preset" onclick="setSpeed(20,true)">20%</button>
@@ -345,6 +351,22 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
         <section class="card">
           <div class="card-head">
             <div class="card-title">
+              <b>控制条行为</b>
+              <span>设置非手动模式下转速控制条是否可操作。</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="behavior-choice">
+              <button id="speedBehaviorManualOnly" class="btn" onclick="setSpeedControlBehavior('manualOnly')">仅手动可调</button>
+              <button id="speedBehaviorSwitch" class="btn" onclick="setSpeedControlBehavior('switchToManual')">拖动切手动</button>
+            </div>
+            <div class="perf-note">默认会在只监控、自动、关闭模式下锁住转速控制条，避免误触改变运行模式。</div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <div class="card-title">
               <b>后台行为</b>
               <span>设置关闭窗口和启动后的默认状态。</span>
             </div>
@@ -425,7 +447,7 @@ const DEFAULT_CURVE='30:20,36:22,42:26,48:34,54:44,60:56,66:70,74:86,82:100';
 const webview=window.chrome&&window.chrome.webview?window.chrome.webview:null;
 const $=id=>document.getElementById(id);
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
-let state=null,points=parseCurve(DEFAULT_CURVE),selectedPoint=null,dragging=false,currentPage='dashboard';
+let state=null,points=parseCurve(DEFAULT_CURVE),selectedPoint=null,dragging=false,speedDragging=false,currentPage='dashboard';
 
 const labels={
   mode:{monitor:'只监控',manual:'手动',auto:'自动',off:'关闭'},
@@ -445,6 +467,7 @@ function normalizeMode(mode){return ['manual','auto','off'].includes(mode)?mode:
 function normalizeSource(source){return ['gpu','max'].includes(source)?source:'cpu'}
 function normalizeSensorId(sensorId){return sensorId&&String(sensorId).trim()?String(sensorId).trim():'auto'}
 function normalizeNavigationPlacement(value){return value==='side'?'side':'top'}
+function normalizeSpeedControlBehavior(value){return value==='switchToManual'?'switchToManual':'manualOnly'}
 
 function setPage(page){
   currentPage=['dashboard','settings'].includes(page)?page:'dashboard';
@@ -484,6 +507,12 @@ function setTemperatureSensor(sensorKind,sensorId){
   send({command:'setTemperatureSensor',sensorKind,sensorId:normalizeSensorId(sensorId)});
 }
 
+function setSpeedControlBehavior(behavior){
+  behavior=normalizeSpeedControlBehavior(behavior);
+  renderSpeedBehaviorButtons(behavior);
+  send({command:'setSpeedControlBehavior',behavior});
+}
+
 function saveIp(){send({command:'saveIp',ip:$('deviceIp').value.trim()})}
 function testIp(){send({command:'test',ip:$('deviceIp').value.trim()})}
 
@@ -495,9 +524,23 @@ function syncSpeed(value){
 }
 
 function setSpeed(value,forceMode){
+  if(isSpeedControlLocked())return;
   const speed=clamp(parseInt(value,10)||0,0,100);
   syncSpeed(speed);
   send({command:'setSpeed',speed,forceMode});
+}
+
+function beginSpeedDrag(){speedDragging=true}
+function endSpeedDrag(value,forceMode){
+  speedDragging=false;
+  setSpeed(value,forceMode);
+}
+
+function isSpeedControlLocked(){
+  const settings=state?.settings||{};
+  const mode=normalizeMode(settings.mode);
+  const behavior=normalizeSpeedControlBehavior(settings.speedControlBehavior);
+  return behavior==='manualOnly'&&mode!=='manual';
 }
 
 function renderSpeedPresets(speed){
@@ -511,6 +554,29 @@ function renderModeButtons(mode){
   ['monitor','manual','auto','off'].forEach(name=>{
     $('mode-'+name).classList.toggle('active',name===mode);
   });
+}
+
+function renderSpeedBehaviorButtons(behavior){
+  behavior=normalizeSpeedControlBehavior(behavior);
+  $('speedBehaviorManualOnly')?.classList.toggle('active',behavior==='manualOnly');
+  $('speedBehaviorSwitch')?.classList.toggle('active',behavior==='switchToManual');
+}
+
+function renderSpeedControlState(mode,behavior){
+  mode=normalizeMode(mode);
+  behavior=normalizeSpeedControlBehavior(behavior);
+  const locked=behavior==='manualOnly'&&mode!=='manual';
+  $('speedCard')?.classList.toggle('locked',locked);
+  ['speed','speedText','speedPreset20','speedPreset45','speedPreset75','speedPreset100'].forEach(id=>{
+    const el=$(id);
+    if(el)el.disabled=locked;
+  });
+  const note=locked
+    ? `${modeLabel(mode)}模式已锁定转速控制条，可切到手动或在设置中改为拖动切手动。`
+    : behavior==='switchToManual'
+      ? '拖动滑块或点击预设会切换到手动模式。'
+      : '手动模式下可以调整转速。';
+  setText('speedLockText',note);
 }
 
 function renderSourceButtons(source){
@@ -675,7 +741,11 @@ function render(){
   const diagnostic=hardware.diagnostic||'温度采集正常。';
 
   if(document.activeElement!==$('deviceIp'))$('deviceIp').value=settings.ip||'';
-  syncSpeed(settings.manualSpeed??45);
+  if(!speedDragging&&document.activeElement!==$('speed')&&document.activeElement!==$('speedText')){
+    syncSpeed(settings.manualSpeed??45);
+  }else{
+    renderSpeedPresets($('speed').value);
+  }
   $('closeTray').checked=!!settings.closeToTray;
   $('startMin').checked=!!settings.startMinimized;
   $('startWin').checked=!!settings.startWithWindows;
@@ -712,6 +782,8 @@ function render(){
   setText('diagnosticText',diagnostic);
 
   renderModeButtons(mode);
+  renderSpeedBehaviorButtons(settings.speedControlBehavior);
+  renderSpeedControlState(mode,settings.speedControlBehavior);
   renderSourceButtons(source);
   syncTemperatureSensorSelect('cpu',hardware.cpuSensors,settings.cpuSensorId,hardware.cpuSensor,hardware.cpuTemp);
   syncTemperatureSensorSelect('gpu',hardware.gpuSensors,settings.gpuSensorId,hardware.gpuSensor,hardware.gpuTemp);
@@ -866,7 +938,7 @@ if(webview){
 }else{
   state={
     type:'state',
-    settings:{ip:'192.168.1.20:8080',mode:'auto',source:'max',cpuSensorId:'/intelcpu/0/temperature/16',gpuSensorId:'/gpu-nvidia/0/temperature/0',manualSpeed:45,curve:DEFAULT_CURVE,closeToTray:true,startMinimized:false,startWithWindows:false,releaseWebViewInBackground:true,trimWorkingSetInBackground:true,navigationPlacement:'top'},
+    settings:{ip:'192.168.1.20:8080',mode:'auto',source:'max',cpuSensorId:'/intelcpu/0/temperature/16',gpuSensorId:'/gpu-nvidia/0/temperature/0',manualSpeed:45,curve:DEFAULT_CURVE,speedControlBehavior:'manualOnly',closeToTray:true,startMinimized:false,startWithWindows:false,releaseWebViewInBackground:true,trimWorkingSetInBackground:true,navigationPlacement:'top'},
     hardware:{
       cpuTemp:61,cpuSensor:'CPU Package',gpuTemp:68,gpuSensor:'GPU Core',diagnostic:'预览模式：硬件读取正常。',
       cpuSensors:[{id:'/intelcpu/0/temperature/16',name:'Intel Core Ultra 5 225H / CPU Package',value:61},{id:'/intelcpu/0/temperature/13',name:'Intel Core Ultra 5 225H / P-Core #4',value:65}],

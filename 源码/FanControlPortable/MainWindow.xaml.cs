@@ -316,6 +316,11 @@ public partial class MainWindow : Window
                 _settings.Save();
                 SendFullState();
                 break;
+            case "setSpeedControlBehavior":
+                _settings.SpeedControlBehavior = command.Behavior == "switchToManual" ? "switchToManual" : "manualOnly";
+                _settings.Save();
+                SendFullState();
+                break;
             case "showWindow":
                 ShowFromTray();
                 break;
@@ -413,6 +418,7 @@ public partial class MainWindow : Window
                 gpuSensorId = _settings.FanControlGpuTemperatureSensorId,
                 manualSpeed = _settings.FanControlManualSpeed,
                 curve = _settings.FanControlCurve,
+                speedControlBehavior = _settings.SpeedControlBehavior,
                 startMinimized = _settings.StartMinimized,
                 startWithWindows = _settings.StartWithWindows,
                 closeToTray = _settings.CloseToTray,
@@ -748,4 +754,5 @@ public sealed class WebCommand
     public string? SensorKind { get; set; }
     public string? SensorId { get; set; }
     public string? Placement { get; set; }
+    public string? Behavior { get; set; }
 }
