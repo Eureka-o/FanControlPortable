@@ -11,6 +11,9 @@
 /FanControlPortable.exe
 /FanControlPortable.locked-*.exe
 /*.zip
+!/FanControlPortable-兼容版.zip
+!/FanControlPortable-lite.zip
+!/FanControlPortable-superlite.zip
 /Resources/
 /Microsoft.Web.WebView2.Core.xml
 /Microsoft.Web.WebView2.WinForms.xml
