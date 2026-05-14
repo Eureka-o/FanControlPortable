@@ -1,0 +1,25 @@
+# Build output
+**/bin/
+**/obj/
+
+# Local runtime state
+/FanControlPortable.exe.WebView2/
+/hardware-sensors.log
+/settings.json
+
+# Packaged artifacts
+/FanControlPortable.exe
+/*.zip
+/Resources/
+/Microsoft.Web.WebView2.Core.xml
+/Microsoft.Web.WebView2.WinForms.xml
+/Microsoft.Web.WebView2.Wpf.xml
+
+# Agent/project memory
+/MEMORY_INDEX.md
+/SKILL_ROUTER_MEMORY.md
+
+# IDE/user files
+.vs/
+*.user
+*.suo
