@@ -1,67 +1,72 @@
 # FanControlPortable
 
-FanControlPortable is a portable Windows controller for an ESP8266-based laptop cooling pad. It reads local CPU/GPU temperatures, applies a fan curve, and sends speed commands to the cooler over Wi-Fi.
+FanControlPortable is a Windows desktop controller for an ESP8266-based automatic laptop cooling pad. It reads local CPU/GPU temperatures, applies a configurable fan curve, and sends speed commands to the cooler over Wi-Fi.
+
+The app is designed for portable use: unzip one package, run the executable, enter the cooler address, choose a mode, and keep the controller in the tray.
 
 ## Downloads
 
-Start with `FanControlPortable-lite.zip` for most modern Windows PCs.
+| Package | Best For | Includes | Approx. Zip / Unpacked |
+| --- | --- | --- | --- |
+| `FanControlPortable-兼容版.zip` | Maximum compatibility | Self-contained .NET 8 app, WebView2 installer, PawnIO installer | 75.8 MB / 82.1 MB |
+| `FanControlPortable-lite.zip` | Modern Windows PCs that may need sensor driver help | .NET Framework 4.8 app, PawnIO installer | 6.8 MB / 10.1 MB |
+| `FanControlPortable-superlite.zip` | Smallest package for prepared systems | .NET Framework 4.8 app only | 2.1 MB / 5.1 MB |
 
-| Package | Recommended For | Includes |
-| --- | --- | --- |
-| `FanControlPortable-lite.zip` | Default choice. Smallest package for prepared systems. | .NET Framework 4.8 app only |
-| `FanControlPortable.zip` | Standard package when sensor driver help may be needed. | .NET Framework 4.8 app + PawnIO installer |
-| `FanControlPortable-compat.zip` | Compatibility package for unknown Windows environments. | Self-contained .NET 8 app + WebView2 installer + PawnIO installer |
-
-The app may create a `FanControlPortable.exe.WebView2` folder next to the executable. That is WebView2 runtime cache. Keeping it avoids unnecessary reloads and is the least disruptive choice.
+Use the compatibility package if you are sending the app to someone and do not know their Windows setup. Use `lite` or `superlite` when the target PC already has Microsoft Edge WebView2 Runtime and .NET Framework 4.8.
 
 ## Main Features
 
-- First-run setup card for IP, connection test, temperature source, and auto mode.
-- Human-readable connection diagnostics for empty IP, wrong format, timeout, wrong device/API, and rejected speed commands.
-- GitHub release update check with matching package download link.
-- Built-in fan curve presets: Quiet, Balanced, Cooling, and Game.
-- Clear status dashboard: CPU/GPU temperature, fan speed, target speed, mode, online state, and last successful command time.
-- Recent cooler IP list and one-click retest.
-- Tray quick actions for monitor/manual/auto/off and common speeds.
+- CPU/GPU temperature monitoring with selectable sensor sources.
+- Automatic, manual, off, and monitor-only operating modes.
+- Configurable fan curve and quick speed presets.
+- Background tray mode with current mode shown in the right-click menu.
+- Optional startup with Windows.
+- Performance options for lower background memory use.
+- Import/export of the local profile.
 
-## Cooler Connection
+## Cooler / Controller Notes
 
-The cooler is expected to expose:
+The cooler is expected to expose a small HTTP API over Wi-Fi. A typical ESP8266 controller page shows information such as:
 
-- `GET /api/data`
-- `POST /api/speed` with JSON `{ "speed": 0-100 }`
+- device uptime and chip/flash status;
+- Wi-Fi station/AP state, SSID, IP address, hostname, and MAC address;
+- firmware/about information and build date;
+- OTA update entry;
+- Wi-Fi reset/erase option;
+- pages such as menu, Wi-Fi configuration, parameter page, info page, update page, restart, and erase.
 
-Enter the cooler IP or `IP:port` in the top bar, then click **Test Connection**. If the controller is in access point mode, connect to its AP first, configure Wi-Fi, then use the station IP after it joins the normal network.
+The Windows app only needs the cooler IP or `IP:port` to communicate with it. If the controller is in access point mode, connect to its AP first, configure Wi-Fi, then return to the normal network and use the station IP.
 
 ## Package Guidance
 
-- Choose `lite` first.
-- If CPU/GPU sensors are unavailable, try `FanControlPortable.zip` and install PawnIO from `Resources/assets`.
-- If the app cannot start because .NET or WebView2 is missing, use `FanControlPortable-compat.zip`.
+`兼容版` is the safest package. It keeps the .NET runtime inside the app bundle and includes installer helpers for WebView2 and PawnIO.
 
-## 中文快速说明
+`lite` is smaller, but depends on Windows having .NET Framework 4.8 and WebView2 Runtime. It still includes PawnIO so users can install the hardware driver if CPU/GPU sensor access is limited.
 
-- 大多数电脑先下载 `FanControlPortable-lite.zip`。
-- 如果温度传感器读不到，再用标准包 `FanControlPortable.zip`，并安装 `Resources/assets` 里的 PawnIO。
-- 如果软件打不开、缺 .NET 或 WebView2，再用 `FanControlPortable-compat.zip`。
-- 软件目录里可能出现 `FanControlPortable.exe.WebView2` 文件夹，这是 WebView2 缓存。保留它最稳，能避免每次重新加载界面。
+`superlite` is the smallest package. It does not include a `Resources` folder or helper installers. Use it only when the target PC already has the required runtime, WebView2, and driver environment.
 
 ## Build
 
-Compatibility package:
-
 ```powershell
+dotnet build "源码\FanControlPortable\FanControlPortable.csproj" -c Release
 dotnet publish "源码\FanControlPortable\FanControlPortable.csproj" -c Release -o "源码\FanControlPortable\bin\Release\publish\portable-single"
 ```
 
-Standard package:
+Lightweight builds:
 
 ```powershell
-dotnet publish "源码\FanControlPortable\FanControlPortable.csproj" -c Release -p:LightweightPackage=true -p:IncludePawnIoInstaller=true -o "源码\FanControlPortable\bin\Release\publish\standard-net48"
+dotnet publish "源码\FanControlPortable\FanControlPortable.csproj" -c Release -p:LightweightPackage=true -p:IncludePawnIoInstaller=true -o "源码\FanControlPortable\bin\Release\publish\lite-net48"
+dotnet publish "源码\FanControlPortable\FanControlPortable.csproj" -c Release -p:LightweightPackage=true -p:IncludePawnIoInstaller=false -o "源码\FanControlPortable\bin\Release\publish\superlite-net48"
 ```
 
-Lite package:
+## 中文说明
 
-```powershell
-dotnet publish "源码\FanControlPortable\FanControlPortable.csproj" -c Release -p:LightweightPackage=true -p:IncludePawnIoInstaller=false -o "源码\FanControlPortable\bin\Release\publish\lite-net48"
-```
+FanControlPortable 是一个 Windows 便携式风扇控制软件，用来控制基于 ESP8266 的笔记本散热底座。软件读取本机 CPU/GPU 温度，根据风扇曲线自动调速，也支持手动、关闭和仅监控模式。
+
+三个包的区别：
+
+- `FanControlPortable-兼容版.zip`：最稳，适合直接发给别人，包含自带 .NET 运行时、WebView2 安装器和 PawnIO 安装器。
+- `FanControlPortable-lite.zip`：轻量版，包含 PawnIO 安装器，但不包含 WebView2 安装器。
+- `FanControlPortable-superlite.zip`：最小版，不包含 `Resources` 文件夹，也不包含安装器，适合运行环境已经准备好的电脑。
+
+控制器侧通常会有 Wi-Fi 配置、设备信息、OTA 更新、擦除 Wi-Fi 配置等页面。软件端只需要填写散热器的 IP 或 `IP:端口` 即可连接。
