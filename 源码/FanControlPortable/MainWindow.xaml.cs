@@ -1,4 +1,5 @@
 using System.IO;
+using System.Diagnostics;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Windows;
@@ -22,15 +23,18 @@ public partial class MainWindow : Window
 
     private readonly AppSettings _settings;
     private readonly FanControlRuntime _runtime;
+    private readonly UpdateService _updateService = new();
     private readonly Dictionary<string, Forms.ToolStripMenuItem> _trayModeItems = new(StringComparer.OrdinalIgnoreCase);
     private FanRuntimeSnapshot? _lastSnapshot;
     private Forms.NotifyIcon? _trayIcon;
     private Forms.ContextMenuStrip? _trayMenu;
+    private Forms.ToolStripMenuItem? _trayStatusItem;
     private bool _allowExit;
     private bool _browserReady;
     private bool _browserReleasedForBackground;
     private CoreWebView2? _browserEventSource;
     private Task? _browserInitializationTask;
+    private UpdateCheckResult? _lastUpdateCheck;
 
     public MainWindow(AppSettings settings)
     {
@@ -245,13 +249,26 @@ public partial class MainWindow : Window
                 break;
             case "saveIp":
                 _settings.FanControlDeviceIp = command.Ip?.Trim() ?? _settings.FanControlDeviceIp;
+                _settings.RememberDeviceIp(_settings.FanControlDeviceIp);
                 _settings.Save();
                 await _runtime.ForceApplyAsync();
                 break;
             case "test":
                 _settings.FanControlDeviceIp = command.Ip?.Trim() ?? _settings.FanControlDeviceIp;
+                _settings.RememberDeviceIp(_settings.FanControlDeviceIp);
                 _settings.Save();
                 _runtime.TestConnection();
+                break;
+            case "completeSetup":
+                _settings.FirstRunSetupComplete = true;
+                _settings.Save();
+                SendFullState();
+                break;
+            case "checkUpdate":
+                await CheckUpdateAsync();
+                break;
+            case "openUpdate":
+                OpenUrl(_lastUpdateCheck?.DownloadUrl ?? AppInfo.ReleasesUrl);
                 break;
             case "setSource":
                 _settings.FanControlTemperatureSource = command.Source is "gpu" or "max" ? command.Source : "cpu";
@@ -412,6 +429,7 @@ public partial class MainWindow : Window
             settings = new
             {
                 ip = _settings.FanControlDeviceIp,
+                recentIps = _settings.FanControlRecentDeviceIps,
                 mode = FanControlService.NormalizeMode(_settings.FanControlMode),
                 source = _settings.FanControlTemperatureSource,
                 cpuSensorId = _settings.FanControlCpuTemperatureSensorId,
@@ -424,7 +442,27 @@ public partial class MainWindow : Window
                 closeToTray = _settings.CloseToTray,
                 releaseWebViewInBackground = _settings.PerformanceReleaseWebViewInBackground,
                 trimWorkingSetInBackground = _settings.PerformanceTrimWorkingSetInBackground,
-                navigationPlacement = _settings.UiNavigationPlacement
+                navigationPlacement = _settings.UiNavigationPlacement,
+                firstRunSetupComplete = _settings.FirstRunSetupComplete
+            },
+            app = new
+            {
+                name = AppInfo.DisplayName,
+                version = AppInfo.Version,
+                edition = AppInfo.Edition,
+                packageFile = AppInfo.PackageFileName,
+                releasesUrl = AppInfo.ReleasesUrl
+            },
+            update = _lastUpdateCheck == null ? null : new
+            {
+                success = _lastUpdateCheck.Success,
+                hasUpdate = _lastUpdateCheck.HasUpdate,
+                currentVersion = _lastUpdateCheck.CurrentVersion,
+                latestVersion = _lastUpdateCheck.LatestVersion,
+                message = _lastUpdateCheck.Message,
+                downloadUrl = _lastUpdateCheck.DownloadUrl,
+                assetName = _lastUpdateCheck.AssetName,
+                notes = TrimForUi(_lastUpdateCheck.Notes, 360)
             },
             hardware = new
             {
@@ -448,6 +486,7 @@ public partial class MainWindow : Window
                 wifiControl = status.DeviceWifiControl,
                 controlTemp = SelectControlTemperature(hardware),
                 smoothedTemp = status.SmoothedTemperature,
+                lastCommandAt = status.LastCommandAt?.ToString("HH:mm:ss"),
                 mode = status.Mode,
                 message = TranslateStatus(snapshot.HardwareError != null ? "\u786c\u4ef6\u8bfb\u53d6\u4e0d\u53ef\u7528\uff1a" + snapshot.HardwareError : hardwareMessage ?? status.Message)
             }
@@ -464,6 +503,47 @@ public partial class MainWindow : Window
         }
 
         _settings.FanControlCpuTemperatureSensorId = sensorId;
+    }
+
+    private async Task CheckUpdateAsync()
+    {
+        _lastUpdateCheck = new UpdateCheckResult(
+            Success: true,
+            HasUpdate: false,
+            CurrentVersion: AppInfo.Version,
+            LatestVersion: "",
+            Message: "正在检查 GitHub 发布版本...",
+            DownloadUrl: AppInfo.ReleasesUrl,
+            Notes: "",
+            AssetName: "");
+        SendFullState();
+
+        try
+        {
+            _lastUpdateCheck = await _updateService.CheckLatestAsync();
+        }
+        catch (Exception ex)
+        {
+            _lastUpdateCheck = UpdateCheckResult.Failed("检查更新失败：" + ex.Message, AppInfo.ReleasesUrl);
+        }
+
+        SendFullState();
+    }
+
+    private static string TrimForUi(string? text, int maxLength)
+    {
+        text = text?.Trim() ?? "";
+        if (text.Length <= maxLength)
+            return text;
+        return text.Substring(0, maxLength) + "...";
+    }
+
+    private static void OpenUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            url = AppInfo.ReleasesUrl;
+
+        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     }
 
     private void PostToMain(object payload)
@@ -496,7 +576,21 @@ public partial class MainWindow : Window
             RenderMode = Forms.ToolStripRenderMode.Professional,
             Renderer = new Forms.ToolStripProfessionalRenderer(new PlainTrayMenuColorTable())
         };
-        _trayMenu.Opening += (_, _) => UpdateTrayModeItems(_settings.FanControlMode);
+        _trayMenu.Opening += (_, _) =>
+        {
+            UpdateTrayModeItems(_settings.FanControlMode);
+            UpdateTrayStatusItem();
+        };
+
+        _trayStatusItem = CreateTrayMenuItemBase("状态 --");
+        _trayStatusItem.Enabled = false;
+        _trayMenu.Items.Add(_trayStatusItem);
+        _trayMenu.Items.Add(CreateTraySeparator());
+        _trayMenu.Items.Add(CreateTrayMenuItem("打开设置", ShowSettingsFromTray));
+        _trayMenu.Items.Add(CreateTrayMenuItem("静音 20%", () => SetManualSpeedAsync(20, true)));
+        _trayMenu.Items.Add(CreateTrayMenuItem("均衡 45%", () => SetManualSpeedAsync(45, true)));
+        _trayMenu.Items.Add(CreateTrayMenuItem("强冷 100%", () => SetManualSpeedAsync(100, true)));
+        _trayMenu.Items.Add(CreateTraySeparator());
 
         _trayMenu.Items.Add(CreateTrayMenuItem("打开完整面板", ShowFromTray));
         _trayMenu.Items.Add(CreateTraySeparator());
@@ -534,6 +628,7 @@ public partial class MainWindow : Window
 
         _trayMenu?.Dispose();
         _trayMenu = null;
+        _trayStatusItem = null;
     }
 
     private void TrayIcon_MouseUp(object? sender, Forms.MouseEventArgs e)
@@ -645,6 +740,28 @@ public partial class MainWindow : Window
         Activate();
         _ = Dispatcher.InvokeAsync(async () => await RestoreBrowserIfNeededAsync());
     }
+
+    private void ShowSettingsFromTray()
+    {
+        ShowFromTray();
+        Dispatcher.InvokeAsync(async () =>
+        {
+            await RestoreBrowserIfNeededAsync();
+            PostToMain(new { type = "navigate", page = "settings" });
+        });
+    }
+
+    private void UpdateTrayStatusItem()
+    {
+        if (_trayStatusItem == null)
+            return;
+
+        var status = _lastSnapshot?.Status ?? _runtime.CurrentStatus;
+        var hardware = _lastSnapshot?.Hardware ?? _runtime.CurrentHardware;
+        _trayStatusItem.Text = $"CPU {ValueOrDash(Round(hardware.CpuTemperature))}°C | GPU {ValueOrDash(Round(hardware.GpuTemperature))}°C | 风扇 {ValueOrDash(status.CurrentSpeed)}%";
+    }
+
+    private static int? Round(float? value) => value.HasValue ? (int)Math.Round(value.Value) : null;
 
     private static string ValueOrDash(int? value) => value.HasValue ? value.Value.ToString() : "--";
 

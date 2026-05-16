@@ -11,16 +11,21 @@
 /FanControlPortable.exe
 /FanControlPortable.locked-*.exe
 /*.zip
-!/FanControlPortable-兼容版.zip
 !/FanControlPortable-lite.zip
-!/FanControlPortable-superlite.zip
+!/FanControlPortable.zip
+!/FanControlPortable-compat.zip
 /Resources/
 /Microsoft.Web.WebView2.Core.xml
 /Microsoft.Web.WebView2.WinForms.xml
 /Microsoft.Web.WebView2.Wpf.xml
 
 # Agent/project memory
+/AGENT.md
 /MEMORY_INDEX.md
+/PROJECT_MEMORY.md
+/LOCAL_CLEANUP_MEMORY.md
+/REPAIR_MEMORY.md
+/SKILL_ROUTER_BRIEF.md
 /SKILL_ROUTER_MEMORY.md
 
 # IDE/user files

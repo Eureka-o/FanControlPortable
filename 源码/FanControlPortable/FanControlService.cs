@@ -1,4 +1,5 @@
 ﻿using System.Net.Http;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -12,6 +13,7 @@ public sealed class FanControlService : IDisposable
     private readonly object _sync = new();
     private int? _lastSentSpeed;
     private DateTime _lastSentAtUtc = DateTime.MinValue;
+    private DateTime? _lastSuccessfulCommandAt;
     private string _lastMode = "";
     private int? _lastManualSpeed;
     private float? _smoothedTemperature;
@@ -71,7 +73,7 @@ public sealed class FanControlService : IDisposable
             }
             catch (Exception ex)
             {
-                Status = Status with { Enabled = _cfg.FanControlEnabled, Mode = NormalizeMode(_cfg.FanControlMode), Online = false, Message = ex.Message };
+                Status = Status with { Enabled = _cfg.FanControlEnabled, Mode = NormalizeMode(_cfg.FanControlMode), Online = false, Message = DiagnoseConnectionError(ex) };
             }
             return Status;
         }
@@ -132,7 +134,8 @@ public sealed class FanControlService : IDisposable
                 GpuTemperature = gpuTemp,
                 ControlTemperature = controlTemp,
                 SmoothedTemperature = _smoothedTemperature,
-                Message = "散热器离线或地址不可达：" + ex.Message
+                LastCommandAt = _lastSuccessfulCommandAt,
+                Message = DiagnoseConnectionError(ex)
             };
             return;
         }
@@ -156,6 +159,7 @@ public sealed class FanControlService : IDisposable
                 {
                     _lastSentSpeed = target;
                     _lastSentAtUtc = DateTime.UtcNow;
+                    _lastSuccessfulCommandAt = DateTime.Now;
                     sendMessage = "转速命令已下发";
                     cooler = TryReadCoolerState() ?? cooler;
                 }
@@ -163,7 +167,7 @@ public sealed class FanControlService : IDisposable
             }
             catch (Exception ex)
             {
-                Status = BuildStatus(cooler, mode, target, cpuTemp, gpuTemp, controlTemp, sent, "转速下发失败：" + ex.Message);
+                Status = BuildStatus(cooler, mode, target, cpuTemp, gpuTemp, controlTemp, sent, "转速下发失败：" + DiagnoseConnectionError(ex));
                 return;
             }
         }
@@ -176,8 +180,19 @@ public sealed class FanControlService : IDisposable
     {
         var baseUrl = GetBaseUrl();
         var body = _http.GetStringAsync($"{baseUrl}/api/data").GetAwaiter().GetResult();
-        var data = JsonSerializer.Deserialize<CoolerData>(body)
-            ?? throw new InvalidOperationException("empty response");
+        CoolerData? data;
+        try
+        {
+            data = JsonSerializer.Deserialize<CoolerData>(body);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException("设备有响应，但不是预期的 /api/data JSON。请确认填的是散热器控制器 IP。", ex);
+        }
+
+        if (data == null)
+            throw new InvalidOperationException("设备有响应，但 /api/data 返回空内容。");
+
         return new CoolerState(true, data.Speed, data.Temperature, data.Power, data.WifiControl, data.WifiTargetSpeed, data.ControlMode, null);
     }
 
@@ -255,9 +270,34 @@ public sealed class FanControlService : IDisposable
         GpuTemperature = gpuTemp,
         ControlTemperature = controlTemp,
         SmoothedTemperature = _smoothedTemperature,
+        LastCommandAt = _lastSuccessfulCommandAt,
         Sent = sent,
         Message = message
     };
+
+    public static string DiagnoseConnectionError(Exception ex)
+    {
+        var root = ex;
+        while (root.InnerException != null && root is not InvalidOperationException)
+            root = root.InnerException;
+
+        if (root is TaskCanceledException)
+            return "连接超时：请确认电脑和散热器在同一网络，或当前是否还连着散热器热点。";
+
+        if (root is SocketException)
+            return "无法连接到设备：请检查 IP、端口、电源和 WiFi。";
+
+        if (root is HttpRequestException)
+            return "网络请求失败：请检查 IP 是否正确，或设备是否已接入当前 WiFi。";
+
+        if (root is UriFormatException)
+            return "散热器地址格式不正确，请填写 IP 或 IP:端口。";
+
+        if (root is InvalidOperationException && !string.IsNullOrWhiteSpace(root.Message))
+            return root.Message;
+
+        return "散热器离线或地址不可达：" + ex.Message;
+    }
 
     private bool ShouldSend(int target, string mode)
     {
@@ -358,6 +398,7 @@ public record FanControlStatus
     public float? GpuTemperature { get; init; }
     public float? ControlTemperature { get; init; }
     public float? SmoothedTemperature { get; init; }
+    public DateTime? LastCommandAt { get; init; }
     public bool Sent { get; init; }
     public string Message { get; init; } = "";
 }

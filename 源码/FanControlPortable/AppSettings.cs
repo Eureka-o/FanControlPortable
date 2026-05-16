@@ -5,7 +5,7 @@ namespace FanControlPortable;
 
 public sealed class AppSettings
 {
-    public const int CurrentSettingsSchemaVersion = 2;
+    public const int CurrentSettingsSchemaVersion = 3;
     public const string DefaultCurve = "30:20,36:22,42:26,48:34,54:44,60:56,66:70,74:86,82:100";
 
     public int SettingsSchemaVersion { get; set; }
@@ -22,7 +22,9 @@ public sealed class AppSettings
     public double FanControlSmoothingAlpha { get; set; } = 0.22;
     public string FanControlCurve { get; set; } = DefaultCurve;
     public List<FanCurvePreset> FanControlCurvePresets { get; set; } = new();
+    public List<string> FanControlRecentDeviceIps { get; set; } = new();
     public string SpeedControlBehavior { get; set; } = "manualOnly";
+    public bool FirstRunSetupComplete { get; set; } = false;
     public bool StartMinimized { get; set; } = false;
     public bool StartWithWindows { get; set; } = false;
     public bool CloseToTray { get; set; } = true;
@@ -86,7 +88,9 @@ public sealed class AppSettings
         FanControlSmoothingAlpha = other.FanControlSmoothingAlpha;
         FanControlCurve = string.IsNullOrWhiteSpace(other.FanControlCurve) ? DefaultCurve : other.FanControlCurve;
         FanControlCurvePresets = other.FanControlCurvePresets ?? new List<FanCurvePreset>();
+        FanControlRecentDeviceIps = other.FanControlRecentDeviceIps ?? new List<string>();
         SpeedControlBehavior = other.SpeedControlBehavior;
+        FirstRunSetupComplete = other.FirstRunSetupComplete;
         StartMinimized = other.StartMinimized;
         StartWithWindows = other.StartWithWindows;
         CloseToTray = other.CloseToTray;
@@ -112,9 +116,19 @@ public sealed class AppSettings
         SpeedControlBehavior = SpeedControlBehavior == "switchToManual" ? "switchToManual" : "manualOnly";
         if (FanControlCurvePresets == null)
             FanControlCurvePresets = new List<FanCurvePreset>();
+        FanControlRecentDeviceIps = NormalizeRecentIps(FanControlRecentDeviceIps, FanControlDeviceIp);
         FanControlCurve = FanControlService.TryNormalizeCurve(FanControlCurve, out var normalizedCurve, out _)
             ? normalizedCurve
             : DefaultCurve;
+    }
+
+    public void RememberDeviceIp(string? ip)
+    {
+        ip = ip?.Trim();
+        if (string.IsNullOrWhiteSpace(ip))
+            return;
+
+        FanControlRecentDeviceIps = NormalizeRecentIps(FanControlRecentDeviceIps, ip);
     }
 
     private static string NormalizeSensorId(string? sensorId)
@@ -132,6 +146,25 @@ public sealed class AppSettings
         }
 
         SettingsSchemaVersion = CurrentSettingsSchemaVersion;
+    }
+
+    private static List<string> NormalizeRecentIps(IEnumerable<string>? values, string? currentIp)
+    {
+        var result = new List<string>();
+        void Add(string? value)
+        {
+            value = value?.Trim();
+            if (string.IsNullOrWhiteSpace(value))
+                return;
+            if (!result.Any(existing => string.Equals(existing, value, StringComparison.OrdinalIgnoreCase)))
+                result.Add(value!);
+        }
+
+        Add(currentIp);
+        foreach (var value in values ?? Enumerable.Empty<string>())
+            Add(value);
+
+        return result.Take(8).ToList();
     }
 
     private static JsonSerializerOptions JsonOptions() => new() { WriteIndented = true };
