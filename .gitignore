@@ -12,7 +12,7 @@ bridge/TempBridge/obj/
 # Local runtime state
 logs/
 telemetry/
-config/
+/config/
 settings.json
 *.log
 *.lock
