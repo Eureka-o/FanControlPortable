@@ -1,27 +1,34 @@
 # Build output
-**/bin/
-**/obj/
+build/bin/
+build/portable/
+build/*.log
+frontend/dist/
+frontend/.next/
+frontend/node_modules/
+frontend/tsconfig.tsbuildinfo
+bridge/TempBridge/bin/
+bridge/TempBridge/obj/
 
 # Local runtime state
-/FanControlPortable.exe.WebView2/
-/hardware-sensors.log
-/settings.json
+logs/
+telemetry/
+config/
+settings.json
+*.log
+*.lock
+*.exe.WebView2/
+
+# Temporary/runtime dependencies
+temp/LibreHardwareMonitor/
+*.syso
 
 # Packaged artifacts
-/FanControlPortable.exe
-/FanControlPortable.locked-*.exe
-/*.zip
-!/FanControlPortable-兼容版.zip
-!/FanControlPortable-lite.zip
-!/FanControlPortable-superlite.zip
-/Resources/
-/Microsoft.Web.WebView2.Core.xml
-/Microsoft.Web.WebView2.WinForms.xml
-/Microsoft.Web.WebView2.Wpf.xml
+*.exe
+*.zip
 
-# Agent/project memory
-/MEMORY_INDEX.md
-/SKILL_ROUTER_MEMORY.md
+# Local Codex/project memory
+MEMORY_INDEX.md
+SKILL_ROUTER_MEMORY.md
 
 # IDE/user files
 .vs/

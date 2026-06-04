@@ -1,0 +1,16 @@
+{
+  "$comment": "主题清单文件。应用读取它来识别这个主题。复制本主题做自己的主题时，务必改掉 id 与 name。",
+
+  "id": "thrm",
+  "_id_说明": "主题唯一标识，只能用小写字母/数字/连字符/下划线。它同时是文件夹名，也是注入到 <html data-theme> 上的值，theme.css 里的选择器前缀 html[data-theme=\"xxx\"] 必须与它一致。",
+
+  "name": "THRM",
+  "_name_说明": "在「系统设置 → 界面主题」下拉里显示的名字。",
+
+  "base": "light",
+  "_base_说明": "本主题基于哪种底色，可填 light 或 dark。应用会先套用对应的浅色/深色底，再叠加本主题的 theme.css。",
+
+  "author": "THRM",
+  "version": "1.0.0",
+  "description": "官方二次元主题。"
+}

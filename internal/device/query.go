@@ -1,0 +1,195 @@
+//go:build legacydevice
+
+package device
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/TIANLI0/THRM/internal/deviceproto"
+	"github.com/TIANLI0/THRM/internal/types"
+)
+
+const deviceQueryWait = 140 * time.Millisecond
+
+var deviceSettingsQueryCommands = []byte{
+	deviceproto.CmdQueryGearRPMTable,
+	deviceproto.CmdQueryWorkMode,
+	deviceproto.CmdRGBStatus,
+}
+
+func (m *Manager) QueryDeviceSettings() (types.DeviceSettings, error) {
+	if m.GetDeviceType() == types.DeviceTypeBLE {
+		return m.bleManager.QueryDeviceSettings()
+	}
+	if m.GetDeviceType() == types.DeviceTransportWiFi {
+		settings := types.DeviceSettings{
+			Available: true,
+			Source:    types.DeviceTransportWiFi,
+			ReadAt:    time.Now().Format("2006-01-02 15:04:05"),
+			Model:     "WiFi 风扇控制器",
+		}
+		applyCurrentStatus(&settings, m.GetCurrentFanData())
+		return settings, nil
+	}
+
+	settings := types.DeviceSettings{
+		Available: false,
+		Source:    types.DeviceTypeHID,
+		ReadAt:    time.Now().Format("2006-01-02 15:04:05"),
+		Model:     m.GetModelName(),
+	}
+
+	m.mutex.RLock()
+	connected := m.isConnected && m.device != nil
+	m.mutex.RUnlock()
+	if !connected {
+		return settings, fmt.Errorf("device is not connected")
+	}
+
+	var lastErr error
+	for _, cmd := range deviceSettingsQueryCommands {
+		frames, err := m.queryCommand(cmd)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		settings.RawFrames = append(settings.RawFrames, frames...)
+		applyDeviceSettingsFrames(&settings, frames)
+	}
+	applyCurrentStatus(&settings, m.GetCurrentFanData())
+
+	settings.Available = len(settings.GearRPMTable) > 0 || settings.WorkMode != "" || settings.Status != nil
+	return settings, lastErr
+}
+
+func (m *Manager) queryCommand(cmd byte) ([]types.DeviceDebugFrame, error) {
+	startSeq := m.currentDebugSeq()
+	frame := deviceproto.BuildFrame(cmd)
+	report := deviceproto.BuildReport(frame, hidControlReportLen)
+
+	m.mutex.Lock()
+	if !m.isConnected || m.device == nil {
+		m.mutex.Unlock()
+		return nil, fmt.Errorf("device is not connected")
+	}
+	m.recordDebugFrame("tx", types.DeviceTypeHID, report)
+	_, err := m.device.Write(report)
+	m.mutex.Unlock()
+	if err != nil {
+		return nil, err
+	}
+
+	time.Sleep(deviceQueryWait)
+	return m.debugFramesAfter(startSeq), nil
+}
+
+func (b *BLEManager) QueryDeviceSettings() (types.DeviceSettings, error) {
+	settings := types.DeviceSettings{
+		Available: false,
+		Source:    types.DeviceTypeBLE,
+		ReadAt:    time.Now().Format("2006-01-02 15:04:05"),
+		Model:     "BS1",
+	}
+
+	if !b.IsConnected() {
+		return settings, fmt.Errorf("BLE device is not connected")
+	}
+
+	var lastErr error
+	for _, cmd := range deviceSettingsQueryCommands {
+		frames, err := b.queryCommand(cmd)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		settings.RawFrames = append(settings.RawFrames, frames...)
+		applyDeviceSettingsFrames(&settings, frames)
+	}
+	applyCurrentStatus(&settings, b.GetCurrentFanData())
+
+	settings.Available = len(settings.GearRPMTable) > 0 || settings.WorkMode != "" || settings.Status != nil
+	return settings, lastErr
+}
+
+func (b *BLEManager) queryCommand(cmd byte) ([]types.DeviceDebugFrame, error) {
+	startSeq := b.currentDebugSeq()
+	if err := b.WriteCommand(deviceproto.BuildFrame(cmd)); err != nil {
+		return nil, err
+	}
+	time.Sleep(deviceQueryWait)
+	return b.debugFramesAfter(startSeq), nil
+}
+
+func applyDeviceSettingsFrames(settings *types.DeviceSettings, frames []types.DeviceDebugFrame) {
+	for _, debugFrame := range frames {
+		if debugFrame.Direction != "rx" || debugFrame.FrameHex == "" {
+			continue
+		}
+		raw, err := deviceproto.ParseHex(debugFrame.FrameHex)
+		if err != nil {
+			continue
+		}
+		frame, ok := deviceproto.ParseFrame(raw)
+		if !ok || !frame.ChecksumOK {
+			continue
+		}
+		decoded := deviceproto.DecodeFrame(frame)
+		applyDecodedDeviceSetting(settings, decoded)
+	}
+}
+
+func applyDecodedDeviceSetting(settings *types.DeviceSettings, decoded deviceproto.DecodedFrame) {
+	switch decoded.Type {
+	case "gearRpmTable":
+		settings.GearRPMTable = make([]types.DeviceGearRPM, 0, len(decoded.GearTable))
+		for _, item := range decoded.GearTable {
+			settings.GearRPMTable = append(settings.GearRPMTable, types.DeviceGearRPM{
+				Gear:  item.Gear,
+				Label: item.Label,
+				RPM:   item.RPM,
+			})
+		}
+	case "workMode":
+		settings.WorkMode = decoded.Mode
+		settings.WorkModeName = decoded.ModeName
+	case "rgbStatus":
+		settings.RGBState = decoded.RGBState
+		settings.RGBStateName = decoded.RGBName
+	case "statusNotification":
+		settings.Status = &types.DeviceStatusRead{
+			GearSetting:        decoded.GearSetting,
+			MaxGear:            decoded.MaxGear,
+			Selected:           decoded.Selected,
+			Mode:               decoded.Mode,
+			ModeName:           decoded.ModeName,
+			SmartStartStop:     decoded.SmartStartStop,
+			SmartStartStopName: decoded.SmartStartStopName,
+			CurrentRPM:         decoded.CurrentRPM,
+			TargetRPM:          decoded.TargetRPM,
+		}
+	}
+}
+
+func applyCurrentStatus(settings *types.DeviceSettings, fanData *types.FanData) {
+	if fanData == nil {
+		return
+	}
+	if settings.WorkMode == "" {
+		settings.WorkMode = fmt.Sprintf("0x%02X", fanData.CurrentMode)
+		settings.WorkModeName = deviceproto.ModeName(fanData.CurrentMode)
+	}
+	maxGear, selected := deviceproto.DecodeGearSetting(fanData.GearSettings)
+	smartCode, smartName := deviceproto.DecodeSmartStartStop(fanData.CurrentMode)
+	settings.Status = &types.DeviceStatusRead{
+		GearSetting:        fmt.Sprintf("0x%02X", fanData.GearSettings),
+		MaxGear:            maxGear,
+		Selected:           selected,
+		Mode:               fmt.Sprintf("0x%02X", fanData.CurrentMode),
+		ModeName:           deviceproto.ModeName(fanData.CurrentMode),
+		SmartStartStop:     smartCode,
+		SmartStartStopName: smartName,
+		CurrentRPM:         int(fanData.CurrentRPM),
+		TargetRPM:          int(fanData.TargetRPM),
+	}
+}

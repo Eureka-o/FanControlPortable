@@ -1,0 +1,21 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "FanControlPortable",
+  "outputfilename": "FanControlPortable",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "Eureka-o",
+    "email": ""
+  },
+  "info": {
+    "companyName": "Eureka-o",
+    "productName": "FanControlPortable",
+    "productVersion": "2.0.0",
+    "copyright": "Copyright (c) 2026 Eureka-o",
+    "comments": "FanControlPortable 2.0"
+  },
+  "nsisType": "multiple"
+}

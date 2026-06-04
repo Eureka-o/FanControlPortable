@@ -1,0 +1,458 @@
+/* ============================================================================
+ * THRM 主题（冰川 / Glacier）—— 官方参考主题，演示「自定义主题」的最高复杂度
+ * ============================================================================
+ *
+ * 这是什么？
+ *   这是一个「自定义主题」示例文件。应用启动后会扫描安装目录下的 themes\ 文件夹，
+ *   把每个子文件夹都识别成一个可选主题。你在「系统设置 → 界面主题」里选中它，
+ *   应用就会把本文件的内容注入页面，从而改变整个界面的外观。
+ *
+ *   想做自己的主题？把整个 themes\thrm 文件夹复制一份（例如 themes\mytheme），
+ *   改掉里面的 theme.json（尤其是 id 和 name），再按需修改本文件即可。
+ *
+ * 作用域（非常重要！）
+ *   应用在选中本主题时，会给页面根元素 <html> 加上属性  data-theme="thrm"
+ *   （这里的 "thrm" 就是 theme.json 里的 id）。
+ *   因此本文件里所有选择器都必须以  html[data-theme="thrm"]  开头，
+ *   这样样式只在「本主题被选中」时才生效，不会污染浅色/深色等其它主题。
+ *   如果你新建主题，请把所有  html[data-theme="thrm"]  替换成你自己的 id。
+ *
+ * 两类可改的东西：
+ *   1) 颜色变量（CSS 变量 / Design Tokens）——见下方「① 颜色变量」。
+ *      改这些就能整体换色，最简单、最安全，推荐新手从这里入手。
+ *   2) 结构化外观（毛玻璃、网格背景、装饰线条、扫描动画等）——见「② 结构化外观」。
+ *      这些针对界面里预留的「钩子类名」（统一以 glacier- 前缀，见下文）做深度定制，
+ *      属于进阶玩法，是本主题「复杂度天花板」的体现。
+ *
+ * 界面预留的结构化钩子类名（这些类名已经写在界面里，你的主题可以直接选中它们）：
+ *   .glacier-shell         —— 整个应用最外层容器（铺背景的地方）
+ *   .glacier-titlebar      —— 顶部标题栏（Windows 下的拖拽条）
+ *   .glacier-sidebar       —— 左侧竖向导航栏
+ *   .glacier-hero-card     —— 状态页顶部的主信息大卡片
+ *   .glacier-hero-content  —— 大卡片内的文字内容区
+ *   .glacier-hero-actions  —— 大卡片内的操作按钮区
+ *   .glacier-hero-art      —— 大卡片右侧的装饰插画容器
+ *   .glacier-hero-art-label—— 装饰插画上的文字标签
+ *   .glacier-operator-art  —— 装饰插画图片本身
+ *   .glacier-metric-card   —— 指标卡片（温度/转速等）
+ *   .glacier-control-card  —— 控制类卡片
+ *   .glacier-stat-tile     —— 小型统计磁贴
+ *   .glacier-chart-card    —— 图表卡片外壳
+ *   .glacier-chart-canvas  —— 图表实际绘制区域
+ *   .theme-thrm-only       —— 「仅本主题显示」的元素：默认全局隐藏，
+ *                              只有在本主题下才会显示（见文件末尾）。
+ *
+ * 小贴士：
+ *   - color-mix(in srgb, A 70%, B) 表示把 A 与 B 按 70%/30% 混合，方便基于变量微调。
+ *   - 颜色尽量引用变量（var(--primary) 等），这样调一处即可联动多处。
+ *   - 修改本文件后，在应用里重新选择一次主题（或重启应用）即可看到效果。
+ * ========================================================================== */
+
+
+/* ---------------------------------------------------------------------------
+ * ① 颜色变量（Design Tokens）
+ * ---------------------------------------------------------------------------
+ * 这些变量决定了界面的整体配色。它们在浅色/深色主题里都有默认值，
+ * 本主题在「被选中」时覆盖其中一部分，把整体调成清爽的「冰川蓝」。
+ * 只想换个主色调？改 --primary / --ring / --chart-primary 三个就够了。
+ * ------------------------------------------------------------------------- */
+html[data-theme="thrm"] {
+  --background: #f7fbff;          /* 页面主背景色 */
+  --foreground: #13233e;          /* 主文字色 */
+  --card: #fbfdff;                /* 卡片背景色 */
+  --card-foreground: #13233e;     /* 卡片内文字色 */
+  --muted: #edf6ff;               /* 弱化背景（次级区块） */
+  --muted-foreground: #647894;    /* 弱化文字（说明、副标题） */
+  --border: #d9e9ff;              /* 描边/分割线颜色 */
+  --input: #c9ddfb;              /* 输入框描边色 */
+  --ring: #2f74ff;                /* 聚焦光圈色 */
+  --primary: #2f74ff;             /* 主题主色（按钮、强调、激活态） */
+  --primary-foreground: #ffffff;  /* 主色之上的文字色 */
+
+  /* 滚动条轨道（与冰川蓝背景协调） */
+  --scrollbar-track: color-mix(in srgb, #edf6ff 88%, transparent);
+
+  /* 图表相关配色 */
+  --chart-grid: #dfeeff;                       /* 图表网格线 */
+  --chart-axis: #cfe2fb;                       /* 图表坐标轴 */
+  --chart-tick: #6f82a0;                       /* 图表刻度文字 */
+  --chart-primary: #2f74ff;                    /* 曲线主色 */
+  --chart-primary-active: #1d5fe6;             /* 曲线高亮/激活 */
+  --chart-primary-glow: rgba(47, 116, 255, 0.34); /* 曲线光晕 */
+  --chart-temperature-indicator: #ef4444;      /* 温度指示线（红） */
+
+  /* 次级/强调背景 */
+  --secondary: #edf6ff;
+  --accent: #e7f2ff;
+
+  /* 左侧导航栏配色 */
+  --sidebar: #f8fbff;
+  --sidebar-foreground: #1b355d;
+  --sidebar-primary: #2f74ff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #eaf4ff;
+  --sidebar-accent-foreground: #13233e;
+  --sidebar-border: #d8e9ff;
+  --sidebar-ring: #2f74ff;
+}
+
+
+/* ---------------------------------------------------------------------------
+ * ② 结构化外观（进阶）
+ * ---------------------------------------------------------------------------
+ * 下面针对各个 glacier- 钩子做深度装饰。每一块都加了注释说明它在改哪里、
+ * 想达到什么效果。你可以整段删除任意一块来「关闭」对应装饰，不影响其它部分。
+ * ------------------------------------------------------------------------- */
+
+/* 最外层容器：叠加两层径向高光 + 一层冰川蓝渐变作为整体背景。
+ * isolation: isolate 让后面的 ::before 网格不会溢出影响外部层叠。 */
+html[data-theme="thrm"] .glacier-shell {
+  background:
+    radial-gradient(circle at 78% 10%, rgba(150, 207, 255, 0.28), transparent 28rem),
+    radial-gradient(circle at 16% 92%, rgba(47, 116, 255, 0.12), transparent 24rem),
+    linear-gradient(135deg, #fbfdff 0%, #f5faff 44%, #edf6ff 100%);
+  isolation: isolate;
+}
+
+/* 在最外层容器上铺一层「蓝图网格 + 斜切装饰线」，并用 mask 让上下边缘淡出，
+ * 营造科技蓝图的氛围。pointer-events:none 保证不挡住鼠标点击。 */
+html[data-theme="thrm"] .glacier-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(47, 116, 255, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(47, 116, 255, 0.055) 1px, transparent 1px),
+    linear-gradient(135deg, transparent 0 72%, rgba(47, 116, 255, 0.08) 72% 73%, transparent 73%);
+  background-size: 28px 28px, 28px 28px, 180px 180px;
+  mask-image: linear-gradient(to bottom, transparent 0%, black 10%, black 88%, transparent 100%);
+}
+
+/* 让侧栏与主内容区位于网格之上（z-index:1），避免被 ::before 网格盖住。 */
+html[data-theme="thrm"] .glacier-sidebar,
+html[data-theme="thrm"] .glacier-shell > section {
+  position: relative;
+  z-index: 1;
+}
+
+/* 标题栏：半透明 + 毛玻璃模糊，底部一条细描边。 */
+html[data-theme="thrm"] .glacier-titlebar {
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  background: color-mix(in srgb, var(--background) 80%, transparent);
+  backdrop-filter: blur(24px) saturate(118%);
+}
+
+/* 卡片底色：给所有 .bg-card 叠一层从白到淡蓝的纵向渐变，增加质感。 */
+html[data-theme="thrm"] .glacier-shell .bg-card {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 96%, white) 0%, color-mix(in srgb, var(--card) 88%, #e8f4ff) 100%);
+}
+
+/* 把界面里几种描边类（含 Tailwind 的 /70 /80 透明度变体）统一染成偏蓝的描边。 */
+html[data-theme="thrm"] .glacier-shell .border-border,
+html[data-theme="thrm"] .glacier-shell .border-border\/70,
+html[data-theme="thrm"] .glacier-shell .border-border\/80 {
+  border-color: color-mix(in srgb, var(--border) 82%, rgba(47, 116, 255, 0.28));
+}
+
+/* 卡片阴影：外发光 + 内高光，营造「悬浮玻璃」效果。 */
+html[data-theme="thrm"] .glacier-shell .shadow-sm {
+  box-shadow:
+    0 16px 34px -28px rgba(47, 116, 255, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+/* 侧栏：白到淡蓝渐变叠加 45° 细斜纹，右侧一道内阴影做出立体边界。 */
+html[data-theme="thrm"] .glacier-sidebar {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(235, 246, 255, 0.94)),
+    repeating-linear-gradient(135deg, transparent 0 12px, rgba(47, 116, 255, 0.08) 12px 14px);
+  box-shadow: inset -1px 0 0 rgba(47, 116, 255, 0.12);
+}
+
+/* 侧栏底部竖排的 "AUX" 装饰文字（纯装饰，旋转 90°）。 */
+html[data-theme="thrm"] .glacier-sidebar::after {
+  content: "AUX";
+  position: absolute;
+  bottom: 5.5rem;
+  left: 50%;
+  transform: translateX(-50%) rotate(90deg);
+  color: color-mix(in srgb, var(--primary) 48%, transparent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+}
+
+/* 顶部主信息大卡片：横向白→淡蓝渐变，叠一层左上角的蓝色斜光。 */
+html[data-theme="thrm"] .glacier-hero-card {
+  min-height: 104px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.96), rgba(247, 251, 255, 0.9) 46%, rgba(231, 243, 255, 0.62)),
+    linear-gradient(135deg, rgba(47, 116, 255, 0.08), transparent 48%);
+}
+
+/* 大卡片文字区右侧留出空间，避免文字与右侧装饰插画重叠。 */
+html[data-theme="thrm"] .glacier-hero-content {
+  padding-right: clamp(220px, 28vw, 340px);
+}
+
+/* 大卡片内的操作按钮区：做成胶囊形毛玻璃浮层。 */
+html[data-theme="thrm"] .glacier-hero-actions {
+  position: relative;
+  z-index: 2;
+  padding: 0.35rem 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card) 72%, transparent);
+  backdrop-filter: blur(14px) saturate(116%);
+}
+
+/* 右侧装饰插画容器：用双向 mask 让插画四边柔和淡出，左侧加一道蓝色分隔线。 */
+html[data-theme="thrm"] .glacier-hero-art {
+  top: 1.25rem;
+  right: clamp(5.75rem, 9vw, 8.5rem);
+  bottom: -1.35rem;
+  width: clamp(230px, 27vw, 360px);
+  border-left: 1px solid color-mix(in srgb, var(--primary) 16%, transparent);
+  mask-image:
+    linear-gradient(to right, transparent 0%, black 28%, black 82%, transparent 100%),
+    linear-gradient(to bottom, transparent 0%, black 22%, black 100%);
+  mask-composite: intersect;
+}
+
+/* 插画上的文字标签定位。 */
+html[data-theme="thrm"] .glacier-hero-art-label {
+  right: clamp(1.25rem, 2.8vw, 2.25rem);
+  width: clamp(240px, 28vw, 370px);
+  text-align: center;
+}
+
+/* 大卡片的两条装饰线（顶部细横线 + 右下角斜纹），均为纯装饰。 */
+html[data-theme="thrm"] .glacier-hero-card::before,
+html[data-theme="thrm"] .glacier-hero-card::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+html[data-theme="thrm"] .glacier-hero-card::before {
+  inset: 0.7rem 1.2rem auto auto;
+  width: min(38%, 360px);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(47, 116, 255, 0.38), transparent);
+}
+
+html[data-theme="thrm"] .glacier-hero-card::after {
+  right: 1.2rem;
+  bottom: 0.75rem;
+  width: 82px;
+  height: 9px;
+  background: repeating-linear-gradient(135deg, rgba(47, 116, 255, 0.32) 0 5px, transparent 5px 10px);
+  opacity: 0.7;
+}
+
+/* 指标卡 / 控制卡 / 图表卡：统一叠加「玻璃渐变 + 左上角高光」。 */
+html[data-theme="thrm"] .glacier-shell .glacier-metric-card,
+html[data-theme="thrm"] .glacier-shell .glacier-control-card,
+html[data-theme="thrm"] .glacier-shell .glacier-chart-card {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 252, 255, 0.9) 42%, rgba(229, 243, 255, 0.68) 100%),
+    radial-gradient(circle at 18% 0%, rgba(124, 199, 255, 0.28), transparent 44%);
+}
+
+/* 这几类卡片内部画一圈「四角加重」的描边框，模拟仪表/HUD 取景框。 */
+html[data-theme="thrm"] .glacier-shell .glacier-metric-card::before,
+html[data-theme="thrm"] .glacier-shell .glacier-control-card::before,
+html[data-theme="thrm"] .glacier-shell .glacier-chart-card::before {
+  content: "";
+  position: absolute;
+  inset: 0.7rem;
+  pointer-events: none;
+  border-radius: 0.65rem;
+  background:
+    linear-gradient(90deg, rgba(47, 116, 255, 0.42) 0 34px, transparent 34px calc(100% - 34px), rgba(47, 116, 255, 0.22) calc(100% - 34px) 100%) top / 100% 1px no-repeat,
+    linear-gradient(90deg, rgba(47, 116, 255, 0.18), transparent 36%, transparent 64%, rgba(47, 116, 255, 0.18)) bottom / 100% 1px no-repeat,
+    linear-gradient(rgba(47, 116, 255, 0.42) 0 22px, transparent 22px calc(100% - 22px), rgba(47, 116, 255, 0.2) calc(100% - 22px) 100%) left / 1px 100% no-repeat,
+    linear-gradient(rgba(47, 116, 255, 0.2) 0 22px, transparent 22px calc(100% - 22px), rgba(47, 116, 255, 0.34) calc(100% - 22px) 100%) right / 1px 100% no-repeat;
+  opacity: 0.72;
+}
+
+/* 指标卡右下角的小斜纹装饰。 */
+html[data-theme="thrm"] .glacier-shell .glacier-metric-card::after {
+  content: "";
+  position: absolute;
+  right: 1.15rem;
+  bottom: 0.8rem;
+  width: 58px;
+  height: 7px;
+  pointer-events: none;
+  background: repeating-linear-gradient(135deg, rgba(47, 116, 255, 0.28) 0 4px, transparent 4px 8px);
+  opacity: 0.72;
+}
+
+/* 保证指标卡内容压在装饰层之上。 */
+html[data-theme="thrm"] .glacier-metric-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* 指标卡 hover 微交互：轻微上浮 + 描边变主色。 */
+html[data-theme="thrm"] .glacier-metric-card {
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+/* 指标卡内的环形进度图：底环更淡，进度环加蓝色光晕。 */
+html[data-theme="thrm"] .glacier-metric-card svg path:first-child {
+  stroke: rgba(47, 116, 255, 0.08);
+}
+
+html[data-theme="thrm"] .glacier-metric-card svg path:last-child {
+  filter: drop-shadow(0 0 8px rgba(47, 116, 255, 0.32));
+}
+
+html[data-theme="thrm"] .glacier-metric-card:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
+}
+
+/* 控制卡：略微收紧内边距。
+ * 注：原先在右上角用 ::after 放了一行 "AUX STATUS / SYNC" 装饰文字，
+ * 但该位置已被真实内容（CPU/GPU 型号胶囊 HardwareIdentitySummary）占用，
+ * 两者重叠，故移除该装饰，避免与显卡型号文字重合。 */
+html[data-theme="thrm"] .glacier-control-card {
+  padding: 0.85rem;
+}
+
+/* 小统计磁贴：玻璃质感 + 右上角一道短高光。 */
+html[data-theme="thrm"] .glacier-stat-tile {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(239, 248, 255, 0.62)),
+    linear-gradient(135deg, rgba(47, 116, 255, 0.09), transparent 48%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.74),
+    0 10px 22px -24px rgba(47, 116, 255, 0.42);
+}
+
+html[data-theme="thrm"] .glacier-stat-tile::before {
+  content: "";
+  position: absolute;
+  top: 0.55rem;
+  right: 0.6rem;
+  width: 28px;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(47, 116, 255, 0.5));
+}
+
+/* 图表卡：右下角放一行 "DATA LOG" 装饰文字。 */
+html[data-theme="thrm"] .glacier-chart-card {
+  min-height: 0;
+}
+
+html[data-theme="thrm"] .glacier-chart-card::after {
+  content: "DATA LOG";
+  position: absolute;
+  right: 1rem;
+  bottom: 0.7rem;
+  pointer-events: none;
+  color: color-mix(in srgb, var(--primary) 22%, transparent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+}
+
+html[data-theme="thrm"] .glacier-chart-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* 图表绘制区：叠加细网格背景 + 内高光，做出「示波器画布」质感。 */
+html[data-theme="thrm"] .glacier-chart-canvas {
+  position: relative;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  background:
+    linear-gradient(rgba(47, 116, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(47, 116, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(230, 243, 255, 0.2));
+  background-size: 24px 24px, 24px 24px, 100% 100%;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.56);
+}
+
+/* 图表绘制区上的「扫描光」动画：一束横向高光周期性扫过。 */
+html[data-theme="thrm"] .glacier-chart-canvas::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(47, 116, 255, 0.1), transparent);
+  transform: translateX(-55%);
+  animation: glacier-scan 5.8s ease-in-out infinite;
+}
+
+@keyframes glacier-scan {
+  0%,
+  58% {
+    transform: translateX(-65%);
+    opacity: 0;
+  }
+  68% {
+    opacity: 0.65;
+  }
+  100% {
+    transform: translateX(65%);
+    opacity: 0;
+  }
+}
+
+/* 无障碍：当系统开启「减少动态效果」时，关闭扫描动画与 hover 位移。 */
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="thrm"] .glacier-chart-canvas::before {
+    animation: none;
+    opacity: 0;
+  }
+
+  html[data-theme="thrm"] .glacier-metric-card:hover {
+    transform: none;
+  }
+}
+
+/* 「仅本主题显示」的元素：本主题下显示出来（默认是全局隐藏的，见 globals.css）。 */
+html[data-theme="thrm"] .theme-thrm-only {
+  display: block !important;
+}
+
+/* 窄屏（手机/极窄窗口）下，隐藏这些纯装饰元素以保证布局。 */
+@media (max-width: 767px) {
+  html[data-theme="thrm"] .theme-thrm-only {
+    display: none !important;
+  }
+}
+
+/* 窄屏下取消大卡片右侧留白并隐藏装饰插画，避免内容被挤压。 */
+@media (max-width: 1023px) {
+  html[data-theme="thrm"] .glacier-hero-content {
+    padding-right: 0;
+  }
+
+  html[data-theme="thrm"] .glacier-hero-art,
+  html[data-theme="thrm"] .glacier-hero-art-label {
+    display: none !important;
+  }
+}
+
+/* 给本主题下的按钮/输入框/标签页加一道内高光，统一玻璃质感。 */
+html[data-theme="thrm"] .glacier-shell button,
+html[data-theme="thrm"] .glacier-shell input,
+html[data-theme="thrm"] .glacier-shell [role="tab"] {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}

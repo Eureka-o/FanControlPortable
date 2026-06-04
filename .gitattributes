@@ -1,0 +1,10 @@
+*.asm linguist-detectable=false
+*.S linguist-detectable=false
+
+# Exclude installer scripts from language stats
+*.nsi linguist-detectable=false
+*.nsh linguist-detectable=false
+
+# Mark firmware reverse-engineering outputs as generated
+ota/*.asm linguist-generated=true
+ota/*.S linguist-generated=true

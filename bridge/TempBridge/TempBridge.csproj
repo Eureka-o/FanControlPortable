@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net4.7.2</TargetFramework>
+    <Platform Condition="'$(Platform)' == ''">x64</Platform>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <LangVersion>7.3</LangVersion>
+    <PublishSingleFile>false</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <PublishTrimmed>false</PublishTrimmed>
+    <ApplicationIcon>$(MSBuildProjectDirectory)\..\..\build\windows\icon.ico</ApplicationIcon>
+    <AssemblyName>FanControlPortable TempBridge</AssemblyName>
+    <RootNamespace>FanControlPortable.TempBridge</RootNamespace>
+    <StartupObject>FanControlPortable.TempBridge.Program</StartupObject>
+    <LibreHardwareMonitorRepoRoot Condition="'$(LibreHardwareMonitorRepoRoot)' == ''">$(MSBuildProjectDirectory)\..\..\temp\LibreHardwareMonitor</LibreHardwareMonitorRepoRoot>
+    <LibreHardwareMonitorLibProject>$(LibreHardwareMonitorRepoRoot)\LibreHardwareMonitorLib\LibreHardwareMonitorLib.csproj</LibreHardwareMonitorLibProject>
+    <UseLibreHardwareMonitorProjectReference Condition="'$(UseLibreHardwareMonitorProjectReference)' == '' and Exists('$(LibreHardwareMonitorLibProject)')">true</UseLibreHardwareMonitorProjectReference>
+    <UseLibreHardwareMonitorProjectReference Condition="'$(UseLibreHardwareMonitorProjectReference)' == ''">false</UseLibreHardwareMonitorProjectReference>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="DebugProgram.cs" />
+  </ItemGroup>
+  
+  <ItemGroup Condition="'$(UseLibreHardwareMonitorProjectReference)' == 'true'">
+    <ProjectReference Include="$(LibreHardwareMonitorLibProject)" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseLibreHardwareMonitorProjectReference)' != 'true'">
+    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Management" />
+    <Reference Include="System.ServiceProcess" />
+  </ItemGroup>
+</Project>

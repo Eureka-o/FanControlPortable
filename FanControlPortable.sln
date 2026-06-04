@@ -1,0 +1,29 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "bridge", "bridge", "{68BF4094-9419-05A7-776B-98D5B493D877}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TempBridge", "bridge\TempBridge\TempBridge.csproj", "{910233F0-6B01-99D0-B628-2C361C6239F7}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{910233F0-6B01-99D0-B628-2C361C6239F7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{910233F0-6B01-99D0-B628-2C361C6239F7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{910233F0-6B01-99D0-B628-2C361C6239F7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{910233F0-6B01-99D0-B628-2C361C6239F7}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{910233F0-6B01-99D0-B628-2C361C6239F7} = {68BF4094-9419-05A7-776B-98D5B493D877}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {DFFD47D9-7CC5-4B71-832A-86A762927736}
+	EndGlobalSection
+EndGlobal
