@@ -241,7 +241,7 @@ jobs:
         shell: cmd
         run: build_bridge.bat
 
-      - name: Build FanControlPortable
+      - name: Build FanControl
         shell: cmd
         env:
           FANCONTROL_BUILD_VERSION: ${{ needs.prepare-release.outputs.build_version }}
@@ -251,23 +251,28 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path build/output | Out-Null
-          Copy-Item build/bin/FanControlPortable.exe build/output/FanControlPortable.exe
-          Copy-Item 'build/bin/FanControlPortable Core.exe' 'build/output/FanControlPortable Core.exe'
+          $buildVersion = '${{ needs.prepare-release.outputs.build_version }}'
+          if ([string]::IsNullOrWhiteSpace($buildVersion)) {
+            $wailsConfig = Get-Content wails.json -Raw | ConvertFrom-Json
+            $buildVersion = $wailsConfig.info.productVersion
+          }
+          if ([string]::IsNullOrWhiteSpace($buildVersion)) {
+            $buildVersion = 'dev'
+          }
+          Copy-Item build/bin/FanControl.exe build/output/FanControl.exe
+          Copy-Item 'build/bin/FanControl Core.exe' 'build/output/FanControl Core.exe'
           Copy-Item build/bin/PawnIO_setup.exe build/output/PawnIO_setup.exe
           Copy-Item -Recurse build/bin/bridge build/output/bridge
-          if (Test-Path 'build/bin/FanControlPortable-amd64-installer.exe') {
-            Copy-Item 'build/bin/FanControlPortable-amd64-installer.exe' 'build/output/FanControlPortable-amd64-installer.exe'
-          }
-          Compress-Archive -Path build/output/* -DestinationPath build/bin/FanControlPortable-windows-portable.zip -Force
+          Compress-Archive -Path build/output/* -DestinationPath "build/bin/FanControl-$buildVersion-portable.zip" -Force
 
       - name: Upload PR artifacts
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: FanControlPortable-windows-${{ github.event.pull_request.number }}
+          name: FanControl-windows-${{ github.event.pull_request.number }}
           path: |
-            build/bin/FanControlPortable-amd64-installer.exe
-            build/bin/FanControlPortable-windows-portable.zip
+            build/bin/FanControl-*-amd64-installer.exe
+            build/bin/FanControl-*-portable.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -275,10 +280,10 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
         uses: actions/upload-artifact@v4
         with:
-          name: FanControlPortable-windows-${{ github.sha }}
+          name: FanControl-windows-${{ github.sha }}
           path: |
-            build/bin/FanControlPortable-amd64-installer.exe
-            build/bin/FanControlPortable-windows-portable.zip
+            build/bin/FanControl-*-amd64-installer.exe
+            build/bin/FanControl-*-portable.zip
           if-no-files-found: error
           retention-days: 7
 
@@ -507,5 +512,5 @@ jobs:
           prerelease: ${{ needs.prepare-release.outputs.is_prerelease }}
           body_path: ${{ steps.ai_release_notes.outputs.notes_path }}
           files: |
-            build/bin/FanControlPortable-amd64-installer.exe
-            build/bin/FanControlPortable-windows-portable.zip
+            build/bin/FanControl-*-amd64-installer.exe
+            build/bin/FanControl-*-portable.zip

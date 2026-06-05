@@ -3,6 +3,7 @@ package coreapp
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -88,6 +89,23 @@ func shouldRecoverFromSystemResumeGap(gap, expectedInterval time.Duration) bool 
 	return gap >= systemResumeDetectionThreshold(expectedInterval)
 }
 
+func copyFileIfMissing(src, dst string) error {
+	if _, err := os.Stat(dst); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, 0644)
+}
+
 // NewCoreApp 创建核心应用实例。
 func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 	installDir := config.GetInstallDir()
@@ -107,6 +125,15 @@ func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 	tempReader := temperature.NewReader(bridgeMgr, customLogger)
 	configMgr := config.NewManager(installDir, customLogger)
 	historyPath := filepath.Join(installDir, temperature.DefaultHistoryRelativePath)
+	if _, err := os.Stat(historyPath); err != nil && os.IsNotExist(err) {
+		legacyHistoryPath := filepath.Join(installDir, temperature.LegacyHistoryRelativePath)
+		if _, legacyErr := os.Stat(legacyHistoryPath); legacyErr == nil {
+			if copyErr := copyFileIfMissing(legacyHistoryPath, historyPath); copyErr != nil {
+				customLogger.Error("迁移历史数据文件失败，将继续使用旧路径: %v", copyErr)
+				historyPath = legacyHistoryPath
+			}
+		}
+	}
 	tempHistory := temperature.NewHistoryRecorder(historyPath, temperature.DefaultHistoryCapacity, temperature.DefaultHistorySampleInterval, customLogger)
 	trayMgr := tray.NewManager(customLogger, iconData)
 	autostartMgr := autostart.NewManager(customLogger)

@@ -18,7 +18,7 @@ const (
 	bleReservedModel  = appmeta.DeviceModelName + "（蓝牙预留）"
 )
 
-// Manager is the default FanControlPortable device manager.
+// Manager is the default FanControl device manager.
 // It keeps only the WiFi HTTP transport in the normal build.
 type Manager struct {
 	isConnected     bool
@@ -67,8 +67,8 @@ func (m *Manager) Connect() (bool, map[string]string) {
 
 	if m.isConnected {
 		return true, map[string]string{
-			"manufacturer": "FanControlPortable",
-			"product":      "FanControlPortable",
+			"manufacturer": "FanControl",
+			"product":      "FanControl",
 			"serial":       m.wifiEndpoint,
 			"model":        wifiOnlyModelName,
 			"transport":    types.DeviceTransportWiFi,
@@ -79,8 +79,8 @@ func (m *Manager) Connect() (bool, map[string]string) {
 	if !m.shouldUseWiFiLocked() {
 		m.logWarn("蓝牙连接方式已预留，当前版本尚未启用 BLE 协议")
 		return false, map[string]string{
-			"manufacturer": "FanControlPortable",
-			"product":      "FanControlPortable",
+			"manufacturer": "FanControl",
+			"product":      "FanControl",
 			"serial":       "",
 			"model":        bleReservedModel,
 			"transport":    types.DeviceTransportBLE,

@@ -1,6 +1,6 @@
 {
   "common": {
-    "appName": "FanControlPortable 2.0",
+    "appName": "FanControl 2.0",
     "metaDescription": "A driver and control utility for portable fan controller devices.",
     "language": "Language",
     "languages": {
@@ -65,7 +65,7 @@
       "default": "CPU/GPU temperature reading failed. Try reinitializing temperature monitoring. If the CPU temperature is still empty, install or update PawnIO, or close other hardware monitoring tools."
     },
     "coreService": {
-      "unavailable": "Core service is unavailable. Check whether FanControlPortable Core was quarantined by security software, or restore/reinstall Core and try again.",
+      "unavailable": "Core service is unavailable. Check whether FanControl Core was quarantined by security software, or restore/reinstall Core and try again.",
       "unavailableWithDetail": "Core service is unavailable: {{detail}}"
     },
     "errors": {
@@ -256,7 +256,7 @@
         },
         {
           "question": "Can existing settings continue to work?",
-          "answer": "The portable directory settings.json is read first, and common settings from earlier FanControlPortable builds remain compatible, including device IP, control mode, temperature source, manual speed, and fan curve."
+          "answer": "The portable directory settings.json is read first, and common settings from earlier FanControl builds remain compatible, including device IP, control mode, temperature source, manual speed, and fan curve."
         }
       ]
     },

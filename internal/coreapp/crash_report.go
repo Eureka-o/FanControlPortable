@@ -25,7 +25,7 @@ func CapturePanic(app *CoreApp, source string, recovered any) string {
 	filePath := filepath.Join(logDir, fileName)
 
 	var builder strings.Builder
-	builder.WriteString("=== THRM Core Crash Report ===\n")
+	builder.WriteString("=== FanControl Core Crash Report ===\n")
 	builder.WriteString(fmt.Sprintf("time: %s\n", time.Now().Format(time.RFC3339Nano)))
 	builder.WriteString(fmt.Sprintf("source: %s\n", source))
 	builder.WriteString(fmt.Sprintf("panic: %v\n", recovered))

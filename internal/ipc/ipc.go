@@ -657,7 +657,7 @@ func CheckCoreServiceRunning() bool {
 // GetCoreLockFilePath 获取核心服务锁文件路径
 func GetCoreLockFilePath() string {
 	tempDir := os.TempDir()
-	return fmt.Sprintf("%s/fancontrolportable core.lock", tempDir)
+	return fmt.Sprintf("%s/fancontrol core.lock", tempDir)
 }
 
 // StartCoreRequestParams 启动核心服务的请求参数

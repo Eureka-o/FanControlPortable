@@ -1,6 +1,6 @@
 {
   "common": {
-    "appName": "FanControlPortable 2.0",
+    "appName": "FanControl 2.0",
     "metaDescription": "ポータブルファンコントローラー向けのドライバー兼制御ツールです。",
     "language": "言語",
     "languages": {
@@ -65,7 +65,7 @@
       "default": "CPU/GPU 温度の取得に失敗しました。温度モニタリングの初期化を試してください。CPU 温度が表示されないままの場合は、PawnIO をインストールまたはアップデートするか、他のハードウェアモニタリングソフトを終了してください。"
     },
     "coreService": {
-      "unavailable": "Core サービスを利用できません。FanControlPortable Core がセキュリティソフトに隔離されていないか確認するか、Core を復元/再インストールしてから再試行してください。",
+      "unavailable": "Core サービスを利用できません。FanControl Core がセキュリティソフトに隔離されていないか確認するか、Core を復元/再インストールしてから再試行してください。",
       "unavailableWithDetail": "Core サービスを利用できません: {{detail}}"
     },
     "errors": {
@@ -256,7 +256,7 @@
         },
         {
           "question": "既存の設定はそのまま使えますか？",
-          "answer": "ポータブルディレクトリの settings.json を優先して読み込みます。デバイス IP、制御モード、温度ソース、手動速度、ファンカーブなど、旧 FanControlPortable の主要な設定項目にも対応します。"
+          "answer": "ポータブルディレクトリの settings.json を優先して読み込みます。デバイス IP、制御モード、温度ソース、手動速度、ファンカーブなど、旧 FanControl の主要な設定項目にも対応します。"
         }
       ]
     },

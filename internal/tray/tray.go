@@ -303,7 +303,7 @@ func (m *Manager) createMenu() (items *MenuItems, err error) {
 
 	items = &MenuItems{}
 
-	items.Show = systray.AddMenuItem("打开 FanControlPortable", "显示 FanControlPortable 主窗口")
+	items.Show = systray.AddMenuItem("打开 FanControl", "显示 FanControl 主窗口")
 	systray.AddSeparator()
 
 	items.DeviceStatus = systray.AddMenuItem("Slim压风散热器Pro：未连接", "查看散热器连接状态")
@@ -333,7 +333,7 @@ func (m *Manager) createMenu() (items *MenuItems, err error) {
 	items.AutoControl = systray.AddMenuItemCheckbox("智能温控", "启用或关闭智能温控", autoControlEnabled)
 
 	systray.AddSeparator()
-	items.Quit = systray.AddMenuItem("退出 FanControlPortable", "完全退出本软件")
+	items.Quit = systray.AddMenuItem("退出 FanControl", "完全退出本软件")
 
 	return items, nil
 }

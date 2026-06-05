@@ -110,18 +110,20 @@ func (m *Manager) createScheduledTask() error {
 
 // deleteScheduledTask 删除任务计划程序
 func (m *Manager) deleteScheduledTask() error {
-	cmd := exec.Command("schtasks", "/delete", "/tn", appmeta.AppName, "/f")
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	for _, taskName := range []string{appmeta.AppName, appmeta.LegacyAppName} {
+		cmd := exec.Command("schtasks", "/delete", "/tn", taskName, "/f")
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		if strings.Contains(string(output), "不存在") || strings.Contains(string(output), "cannot be found") {
-			return nil
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			if strings.Contains(string(output), "cannot be found") || strings.Contains(string(output), "不存在") {
+				continue
+			}
+			return fmt.Errorf("delete scheduled task failed: %v, output: %s", err, string(output))
 		}
-		return fmt.Errorf("删除任务计划失败: %v, 输出: %s", err, string(output))
 	}
 
-	m.logger.Info("已删除任务计划程序的自启动任务")
+	m.logger.Info("Deleted auto-start scheduled tasks")
 	return nil
 }
 
@@ -129,16 +131,18 @@ func (m *Manager) deleteScheduledTask() error {
 func (m *Manager) removeRegistryAutoStart() error {
 	key, err := registry.OpenKey(registry.CURRENT_USER, `SOFTWARE\Microsoft\Windows\CurrentVersion\Run`, registry.SET_VALUE)
 	if err != nil {
-		return fmt.Errorf("打开注册表失败: %v", err)
+		return fmt.Errorf("open registry failed: %v", err)
 	}
 	defer key.Close()
 
-	err = key.DeleteValue(appmeta.AppName)
-	if err != nil && err != registry.ErrNotExist {
-		return fmt.Errorf("删除注册表项失败: %v", err)
+	for _, valueName := range []string{appmeta.AppName, appmeta.LegacyAppName} {
+		err = key.DeleteValue(valueName)
+		if err != nil && err != registry.ErrNotExist {
+			return fmt.Errorf("delete registry value failed: %v", err)
+		}
 	}
 
-	m.logger.Info("已删除注册表自启动项")
+	m.logger.Info("Deleted registry auto-start values")
 	return nil
 }
 
@@ -217,33 +221,42 @@ func (m *Manager) CheckWindowsAutoStart() bool {
 
 // checkScheduledTask 检查任务计划程序中的自启动任务
 func (m *Manager) checkScheduledTask() bool {
-	cmd := exec.Command("schtasks", "/query", "/tn", appmeta.AppName, "/fo", "list", "/v")
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	for _, taskName := range []string{appmeta.AppName, appmeta.LegacyAppName} {
+		cmd := exec.Command("schtasks", "/query", "/tn", taskName, "/fo", "list", "/v")
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 
-	output, err := cmd.Output()
-	if err != nil {
-		return false
+		output, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		command := scheduledTaskCommandLine(string(output))
+		if commandTargetsCurrentCore(command) {
+			return true
+		}
 	}
-	command := scheduledTaskCommandLine(string(output))
-	return commandTargetsCurrentCore(command)
+	return false
 }
 
 // checkRegistryAutoStart 检查注册表中的自启动项
 func (m *Manager) checkRegistryAutoStart() bool {
 	key, err := registry.OpenKey(registry.CURRENT_USER, `SOFTWARE\Microsoft\Windows\CurrentVersion\Run`, registry.QUERY_VALUE)
 	if err != nil {
-		m.logger.Debug("打开注册表失败: %v", err)
+		m.logger.Debug("open registry failed: %v", err)
 		return false
 	}
 	defer key.Close()
 
-	value, _, err := key.GetStringValue(appmeta.AppName)
-	if err != nil {
-		return false
+	for _, valueName := range []string{appmeta.AppName, appmeta.LegacyAppName} {
+		value, _, err := key.GetStringValue(valueName)
+		if err != nil {
+			continue
+		}
+		if commandTargetsCurrentCore(value) {
+			return true
+		}
 	}
-	return commandTargetsCurrentCore(value)
+	return false
 }
-
 func scheduledTaskCommandLine(output string) string {
 	for line := range strings.SplitSeq(output, "\n") {
 		line = strings.TrimSpace(line)

@@ -42,8 +42,11 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 
 	defaultConfigDir := m.GetDefaultConfigDir()
 	defaultConfigPath := filepath.Join(defaultConfigDir, "config.json")
-	legacyConfigPath := filepath.Join(m.GetLegacyConfigDir(), "config.json")
 	installConfigPath := filepath.Join(m.installDir, "config", "config.json")
+	legacyConfigPaths := make([]string, 0)
+	for _, legacyConfigDir := range m.GetLegacyConfigDirs() {
+		legacyConfigPaths = append(legacyConfigPaths, filepath.Join(legacyConfigDir, "config.json"))
+	}
 
 	m.logInfo("尝试从便携目录加载配置: %s", installConfigPath)
 
@@ -66,16 +69,18 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 		return m.config
 	}
 
-	m.logInfo("从用户目录加载配置失败，尝试从旧目录迁移: %s", legacyConfigPath)
+	for _, legacyConfigPath := range legacyConfigPaths {
+		m.logInfo("从用户目录加载配置失败，尝试从旧目录迁移: %s", legacyConfigPath)
 
-	if m.tryLoadFromPathLocked(legacyConfigPath) {
-		m.config.ConfigPath = installConfigPath
-		m.logInfo("从旧目录加载配置成功，将迁移到便携目录: %s", legacyConfigPath)
-		if err := m.saveLocked(); err != nil {
-			m.logError("迁移旧目录配置失败: %v", err)
+		if m.tryLoadFromPathLocked(legacyConfigPath) {
+			m.config.ConfigPath = installConfigPath
+			m.logInfo("从旧目录加载配置成功，将迁移到便携目录: %s", legacyConfigPath)
+			if err := m.saveLocked(); err != nil {
+				m.logError("迁移旧目录配置失败: %v", err)
+			}
+			m.bumpRevisionLocked()
+			return m.config
 		}
-		m.bumpRevisionLocked()
-		return m.config
 	}
 
 	if m.tryLoadLegacyPortableSettingsLocked(isAutoStart, installConfigPath) {
@@ -565,6 +570,15 @@ func (m *Manager) GetLegacyConfigDir() string {
 		return filepath.Join(m.installDir, "config")
 	}
 	return appmeta.LegacyUserConfigDir(homeDir)
+}
+
+// GetLegacyConfigDirs 获取可迁移的旧版本配置目录
+func (m *Manager) GetLegacyConfigDirs() []string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return []string{filepath.Join(m.installDir, "config")}
+	}
+	return appmeta.LegacyUserConfigDirs(homeDir)
 }
 
 // Get 获取当前配置（线程安全，返回拷贝）

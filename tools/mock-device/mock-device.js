@@ -120,7 +120,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(port, host, () => {
   console.log(`[mock-device] listening on http://${host}:${port}`);
-  console.log('[mock-device] configure FanControlPortable device address as 127.0.0.1:18080');
+  console.log('[mock-device] configure FanControl device address as 127.0.0.1:18080');
 });
 
 function shutdown() {

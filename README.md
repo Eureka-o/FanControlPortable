@@ -1,6 +1,6 @@
-# FanControlPortable
+# FanControl
 
-FanControlPortable 是面向 **Slim压风散热器Pro** 的 Windows 散热控制软件。它可以读取电脑 CPU/GPU 温度，显示实时风扇状态，并根据手动速度或风扇曲线控制散热器。
+FanControl 是面向 **Slim压风散热器Pro** 的 Windows 散热控制软件。它可以读取电脑 CPU/GPU 温度，显示实时风扇状态，并根据手动速度或风扇曲线控制散热器。
 
 [下载最新版](https://github.com/Eureka-o/FanControlPortable/releases/latest)
 
@@ -12,15 +12,15 @@ FanControlPortable 是面向 **Slim压风散热器Pro** 的 Windows 散热控制
 
 ## 下载哪个文件
 
-- `FanControlPortable-2.0.0-amd64-installer.exe`：推荐大多数用户使用。安装后可以从开始菜单或桌面启动，升级时会保留已有配置。
-- `FanControlPortable-2.0.0-portable.zip`：免安装便携版。解压到一个固定文件夹后运行 `FanControlPortable.exe`。
+- `FanControl-2.0.0-amd64-installer.exe`：推荐大多数用户使用。安装后可以从开始菜单或桌面启动，升级时会保留已有配置。
+- `FanControl-2.0.0-portable.zip`：免安装便携版。解压到一个固定文件夹后运行 `FanControl.exe`。
 
 首次启动时如果 Windows 弹出权限确认，请选择允许。软件需要读取硬件温度，并可能安装或调用温度读取所需的辅助组件。
 
 ## 第一次使用
 
 1. 确认电脑和散热器处在同一个网络环境中。
-2. 打开 FanControlPortable。
+2. 打开 FanControl。
 3. 进入设置页，连接方式选择 `WiFi`。
 4. 填写设备地址。常见默认地址为 `192.168.137.2`，也支持 `127.0.0.1:18080` 这种带端口的写法。
 5. 点击连接，回到主页查看温度、当前风速、目标风速和控制模式。
@@ -39,7 +39,7 @@ FanControlPortable 是面向 **Slim压风散热器Pro** 的 Windows 散热控制
 
 ## 使用提示
 
-- 关闭窗口不等于退出软件。FanControlPortable 会继续留在系统托盘中运行；需要完全退出时，请右键托盘图标并选择退出。
+- 关闭窗口不等于退出软件。FanControl 会继续留在系统托盘中运行；需要完全退出时，请右键托盘图标并选择退出。
 - 便携版更新时，请先从托盘退出软件，再解压新版覆盖旧文件夹。不要删除原来的 `settings.json`，这样可以保留配置。
 - 如果你同时使用其他硬件监控或风扇控制软件，遇到温度读取异常时可以先临时关闭它们再重试。
 
@@ -54,7 +54,7 @@ FanControlPortable 是面向 **Slim压风散热器Pro** 的 Windows 散热控制
 
 ### 温度为空或一直是 0
 
-- 以管理员身份重新启动 FanControlPortable。
+- 以管理员身份重新启动 FanControl。
 - 安装器提示安装或更新温度读取组件时，请允许。
 - 临时关闭其他硬件监控软件后再试一次。
 - 如果便携版缺少 `bridge` 目录，请重新下载并完整解压便携包。
@@ -72,7 +72,7 @@ FanControlPortable 是面向 **Slim压风散热器Pro** 的 Windows 散热控制
 
 ## 致谢
 
-FanControlPortable 基于 [TIANLI0/THRM](https://github.com/TIANLI0/THRM) 的开源工作进行改造和适配。感谢原作者提供的桌面端框架、托盘后台机制、温度读取思路、风扇曲线交互和安装器基础。
+FanControl 基于 [TIANLI0/THRM](https://github.com/TIANLI0/THRM) 的开源工作进行改造和适配。感谢原作者提供的桌面端框架、托盘后台机制、温度读取思路、风扇曲线交互和安装器基础。
 
 ## 许可
 
@@ -80,4 +80,4 @@ FanControlPortable 基于 [TIANLI0/THRM](https://github.com/TIANLI0/THRM) 的开
 
 ## 免责声明
 
-FanControlPortable 是第三方开源软件。请根据设备状态合理设置风扇速度，因使用本软件产生的风险由用户自行承担。
+FanControl 是第三方开源软件。请根据设备状态合理设置风扇速度，因使用本软件产生的风险由用户自行承担。

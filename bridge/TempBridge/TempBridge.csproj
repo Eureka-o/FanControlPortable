@@ -13,12 +13,11 @@
     <PublishReadyToRun>false</PublishReadyToRun>
     <PublishTrimmed>false</PublishTrimmed>
     <ApplicationIcon>$(MSBuildProjectDirectory)\..\..\build\windows\icon.ico</ApplicationIcon>
-    <AssemblyName>FanControlPortable TempBridge</AssemblyName>
-    <RootNamespace>FanControlPortable.TempBridge</RootNamespace>
-    <StartupObject>FanControlPortable.TempBridge.Program</StartupObject>
+    <AssemblyName>FanControl TempBridge</AssemblyName>
+    <RootNamespace>FanControl.TempBridge</RootNamespace>
+    <StartupObject>FanControl.TempBridge.Program</StartupObject>
     <LibreHardwareMonitorRepoRoot Condition="'$(LibreHardwareMonitorRepoRoot)' == ''">$(MSBuildProjectDirectory)\..\..\temp\LibreHardwareMonitor</LibreHardwareMonitorRepoRoot>
     <LibreHardwareMonitorLibProject>$(LibreHardwareMonitorRepoRoot)\LibreHardwareMonitorLib\LibreHardwareMonitorLib.csproj</LibreHardwareMonitorLibProject>
-    <UseLibreHardwareMonitorProjectReference Condition="'$(UseLibreHardwareMonitorProjectReference)' == '' and Exists('$(LibreHardwareMonitorLibProject)')">true</UseLibreHardwareMonitorProjectReference>
     <UseLibreHardwareMonitorProjectReference Condition="'$(UseLibreHardwareMonitorProjectReference)' == ''">false</UseLibreHardwareMonitorProjectReference>
   </PropertyGroup>
 

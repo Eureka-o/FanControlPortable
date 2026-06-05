@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-echo Building FanControlPortable...
+echo Building FanControl...
 
 if not "%FANCONTROL_BUILD_VERSION%"=="" (
     set "VERSION=%FANCONTROL_BUILD_VERSION%"
@@ -26,6 +26,11 @@ for /f "delims=" %%G in ('go env GOPATH 2^>nul') do set "GOPATH_VALUE=%%G"
 if not "!GOPATH_VALUE!"=="" (
     set "PATH=!GOPATH_VALUE!\bin;!PATH!"
 )
+if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
+    set "PATH=C:\Program Files (x86)\NSIS;!PATH!"
+) else if exist "C:\Program Files\NSIS\makensis.exe" (
+    set "PATH=C:\Program Files\NSIS;!PATH!"
+)
 
 if not exist "!BUILD_BIN!" mkdir "!BUILD_BIN!"
 
@@ -37,17 +42,17 @@ echo Cleaning stale bridge output...
 if exist "!BUILD_BIN!\bridge" rmdir /s /q "!BUILD_BIN!\bridge"
 
 echo Building temperature bridge...
-dotnet publish bridge\TempBridge\TempBridge.csproj -c Release --self-contained false -o build\bin\bridge /p:Platform=x64 /p:DebugType=none /p:DebugSymbols=false
+dotnet publish bridge\TempBridge\TempBridge.csproj -c Release --self-contained false -o build\bin\bridge /p:Platform=x64 /p:DebugType=none /p:DebugSymbols=false /p:UseLibreHardwareMonitorProjectReference=false
 if errorlevel 1 exit /b 1
 
 REM Build core service first
 echo Building core service...
 go-winres make --in cmd/core/winres/winres.json --out cmd/core/rsrc
 if errorlevel 1 exit /b 1
-go build -trimpath -ldflags "!LDFLAGS!" -o "build/bin/FanControlPortable Core.exe" ./cmd/core/
+go build -trimpath -ldflags "!LDFLAGS!" -o "build/bin/FanControl Core.exe" ./cmd/core/
 if errorlevel 1 exit /b 1
 
-REM Installer icon is still file-based; system notification icon is embedded in FanControlPortable Core.exe
+REM Installer icon is still file-based; system notification icon is embedded in FanControl Core.exe
 if not exist "build\windows\icon.ico" (
     echo WARNING: build\windows\icon.ico not found, executable/installer icon may be incorrect
 )
@@ -55,9 +60,10 @@ if not exist "build\windows\icon.ico" (
 REM Build main application with wails
 echo Building main application...
 wails build -nsis -ldflags "!LDFLAGS!"
+if errorlevel 1 exit /b 1
 
 REM Ensure core service is in the bin directory for installer
-if exist "build\bin\FanControlPortable Core.exe" (
+if exist "build\bin\FanControl Core.exe" (
     echo Core service built successfully
 ) else (
     echo ERROR: Core service build failed!
@@ -70,6 +76,12 @@ echo Cleaning stale release artifacts...
 for %%F in (
     "!BUILD_BIN!\THRM-v*.exe"
     "!BUILD_BIN!\THRM Core.exe"
+    "!BUILD_BIN!\FanControlPortable.exe"
+    "!BUILD_BIN!\FanControlPortable Core.exe"
+    "!BUILD_BIN!\FanControlPortable TempBridge.exe"
+    "!BUILD_BIN!\FanControlPortable-amd64-installer.exe"
+    "!BUILD_BIN!\FanControlPortable-*-installer.exe"
+    "!BUILD_BIN!\FanControlPortable-windows-portable.zip"
     "!BUILD_BIN!\BS2PRO-Controller-v*.exe"
     "!BUILD_BIN!\BS2PRO-Controller-*-installer.exe"
     "!BUILD_BIN!\BS2PRO-Controller-amd64-installer.zip"
@@ -81,6 +93,14 @@ for %%F in (
     "!BUILD_BIN!\*.exe~"
 ) do (
     if exist "%%~F" del /q "%%~F"
+)
+
+if exist "!BUILD_BIN!\FanControl-amd64-installer.exe" (
+    copy /y "!BUILD_BIN!\FanControl-amd64-installer.exe" "!BUILD_BIN!\FanControl-!VERSION!-amd64-installer.exe" >nul
+    if errorlevel 1 exit /b 1
+) else (
+    echo ERROR: Installer was not created. Check that NSIS makensis.exe is installed and available.
+    exit /b 1
 )
 
 echo Build completed successfully with version !VERSION!

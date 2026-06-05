@@ -260,4 +260,4 @@ New-IcoFile $icon (Join-Path $RepoRoot "frontend\src\app\favicon.ico") @(16, 32,
 
 $coreIcon.Dispose()
 $icon.Dispose()
-Write-Host "Generated FanControlPortable icon assets in $RepoRoot"
+Write-Host "Generated FanControl icon assets in $RepoRoot"

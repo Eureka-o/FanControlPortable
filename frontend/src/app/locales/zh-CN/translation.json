@@ -1,6 +1,6 @@
 {
   "common": {
-    "appName": "FanControlPortable 2.0",
+    "appName": "FanControl 2.0",
     "metaDescription": "面向便携式风扇控制器的驱动与控制工具",
     "language": "语言",
     "languages": {
@@ -65,7 +65,7 @@
       "default": "CPU/GPU 温度读取失败，可尝试重新初始化温度监控；若 CPU 仍为空，请安装或更新 PawnIO，或关闭其它硬件监控工具。"
     },
     "coreService": {
-      "unavailable": "核心服务不可用。请检查 FanControlPortable Core 是否被安全软件隔离，或重新安装/恢复 Core 后重试。",
+      "unavailable": "核心服务不可用。请检查 FanControl Core 是否被安全软件隔离，或重新安装/恢复 Core 后重试。",
       "unavailableWithDetail": "核心服务不可用：{{detail}}"
     },
     "errors": {
@@ -256,7 +256,7 @@
         },
         {
           "question": "原有配置还能继续使用吗？",
-          "answer": "会优先读取便携目录中的 settings.json，并兼容旧版 FanControlPortable 的常用配置项，例如设备 IP、控制模式、温度来源、手动速度和风扇曲线。"
+          "answer": "会优先读取便携目录中的 settings.json，并兼容旧版 FanControl 的常用配置项，例如设备 IP、控制模式、温度来源、手动速度和风扇曲线。"
         }
       ]
     },

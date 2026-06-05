@@ -16,7 +16,8 @@ import (
 const (
 	DefaultHistoryCapacity              = 3600
 	DefaultHistorySampleInterval        = 1 * time.Second
-	DefaultHistoryRelativePath          = "telemetry/fancontrolportable2-history.bin"
+	DefaultHistoryRelativePath          = "telemetry/fancontrol-history.bin"
+	LegacyHistoryRelativePath           = "telemetry/fancontrolportable2-history.bin"
 	historyBinaryMagic                  = "THST"
 	historyBinaryVersion         uint16 = 1
 	historyEnabledFlag           uint8  = 1

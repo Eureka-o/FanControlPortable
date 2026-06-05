@@ -11,7 +11,7 @@ using Newtonsoft.Json;
 using LibreHardwareMonitor.Hardware;
 using LibreHardwareMonitor.PawnIo;
 
-namespace FanControlPortable.TempBridge
+namespace FanControl.TempBridge
 {
     public class TemperatureData
     {
@@ -138,8 +138,8 @@ namespace FanControlPortable.TempBridge
 
     class Program
     {
-        private const string PipeName = "FanControlPortable2_TempBridge";
-        private const string MutexName = @"Global\FanControlPortable2_TempBridge_Singleton";
+        private const string PipeName = "FanControl2_TempBridge";
+        private const string MutexName = @"Global\FanControl2_TempBridge_Singleton";
         private const int MaxInitRetries = 3;
         private const int InitRetryDelayMs = 2000;
         private const int ConsecutiveFailuresBeforeReinit = 5;
@@ -191,7 +191,7 @@ namespace FanControlPortable.TempBridge
             {
                 if (ShouldRunDiagnosticMode(args))
                 {
-                    Console.Error.WriteLine("FanControlPortable TempBridge 启动失败");
+                    Console.Error.WriteLine("FanControl TempBridge 启动失败");
                     Console.Error.WriteLine($"错误: {ex.Message}");
                 }
                 else
@@ -261,7 +261,7 @@ namespace FanControlPortable.TempBridge
 
         static void RunConsoleDiagnostics()
         {
-            Console.WriteLine("FanControlPortable TempBridge 诊断模式");
+            Console.WriteLine("FanControl TempBridge 诊断模式");
             Console.WriteLine($"时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             Console.WriteLine();
 

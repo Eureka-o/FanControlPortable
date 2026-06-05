@@ -1,4 +1,4 @@
-﻿Unicode true
+Unicode true
 
 ####
 ## Please note: Template replacements don't work in this file. They are provided with default defines like
@@ -28,8 +28,14 @@
 ## !define PRODUCT_EXECUTABLE  "Application.exe"      # Default "${INFO_PROJECTNAME}.exe"
 ## !define UNINST_KEY_NAME     "UninstKeyInRegistry"  # Default "${INFO_COMPANYNAME}${INFO_PRODUCTNAME}"
 ####
-## Keep FanControlPortable isolated from other installed fan-control tools.
-!define UNINST_KEY_NAME "Eureka-o FanControlPortable"
+## Keep FanControl isolated from other installed fan-control tools.
+!define UNINST_KEY_NAME "Eureka-o FanControl"
+!define LEGACY_UNINST_KEY_NAME "Eureka-o FanControlPortable"
+!define LEGACY_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${LEGACY_UNINST_KEY_NAME}"
+!define LEGACY_PRODUCTNAME "FanControlPortable"
+!define LEGACY_PRODUCT_EXECUTABLE "FanControlPortable.exe"
+!define LEGACY_CORE_EXECUTABLE "FanControlPortable Core.exe"
+!define LEGACY_BRIDGE_EXECUTABLE "FanControlPortable TempBridge.exe"
 ####
 ## !define REQUEST_EXECUTION_LEVEL "admin"            # Default "admin"  see also https://nsis.sourceforge.io/Docs/Chapter4.html
 ####
@@ -57,6 +63,11 @@
             ${EndIf}
             Goto found_installation
         ${EndIf}
+        ${If} ${FileExists} "${CANDIDATE}\${LEGACY_PRODUCT_EXECUTABLE}"
+            StrCpy $INSTDIR "${CANDIDATE}"
+            DetailPrint "$(THRM_STR_FOUND_LEGACY_INSTALL) $INSTDIR"
+            Goto found_installation
+        ${EndIf}
         ${If} ${FileExists} "${CANDIDATE}\uninstall.exe"
             StrCpy $INSTDIR "${CANDIDATE}"
             ${If} "${LEGACY}" == "1"
@@ -76,7 +87,7 @@
 !endif
 
 !ifndef CORE_EXECUTABLE_SOURCE
-!define CORE_EXECUTABLE_SOURCE "..\..\bin\FanControlPortable Core.exe"
+!define CORE_EXECUTABLE_SOURCE "..\..\bin\FanControl Core.exe"
 !endif
 
 # The version information for this two must consist of 4 parts
@@ -153,7 +164,7 @@ FunctionEnd
 
 # Function to clean up legacy/duplicate registry keys
 Function CleanLegacyRegistryKeys
-    # No-op: FanControlPortable must not clean registry keys owned by other apps.
+    # No-op: FanControl must not clean registry keys owned by other apps.
 FunctionEnd
 
 # Function to detect existing installation and set install directory
@@ -165,7 +176,7 @@ Function DetectExistingInstallation
     Push $R1
     Push $R2
 
-    # Only detect FanControlPortable's own install. Do not inspect other fan-control tools.
+    # Only detect FanControl's own install. Do not inspect other fan-control tools.
     # registry keys or folders because the user may run those applications side by side.
     ReadRegStr $R2 HKLM "${UNINST_KEY}" "DisplayVersion"
     ${If} $R2 != ""
@@ -175,7 +186,7 @@ Function DetectExistingInstallation
     ${EndIf}
 
     ReadRegStr $R0 HKLM "${UNINST_KEY}" "InstallLocation"
-    !insertmacro TryInstallDirCandidate "$R0" "正确键-安装位置" "0"
+    !insertmacro TryInstallDirCandidate "$R0" "current-key-install-location" "0"
 
     ReadRegStr $R0 HKLM "${UNINST_KEY}" "UninstallString"
     ${If} $R0 != ""
@@ -183,7 +194,7 @@ Function DetectExistingInstallation
         Call TrimQuotes
         Pop $R0
         ${GetParent} $R0 $R1
-        !insertmacro TryInstallDirCandidate "$R1" "正确键-卸载路径" "0"
+        !insertmacro TryInstallDirCandidate "$R1" "current-key-uninstall-path" "0"
     ${EndIf}
 
     ReadRegStr $R0 HKLM "${UNINST_KEY}" "DisplayIcon"
@@ -192,12 +203,39 @@ Function DetectExistingInstallation
         Call TrimQuotes
         Pop $R0
         ${GetParent} $R0 $R1
-        !insertmacro TryInstallDirCandidate "$R1" "正确键-图标路径" "0"
+        !insertmacro TryInstallDirCandidate "$R1" "current-key-icon-path" "0"
+    ${EndIf}
+
+    ReadRegStr $R0 HKLM "${LEGACY_UNINST_KEY}" "InstallLocation"
+    !insertmacro TryInstallDirCandidate "$R0" "legacy-key-install-location" "1"
+
+    ReadRegStr $R0 HKLM "${LEGACY_UNINST_KEY}" "UninstallString"
+    ${If} $R0 != ""
+        Push $R0
+        Call TrimQuotes
+        Pop $R0
+        ${GetParent} $R0 $R1
+        !insertmacro TryInstallDirCandidate "$R1" "legacy-key-uninstall-path" "1"
+    ${EndIf}
+
+    ReadRegStr $R0 HKLM "${LEGACY_UNINST_KEY}" "DisplayIcon"
+    ${If} $R0 != ""
+        Push $R0
+        Call TrimQuotes
+        Pop $R0
+        ${GetParent} $R0 $R1
+        !insertmacro TryInstallDirCandidate "$R1" "legacy-key-icon-path" "1"
     ${EndIf}
 
     ${If} ${FileExists} "$PROGRAMFILES64\${INFO_PRODUCTNAME}\${PRODUCT_EXECUTABLE}"
         StrCpy $INSTDIR "$PROGRAMFILES64\${INFO_PRODUCTNAME}"
         DetailPrint "$(THRM_STR_FOUND_INSTALL) $INSTDIR"
+        Goto found_installation
+    ${EndIf}
+
+    ${If} ${FileExists} "$PROGRAMFILES64\${LEGACY_PRODUCTNAME}\${LEGACY_PRODUCT_EXECUTABLE}"
+        StrCpy $INSTDIR "$PROGRAMFILES64\${LEGACY_PRODUCTNAME}"
+        DetailPrint "$(THRM_STR_FOUND_LEGACY_INSTALL) $INSTDIR"
         Goto found_installation
     ${EndIf}
     
@@ -263,7 +301,7 @@ Function StopRunningInstances
     DetailPrint "$(THRM_STR_CHECKING_PROCESSES)"
 
     ClearErrors
-    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "FanControlPortable Core.exe" /T'
+    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "FanControl Core.exe" /T'
     Pop $0
     Pop $1
     ${If} $0 == 0
@@ -271,7 +309,7 @@ Function StopRunningInstances
         Sleep 2000
     ${EndIf}
 
-    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "FanControlPortable Core.exe" /T'
+    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "FanControl Core.exe" /T'
     Pop $0
     Pop $1
 
@@ -289,12 +327,27 @@ Function StopRunningInstances
     Pop $0
     Pop $1
 
-    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "FanControlPortable TempBridge.exe" /T'
+    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "FanControl TempBridge.exe" /T'
+    Pop $0
+    Pop $1
+
+    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "${LEGACY_CORE_EXECUTABLE}" /T'
+    Pop $0
+    Pop $1
+
+    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "${LEGACY_PRODUCT_EXECUTABLE}" /T'
+    Pop $0
+    Pop $1
+
+    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "${LEGACY_BRIDGE_EXECUTABLE}" /T'
     Pop $0
     Pop $1
 
     DetailPrint "$(THRM_STR_CLEAN_TASKS)"
-    nsExec::ExecToStack '"$SYSDIR\schtasks.exe" /delete /tn "FanControlPortable" /f'
+    nsExec::ExecToStack '"$SYSDIR\schtasks.exe" /delete /tn "FanControl" /f'
+    Pop $0
+    Pop $1
+    nsExec::ExecToStack '"$SYSDIR\schtasks.exe" /delete /tn "${LEGACY_PRODUCTNAME}" /f'
     Pop $0
     Pop $1
     
@@ -311,13 +364,13 @@ Function BackupUserData
     
     # Backup configuration files if they exist
     ${If} ${FileExists} "$INSTDIR\config.json"
-        CopyFiles "$INSTDIR\config.json" "$TEMP\fancontrolportable_config_backup.json"
+        CopyFiles "$INSTDIR\config.json" "$TEMP\fancontrol_config_backup.json"
         DetailPrint "$(THRM_STR_BACKUP_CONFIG_DONE)"
     ${EndIf}
     
     # Backup other important user files if needed
     ${If} ${FileExists} "$INSTDIR\settings.ini"
-        CopyFiles "$INSTDIR\settings.ini" "$TEMP\fancontrolportable_settings_backup.ini"
+        CopyFiles "$INSTDIR\settings.ini" "$TEMP\fancontrol_settings_backup.ini"
         DetailPrint "$(THRM_STR_BACKUP_SETTINGS_DONE)"
     ${EndIf}
 FunctionEnd
@@ -327,30 +380,36 @@ Function RestoreUserData
     DetailPrint "$(THRM_STR_RESTORE_CONFIG)"
     
     # Restore configuration files if backup exists
-    ${If} ${FileExists} "$TEMP\fancontrolportable_config_backup.json"
-        CopyFiles "$TEMP\fancontrolportable_config_backup.json" "$INSTDIR\config.json"
+    ${If} ${FileExists} "$TEMP\fancontrol_config_backup.json"
+        CopyFiles "$TEMP\fancontrol_config_backup.json" "$INSTDIR\config.json"
         DetailPrint "$(THRM_STR_RESTORE_CONFIG_DONE)"
     ${EndIf}
     
-    ${If} ${FileExists} "$TEMP\fancontrolportable_settings_backup.ini"
-        CopyFiles "$TEMP\fancontrolportable_settings_backup.ini" "$INSTDIR\settings.ini"
-        Delete "$TEMP\fancontrolportable_settings_backup.ini"
+    ${If} ${FileExists} "$TEMP\fancontrol_settings_backup.ini"
+        CopyFiles "$TEMP\fancontrol_settings_backup.ini" "$INSTDIR\settings.ini"
+        Delete "$TEMP\fancontrol_settings_backup.ini"
         DetailPrint "$(THRM_STR_RESTORE_SETTINGS_DONE)"
     ${EndIf}
 FunctionEnd
 
 Function CleanupLegacyShortcuts
     DetailPrint "$(THRM_STR_CLEAN_SHORTCUTS)"
-    Delete "$SMPROGRAMS\FanControlPortable.lnk"
-    Delete "$DESKTOP\FanControlPortable.lnk"
-    Delete "$SMSTARTUP\FanControlPortable.lnk"
+    Delete "$SMPROGRAMS\FanControl.lnk"
+    Delete "$DESKTOP\FanControl.lnk"
+    Delete "$SMSTARTUP\FanControl.lnk"
+    Delete "$SMPROGRAMS\${LEGACY_PRODUCTNAME}.lnk"
+    Delete "$DESKTOP\${LEGACY_PRODUCTNAME}.lnk"
+    Delete "$SMSTARTUP\${LEGACY_PRODUCTNAME}.lnk"
 FunctionEnd
 
 Function un.CleanupLegacyShortcuts
     DetailPrint "$(THRM_STR_CLEAN_SHORTCUTS)"
-    Delete "$SMPROGRAMS\FanControlPortable.lnk"
-    Delete "$DESKTOP\FanControlPortable.lnk"
-    Delete "$SMSTARTUP\FanControlPortable.lnk"
+    Delete "$SMPROGRAMS\FanControl.lnk"
+    Delete "$DESKTOP\FanControl.lnk"
+    Delete "$SMSTARTUP\FanControl.lnk"
+    Delete "$SMPROGRAMS\${LEGACY_PRODUCTNAME}.lnk"
+    Delete "$DESKTOP\${LEGACY_PRODUCTNAME}.lnk"
+    Delete "$SMSTARTUP\${LEGACY_PRODUCTNAME}.lnk"
 FunctionEnd
 
 Section "$(THRM_STR_SECTION_MAIN)" SEC_MAIN
@@ -363,7 +422,10 @@ Section "$(THRM_STR_SECTION_MAIN)" SEC_MAIN
     ${If} ${FileExists} "$INSTDIR\${PRODUCT_EXECUTABLE}"
         StrCpy $0 "1"
         DetailPrint "$(THRM_STR_UPGRADING) $INSTDIR"
-    ${ElseIf} ${FileExists} "$INSTDIR\FanControlPortable Core.exe"
+    ${ElseIf} ${FileExists} "$INSTDIR\FanControl Core.exe"
+        StrCpy $0 "1"
+        DetailPrint "$(THRM_STR_UPGRADING) $INSTDIR"
+    ${ElseIf} ${FileExists} "$INSTDIR\${LEGACY_CORE_EXECUTABLE}"
         StrCpy $0 "1"
         DetailPrint "$(THRM_STR_UPGRADING) $INSTDIR"
     ${ElseIf} ${FileExists} "$INSTDIR\uninstall.exe"
@@ -381,7 +443,10 @@ Section "$(THRM_STR_SECTION_MAIN)" SEC_MAIN
         # Clean up old files but preserve user data
         DetailPrint "$(THRM_STR_CLEAN_OLD_FILES)"
         Delete "$INSTDIR\${PRODUCT_EXECUTABLE}"
-        Delete "$INSTDIR\FanControlPortable Core.exe"
+        Delete "$INSTDIR\FanControl Core.exe"
+        Delete "$INSTDIR\${LEGACY_PRODUCT_EXECUTABLE}"
+        Delete "$INSTDIR\${LEGACY_CORE_EXECUTABLE}"
+        Delete "$INSTDIR\${LEGACY_BRIDGE_EXECUTABLE}"
         RMDir /r "$INSTDIR\bridge"
         Delete "$INSTDIR\logs\*.log"  # Keep log structure but remove old logs
     ${Else}
@@ -404,7 +469,7 @@ Section "$(THRM_STR_SECTION_MAIN)" SEC_MAIN
     
     # Copy core service executable
     DetailPrint "$(THRM_STR_INSTALLING_CORE)"
-    File "/oname=FanControlPortable Core.exe" "${CORE_EXECUTABLE_SOURCE}"
+    File "/oname=FanControl Core.exe" "${CORE_EXECUTABLE_SOURCE}"
     
     # Copy bridge directory and its contents
     DetailPrint "$(THRM_STR_INSTALLING_BRIDGE)"
@@ -435,14 +500,14 @@ Section "$(THRM_STR_SECTION_MAIN)" SEC_MAIN
 
     ${If} $LegacyRenameNoticeNeeded == "1"
         DetailPrint "$(THRM_STR_UPGRADE_RENAME_DONE)"
-    ${ElseIf} ${FileExists} "$TEMP\fancontrolportable_config_backup.json"
+    ${ElseIf} ${FileExists} "$TEMP\fancontrol_config_backup.json"
         DetailPrint "$(THRM_STR_UPGRADE_SETTINGS_DONE)"
     ${Else}
         DetailPrint "$(THRM_STR_INSTALL_SUCCESS)"
     ${EndIf}
 
-    ${If} ${FileExists} "$TEMP\fancontrolportable_config_backup.json"
-        Delete "$TEMP\fancontrolportable_config_backup.json"
+    ${If} ${FileExists} "$TEMP\fancontrol_config_backup.json"
+        Delete "$TEMP\fancontrol_config_backup.json"
     ${EndIf}
 SectionEnd
 
@@ -452,18 +517,23 @@ Section "$(THRM_STR_SECTION_AUTOSTART)" SEC_AUTOSTART
     
     # First, remove our existing auto-start entries to ensure clean state.
     DetailPrint "$(THRM_STR_CLEAN_AUTOSTART)"
-    nsExec::ExecToStack '"$SYSDIR\schtasks.exe" /delete /tn "FanControlPortable" /f'
+    nsExec::ExecToStack '"$SYSDIR\schtasks.exe" /delete /tn "FanControl" /f'
     Pop $0
     Pop $1
-    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "FanControlPortable"
-    DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "FanControlPortable"
+    nsExec::ExecToStack '"$SYSDIR\schtasks.exe" /delete /tn "${LEGACY_PRODUCTNAME}" /f'
+    Pop $0
+    Pop $1
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "FanControl"
+    DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "FanControl"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${LEGACY_PRODUCTNAME}"
+    DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "${LEGACY_PRODUCTNAME}"
     
     # Create new scheduled task for auto-start with admin privileges
     DetailPrint "$(THRM_STR_CREATE_AUTOSTART_TASK)"
     
     # Use schtasks to create a task that runs at logon with highest privileges
-    # The task starts FanControlPortable Core.exe with --autostart after 15 seconds.
-    nsExec::ExecToStack '"$SYSDIR\schtasks.exe" /create /tn "FanControlPortable" /tr "\"$INSTDIR\FanControlPortable Core.exe\" --autostart" /sc onlogon /delay 0000:15 /rl highest /f'
+    # The task starts FanControl Core.exe with --autostart after 15 seconds.
+    nsExec::ExecToStack '"$SYSDIR\schtasks.exe" /create /tn "FanControl" /tr "\"$INSTDIR\FanControl Core.exe\" --autostart" /sc onlogon /delay 0000:15 /rl highest /f'
     Pop $0
     Pop $1
     ${If} $0 == 0
@@ -471,7 +541,7 @@ Section "$(THRM_STR_SECTION_AUTOSTART)" SEC_AUTOSTART
     ${Else}
         DetailPrint "$(THRM_STR_AUTOSTART_TASK_FAIL)"
         # Fallback: use registry auto-start (will trigger UAC on each login)
-        WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "FanControlPortable" '"$INSTDIR\FanControlPortable Core.exe" --autostart'
+        WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "FanControl" '"$INSTDIR\FanControl Core.exe" --autostart'
         DetailPrint "$(THRM_STR_AUTOSTART_REG_OK)"
     ${EndIf}
 SectionEnd
@@ -576,11 +646,11 @@ Section "uninstall"
     DetailPrint "$(THRM_STR_UNINSTALL_STOP)"
     
     DetailPrint "$(THRM_STR_STOP_CORE)"
-    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "FanControlPortable Core.exe" /T'
+    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "FanControl Core.exe" /T'
     Pop $0
     Pop $1
     Sleep 1000
-    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "FanControlPortable Core.exe" /T'
+    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "FanControl Core.exe" /T'
     Pop $0
     Pop $1
     
@@ -595,11 +665,21 @@ Section "uninstall"
     Pop $1
 
     DetailPrint "$(THRM_STR_STOP_BRIDGE)"
-    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "FanControlPortable TempBridge.exe" /T'
+    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "FanControl TempBridge.exe" /T'
     Pop $0
     Pop $1
     Sleep 500
-    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "FanControlPortable TempBridge.exe" /T'
+    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "FanControl TempBridge.exe" /T'
+    Pop $0
+    Pop $1
+
+    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "${LEGACY_CORE_EXECUTABLE}" /T'
+    Pop $0
+    Pop $1
+    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "${LEGACY_PRODUCT_EXECUTABLE}" /T'
+    Pop $0
+    Pop $1
+    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "${LEGACY_BRIDGE_EXECUTABLE}" /T'
     Pop $0
     Pop $1
 
@@ -608,14 +688,20 @@ Section "uninstall"
     # Remove auto-start entries
     DetailPrint "$(THRM_STR_REMOVE_AUTOSTART)"
     
-    nsExec::ExecToStack '"$SYSDIR\schtasks.exe" /delete /tn "FanControlPortable" /f'
+    nsExec::ExecToStack '"$SYSDIR\schtasks.exe" /delete /tn "FanControl" /f'
+    Pop $0
+    Pop $1
+    nsExec::ExecToStack '"$SYSDIR\schtasks.exe" /delete /tn "${LEGACY_PRODUCTNAME}" /f'
     Pop $0
     Pop $1
     
-    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "FanControlPortable"
-    DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "FanControlPortable"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "FanControl"
+    DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "FanControl"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${LEGACY_PRODUCTNAME}"
+    DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "${LEGACY_PRODUCTNAME}"
     
-    Delete "$SMSTARTUP\FanControlPortable.lnk"
+    Delete "$SMSTARTUP\FanControl.lnk"
+    Delete "$SMSTARTUP\${LEGACY_PRODUCTNAME}.lnk"
     
     # Wait for processes to fully terminate
     Sleep 2000
@@ -623,9 +709,12 @@ Section "uninstall"
     # Remove application data directories
     DetailPrint "$(THRM_STR_REMOVE_APPDATA)"
     RMDir /r "$AppData\${PRODUCT_EXECUTABLE}" # Remove the WebView2 DataPath
-    RMDir /r "$APPDATA\FanControlPortable"
-    RMDir /r "$LOCALAPPDATA\FanControlPortable"
-    RMDir /r "$TEMP\FanControlPortable"
+    RMDir /r "$APPDATA\FanControl"
+    RMDir /r "$LOCALAPPDATA\FanControl"
+    RMDir /r "$TEMP\FanControl"
+    RMDir /r "$APPDATA\${LEGACY_PRODUCTNAME}"
+    RMDir /r "$LOCALAPPDATA\${LEGACY_PRODUCTNAME}"
+    RMDir /r "$TEMP\${LEGACY_PRODUCTNAME}"
 
     # Remove installation directory and all contents
     DetailPrint "$(THRM_STR_REMOVE_INSTALL_FILES)"
@@ -647,7 +736,8 @@ Section "uninstall"
     Call un.CleanupLegacyShortcuts
     Delete "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk"
     Delete "$DESKTOP\${INFO_PRODUCTNAME}.lnk"
-    Delete "$SMSTARTUP\FanControlPortable.lnk"
+    Delete "$SMSTARTUP\FanControl.lnk"
+    Delete "$SMSTARTUP\${LEGACY_PRODUCTNAME}.lnk"
 
     !insertmacro wails.unassociateFiles
     !insertmacro wails.unassociateCustomProtocols
@@ -658,7 +748,9 @@ Section "uninstall"
     
     # Optional: Ask user if they want to remove configuration files
     MessageBox MB_YESNO|MB_ICONQUESTION "$(THRM_STR_UNINSTALL_REMOVE_CONFIG)" IDNO skip_config
-    RMDir /r "$APPDATA\FanControlPortable"
-    RMDir /r "$LOCALAPPDATA\FanControlPortable"
+    RMDir /r "$APPDATA\FanControl"
+    RMDir /r "$LOCALAPPDATA\FanControl"
+    RMDir /r "$APPDATA\${LEGACY_PRODUCTNAME}"
+    RMDir /r "$LOCALAPPDATA\${LEGACY_PRODUCTNAME}"
     skip_config:
 SectionEnd

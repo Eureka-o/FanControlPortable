@@ -1,6 +1,6 @@
 @echo off
 setlocal
-echo Building TempBridge with latest LibreHardwareMonitor...
+echo Building TempBridge...
 
 set "ROOT=%~dp0"
 set "PROJECT=%ROOT%bridge\TempBridge\TempBridge.csproj"
@@ -16,42 +16,49 @@ set "PAWNIO_URL=https://github.com/namazso/PawnIO.Setup/releases/latest/download
 set "PAWNIO_OUT=%BUILDROOT%\PawnIO_setup.exe"
 
 if not exist "%BUILDROOT%" mkdir "%BUILDROOT%"
-if not exist "%TEMPROOT%" mkdir "%TEMPROOT%"
 if exist "%OUTDIR%" rmdir /s /q "%OUTDIR%"
 if not exist "%OUTDIR%" mkdir "%OUTDIR%"
 
-where git >nul 2>nul
-if errorlevel 1 (
-	echo ERROR: git not found. Cannot sync LibreHardwareMonitor HEAD.
-	goto :error
-)
+set "LHM_SOURCE_PROPS=/p:UseLibreHardwareMonitorProjectReference=false"
+if /I "%USE_LHM_SOURCE%"=="true" (
+	if not exist "%TEMPROOT%" mkdir "%TEMPROOT%"
 
-if not exist "%LHM_REPO%\.git" (
-	echo Cloning LibreHardwareMonitor into %LHM_REPO%...
-	git clone --depth 1 --branch %LHM_BRANCH% "%LHM_URL%" "%LHM_REPO%"
-	if errorlevel 1 goto :error
+	where git >nul 2>nul
+	if errorlevel 1 (
+		echo ERROR: git not found. Cannot sync LibreHardwareMonitor source.
+		goto :error
+	)
+
+	if not exist "%LHM_REPO%\.git" (
+		echo Cloning LibreHardwareMonitor into %LHM_REPO%...
+		git clone --depth 1 --branch %LHM_BRANCH% "%LHM_URL%" "%LHM_REPO%"
+		if errorlevel 1 goto :error
+	) else (
+		echo Updating LibreHardwareMonitor in %LHM_REPO%...
+		git -C "%LHM_REPO%" checkout %LHM_BRANCH%
+		if errorlevel 1 goto :error
+		git -C "%LHM_REPO%" pull --ff-only origin %LHM_BRANCH%
+		if errorlevel 1 goto :error
+	)
+
+	if not exist "%LHM_PROJECT%" (
+		echo ERROR: LibreHardwareMonitorLib project not found at %LHM_PROJECT%
+		goto :error
+	)
+
+	for /f %%i in ('git -C "%LHM_REPO%" rev-parse HEAD') do set "LHM_COMMIT=%%i"
+	echo Using LibreHardwareMonitor source commit: %LHM_COMMIT%
+	set "LHM_SOURCE_PROPS=/p:UseLibreHardwareMonitorProjectReference=true /p:LibreHardwareMonitorRepoRoot=%LHM_REPO%"
 ) else (
-	echo Updating LibreHardwareMonitor in %LHM_REPO%...
-	git -C "%LHM_REPO%" checkout %LHM_BRANCH%
-	if errorlevel 1 goto :error
-	git -C "%LHM_REPO%" pull --ff-only origin %LHM_BRANCH%
-	if errorlevel 1 goto :error
+	echo Using LibreHardwareMonitorLib NuGet package for stable local packaging.
 )
-
-if not exist "%LHM_PROJECT%" (
-	echo ERROR: LibreHardwareMonitorLib project not found at %LHM_PROJECT%
-	goto :error
-)
-
-for /f %%i in ('git -C "%LHM_REPO%" rev-parse HEAD') do set "LHM_COMMIT=%%i"
-echo Using LibreHardwareMonitor commit: %LHM_COMMIT%
 
 echo Restoring TempBridge dependencies...
-dotnet restore "%PROJECT%" /p:Platform=x64 /p:UseLibreHardwareMonitorProjectReference=true /p:LibreHardwareMonitorRepoRoot="%LHM_REPO%"
+dotnet restore "%PROJECT%" /p:Platform=x64 %LHM_SOURCE_PROPS%
 if errorlevel 1 goto :error
 
 echo Publishing TempBridge...
-dotnet publish "%PROJECT%" -c Release --self-contained false -o "%OUTDIR%" /p:Platform=x64 /p:DebugType=none /p:DebugSymbols=false /p:UseLibreHardwareMonitorProjectReference=true /p:LibreHardwareMonitorRepoRoot="%LHM_REPO%"
+dotnet publish "%PROJECT%" -c Release --self-contained false -o "%OUTDIR%" /p:Platform=x64 /p:DebugType=none /p:DebugSymbols=false %LHM_SOURCE_PROPS%
 if errorlevel 1 goto :error
 
 echo Removing non-runtime bridge artifacts...
