@@ -1,163 +1,83 @@
 # FanControlPortable
 
-FanControlPortable 2.0 是面向 **Slim压风散热器Pro** 的 Windows 散热控制工具。
+FanControlPortable 是面向 **Slim压风散热器Pro** 的 Windows 散热控制软件。它可以读取电脑 CPU/GPU 温度，显示实时风扇状态，并根据手动速度或风扇曲线控制散热器。
 
-软件会读取本机 CPU/GPU 温度，记录近期温度和风扇历史，按百分比风扇曲线进行控制，并通过 WiFi 向设备发送原生 `0-100%` 转速指令。
+[下载最新版](https://github.com/Eureka-o/FanControlPortable/releases/latest)
 
-> 普通用户请直接前往 [Releases](https://github.com/Eureka-o/FanControlPortable/releases/latest) 下载 Windows 安装包或便携包，不需要安装 Go、Node.js、Wails、NSIS 或 .NET SDK。
+## 适用范围
 
-## 普通用户先看
+- 系统：Windows 10 / Windows 11 64 位。
+- 设备：Slim压风散热器Pro。
+- 连接方式：当前请使用 WiFi；蓝牙暂不可用。
 
-### 下载与运行
+## 下载哪个文件
 
-1. 打开 [Releases](https://github.com/Eureka-o/FanControlPortable/releases/latest)。
-2. 下载 `FanControlPortable-2.0.0-amd64-installer.exe` 使用安装版，或下载 `FanControlPortable-2.0.0-portable.zip` 使用便携版。
-3. 启动 `FanControlPortable.exe`。
-4. 在设置页选择 WiFi 连接方式并填写设备地址，常见默认地址为 `192.168.137.2`。
-5. 回到主页确认温度、风扇速度、连接状态和控制模式正常显示。
+- `FanControlPortable-2.0.0-amd64-installer.exe`：推荐大多数用户使用。安装后可以从开始菜单或桌面启动，升级时会保留已有配置。
+- `FanControlPortable-2.0.0-portable.zip`：免安装便携版。解压到一个固定文件夹后运行 `FanControlPortable.exe`。
 
-### 当前设备协议
+首次启动时如果 Windows 弹出权限确认，请选择允许。软件需要读取硬件温度，并可能安装或调用温度读取所需的辅助组件。
 
-- 状态读取：`GET http://<ip>/api/data`
-- 转速控制：`POST http://<ip>/api/speed`
-- 请求体：`{"speed": 0-100}`
+## 第一次使用
 
-风扇速度使用设备协议中的原生百分比，不把百分比和 RPM 做简单线性映射。
+1. 确认电脑和散热器处在同一个网络环境中。
+2. 打开 FanControlPortable。
+3. 进入设置页，连接方式选择 `WiFi`。
+4. 填写设备地址。常见默认地址为 `192.168.137.2`，也支持 `127.0.0.1:18080` 这种带端口的写法。
+5. 点击连接，回到主页查看温度、当前风速、目标风速和控制模式。
 
-### 2.0 做了什么
+连接成功后，可以使用自动曲线控制，也可以切换到手动速度进行固定百分比控制。
 
-- 将目标设备改为 **Slim压风散热器Pro**。
-- 将 WiFi 控制逻辑改为当前设备使用的 HTTP 协议，通过 `/api/data` 读取状态，通过 `/api/speed` 发送 `0-100%` 转速。
-- 在界面中预留蓝牙/BLE 连接模式，方便后续接入 BLE 协议。
-- 重做运行身份：进程名、命名管道、互斥锁、配置目录、托盘身份、计划任务名和更新仓库都已换成 FanControlPortable 自己的值，可与原软件同时运行。
-- 更新关于页、仓库链接、反馈邮箱、图标、品牌资源、托盘菜单和安装器文案。
-- 保留并适配了实用的桌面端能力：后台核心服务、系统托盘、温度桥接、风扇曲线编辑、手动档位、学习机制接口、历史曲线、安装包和便携包。
-- 新增 `tools/mock-device/` 本地模拟设备，用于没有硬件时测试连接、读包和发包。
+## 主要功能
 
-### 配置与日志
+- 实时查看 CPU/GPU 温度和散热器风速。
+- 自动模式下按风扇曲线调节速度。
+- 手动模式下直接设定固定百分比速度。
+- 查看温度和风扇速度历史记录。
+- 最小化到系统托盘后台运行。
+- 从软件内检查 GitHub 最新版本。
+- 安装版和便携版都会尽量保留已有配置。
 
-- 便携版会优先读取可执行文件旁边的 `settings.json`。
-- 安装版使用 FanControlPortable 独立的数据目录。
-- 安装器升级时会保留已有 FanControlPortable 配置。
-- 日志写入软件日志目录，不会提交到仓库。
+## 使用提示
 
-### 常见问题
+- 关闭窗口不等于退出软件。FanControlPortable 会继续留在系统托盘中运行；需要完全退出时，请右键托盘图标并选择退出。
+- 便携版更新时，请先从托盘退出软件，再解压新版覆盖旧文件夹。不要删除原来的 `settings.json`，这样可以保留配置。
+- 如果你同时使用其他硬件监控或风扇控制软件，遇到温度读取异常时可以先临时关闭它们再重试。
 
-#### 设备无法连接
+## 常见问题
 
-1. 确认电脑和散热器处在预期网络中。
-2. 检查设置页 IP 地址；支持 `127.0.0.1:18080` 这种带端口写法。
-3. 用浏览器或 `curl` 测试 `http://<ip>/api/data`。
-4. 如需模拟设备，运行 `tools\mock-device\start-mock-device.ps1`，然后连接 `127.0.0.1:18080`。
+### 设备连接不上
 
-#### 温度为空或显示 0
+- 确认散热器已通电，并且电脑和散热器处于同一网络。
+- 检查设置页中的设备地址是否正确。
+- 如果修改过散热器网络设置，请重新填写新的 IP 地址。
+- 可以在浏览器中打开 `http://设备地址/api/data` 做简单确认；能看到返回内容通常说明网络连通。
 
-1. 尝试以管理员身份重启 FanControlPortable。
-2. 确认 `bridge` 目录中的温度桥接文件完整。
-3. 安装器提示时安装或更新 PawnIO。
-4. 如果同时运行了其他硬件监控工具，先临时关闭后重试。
+### 温度为空或一直是 0
 
-#### 关闭窗口后仍在后台
+- 以管理员身份重新启动 FanControlPortable。
+- 安装器提示安装或更新温度读取组件时，请允许。
+- 临时关闭其他硬件监控软件后再试一次。
+- 如果便携版缺少 `bridge` 目录，请重新下载并完整解压便携包。
 
-FanControlPortable 支持最小化到托盘运行。如需完全退出，请使用托盘菜单中的退出命令。
+### 风速没有按预期变化
 
-## 来源与致谢
+- 确认设备已经连接成功。
+- 检查当前是自动模式还是手动模式。
+- 手动模式会固定在你设定的百分比速度；自动模式会按风扇曲线计算目标速度。
+- 速度下发后设备状态可能需要几秒钟刷新。
 
-本项目基于 [TIANLI0/THRM](https://github.com/TIANLI0/THRM) 的开源工作进行设备适配和改造。感谢原作者提供的 Wails 桌面端架构、托盘/后台机制、温度桥接思路、风扇曲线交互模型和安装器基础。
+## 反馈
 
-FanControlPortable 2.0 已针对新的目标设备、通信协议、运行身份、打包命名、更新仓库和用户文案做了独立化处理，避免与原软件互相冲突。
+如果遇到问题，可以在 GitHub 提交 issue，或发送邮件到 `1989005183@qq.com`。
 
-<details>
-<summary>开发与构建说明</summary>
+## 致谢
 
-## 技术栈
+FanControlPortable 基于 [TIANLI0/THRM](https://github.com/TIANLI0/THRM) 的开源工作进行改造和适配。感谢原作者提供的桌面端框架、托盘后台机制、温度读取思路、风扇曲线交互和安装器基础。
 
-- Go 1.26+
-- Wails v2
-- Next.js 16
-- TypeScript
-- Tailwind CSS 4
-- C#/.NET 温度桥接
-- NSIS 安装器
+## 许可
 
-## 项目结构
-
-```text
-cmd/core/                 后台核心服务入口
-internal/                 设备、配置、IPC、温度、托盘、更新和应用模块
-bridge/TempBridge/        C# 温度桥接程序
-frontend/                 Wails 前端
-frontend/src/app/         主界面、状态页、风扇曲线页、设置页和关于页
-frontend/src/components/  通用界面组件
-build/windows/installer/  NSIS 安装器脚本
-scripts/                  资源生成和辅助脚本
-tools/mock-device/        WiFi 发包/读包测试用本地模拟设备
-themes/                   主题资源
-```
-
-整体结构参考 THRM 的 Wails 桌面应用组织方式，同时将硬件协议、后台服务、GUI 绑定和前端界面模块拆开，方便后续继续重写控制与学习逻辑。
-
-## 本地开发
-
-```powershell
-go mod tidy
-npm install --prefix frontend
-wails dev
-```
-
-## 构建
-
-```powershell
-npm install --prefix frontend
-npm run build --prefix frontend
-dotnet publish bridge\TempBridge\TempBridge.csproj -c Release --self-contained false -o build\bin\bridge /p:Platform=x64 /p:DebugType=none /p:DebugSymbols=false
-.\build.bat
-```
-
-生成安装器需要安装 NSIS 3.x，并确保 `makensis.exe` 在 `PATH` 中。
-
-`build.bat` 会生成：
-
-```text
-build/bin/FanControlPortable.exe
-build/bin/FanControlPortable Core.exe
-build/bin/bridge/
-build/bin/FanControlPortable-amd64-installer.exe
-```
-
-安装器需要 `build/bin/PawnIO_setup.exe`。可以运行 `build_bridge.bat` 下载，也可以在打包前手动放入 `build/bin/`。
-
-## 模拟设备
-
-```powershell
-tools\mock-device\start-mock-device.ps1
-```
-
-默认地址：
-
-```text
-http://127.0.0.1:18080
-```
-
-模拟设备实现 `GET /api/data` 和 `POST /api/speed`，用于测试真实 WiFi 读写路径。
-
-## 发布
-
-GitHub Releases 是正式分发渠道。Release 附件应包含：
-
-```text
-FanControlPortable-2.0.0-amd64-installer.exe
-FanControlPortable-2.0.0-portable.zip
-```
-
-打包后的二进制文件不提交到 git，应作为 Release 附件上传。
-
-</details>
-
-## 许可证
-
-本项目沿用上游开源基础的 MIT License，详见 [LICENSE](LICENSE)。
+本项目使用 MIT License，详见 [LICENSE](LICENSE)。
 
 ## 免责声明
 
-FanControlPortable 是面向特定散热控制设备的第三方开源项目。使用本软件产生的风险由用户自行承担。
+FanControlPortable 是第三方开源软件。请根据设备状态合理设置风扇速度，因使用本软件产生的风险由用户自行承担。
