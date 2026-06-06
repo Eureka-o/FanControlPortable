@@ -1,49 +1,49 @@
-# FanControl 2.1.1 Release Notes
+# FanControl 2.1.1 发布说明
 
-FanControl 2.1.1 is a focused bugfix release for the 2.1.x line. This update fixes percent-learning display, percent/RPM device switching, and device capability binding. All users are recommended to update, especially users who have imported custom devices, switched between percent and RPM profiles, or used learning curves.
+FanControl 2.1.1 是面向 2.1.x 的修复版本，主要修复学习曲线显示、百分比/RPM 设备切换、转速设备手动控制和设备能力绑定问题。建议所有 2.0/2.1 用户更新，尤其是使用学习曲线、导入设备档案，或在百分比设备和 RPM 设备之间切换的用户。
 
-## Downloads
+## 下载
 
-- `FanControl-2.1.1-amd64-installer.exe`: recommended for most Windows users.
-- `FanControl-2.1.1-portable.zip`: portable build; extract and run `FanControl.exe`.
+- `FanControl-2.1.1-amd64-installer.exe`：推荐大多数 Windows 用户使用。
+- `FanControl-2.1.1-portable.zip`：免安装便携版，解压后运行 `FanControl.exe`。
 
-SHA256:
+SHA256：
 
 - `FanControl-2.1.1-amd64-installer.exe`
   - `3E7FC770487EB358E0ECC7885C391411E8E431D9742B11F2E7DAEC10A91E535F`
 - `FanControl-2.1.1-portable.zip`
-  - `F1D6C69308D88DFF8E5ADBB3CEAD4756E48CBA69BFEA5AF3C5758B1F51F5F385`
+  - `51731D658CE17DBD2D3FB0403B4B7306AD48EACC5E1A7B05A9F144A529C1033E`
 
-## Fixed
+## 修复内容
 
-- Fixed percent-learning display on the fan-curve page. Percent learned offsets are stored internally as `0.1%` ticks, so a 25-tick offset now displays as `2.5%` instead of `25%`.
-- Fixed speed-unit switching between percent and RPM devices. Speed labels, ranges, curve axes, tooltips, learned-curve summaries, manual gear editing, custom speed input, homepage gauges, mini charts, and title-bar badges now follow the active device profile.
-- Fixed stale fan-speed display after switching devices or connection types. Frontend speed readings now trust device telemetry only when its transport and speed unit match the currently enabled device profile.
-- Fixed RPM manual/custom speed control after switching from a percent device. Backend profile selection now prefers the enabled device for the current connection type, so RPM targets are no longer clamped or sent through the previous percent profile.
-- Fixed RPM-device curve normalization. Old 0-100 percent-shaped curves are no longer reused as valid-looking 0-4000 RPM curves after switching to an RPM profile.
-- Fixed non-speed capability defaults. WiFi, library BLE, serial, and legacy RPM/HID profiles no longer infer lighting, power-on-start, smart start/stop, raw commands, or debug-frame support from the connection type alone.
-- Fixed backend capability enforcement. Unsupported non-speed actions are rejected before config is updated; the default WiFi runtime no longer reports fake success for lighting, power-on-start, smart start/stop, brightness, light-strip, or RGB-off calls.
-- Fixed Settings UI capability binding. Lighting, power-on-start, and smart start/stop controls stay hidden unless a future whitelisted device profile explicitly enables them.
+- 修复百分比学习曲线显示问题。百分比学习偏移内部按 `0.1%` 刻度保存，现在会按真实百分比显示，不再把 25 个刻度显示成 `25%`。
+- 修复百分比设备和 RPM 设备切换后的前端显示。速度单位、范围、曲线坐标轴、工具提示、学习曲线摘要、手动档位编辑、自定义速度输入、首页仪表、小型图表和标题栏状态都会跟随当前启用设备档案。
+- 修复切换设备或连接方式后，旧设备上报数据覆盖当前设备单位的问题。前端只在上报数据的连接方式和速度单位都匹配当前启用设备档案时，才信任设备上报的速度单位。
+- 修复从百分比设备切到 RPM 设备后，手动/自定义速度仍可能按旧百分比档案处理的问题。后端现在会优先按当前连接方式选择启用设备，RPM 目标值不会再被旧百分比档案夹住或走错通道。
+- 修复 RPM 设备曲线归一化问题。旧的 0-100 百分比曲线不会再被当作 0-4000 RPM 曲线继续使用。
+- 收紧设备能力默认值。WiFi、库内 BLE、虚拟串口和旧版 RPM/HID 档案不再因为连接方式自动显示灯光、通电自启、智能启停、原始命令或调试帧能力。
+- 收紧后端能力判断。不支持的非风速功能会在更新配置前被拒绝，默认 WiFi 运行时不再对灯光、通电自启、智能启停、亮度、灯带或 RGB 关闭返回假成功。
+- 修复设置页能力绑定。灯光、通电自启和智能启停控件只有在未来白名单设备档案明确支持时才会显示。
 
-## Compatibility
+## 兼容性
 
-- Existing FanControl 2.0/2.1 configs, WiFi IP, curve profiles, learning data, user device profiles, and imported themes remain compatible.
-- The user-facing app name remains `FanControl`; the repository and updater continue to use `Eureka-o/FanControlPortable`.
-- This release does not change the original/reference THRM app and keeps FanControl's config, process, task, IPC, and updater paths isolated.
+- 已有 FanControl 2.0/2.1 配置、WiFi IP、曲线方案、学习数据、用户设备档案和导入主题保持兼容。
+- 用户可见软件名保持为 `FanControl`；仓库和更新地址仍然使用 `Eureka-o/FanControlPortable`。
+- 本版本不会改动原作者 THRM 软件，并继续保持 FanControl 的配置、进程、任务、IPC 和更新路径隔离。
 
-## Notes
+## 后续计划
 
-- WiFi smart start/stop and BLE smart start/stop are deferred to FanControl 2.2.0 so they can be implemented with explicit capability checks, probing, rollback, and device-specific safety handling.
-- Real hardware validation is still dependent on device-owner feedback; this release was validated with unit tests, frontend builds, mock/runtime paths, and Windows packaging.
+- WiFi 智能启停和 BLE 智能启停延期到 FanControl 2.2.0，以便加入明确的能力判断、探测、回滚和设备安全保护。
+- 真实硬件兼容性仍需要设备用户继续反馈；本版本已经通过单元测试、前端构建、模拟设备/运行时路径和 Windows 打包验证。
 
-## Validation
+## 验证
 
 - `go test ./internal/device ./internal/types ./internal/coreapp`
 - `go test ./...`
 - `npx tsc --noEmit`
 - `npm run build`
-- locale key parity for `en-US`, `zh-CN`, and `ja-JP`
+- `en-US` / `zh-CN` / `ja-JP` 语言键一致性检查
 - `git diff --check`
 - `build.bat`
-- portable zip content inspection
-- file version checks for `FanControl.exe`, `FanControl Core.exe`, and the installer
+- 便携包内容检查
+- `FanControl.exe`、`FanControl Core.exe` 和安装包版本检查
