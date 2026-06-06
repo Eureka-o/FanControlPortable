@@ -8,9 +8,15 @@ export function CheckWindowsAutoStart():Promise<boolean>;
 
 export function ConnectDevice():Promise<boolean>;
 
+export function DeleteDeviceProfile(arg1:string):Promise<void>;
+
 export function DeleteFanCurveProfile(arg1:string):Promise<void>;
 
 export function DisconnectDevice():Promise<void>;
+
+export function ExportDeviceProfiles():Promise<string>;
+
+export function ExportDeviceProfilesToFile():Promise<string>;
 
 export function ExportFanCurveProfiles():Promise<string>;
 
@@ -30,11 +36,15 @@ export function GetDebugInfo():Promise<Record<string, any>>;
 
 export function GetDeviceDebugFrames():Promise<Array<types.DeviceDebugFrame>>;
 
+export function GetDeviceProfiles():Promise<types.DeviceProfilesPayload>;
+
 export function GetDeviceStatus():Promise<Record<string, any>>;
 
 export function GetFanCurve():Promise<Array<types.FanCurvePoint>>;
 
 export function GetFanCurveProfiles():Promise<types.FanCurveProfilesPayload>;
+
+export function GetSupportedDeviceProfiles():Promise<Array<types.DeviceProfile>>;
 
 export function GetTemperature():Promise<types.TemperatureData>;
 
@@ -42,7 +52,11 @@ export function GetTemperatureHistory():Promise<types.TemperatureHistoryPayload>
 
 export function GetThemeCSS(arg1:string):Promise<string>;
 
+export function GetUserDeviceProfiles():Promise<Array<types.DeviceProfile>>;
+
 export function HideWindow():Promise<void>;
+
+export function ImportDeviceProfiles(arg1:string):Promise<void>;
 
 export function ImportFanCurveProfiles(arg1:string):Promise<void>;
 
@@ -52,6 +66,8 @@ export function IsAutoStartLaunch():Promise<boolean>;
 
 export function IsRunningAsAdmin():Promise<boolean>;
 
+export function ListSerialPorts():Promise<Array<types.SerialPortInfo>>;
+
 export function ListThemes():Promise<Array<theme.Meta>>;
 
 export function ManualSetFanSpeed(arg1:number):Promise<boolean>;
@@ -59,6 +75,8 @@ export function ManualSetFanSpeed(arg1:number):Promise<boolean>;
 export function OnWindowClosing(arg1:context.Context):Promise<boolean>;
 
 export function OpenThemesFolder():Promise<void>;
+
+export function ProbeBLEGATT(arg1:types.BLEGATTProbeParams):Promise<types.BLEGATTProbeResult>;
 
 export function QuitAll():Promise<void>;
 
@@ -72,9 +90,15 @@ export function ResetLearnedOffsets():Promise<void>;
 
 export function RestartPawnIO():Promise<types.BridgeTemperatureData>;
 
+export function SaveDeviceProfile(arg1:types.DeviceProfile,arg2:boolean):Promise<types.DeviceProfile>;
+
 export function SaveFanCurveProfile(arg1:string,arg2:string,arg3:Array<types.FanCurvePoint>,arg4:boolean):Promise<types.FanCurveProfile>;
 
+export function ScanBLEDevices(arg1:types.BLEScanParams):Promise<Array<types.BLEDeviceInfo>>;
+
 export function SendDeviceDebugCommand(arg1:string,arg2:number):Promise<types.DeviceDebugCommandResult>;
+
+export function SetActiveDeviceProfile(arg1:string):Promise<types.DeviceProfile>;
 
 export function SetActiveFanCurveProfile(arg1:string):Promise<void>;
 
@@ -109,6 +133,8 @@ export function ShowWindow():Promise<void>;
 export function Startup(arg1:context.Context):Promise<void>;
 
 export function TestBridgeProgram():Promise<types.BridgeTemperatureData>;
+
+export function TestDeviceProfile(arg1:types.DeviceProfileTestParams):Promise<types.DeviceProfileTestResult>;
 
 export function TestTemperatureReading():Promise<types.TemperatureData>;
 

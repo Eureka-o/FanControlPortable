@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/appmeta"
+	"github.com/TIANLI0/THRM/internal/deviceprofileexec"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -56,8 +56,57 @@ func (m *Manager) Configure(transport, endpoint string) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	m.deviceTransport = types.NormalizeDeviceTransport(transport)
+	transport = types.NormalizeDeviceTransport(transport)
 	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		endpoint = types.DefaultFanDeviceIP
+	}
+	if transport != types.DeviceTransportWiFi {
+		if transport == types.DeviceTransportSerial {
+			m.configureProfileLocked(defaultSerialPercentProfile(endpoint), endpoint)
+			return
+		}
+		m.deviceTransport = transport
+		m.wifiEndpoint = endpoint
+		m.wifiExecutor = nil
+		if m.bleExecutor != nil {
+			if err := m.bleExecutor.Close(); err != nil {
+				m.logWarn("BLE profile executor close failed during reconfigure: %v", err)
+			}
+		}
+		m.bleExecutor = nil
+		if m.serialExecutor != nil {
+			if err := m.serialExecutor.Close(); err != nil {
+				m.logWarn("Serial profile executor close failed during reconfigure: %v", err)
+			}
+		}
+		m.serialExecutor = nil
+		m.activeProfile = types.LegacyRPMProfileForTransport(transport)
+		if m.wifiHTTPClient == nil {
+			m.wifiHTTPClient = newWiFiHTTPClient()
+		}
+		return
+	}
+
+	m.configureProfileLocked(types.DefaultWiFiPercentProfile(endpoint), endpoint)
+}
+
+func (m *Manager) ConfigureProfile(profile types.DeviceProfile, fallbackEndpoint string) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	m.configureProfileLocked(profile, fallbackEndpoint)
+}
+
+func (m *Manager) configureProfileLocked(profile types.DeviceProfile, fallbackEndpoint string) {
+	profile = types.NormalizeDeviceProfile(profile, fallbackEndpoint)
+	m.activeProfile = profile
+	m.deviceTransport = profile.Transport
+
+	endpoint := strings.TrimSpace(profile.Connection.Endpoint)
+	if endpoint == "" {
+		endpoint = strings.TrimSpace(fallbackEndpoint)
+	}
 	if endpoint == "" {
 		endpoint = types.DefaultFanDeviceIP
 	}
@@ -65,6 +114,45 @@ func (m *Manager) Configure(transport, endpoint string) {
 	if m.wifiHTTPClient == nil {
 		m.wifiHTTPClient = newWiFiHTTPClient()
 	}
+	m.wifiExecutor = nil
+	if m.bleExecutor != nil {
+		if err := m.bleExecutor.Close(); err != nil {
+			m.logWarn("BLE profile executor close failed during reconfigure: %v", err)
+		}
+	}
+	m.bleExecutor = nil
+	if m.serialExecutor != nil {
+		if err := m.serialExecutor.Close(); err != nil {
+			m.logWarn("Serial profile executor close failed during reconfigure: %v", err)
+		}
+	}
+	m.serialExecutor = nil
+	if profile.Transport != types.DeviceTransportWiFi {
+		if profile.Transport == types.DeviceTransportBLE {
+			executor, err := deviceprofileexec.NewBLEExecutor(profile, m.bleConnector)
+			if err != nil {
+				m.logError("BLE profile executor configuration failed: %v", err)
+				return
+			}
+			m.bleExecutor = executor
+			return
+		}
+		if profile.Transport == types.DeviceTransportSerial {
+			executor, err := deviceprofileexec.NewSerialExecutor(profile, m.serialDialer)
+			if err != nil {
+				m.logError("Serial profile executor configuration failed: %v", err)
+				return
+			}
+			m.serialExecutor = executor
+		}
+		return
+	}
+	executor, err := deviceprofileexec.NewWiFiExecutor(profile, endpoint, m.wifiHTTPClient)
+	if err != nil {
+		m.logError("WiFi profile executor configuration failed: %v", err)
+		return
+	}
+	m.wifiExecutor = executor
 }
 
 func (m *Manager) shouldUseWiFiLocked() bool {
@@ -102,11 +190,12 @@ func (m *Manager) connectWiFiLocked() (bool, map[string]string) {
 		go m.onFanDataUpdate(fanData)
 	}
 
+	displayName := m.activeProfileDisplayNameLocked(wifiOnlyModelName)
 	info := map[string]string{
-		"manufacturer": "Eureka-o",
-		"product":      appmeta.DeviceModelName,
+		"manufacturer": m.activeProfileVendorLocked(),
+		"product":      displayName,
 		"serial":       m.wifiEndpoint,
-		"model":        appmeta.DeviceModelName,
+		"model":        displayName,
 		"transport":    types.DeviceTransportWiFi,
 		"endpoint":     m.wifiEndpoint,
 	}
@@ -151,6 +240,10 @@ func (m *Manager) disconnectWiFiLocked() bool {
 }
 
 func (m *Manager) readWiFiStateLocked() (*types.FanData, error) {
+	if m.wifiExecutor != nil {
+		return m.wifiExecutor.ReadState(nil)
+	}
+
 	endpoint, err := normalizeWiFiEndpoint(m.wifiEndpoint)
 	if err != nil {
 		return nil, err
@@ -182,6 +275,47 @@ func (m *Manager) readWiFiStateLocked() (*types.FanData, error) {
 }
 
 func (m *Manager) setWiFiSpeedLocked(percent int) bool {
+	speed := types.NewPercentSpeed(percent)
+	if types.IsRPMSpeedUnit(m.activeProfile.SpeedUnit) {
+		speed = types.NewRPMSpeed(percent)
+	}
+	return m.setWiFiTargetSpeedLocked(speed)
+}
+
+func (m *Manager) setWiFiTargetSpeedLocked(speed types.FanSpeedValue) bool {
+	speed = speed.Normalized()
+	activeUnit := types.NormalizeFanSpeedUnit(m.activeProfile.SpeedUnit)
+	if speed.Unit != activeUnit {
+		m.logError("WiFi speed unit mismatch: got %s, profile expects %s", speed.Unit, activeUnit)
+		return false
+	}
+
+	if m.wifiExecutor != nil {
+		next, err := m.wifiExecutor.SetSpeed(nil, speed)
+		if err != nil {
+			m.logError("WiFi profile speed command failed: %v", err)
+			return false
+		}
+		next.Transport = types.DeviceTransportWiFi
+		next.SpeedUnit = speed.Unit
+		if next.TargetRPM == 0 {
+			next.TargetRPM = uint16(speedValueForFanData(speed))
+		}
+		m.currentFanData.Store(next)
+
+		if m.onFanDataUpdate != nil {
+			go m.onFanDataUpdate(next)
+		}
+
+		m.logDebug("WiFi profile speed set: %s", formatSpeedValueForLog(speed))
+		return true
+	}
+
+	percent, ok := speed.IntegerPercentForSend()
+	if !ok {
+		m.logError("default WiFi protocol does not support RPM speed command: %d", speed.Value)
+		return false
+	}
 	percent = types.ClampFanPercent(percent)
 	endpoint, err := normalizeWiFiEndpoint(m.wifiEndpoint)
 	if err != nil {
@@ -239,6 +373,30 @@ func (m *Manager) setWiFiSpeedLocked(percent int) bool {
 
 	m.logDebug("已设置 WiFi 风扇速度: %d%%", percent)
 	return true
+}
+
+func speedValueForFanData(speed types.FanSpeedValue) int {
+	if types.IsRPMSpeedUnit(speed.Unit) {
+		return clampUint16(speed.Value)
+	}
+	return types.PercentTicksToIntegerPercent(speed.Value)
+}
+
+func formatSpeedValueForLog(speed types.FanSpeedValue) string {
+	if types.IsRPMSpeedUnit(speed.Unit) {
+		return fmt.Sprintf("%d RPM", speed.Value)
+	}
+	return fmt.Sprintf("%.1f%%", types.PercentTicksToDecimalPercent(speed.Value))
+}
+
+func clampUint16(value int) int {
+	if value < 0 {
+		return 0
+	}
+	if value > 65535 {
+		return 65535
+	}
+	return value
 }
 
 func normalizeWiFiEndpoint(endpoint string) (string, error) {

@@ -1,0 +1,292 @@
+package config
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/TIANLI0/THRM/internal/types"
+)
+
+func TestValidateFanCurveForUnitAllowsReferenceRPMCurve(t *testing.T) {
+	if err := ValidateFanCurveForUnit(types.GetDefaultRPMFanCurve(), types.FanSpeedUnitRPM); err != nil {
+		t.Fatalf("ValidateFanCurveForUnit(RPM default) returned error: %v", err)
+	}
+}
+
+func TestValidateFanCurveForUnitRejectsPercentOverflow(t *testing.T) {
+	curve := []types.FanCurvePoint{
+		{Temperature: 40, RPM: 50},
+		{Temperature: 70, RPM: 101},
+	}
+	if err := ValidateFanCurveForUnit(curve, types.FanSpeedUnitPercent); err == nil {
+		t.Fatal("expected percent curve >100 to be rejected")
+	}
+}
+
+func TestNormalizeSpeedConfigKeepsRPMCurve(t *testing.T) {
+	cfg := types.GetDefaultConfig(false)
+	cfg.DeviceTransport = types.DeviceTransportHID
+	cfg.ActiveDeviceProfileID = types.LegacyRPMProfileID
+	cfg.DeviceProfiles = []types.DeviceProfile{types.LegacyRPMProfile()}
+	cfg.FanCurve = types.GetDefaultRPMFanCurve()
+	cfg.FanCurveProfiles = []types.FanCurveProfile{{ID: "rpm", Name: "RPM", Curve: types.GetDefaultRPMFanCurve()}}
+	cfg.ActiveFanCurveProfileID = "rpm"
+	cfg.CustomSpeedRPM = 2000
+
+	normalizeSpeedConfig(&cfg)
+
+	if got := cfg.FanCurve[len(cfg.FanCurve)-1].RPM; got != 4000 {
+		t.Fatalf("RPM curve max after normalize = %d, want 4000", got)
+	}
+	if cfg.CustomSpeedRPM != 2000 {
+		t.Fatalf("RPM custom speed after normalize = %d, want 2000", cfg.CustomSpeedRPM)
+	}
+}
+
+func TestNormalizeSpeedConfigBackfillsOldWiFiProfile(t *testing.T) {
+	cfg := types.AppConfig{
+		DeviceTransport:    types.DeviceTransportWiFi,
+		FanControlDeviceIp: "10.0.0.9",
+		FanCurve:           types.GetDefaultFanCurve(),
+		CustomSpeedRPM:     45,
+	}
+
+	normalizeSpeedConfig(&cfg)
+
+	if cfg.ActiveDeviceProfileID != types.DefaultWiFiPercentProfileID {
+		t.Fatalf("active profile = %q, want %q", cfg.ActiveDeviceProfileID, types.DefaultWiFiPercentProfileID)
+	}
+	if got := types.DeviceProfileSpeedUnit(&cfg); got != types.FanSpeedUnitPercent {
+		t.Fatalf("device speed unit = %q, want percent", got)
+	}
+	if got := types.ActiveDeviceProfile(&cfg).Connection.Endpoint; got != "10.0.0.9" {
+		t.Fatalf("active endpoint = %q, want 10.0.0.9", got)
+	}
+}
+
+func TestLoadUpgradeConfigPreservesWiFiIPAndCurveProfiles(t *testing.T) {
+	installDir := t.TempDir()
+	configDir := filepath.Join(installDir, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+
+	curve := []types.FanCurvePoint{
+		{Temperature: 25, RPM: 18},
+		{Temperature: 50, RPM: 42},
+		{Temperature: 75, RPM: 76},
+		{Temperature: 100, RPM: 100},
+	}
+	profiles := []types.FanCurveProfile{
+		{ID: "quiet", Name: "Quiet curve", Curve: curve[:3]},
+		{ID: "boost", Name: "Boost curve", Curve: curve},
+	}
+	raw := map[string]any{
+		"deviceTransport":         types.DeviceTransportWiFi,
+		"fanControlDeviceIp":      "10.8.0.42",
+		"fanCurve":                curve,
+		"fanCurveProfiles":        profiles,
+		"activeFanCurveProfileId": "boost",
+		"customSpeedRPM":          37,
+	}
+	data, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config.json"), data, 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg := NewManager(installDir, nil).Load(false)
+
+	if cfg.FanControlDeviceIp != "10.8.0.42" {
+		t.Fatalf("FanControlDeviceIp = %q, want 10.8.0.42", cfg.FanControlDeviceIp)
+	}
+	if got := types.ActiveDeviceProfile(&cfg).Connection.Endpoint; got != "10.8.0.42" {
+		t.Fatalf("active device endpoint = %q, want 10.8.0.42", got)
+	}
+	if cfg.ActiveFanCurveProfileID != "boost" {
+		t.Fatalf("active fan curve profile = %q, want boost", cfg.ActiveFanCurveProfileID)
+	}
+	if len(cfg.FanCurve) != len(curve) || cfg.FanCurve[2].Temperature != 75 || cfg.FanCurve[2].RPM != 76 {
+		t.Fatalf("fanCurve not preserved: %#v", cfg.FanCurve)
+	}
+	if len(cfg.FanCurveProfiles) != 2 || cfg.FanCurveProfiles[1].ID != "boost" || cfg.FanCurveProfiles[1].Curve[1].RPM != 42 {
+		t.Fatalf("fanCurveProfiles not preserved: %#v", cfg.FanCurveProfiles)
+	}
+}
+
+func TestLoadMigratesLegacyRootConfigJSONToInstallConfigDir(t *testing.T) {
+	installDir := t.TempDir()
+
+	curve := []types.FanCurvePoint{
+		{Temperature: 30, RPM: 21},
+		{Temperature: 55, RPM: 48},
+		{Temperature: 80, RPM: 88},
+	}
+	raw := map[string]any{
+		"deviceTransport":         types.DeviceTransportWiFi,
+		"fanControlDeviceIp":      "10.9.0.55",
+		"fanCurve":                curve,
+		"fanCurveProfiles":        []types.FanCurveProfile{{ID: "legacy-root", Name: "Legacy root", Curve: curve}},
+		"activeFanCurveProfileId": "legacy-root",
+		"customSpeedRPM":          48,
+	}
+	data, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(installDir, "config.json"), data, 0644); err != nil {
+		t.Fatalf("write legacy root config: %v", err)
+	}
+
+	cfg := NewManager(installDir, nil).Load(false)
+
+	if cfg.ConfigPath != filepath.Join(installDir, "config", "config.json") {
+		t.Fatalf("ConfigPath = %q, want migrated install config path", cfg.ConfigPath)
+	}
+	if cfg.FanControlDeviceIp != "10.9.0.55" {
+		t.Fatalf("FanControlDeviceIp = %q, want 10.9.0.55", cfg.FanControlDeviceIp)
+	}
+	if got := types.ActiveDeviceProfile(&cfg).Connection.Endpoint; got != "10.9.0.55" {
+		t.Fatalf("active device endpoint = %q, want 10.9.0.55", got)
+	}
+	if cfg.ActiveFanCurveProfileID != "legacy-root" || len(cfg.FanCurveProfiles) != 1 || cfg.FanCurveProfiles[0].Curve[1].RPM != 48 {
+		t.Fatalf("curve profile state not preserved: active=%q profiles=%#v", cfg.ActiveFanCurveProfileID, cfg.FanCurveProfiles)
+	}
+	if _, err := os.Stat(filepath.Join(installDir, "config", "config.json")); err != nil {
+		t.Fatalf("migrated config file missing: %v", err)
+	}
+}
+
+func TestLoadUpgradeConfigPreservesDeviceProfilesAndLearningState(t *testing.T) {
+	installDir := t.TempDir()
+	configDir := filepath.Join(installDir, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+
+	curve := []types.FanCurvePoint{
+		{Temperature: 30, RPM: 20},
+		{Temperature: 50, RPM: 45},
+		{Temperature: 70, RPM: 70},
+		{Temperature: 90, RPM: 95},
+	}
+	wifi := types.DeviceProfile{
+		ID:          "user.wifi.slim.custom",
+		DisplayName: "User WiFi cooler",
+		Vendor:      "DIY",
+		Model:       "WiFi board",
+		Transport:   types.DeviceTransportWiFi,
+		SpeedUnit:   types.FanSpeedUnitPercent,
+		SpeedRange:  types.DefaultPercentSpeedRange(),
+		Connection: types.DeviceConnectionSettings{
+			Endpoint:          "10.8.0.77",
+			StateEndpoint:     "/api/data",
+			SpeedEndpoint:     "/api/speed",
+			HTTPMethod:        "POST",
+			MinSendIntervalMs: 350,
+		},
+		Commands: []types.DeviceCommandTemplate{
+			{Name: "setSpeed", Command: `{"speed":{{percent}}}`, Encoding: "json"},
+		},
+		ResponseParsers: []types.DeviceResponseParser{
+			{Name: "current", Type: "json_path", Expression: "$.speed"},
+		},
+		Capabilities: types.DeviceCapabilities{
+			Transport:         types.DeviceTransportWiFi,
+			SpeedUnit:         types.FanSpeedUnitPercent,
+			SpeedRange:        types.DefaultPercentSpeedRange(),
+			SupportsReadState: true,
+			SupportsSetSpeed:  true,
+		},
+	}
+	serial := types.DeviceProfile{
+		ID:          "user.serial.loopback",
+		DisplayName: "User serial cooler",
+		Transport:   types.DeviceTransportSerial,
+		SpeedUnit:   types.FanSpeedUnitPercent,
+		SpeedRange:  types.DefaultPercentSpeedRange(),
+		Connection: types.DeviceConnectionSettings{
+			SerialPort:           "COM42",
+			SerialBaudRate:       57600,
+			SerialDataBits:       8,
+			SerialStopBits:       1,
+			SerialParity:         "none",
+			SerialFrameDelimiter: "\n",
+		},
+		Commands: []types.DeviceCommandTemplate{
+			{Name: "setSpeed", Command: "SPD {{percent}}\n", Encoding: "ascii"},
+		},
+		Capabilities: types.DeviceCapabilities{
+			Transport:        types.DeviceTransportSerial,
+			SpeedUnit:        types.FanSpeedUnitPercent,
+			SpeedRange:       types.DefaultPercentSpeedRange(),
+			SupportsSetSpeed: true,
+		},
+	}
+	cfg := types.GetDefaultConfig(false)
+	cfg.DeviceTransport = types.DeviceTransportSerial
+	cfg.FanControlDeviceIp = "10.8.0.77"
+	cfg.ActiveDeviceProfileID = serial.ID
+	cfg.ActiveDeviceProfileIDsByTransport = map[string]string{
+		types.DeviceTransportWiFi:   wifi.ID,
+		types.DeviceTransportSerial: serial.ID,
+	}
+	cfg.DeviceProfiles = []types.DeviceProfile{wifi, serial}
+	cfg.FanCurve = curve
+	cfg.FanCurveProfiles = []types.FanCurveProfile{
+		{ID: "daily", Name: "Daily", Curve: curve[:3]},
+		{ID: "gaming", Name: "Gaming", Curve: curve},
+	}
+	cfg.ActiveFanCurveProfileID = "gaming"
+	cfg.CustomSpeedRPM = 52
+	cfg.SmartControl.LearnedOffsets = []int{0, 5, 12, 18}
+	cfg.SmartControl.LearnedOffsetsHeat = []int{0, 4, 10, 14}
+	cfg.SmartControl.LearnedOffsetsCool = []int{0, -2, -5, -8}
+	cfg.SmartControl.LearnedRateHeat = []int{1, 2, 3, 4, 5, 6, 7}
+	cfg.SmartControl.LearnedRateCool = []int{-1, -2, -3, -4, -5, -6, -7}
+
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config.json"), data, 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	loaded := NewManager(installDir, nil).Load(false)
+
+	if loaded.DeviceTransport != types.DeviceTransportSerial || loaded.ActiveDeviceProfileID != serial.ID {
+		t.Fatalf("active transport/profile = %q/%q, want serial/%q", loaded.DeviceTransport, loaded.ActiveDeviceProfileID, serial.ID)
+	}
+	if loaded.FanControlDeviceIp != "10.8.0.77" {
+		t.Fatalf("FanControlDeviceIp = %q, want 10.8.0.77", loaded.FanControlDeviceIp)
+	}
+	if loaded.ActiveDeviceProfileIDsByTransport[types.DeviceTransportWiFi] != wifi.ID {
+		t.Fatalf("active WiFi device = %q, want %q", loaded.ActiveDeviceProfileIDsByTransport[types.DeviceTransportWiFi], wifi.ID)
+	}
+	if loaded.ActiveDeviceProfileIDsByTransport[types.DeviceTransportSerial] != serial.ID {
+		t.Fatalf("active serial device = %q, want %q", loaded.ActiveDeviceProfileIDsByTransport[types.DeviceTransportSerial], serial.ID)
+	}
+	if len(loaded.DeviceProfiles) != 2 || loaded.DeviceProfiles[0].ID != wifi.ID || loaded.DeviceProfiles[1].ID != serial.ID {
+		t.Fatalf("device profiles not preserved: %#v", loaded.DeviceProfiles)
+	}
+	if loaded.DeviceProfiles[0].Connection.Endpoint != "10.8.0.77" || loaded.DeviceProfiles[0].Connection.MinSendIntervalMs != 350 {
+		t.Fatalf("WiFi profile connection not preserved: %#v", loaded.DeviceProfiles[0].Connection)
+	}
+	if loaded.DeviceProfiles[1].Connection.SerialPort != "COM42" || loaded.DeviceProfiles[1].Connection.SerialBaudRate != 57600 {
+		t.Fatalf("serial profile connection not preserved: %#v", loaded.DeviceProfiles[1].Connection)
+	}
+	if loaded.ActiveFanCurveProfileID != "gaming" || len(loaded.FanCurveProfiles) != 2 || loaded.FanCurveProfiles[1].Curve[2].RPM != 70 {
+		t.Fatalf("curve profile state not preserved: active=%q profiles=%#v", loaded.ActiveFanCurveProfileID, loaded.FanCurveProfiles)
+	}
+	if len(loaded.SmartControl.LearnedOffsets) != 4 || loaded.SmartControl.LearnedOffsets[2] != 12 {
+		t.Fatalf("learned offsets not preserved: %#v", loaded.SmartControl.LearnedOffsets)
+	}
+	if loaded.SmartControl.LearnedRateCool[6] != -7 {
+		t.Fatalf("learned rate cool not preserved: %#v", loaded.SmartControl.LearnedRateCool)
+	}
+}

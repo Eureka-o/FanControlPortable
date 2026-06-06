@@ -1,6 +1,6 @@
 {
   "common": {
-    "appName": "FanControl 2.0",
+    "appName": "FanControl",
     "metaDescription": "ポータブルファンコントローラー向けのドライバー兼制御ツールです。",
     "language": "言語",
     "languages": {
@@ -9,13 +9,13 @@
       "ja-JP": "日本語"
     },
     "actions": {
-      "apply": "インポート",
+      "apply": "適用",
       "cancel": "キャンセル",
       "close": "閉じる",
       "copy": "コピー",
       "delete": "削除",
       "export": "エクスポート",
-      "import": "適用",
+      "import": "インポート",
       "refresh": "更新",
       "retry": "再試行",
       "save": "保存"
@@ -38,6 +38,7 @@
       "status": "状態",
       "curve": "カーブ",
       "control": "設定",
+      "devices": "デバイス",
       "about": "概要"
     },
     "status": {
@@ -58,6 +59,238 @@
     },
     "bridgeWarning": {
       "closeAria": "警告を閉じる"
+    }
+  },
+  "advancedDevices": {
+    "title": "対応デバイス",
+    "subtitle": "デバイステンプレートとユーザーデバイスを管理します。通常の制御は有効化したデバイスに従います。",
+    "gate": {
+      "title": "高度なデバイス設定",
+      "description": "このページは、対応デバイスの記録、DIY コントローラーの設定、Raw プロトコルテストに使用します。誤ったコマンドや不一致のインターフェースは、デバイスの異常を引き起こす可能性があります。",
+      "warningTitle": "コントローラー情報を理解している場合のみ続行してください",
+      "warningBody": "コマンド送信やデバイス保存の前に、接続方式、速度単位、エンドポイント、UUID、フレーム形式、チェックサム、レスポンス解析を確認してください。",
+      "primary": "理解しました",
+      "dialogTitle": "高度なデバイス設定へのアクセス確認",
+      "dialogDescription": "次の画面ではデバイス定義のインポートと Raw デバッグコマンド送信ができます。通常のユーザーは状態ページと設定ページを使用してください。",
+      "confirm": "高度な設定へ"
+    },
+    "actions": {
+      "addDevice": "デバイス追加",
+      "manageDevices": "デバイス管理",
+      "editDevice": "編集",
+      "batchExport": "一括出力",
+      "setActive": "有効化",
+      "saveDevice": "保存",
+      "generate": "生成",
+      "send": "送信",
+      "saveDebugProfile": "デバイス下書き保存",
+      "refreshPorts": "ポート再取得",
+      "scanBle": "BLE スキャン",
+      "probeGatt": "GATT 探索",
+      "applyGatt": "GATT 候補を適用"
+    },
+    "sections": {
+      "supported": "デバイステンプレート",
+      "supportedHint": "内蔵テンプレートは、パケット形状、速度マップ、解析ルール、接続既定値の読み取り専用ベースラインです。",
+      "user": "ユーザー登録デバイス",
+      "userHint": "内蔵の既定デバイスと、インポートまたは手動作成したデバイスがここに表示され、現在の制御パスとして有効化できます。",
+      "emptySupported": "対応デバイスライブラリの項目がありません。",
+      "emptyUser": "デバイスライブラリは空です。",
+      "importExport": "デバイス情報のインポート / エクスポート",
+      "importDevices": "デバイス情報のインポート",
+      "debug": "デバッグからデバイス作成",
+      "debugHint": "再利用できるデバイスを作るため、範囲を限定した Raw コマンドテストを行います。"
+    },
+    "connectionBanner": {
+      "title": "接続方式ごとの有効デバイス",
+      "description": "各接続方式で有効化できるデバイスは 1 つです。通常設定では接続カテゴリと日常の接続項目だけを扱い、プロトコル詳細はデバイス管理に残します。",
+      "noDevice": "有効なデバイスなし",
+      "addHint": "先にデバイスを追加またはインポートしてください",
+      "count": "{{count}} 台"
+    },
+    "status": {
+      "active": "現在",
+      "builtin": "内蔵デバイス",
+      "template": "テンプレート",
+      "user": "ユーザー",
+      "working": "デバイス変更を適用中..."
+    },
+    "capabilities": {
+      "read": "状態取得",
+      "setSpeed": "速度設定",
+      "raw": "Raw コマンド",
+      "lighting": "ライト制御",
+      "none": "機能フラグなし"
+    },
+    "transport": {
+      "wifi": "WiFi",
+      "ble": "BLE",
+      "serial": "仮想 COM",
+      "hid": "レガシー HID"
+    },
+    "speedUnit": {
+      "percent": "パーセント",
+      "rpm": "RPM"
+    },
+    "fields": {
+      "name": "デバイス名",
+      "vendor": "ベンダー",
+      "model": "モデル",
+      "notes": "メモ",
+      "transport": "接続方式",
+      "speedUnit": "速度単位",
+      "speedMin": "最小速度",
+      "speedMax": "最大速度",
+      "speedStep": "速度ステップ",
+      "tickScale": "パーセント刻み幅",
+      "endpoint": "デバイスアドレス",
+      "stateEndpoint": "状態エンドポイント",
+      "speedEndpoint": "速度エンドポイント",
+      "httpMethod": "HTTP メソッド",
+      "requestTimeoutMs": "リクエストタイムアウト (ms)",
+      "minSendIntervalMs": "最小送信間隔 (ms)",
+      "maxRetries": "最大再試行回数",
+      "retryBackoffMs": "再試行バックオフ (ms)",
+      "bleAddress": "BLE アドレス",
+      "bleNameFilter": "BLE 名称フィルター",
+      "bleService": "サービス UUID",
+      "bleWrite": "書き込み特性",
+      "bleNotify": "通知特性",
+      "bleWriteWithResponse": "レスポンス付き書き込み",
+      "serialPort": "ポート",
+      "serialBaud": "ボーレート",
+      "serialDataBits": "データビット",
+      "serialStopBits": "ストップビット",
+      "serialParity": "パリティ",
+      "serialDelimiter": "フレーム区切り",
+      "commandEncoding": "コマンドエンコード",
+      "checksum": "チェックサム",
+      "setSpeedCommand": "速度設定コマンド",
+      "readStateCommand": "状態取得コマンド",
+      "parserType": "解析タイプ",
+      "parserExpression": "解析式",
+      "rawCommand": "Raw コマンド",
+      "waitMs": "待機時間 (ms)"
+    },
+    "hints": {
+      "tickScale": "10 にすると 0.1% の学習精度になります。",
+      "serialPorts": "検出された COM ポートを選ぶか、仮想ポート名を手動で入力します。",
+      "bleScan": "スキャンは手動実行で、時間制限があります。FanControl は広告名とサービス UUID を優先して使います。書き込み/通知特性は手動入力できます。",
+      "bleAddress": "任意です。スキャン結果から入力され、直接接続や GATT 探索に使います。"
+    },
+    "placeholders": {
+      "name": "自作クーラー",
+      "serialPortSelect": "検出ポートを選択",
+      "serialPortManual": "手動入力例: COM3",
+      "serialPortCustom": "{{port}}（手動）"
+    },
+    "dialog": {
+      "addTitle": "デバイス追加",
+      "addDescription": "テンプレートから作成するか、既知のコントローラー情報を手動で入力します。",
+      "manualTab": "手動作成",
+      "importTab": "インポート",
+      "libraryProfile": "テンプレートから開始",
+      "blankProfile": "空のデバイス",
+      "setActiveAfterSave": "保存後にこのデバイスを有効化",
+      "editTitle": "デバイスを編集",
+      "editDescription": "保存済みデバイスの名前、接続情報、コマンド、解析ルール、速度設定を更新します。",
+      "manageTitle": "ユーザーデバイスを管理",
+      "manageDescription": "インポートまたは手動登録したデバイスを選択または削除します。内蔵テンプレートは保護されます。",
+      "noUserProfiles": "管理できるユーザーデバイスはありません。",
+      "deleteConfirm": "このデバイスを削除しますか？",
+      "deleteTitle": "デバイスを削除",
+      "deleteDescription": "FanControl に保存されたユーザーデバイスだけを削除します。内蔵テンプレートは変更されません。",
+      "deleteWarning": "このデバイスが有効な場合、同じ接続方式の別デバイスへ可能な範囲で切り替えます。",
+      "deleteAction": "削除"
+    },
+    "validation": {
+      "nameRequired": "先にデバイス名を入力してください。",
+      "importRequired": "先にデバイスインポート文字列を貼り付けてください。",
+      "rawCommandRequired": "先に Raw コマンドを入力してください。",
+      "serialPortsFailed": "COM ポートを取得できません: {{error}}",
+      "serialPortsEmpty": "COM ポートは見つかりません。手動入力は可能です。",
+      "bleScanFailed": "BLE デバイスをスキャンできません: {{error}}",
+      "bleScanEmpty": "BLE デバイスは見つかりません。照合項目は手動入力できます。",
+      "gattProbeFailed": "BLE GATT サービスを探索できません: {{error}}",
+      "gattProbeEmpty": "GATT サービスは返されません。UUID は手動入力できます。"
+    },
+    "importExport": {
+      "description": "デバイスファイルとインポート文字列には、名称、接続方式、速度単位、エンドポイント/特性、コマンドテンプレート、解析ルール、機能フラグが含まれます。",
+      "exportTitle": "エクスポート",
+      "importTitle": "インポート",
+      "exportPlaceholder": "生成を押すと FCDP1. で始まる文字列が作成されます。",
+      "importPlaceholder": "FCDP1. で始まるデバイス文字列を貼り付けます。",
+      "exportFile": "ファイル出力",
+      "chooseFile": "ファイル選択",
+      "dropTitle": "デバイスファイルをドロップ",
+      "dropHint": ".fcdp、JSON、テキストに対応します。インポートはデバイス ID で統合し、既存デバイスを残します。"
+    },
+    "ble": {
+      "scanTitle": "BLE デバイス検出",
+      "matched": "一致",
+      "services": "サービス",
+      "profileMatch": "テンプレート一致: {{profile}}",
+      "gattResult": "GATT サービス",
+      "gattUnknownDevice": "不明な BLE デバイス",
+      "gattNoCharacteristics": "特性は返されません。",
+      "service": "サービス",
+      "properties": {
+        "broadcast": "ブロードキャスト",
+        "read": "読み取り",
+        "write": "書き込み",
+        "writeWithoutResponse": "応答なし書き込み",
+        "notify": "通知",
+        "indicate": "インジケート",
+        "authenticatedWrite": "認証付き書き込み",
+        "extended": "拡張"
+      }
+    },
+    "profileTest": {
+      "title": "デバイステスト",
+      "hint": "現在の下書きを一時的なバックエンド実行器でテストします。保存や有効化は行いません。",
+      "draftName": "下書きデバイス",
+      "testSpeed": "テスト速度",
+      "action": {
+        "connect": "接続",
+        "readState": "状態取得",
+        "setSpeed": "速度設定"
+      },
+      "success": "{{action}}完了",
+      "current": "現在",
+      "target": "目標",
+      "noData": "速度データは返されませんでした。",
+      "error": "デバイステストに失敗しました: {{error}}"
+    },
+    "debug": {
+      "warning": "Raw コマンドはバックエンド経路でレート制限されますが、デバイスへ直接送信されます。安全が確認できたコマンドのみ送信してください。",
+      "notConnected": "Raw コマンドを送信するには先にデバイスを接続してください。",
+      "resultPlaceholder": "コマンド結果がここに表示されます。",
+      "confirmTitle": "Raw コマンドの確認",
+      "confirmDescription": "このコマンドは現在のデバイス経路で送信されます。送信前に内容、対象デバイス、待機時間を確認してください。",
+      "confirmCommand": "コマンド",
+      "confirmWait": "送信後の待機",
+      "confirmSend": "Raw 送信",
+      "saveProfileHint": "最後に成功した Raw コマンドを、再利用できるデバイスの出発点として保存します。",
+      "profileName": "{{name}} デバッグデバイス",
+      "profileNotes": "Raw デバッグコマンドから作成。コマンド: {{command}}。送信後の待機: {{waitMs}} ms。"
+    },
+    "toast": {
+      "loadFailed": "デバイスの読み込みに失敗しました: {{error}}",
+      "profileActivated": "デバイスを有効化しました",
+      "activeFailed": "デバイスの有効化に失敗しました: {{error}}",
+      "saved": "デバイスを保存しました",
+      "deleted": "デバイスを削除しました",
+      "deleteFailed": "デバイスの削除に失敗しました: {{error}}",
+      "exportGenerated": "デバイスのエクスポート文字列を生成しました",
+      "exportFailed": "デバイスのエクスポートに失敗しました: {{error}}",
+      "exportDownloaded": "デバイスファイルを出力しました",
+      "copied": "コピーしました",
+      "importMissing": "先にインポート文字列を貼り付けてください",
+      "imported": "デバイスをインポートしました",
+      "importFailed": "デバイスのインポートに失敗しました: {{error}}",
+      "importFileFailed": "デバイスファイルを読み取れません: {{error}}",
+      "debugSent": "デバッグコマンドを送信しました",
+      "debugFailed": "デバッグコマンドに失敗しました: {{error}}"
     }
   },
   "store": {
@@ -156,6 +389,7 @@
     "hero": {
       "modeLine": "{{mode}} · {{description}}",
       "waitingBluetooth": "ワイヤレス接続待機中…",
+      "waitingDeviceConnection": "{{name}} の接続待機中…",
       "coreUnavailable": "Core サービスを利用できません。先にバックグラウンドサービスを復元してください。"
     },
     "actions": {
@@ -171,7 +405,9 @@
     },
     "disconnected": {
       "title": "デバイスが接続されていません",
-      "description": "設定でデバイスアドレスを入力し、クーラーに接続してください"
+      "description": "設定でデバイスアドレスを入力し、クーラーに接続してください",
+      "titleWithDevice": "{{name}} は未接続です",
+      "descriptionWithDevice": "現在有効なデバイスは {{name}} です。接続方式とアドレスを確認してから接続してください。"
     },
     "bridgeWarning": {
       "default": "温度ブリッジの読み取りに失敗しました。温度モニタリングを初期化してから再試行してください。",
@@ -441,7 +677,7 @@
     "fan": {
       "sectionTitle": "ファン制御",
       "autoControlTitle": "スマート温度制御",
-      "autoControlDescription": "温度カーブに基き、ファン回転数を自動で調整します",
+      "autoControlDescription": "温度カーブに基づいて、ファン回転数を自動で調整します",
       "sampleSmoothingTitle": "動作スムージング",
       "sampleSmoothingDescription": "EMA 指数加重: 値が大きいほど滑らか、値が小さいほどリニアに動作します。迷ったらデフォルトのままにしてください。",
       "temperatureBaselineTitle": "温度基準",
@@ -469,13 +705,14 @@
       "learningDescription": "長時間の動作後、各温度ポイントの目標回転数を自動で微調整し、実際の温度をカーブの設定値に近づくようにします。学習したオフセットはいつでもリセットできます。",
       "learningAria": "適応学習を切り替える",
       "temperatureHistoryTitle": "温度履歴",
-      "temperatureHistoryDescription": "有効にすると、バックラウンドサービスが直近 1 時間の CPU/GPU 温度カーブを保持します。無効時は GUI が開いている間だけ一時カーブを描画します。",
+      "temperatureHistoryDescription": "有効にすると、バックグラウンドサービスが直近 1 時間の CPU/GPU 温度カーブを保持します。無効時は GUI が開いている間だけ一時カーブを描画します。",
       "temperatureHistoryAria": "コア温度履歴を切り替える",
       "curveProfileTitle": "カーブプロファイル",
       "curveProfileDescription": "タブを切り替えずに設定画面から直接ファン制御カーブを変更できます。",
       "customSpeedTitle": "カスタム速度",
-      "customSpeedDescription": "特殊な場面向けの固定パーセント速度",
+      "customSpeedDescription": "特殊な場面向けの固定パーセント速度です",
       "customSpeedWarning": "カスタム速度はスマート温度制御を無効にします",
+      "customSpeedRangeHint": "手動速度の範囲は 0% から 100% です。冷却状態を見ながら慎重に設定してください。",
       "toasts": {
         "profileSwitched": "温度カーブを切り替えました",
         "profileSwitchFailed": "カーブの切り替えに失敗しました: {{error}}"
@@ -542,7 +779,63 @@
       "autoStartTip": "管理者権限で実行すると毎回の UAC 確認を省略できます",
       "reconnectTitle": "設定を維持",
       "reconnectDescription": "再接続後もアプリ設定を引き続き使用します",
-      "reconnectTip": "切断後にデバイス既定モードへ戻るのを防ぐため、有効化を推奨します"
+      "reconnectTip": "切断後にデバイス既定モードへ戻るのを防ぐため、有効化を推奨します",
+      "deviceConnection": {
+        "title": "デバイス接続",
+        "description": "通常の FanControl 制御で使う接続方式を選びます。デバイステンプレートとプロトコル詳細は Devices に残します。",
+        "overviewLabel": "デバイスアドレス",
+        "transportLabel": "接続",
+        "profileLabel": "プロファイル",
+        "activeProfile": "使用中",
+        "noActiveProfile": "使用中のプロファイルなし",
+        "noProfilesOption": "プロファイルなし",
+        "addressLabel": "IP アドレス",
+        "addressPlaceholder": "例: 192.168.1.50",
+        "stateEndpointLabel": "状態 API",
+        "speedEndpointLabel": "速度 API",
+        "wifiHint": "WiFi はここでは IP アドレスだけを設定します。高度な送信内容、プロトコル、解析ルールは Devices で管理します。",
+        "bleNameFilter": "名前フィルター",
+        "bleService": "サービス UUID",
+        "bleWrite": "書き込み UUID",
+        "bleNotify": "通知 UUID",
+        "bleHint": "BLE スキャンは有効な BLE デバイスの照合に使います。UUID とプロトコル詳細は Devices で管理します。",
+        "bleScan": "BLE スキャン",
+        "bleScanFailed": "BLE スキャンに失敗しました: {{error}}",
+        "bleScanEmpty": "BLE デバイスは見つかりません。現在のデバイスを使うか、Devices で詳細を追加してください。",
+        "bleMatched": "一致",
+        "bleServices": "サービス",
+        "bleProfileMatch": "プロファイル: {{profile}}",
+        "serialPort": "ポート",
+        "serialBaud": "ボーレート",
+        "serialFrame": "フレーム",
+        "serialDelimiter": "区切り",
+        "serialHint": "ここでは仮想 COM/シリアルポートとボーレートだけを選びます。高度なプロトコル、コマンド、解析ルールは Devices で管理します。",
+        "hidHint": "旧 HID は分離された RPM 経路を使い、対応デバイスでのみ使用できます。",
+        "notConfigured": "未設定",
+        "toasts": {
+          "loadFailed": "デバイスプロファイルの読み込みに失敗しました: {{error}}",
+          "profileRequired": "この接続方式のデバイスを先に Devices で追加またはインポートしてください。",
+          "transportSaved": "接続を有効にしました",
+          "transportFailed": "接続方式の更新に失敗しました: {{error}}",
+          "profileSaved": "デバイスを有効にしました",
+          "profileFailed": "デバイスの有効化に失敗しました: {{error}}",
+          "wifiSaved": "WiFi 接続を保存しました",
+          "wifiFailed": "WiFi 接続の保存に失敗しました: {{error}}",
+          "bleScanFailed": "BLE デバイスのスキャンに失敗しました: {{error}}",
+          "bleSaved": "BLE デバイス情報を保存しました",
+          "bleSaveFailed": "BLE デバイス情報の保存に失敗しました: {{error}}",
+          "serialSaved": "シリアル接続を保存しました",
+          "serialFailed": "シリアル接続の保存に失敗しました: {{error}}",
+          "serialPortRequired": "COM ポートまたは仮想ポート名を入力してください。",
+          "serialBaudInvalid": "有効なボーレートを入力してください。"
+        },
+        "enabledDeviceLabel": "有効なデバイス",
+        "noEnabledDevice": "有効なデバイスなし",
+        "serialPortPlaceholder": "COM3 または仮想ポート名",
+        "serialDetectPorts": "ポート検出",
+        "serialPortsFailed": "COM ポートを取得できません: {{error}}",
+        "serialPortsEmpty": "COM ポートは見つかりません。仮想ポート名は手動入力できます。"
+      }
     },
     "offline": {
       "message": "デバイスが接続されていないため、一部機能は利用できません"
@@ -552,10 +845,15 @@
       "modeTitle": "デバッグモード",
       "modeDescription": "詳細ログを有効にする",
       "refresh": "デバッグ情報を更新",
+      "commandPlaceholder": "27 または 5A A5 27 02 29",
+      "sendCommand": "送信",
+      "dangerousCommandWarning": "危険コマンド 0x{{command}}: ファームウェア下位層やデバッグレジスターを直接操作します。誤用するとデバイスが異常動作または使用不能になる可能性があります。確認してから送信してください。",
+      "rawCommandWarning": "Raw コマンドはデバイスのファームウェアへ直接送信されます。誤ったコマンドは異常動作の原因になるため、慎重に操作してください。",
       "pawnTitle": "PawnIO ドライバー",
       "pawnDescription": "温度の取得に異常があった場合は、PawnIO ドライバーの再インストールを試してください。",
       "reinstall": "PawnIO を再インストール",
       "toasts": {
+        "commandSent": "{{frame}} を送信しました",
         "reinstallExecuted": "PawnIO インストーラーを実行しました",
         "uninstallWarning": "PawnIO アンインストールステップから通知が返されました: {{warning}}",
         "bridgeWarning": "温度モニタリングの初期化に失敗しました: {{warning}}",

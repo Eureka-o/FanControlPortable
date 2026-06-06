@@ -32,12 +32,19 @@ func CloneCurve(curve []types.FanCurvePoint) []types.FanCurvePoint {
 	return out
 }
 
-func extendCurveRightEdge(curve []types.FanCurvePoint) ([]types.FanCurvePoint, bool) {
+func defaultCurveForUnit(unit string) []types.FanCurvePoint {
+	if types.IsRPMSpeedUnit(unit) {
+		return types.GetDefaultRPMFanCurve()
+	}
+	return types.GetDefaultFanCurve()
+}
+
+func extendCurveRightEdgeForUnit(curve []types.FanCurvePoint, unit string) ([]types.FanCurvePoint, bool) {
 	if len(curve) == 0 {
 		return nil, false
 	}
 
-	defaultCurve := types.GetDefaultFanCurve()
+	defaultCurve := defaultCurveForUnit(unit)
 	defaultMaxTemp := defaultCurve[len(defaultCurve)-1].Temperature
 	lastPoint := curve[len(curve)-1]
 	if lastPoint.Temperature >= defaultMaxTemp {
@@ -56,6 +63,10 @@ func extendCurveRightEdge(curve []types.FanCurvePoint) ([]types.FanCurvePoint, b
 	}
 
 	return extended, len(extended) != len(curve)
+}
+
+func extendCurveRightEdge(curve []types.FanCurvePoint) ([]types.FanCurvePoint, bool) {
+	return extendCurveRightEdgeForUnit(curve, types.FanSpeedUnitPercent)
 }
 
 func CloneProfiles(profiles []types.FanCurveProfile) []types.FanCurveProfile {
@@ -84,9 +95,32 @@ func truncateByRunes(input string, maxRunes int) string {
 	return string(r[:maxRunes])
 }
 
-func NormalizeProfileName(name string, fallback string) string {
+func looksCorruptedProfileName(name string) bool {
 	n := strings.TrimSpace(name)
 	if n == "" {
+		return false
+	}
+	questionLike := 0
+	meaningful := 0
+	for _, r := range n {
+		switch r {
+		case '\uFFFD':
+			return true
+		case ' ', '\t', '\r', '\n', '-', '_', '/', '\\', '(', ')', '[', ']', '（', '）':
+			continue
+		case '?':
+			questionLike++
+			meaningful++
+		default:
+			meaningful++
+		}
+	}
+	return meaningful > 0 && questionLike == meaningful && questionLike >= 2
+}
+
+func NormalizeProfileName(name string, fallback string) string {
+	n := strings.TrimSpace(name)
+	if n == "" || looksCorruptedProfileName(n) {
 		n = fallback
 	}
 	return truncateByRunes(n, 6)
@@ -106,17 +140,22 @@ func FindIndex(profiles []types.FanCurveProfile, profileID string) int {
 }
 
 func NormalizeConfig(cfg *types.AppConfig) bool {
+	return NormalizeConfigForUnit(cfg, types.FanSpeedUnitPercent)
+}
+
+func NormalizeConfigForUnit(cfg *types.AppConfig, unit string) bool {
 	if cfg == nil {
 		return false
 	}
+	unit = types.NormalizeFanSpeedUnit(unit)
 
 	changed := false
 	baseCurve := CloneCurve(cfg.FanCurve)
 	if len(baseCurve) == 0 {
-		baseCurve = types.GetDefaultFanCurve()
+		baseCurve = defaultCurveForUnit(unit)
 		changed = true
 	}
-	if extendedCurve, extended := extendCurveRightEdge(baseCurve); extended {
+	if extendedCurve, extended := extendCurveRightEdgeForUnit(baseCurve, unit); extended {
 		baseCurve = extendedCurve
 		changed = true
 	}
@@ -147,12 +186,12 @@ func NormalizeConfig(cfg *types.AppConfig) bool {
 			changed = true
 		}
 
-		if extendedCurve, extended := extendCurveRightEdge(profile.Curve); extended {
+		if extendedCurve, extended := extendCurveRightEdgeForUnit(profile.Curve, unit); extended {
 			profile.Curve = extendedCurve
 			changed = true
 		}
 
-		if err := cfgpkg.ValidateFanCurve(profile.Curve); err != nil {
+		if err := cfgpkg.ValidateFanCurveForUnit(profile.Curve, unit); err != nil {
 			profile.Curve = CloneCurve(baseCurve)
 			changed = true
 		}
@@ -186,7 +225,7 @@ func NormalizeConfig(cfg *types.AppConfig) bool {
 	}
 	activeCurve := CloneCurve(cfg.FanCurveProfiles[activeIdx].Curve)
 	if len(activeCurve) == 0 {
-		activeCurve = types.GetDefaultFanCurve()
+		activeCurve = defaultCurveForUnit(unit)
 		cfg.FanCurveProfiles[activeIdx].Curve = CloneCurve(activeCurve)
 		changed = true
 	}

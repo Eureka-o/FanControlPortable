@@ -148,7 +148,8 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	smartCfgRevision := cfgRevision - 1
 
 	// 每个曲线点对应一个稳态采样桶。
-	steadyObserver := smartcontrol.NewStableObserver(len(cfg.FanCurve))
+	speedUnit := types.DeviceProfileSpeedUnit(&cfg)
+	steadyObserver := newStableObserverForActiveUnit(len(cfg.FanCurve), speedUnit)
 	timer := time.NewTimer(updateInterval)
 	defer timer.Stop()
 
@@ -221,7 +222,8 @@ func (a *CoreApp) startTemperatureMonitoring() {
 
 			if cfgRevision != smartCfgRevision {
 				smartChanged := false
-				smartCfg, smartChanged = smartcontrol.NormalizeConfig(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode)
+				speedUnit = types.DeviceProfileSpeedUnit(&cfg)
+				smartCfg, smartChanged = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, speedUnit)
 				smartCfgRevision = cfgRevision
 				if smartChanged {
 					cfg.SmartControl = smartCfg
@@ -233,6 +235,8 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			}
 
 			if cfg.AutoControl && temp.ControlTemp > 0 {
+				speedUnit = types.DeviceProfileSpeedUnit(&cfg)
+				controlCurve := smartcontrol.CurveForUnit(cfg.FanCurve, speedUnit)
 				// 采样窗口变化时重置 EMA，避免阶跃。
 				newSampleCount := max(cfg.TempSampleCount, 1)
 				if newSampleCount != sampleCount {
@@ -240,8 +244,10 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					tempEMAReady = false
 				}
 
-				if steadyObserver == nil || len(cfg.FanCurve) != steadyObserver.CurveLen() {
-					steadyObserver = smartcontrol.NewStableObserver(len(cfg.FanCurve))
+				if steadyObserver == nil || len(controlCurve) != steadyObserver.CurveLen() {
+					steadyObserver = newStableObserverForActiveUnit(len(controlCurve), speedUnit)
+				} else if steadyObserver.SetUnit(speedUnit) {
+					lastTargetRPM = -1
 				}
 
 				sampleTemp := temp.ControlTemp
@@ -279,12 +285,17 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					recentControlTemps = recentControlTemps[len(recentControlTemps)-24:]
 				}
 
-				curveMinRPM, curveMaxRPM := smartcontrol.GetCurveRPMBounds(cfg.FanCurve)
+				curveMinRPM, curveMaxRPM := smartcontrol.GetCurveRPMBounds(controlCurve)
 
-				baseRPM := temperature.CalculateTargetRPM(controlTemp, cfg.FanCurve)
+				baseRPM := temperature.CalculateTargetRPM(controlTemp, controlCurve)
 				prevTargetRPM := lastTargetRPM
 
-				targetRPM := smartcontrol.CalculateTargetRPM(controlTemp, cfg.FanCurve, smartCfg)
+				targetRPM := 0
+				if types.IsPercentSpeedUnit(speedUnit) {
+					targetRPM = smartcontrol.CalculatePercentTargetTicks(controlTemp, cfg.FanCurve, smartCfg)
+				} else {
+					targetRPM = smartcontrol.CalculateLegacyRPMTarget(controlTemp, cfg.FanCurve, smartCfg)
+				}
 				if targetRPM <= 0 {
 					targetRPM = baseRPM
 				}
@@ -303,29 +314,21 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				fanData := a.deviceManager.GetCurrentFanData()
 				observedRPM := targetRPM
 				if fanData != nil && fanData.CurrentRPM > 0 {
-					observedRPM = int(fanData.CurrentRPM)
+					observedRPM = fanDataSpeedForControlUnit(int(fanData.CurrentRPM), speedUnit)
 				}
-				if shouldSendTargetRPM(targetRPM, prevTargetRPM, smartCfg.MinRPMChange, fanData) {
-					if a.deviceManager.SetFanSpeed(targetRPM) {
+				if shouldSendTargetSpeed(targetRPM, prevTargetRPM, smartCfg.MinRPMChange, fanData, speedUnit) {
+					if a.deviceManager.SetTargetSpeed(targetRPM, speedUnit) {
 						lastTargetRPM = targetRPM
 					} else {
 						lastTargetRPM = -1
-						a.logError("智能控温转速下发失败，将在下个周期重试: %d RPM", targetRPM)
+						a.logError("智能控温速度下发失败，将在下个周期重试: %d%s", displaySpeedForLog(targetRPM, speedUnit), types.FanSpeedDisplaySuffix(speedUnit))
 					}
 				}
 
 				if smartCfg.Learning && !spikeSuppressed {
-					steady := steadyObserver.Observe(controlTemp, observedRPM, cfg.FanCurve, smartCfg)
+					steady := steadyObserver.Observe(controlTemp, observedRPM, controlCurve, smartCfg)
 					if steady.Ready && steady.BucketIdx >= 0 {
-						newOffsets, changed := smartcontrol.LearnSteadyOffset(
-							steady.BucketIdx,
-							steady.MeanTemp,
-							steady.LocalEff,
-							steady.HaveEff,
-							cfg.FanCurve,
-							smartCfg.LearnedOffsets,
-							smartCfg,
-						)
+						newOffsets, changed := learnSteadyOffsetForActiveUnit(steady.BucketIdx, steady.MeanTemp, steady.LocalEff, steady.HaveEff, cfg.FanCurve, smartCfg.LearnedOffsets, smartCfg, speedUnit)
 						if changed {
 							smartCfg.LearnedOffsets = newOffsets
 							cfg.SmartControl = smartCfg
@@ -350,7 +353,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				}
 
 				if baseRPM > 0 {
-					a.logDebug("智能控温: 最高=%d°C 基准=%s 当前=%d°C 平均=%d°C 控制温度=%d°C 基础=%dRPM 目标=%dRPM", temp.MaxTemp, temp.ControlSource, temp.ControlTemp, avgTemp, controlTemp, baseRPM, targetRPM)
+					a.logDebug("智能控温: 最高=%d°C 基准=%s 当前=%d°C 平均=%d°C 控制温度=%d°C 基础=%d%s 目标=%d%s", temp.MaxTemp, temp.ControlSource, temp.ControlTemp, avgTemp, controlTemp, displaySpeedForLog(baseRPM, speedUnit), types.FanSpeedDisplaySuffix(speedUnit), displaySpeedForLog(targetRPM, speedUnit), types.FanSpeedDisplaySuffix(speedUnit))
 				}
 			}
 
@@ -376,7 +379,35 @@ func temperatureMonitorInterval(updateRateSeconds int) time.Duration {
 	return time.Duration(updateRateSeconds) * time.Second
 }
 
-func shouldSendTargetRPM(targetRPM, prevTargetRPM, minRPMChange int, fanData *types.FanData) bool {
+func fanDataSpeedForControlUnit(speed int, unit string) int {
+	if types.IsPercentSpeedUnit(unit) {
+		return types.PercentToTicks(speed)
+	}
+	return speed
+}
+
+func displaySpeedForLog(speed int, unit string) int {
+	if types.IsPercentSpeedUnit(unit) {
+		return types.PercentTicksToIntegerPercent(speed)
+	}
+	return speed
+}
+
+func newStableObserverForActiveUnit(curveLen int, unit string) *smartcontrol.StableObserver {
+	if types.IsPercentSpeedUnit(unit) {
+		return smartcontrol.NewPercentStableObserver(curveLen)
+	}
+	return smartcontrol.NewLegacyRPMStableObserver(curveLen)
+}
+
+func learnSteadyOffsetForActiveUnit(bucketIdx int, meanTemp int, localEff float64, haveEff bool, curve []types.FanCurvePoint, prevOffsets []int, cfg types.SmartControlConfig, unit string) ([]int, bool) {
+	if types.IsPercentSpeedUnit(unit) {
+		return smartcontrol.LearnPercentSteadyOffsetTicks(bucketIdx, meanTemp, localEff, haveEff, curve, prevOffsets, cfg)
+	}
+	return smartcontrol.LearnLegacyRPMSteadyOffset(bucketIdx, meanTemp, localEff, haveEff, curve, prevOffsets, cfg)
+}
+
+func shouldSendTargetSpeed(targetRPM, prevTargetRPM, minRPMChange int, fanData *types.FanData, unit string) bool {
 	if targetRPM <= 0 {
 		return false
 	}
@@ -389,8 +420,12 @@ func shouldSendTargetRPM(targetRPM, prevTargetRPM, minRPMChange int, fanData *ty
 	if fanData == nil {
 		return false
 	}
-	deviceTargetRPM := int(fanData.TargetRPM)
+	deviceTargetRPM := fanDataSpeedForControlUnit(int(fanData.TargetRPM), unit)
 	return deviceTargetRPM == 0 || absRPMDelta(targetRPM, deviceTargetRPM) >= minRPMChange
+}
+
+func shouldSendTargetRPM(targetRPM, prevTargetRPM, minRPMChange int, fanData *types.FanData) bool {
+	return shouldSendTargetSpeed(targetRPM, prevTargetRPM, minRPMChange, fanData, types.FanSpeedUnitRPM)
 }
 
 func absRPMDelta(a, b int) int {
@@ -473,10 +508,25 @@ func (a *CoreApp) checkDeviceHealth() {
 		a.logInfo("健康检查: 设备未连接，尝试重新连接")
 		a.requestReconnect("health-check", []time.Duration{0})
 	} else {
-		if a.deviceManager.GetDeviceType() == types.DeviceTransportWiFi && !a.deviceManager.RefreshWiFiState() {
-			a.logError("健康检查: WiFi 控制器状态刷新失败，触发断开回调")
-			a.onDeviceDisconnect()
-			return
+		switch a.deviceManager.GetDeviceType() {
+		case types.DeviceTransportWiFi:
+			if !a.deviceManager.RefreshWiFiState() {
+				a.logError("健康检查: WiFi 控制器状态刷新失败，触发断开回调")
+				a.onDeviceDisconnect()
+				return
+			}
+		case types.DeviceTransportBLE:
+			if !a.deviceManager.RefreshBLEState() {
+				a.logError("BLE controller state refresh failed during health check")
+				a.onDeviceDisconnect()
+				return
+			}
+		case types.DeviceTransportSerial:
+			if !a.deviceManager.RefreshSerialState() {
+				a.logError("健康检查: 串口控制器状态刷新失败，触发断开回调")
+				a.onDeviceDisconnect()
+				return
+			}
 		}
 		// 验证设备实际连接状态
 		if !a.deviceManager.IsConnected() {

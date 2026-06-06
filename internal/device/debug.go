@@ -13,7 +13,6 @@ import (
 const (
 	hidControlReportLen = 23
 	hidLightReportLen   = 65
-	maxDebugFrames      = 100
 )
 
 func DebugCommandPresets() []types.DeviceDebugCommandPreset {
@@ -35,51 +34,16 @@ func (m *Manager) currentDebugSeq() uint64 {
 }
 
 func (m *Manager) recordDebugFrame(direction, transport string, raw []byte) uint64 {
-	copiedRaw := make([]byte, len(raw))
-	copy(copiedRaw, raw)
-
-	frameInfo, ok := deviceproto.ParseFrame(copiedRaw)
-	debugFrame := types.DeviceDebugFrame{
-		Direction: direction,
-		Transport: transport,
-		Timestamp: time.Now().Format("2006-01-02 15:04:05.000"),
-		RawHex:    deviceproto.Hex(copiedRaw),
-	}
-	if ok {
-		debugFrame.FrameHex = deviceproto.Hex(frameInfo.Frame)
-		debugFrame.Command = fmt.Sprintf("0x%02X", frameInfo.Command)
-		debugFrame.Length = int(frameInfo.Length)
-		debugFrame.PayloadHex = deviceproto.Hex(frameInfo.Payload)
-		debugFrame.ChecksumOK = frameInfo.ChecksumOK
-		debugFrame.Description = deviceproto.CommandDescription(frameInfo.Command)
-		decoded := deviceproto.DecodeFrame(frameInfo)
-		debugFrame.Decoded = decoded.Summary
-		debugFrame.Parsed = decoded
-	} else {
-		debugFrame.Description = "non-protocol data"
-	}
-
+	debugFrame := newDeviceDebugFrame(direction, transport, raw)
 	m.debugMutex.Lock()
 	defer m.debugMutex.Unlock()
-	m.debugSeq++
-	debugFrame.ID = m.debugSeq
-	m.debugFrames = append(m.debugFrames, debugFrame)
-	if len(m.debugFrames) > maxDebugFrames {
-		m.debugFrames = append([]types.DeviceDebugFrame(nil), m.debugFrames[len(m.debugFrames)-maxDebugFrames:]...)
-	}
-	return debugFrame.ID
+	return appendBoundedDebugFrame(&m.debugSeq, &m.debugFrames, debugFrame)
 }
 
 func (m *Manager) debugFramesAfter(seq uint64) []types.DeviceDebugFrame {
 	m.debugMutex.Lock()
 	defer m.debugMutex.Unlock()
-	frames := make([]types.DeviceDebugFrame, 0, len(m.debugFrames))
-	for _, frame := range m.debugFrames {
-		if frame.ID > seq {
-			frames = append(frames, frame)
-		}
-	}
-	return frames
+	return debugFramesAfterSeq(m.debugFrames, seq)
 }
 
 func (m *Manager) GetDebugFrames() []types.DeviceDebugFrame {
@@ -88,9 +52,7 @@ func (m *Manager) GetDebugFrames() []types.DeviceDebugFrame {
 	}
 	m.debugMutex.Lock()
 	defer m.debugMutex.Unlock()
-	frames := make([]types.DeviceDebugFrame, len(m.debugFrames))
-	copy(frames, m.debugFrames)
-	return frames
+	return cloneDebugFrames(m.debugFrames)
 }
 
 func (m *Manager) SendDebugCommand(input string, waitMs int) (types.DeviceDebugCommandResult, error) {
@@ -147,39 +109,10 @@ func (m *Manager) SendDebugCommand(input string, waitMs int) (types.DeviceDebugC
 }
 
 func (b *BLEManager) recordDebugFrame(direction, transport string, raw []byte) uint64 {
-	copiedRaw := make([]byte, len(raw))
-	copy(copiedRaw, raw)
-
-	frameInfo, ok := deviceproto.ParseFrame(copiedRaw)
-	debugFrame := types.DeviceDebugFrame{
-		Direction: direction,
-		Transport: transport,
-		Timestamp: time.Now().Format("2006-01-02 15:04:05.000"),
-		RawHex:    deviceproto.Hex(copiedRaw),
-	}
-	if ok {
-		debugFrame.FrameHex = deviceproto.Hex(frameInfo.Frame)
-		debugFrame.Command = fmt.Sprintf("0x%02X", frameInfo.Command)
-		debugFrame.Length = int(frameInfo.Length)
-		debugFrame.PayloadHex = deviceproto.Hex(frameInfo.Payload)
-		debugFrame.ChecksumOK = frameInfo.ChecksumOK
-		debugFrame.Description = deviceproto.CommandDescription(frameInfo.Command)
-		decoded := deviceproto.DecodeFrame(frameInfo)
-		debugFrame.Decoded = decoded.Summary
-		debugFrame.Parsed = decoded
-	} else {
-		debugFrame.Description = "non-protocol data"
-	}
-
+	debugFrame := newDeviceDebugFrame(direction, transport, raw)
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
-	b.debugSeq++
-	debugFrame.ID = b.debugSeq
-	b.debugFrames = append(b.debugFrames, debugFrame)
-	if len(b.debugFrames) > maxDebugFrames {
-		b.debugFrames = append([]types.DeviceDebugFrame(nil), b.debugFrames[len(b.debugFrames)-maxDebugFrames:]...)
-	}
-	return debugFrame.ID
+	return appendBoundedDebugFrame(&b.debugSeq, &b.debugFrames, debugFrame)
 }
 
 func (b *BLEManager) currentDebugSeq() uint64 {
@@ -191,21 +124,13 @@ func (b *BLEManager) currentDebugSeq() uint64 {
 func (b *BLEManager) debugFramesAfter(seq uint64) []types.DeviceDebugFrame {
 	b.mutex.RLock()
 	defer b.mutex.RUnlock()
-	frames := make([]types.DeviceDebugFrame, 0, len(b.debugFrames))
-	for _, frame := range b.debugFrames {
-		if frame.ID > seq {
-			frames = append(frames, frame)
-		}
-	}
-	return frames
+	return debugFramesAfterSeq(b.debugFrames, seq)
 }
 
 func (b *BLEManager) GetDebugFrames() []types.DeviceDebugFrame {
 	b.mutex.RLock()
 	defer b.mutex.RUnlock()
-	frames := make([]types.DeviceDebugFrame, len(b.debugFrames))
-	copy(frames, b.debugFrames)
-	return frames
+	return cloneDebugFrames(b.debugFrames)
 }
 
 func (b *BLEManager) SendDebugCommand(input string, waitMs int) (types.DeviceDebugCommandResult, error) {

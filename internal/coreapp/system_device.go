@@ -357,7 +357,7 @@ func (a *CoreApp) safeRun(name string, fn func()) {
 func (a *CoreApp) ConnectDevice() bool {
 	a.autoReconnectSuppressed.Store(false)
 	cfg := a.configManager.Get()
-	a.deviceManager.Configure(cfg.DeviceTransport, cfg.FanControlDeviceIp)
+	a.configureDeviceManager(cfg)
 
 	success, deviceInfo := a.deviceManager.Connect()
 	if success {
@@ -414,16 +414,17 @@ func (a *CoreApp) DisconnectDevice() {
 // reapplyConfigAfterReconnect 重连后重新应用APP配置
 func (a *CoreApp) reapplyConfigAfterReconnect() {
 	cfg := a.configManager.Get()
-	a.deviceManager.Configure(cfg.DeviceTransport, cfg.FanControlDeviceIp)
+	a.configureDeviceManager(cfg)
 
 	// 重新应用智能变频配置
 	if cfg.AutoControl {
 		a.logInfo("重新启动智能变频")
 	} else if cfg.CustomSpeedEnabled {
 		// 重新应用自定义转速
-		speed := types.ClampFanPercent(cfg.CustomSpeedRPM)
-		a.logInfo("重新应用自定义速度: %d%%", speed)
-		if !a.deviceManager.SetCustomFanSpeed(speed) {
+		unit := types.DeviceProfileSpeedUnit(&cfg)
+		speed := types.ClampSpeedForUnit(cfg.CustomSpeedRPM, unit)
+		a.logInfo("重新应用自定义速度: %d%s", speed, types.FanSpeedDisplaySuffix(unit))
+		if !a.deviceManager.SetTargetSpeed(configSpeedToTargetUnit(speed, unit), unit) {
 			a.logError("重新应用自定义转速失败")
 		}
 	}

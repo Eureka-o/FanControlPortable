@@ -40,7 +40,7 @@ const isCoreServiceFailureDetail = (detail?: string) => {
     normalized.includes('服务');
 };
 
-type ActiveTab = 'status' | 'curve' | 'control' | 'about';
+type ActiveTab = 'status' | 'curve' | 'control' | 'devices' | 'about';
 export type CurveFocusTarget = 'curve-editor' | 'history-details';
 
 interface AppStore {
@@ -172,9 +172,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
           deviceSettings: status?.deviceSettings || null,
           deviceProductId: status?.productId || get().deviceProductId,
           deviceModel: status?.model || get().deviceModel,
+          fanData: status?.currentData || get().fanData || null,
           coreServiceError,
           error: coreServiceError,
         });
+        if (status?.temperature) {
+          get().handleTemperaturePayload(status.temperature);
+        }
       }
     } catch (error) {
       console.error('连接失败:', error);
@@ -231,13 +235,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
     unsubscribers.push(
       deviceService.onDeviceConnected((deviceInfo) => {
         console.log('设备已连接:', deviceInfo);
-        const info = deviceInfo as { productId?: string; model?: string };
+        const info = deviceInfo as { productId?: string; model?: string; currentData?: types.FanData | null };
         const settings = (deviceInfo as { deviceSettings?: DeviceSettings | null })?.deviceSettings || null;
         set({
           isConnected: true,
           deviceProductId: info.productId || null,
           deviceModel: info.model || null,
           deviceSettings: settings,
+          fanData: info.currentData || get().fanData || null,
           coreServiceError: null,
           error: null,
         });

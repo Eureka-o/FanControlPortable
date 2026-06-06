@@ -10,12 +10,24 @@ export function ConnectDevice() {
   return window['go']['main']['App']['ConnectDevice']();
 }
 
+export function DeleteDeviceProfile(arg1) {
+  return window['go']['main']['App']['DeleteDeviceProfile'](arg1);
+}
+
 export function DeleteFanCurveProfile(arg1) {
   return window['go']['main']['App']['DeleteFanCurveProfile'](arg1);
 }
 
 export function DisconnectDevice() {
   return window['go']['main']['App']['DisconnectDevice']();
+}
+
+export function ExportDeviceProfiles() {
+  return window['go']['main']['App']['ExportDeviceProfiles']();
+}
+
+export function ExportDeviceProfilesToFile() {
+  return window['go']['main']['App']['ExportDeviceProfilesToFile']();
 }
 
 export function ExportFanCurveProfiles() {
@@ -54,6 +66,10 @@ export function GetDeviceDebugFrames() {
   return window['go']['main']['App']['GetDeviceDebugFrames']();
 }
 
+export function GetDeviceProfiles() {
+  return window['go']['main']['App']['GetDeviceProfiles']();
+}
+
 export function GetDeviceStatus() {
   return window['go']['main']['App']['GetDeviceStatus']();
 }
@@ -64,6 +80,10 @@ export function GetFanCurve() {
 
 export function GetFanCurveProfiles() {
   return window['go']['main']['App']['GetFanCurveProfiles']();
+}
+
+export function GetSupportedDeviceProfiles() {
+  return window['go']['main']['App']['GetSupportedDeviceProfiles']();
 }
 
 export function GetTemperature() {
@@ -78,8 +98,16 @@ export function GetThemeCSS(arg1) {
   return window['go']['main']['App']['GetThemeCSS'](arg1);
 }
 
+export function GetUserDeviceProfiles() {
+  return window['go']['main']['App']['GetUserDeviceProfiles']();
+}
+
 export function HideWindow() {
   return window['go']['main']['App']['HideWindow']();
+}
+
+export function ImportDeviceProfiles(arg1) {
+  return window['go']['main']['App']['ImportDeviceProfiles'](arg1);
 }
 
 export function ImportFanCurveProfiles(arg1) {
@@ -98,6 +126,10 @@ export function IsRunningAsAdmin() {
   return window['go']['main']['App']['IsRunningAsAdmin']();
 }
 
+export function ListSerialPorts() {
+  return window['go']['main']['App']['ListSerialPorts']();
+}
+
 export function ListThemes() {
   return window['go']['main']['App']['ListThemes']();
 }
@@ -112,6 +144,10 @@ export function OnWindowClosing(arg1) {
 
 export function OpenThemesFolder() {
   return window['go']['main']['App']['OpenThemesFolder']();
+}
+
+export function ProbeBLEGATT(arg1) {
+  return window['go']['main']['App']['ProbeBLEGATT'](arg1);
 }
 
 export function QuitAll() {
@@ -138,12 +174,24 @@ export function RestartPawnIO() {
   return window['go']['main']['App']['RestartPawnIO']();
 }
 
+export function SaveDeviceProfile(arg1, arg2) {
+  return window['go']['main']['App']['SaveDeviceProfile'](arg1, arg2);
+}
+
 export function SaveFanCurveProfile(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SaveFanCurveProfile'](arg1, arg2, arg3, arg4);
 }
 
+export function ScanBLEDevices(arg1) {
+  return window['go']['main']['App']['ScanBLEDevices'](arg1);
+}
+
 export function SendDeviceDebugCommand(arg1, arg2) {
   return window['go']['main']['App']['SendDeviceDebugCommand'](arg1, arg2);
+}
+
+export function SetActiveDeviceProfile(arg1) {
+  return window['go']['main']['App']['SetActiveDeviceProfile'](arg1);
 }
 
 export function SetActiveFanCurveProfile(arg1) {
@@ -212,6 +260,10 @@ export function Startup(arg1) {
 
 export function TestBridgeProgram() {
   return window['go']['main']['App']['TestBridgeProgram']();
+}
+
+export function TestDeviceProfile(arg1) {
+  return window['go']['main']['App']['TestDeviceProfile'](arg1);
 }
 
 export function TestTemperatureReading() {

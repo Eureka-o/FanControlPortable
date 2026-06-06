@@ -43,6 +43,7 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 	defaultConfigDir := m.GetDefaultConfigDir()
 	defaultConfigPath := filepath.Join(defaultConfigDir, "config.json")
 	installConfigPath := filepath.Join(m.installDir, "config", "config.json")
+	legacyInstallConfigPath := filepath.Join(m.installDir, "config.json")
 	legacyConfigPaths := make([]string, 0)
 	for _, legacyConfigDir := range m.GetLegacyConfigDirs() {
 		legacyConfigPaths = append(legacyConfigPaths, filepath.Join(legacyConfigDir, "config.json"))
@@ -58,6 +59,17 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 	}
 
 	m.logInfo("从便携目录加载配置失败，尝试从用户目录迁移: %s", defaultConfigPath)
+
+	m.logInfo("trying legacy install-root config migration: %s", legacyInstallConfigPath)
+	if m.tryLoadFromPathLocked(legacyInstallConfigPath) {
+		m.config.ConfigPath = installConfigPath
+		m.logInfo("loaded legacy install-root config and migrated it to portable config directory: %s", legacyInstallConfigPath)
+		if err := m.saveLocked(); err != nil {
+			m.logError("failed to migrate legacy install-root config: %v", err)
+		}
+		m.bumpRevisionLocked()
+		return m.config
+	}
 
 	if m.tryLoadFromPathLocked(defaultConfigPath) {
 		m.config.ConfigPath = installConfigPath
@@ -130,12 +142,12 @@ func (m *Manager) tryLoadFromPathLocked(configPath string) bool {
 	}
 
 	applyMissingHotkeyDefaults(&config, rawConfig)
+	applyMissingDeviceDefaults(&config, rawConfig)
 	applyMissingSmartControlDefaults(&config, rawConfig)
 	applyMissingLegionFnQDefaults(&config, rawConfig)
 	applyMissingThemeDefaults(&config, rawConfig)
 	applyMissingTemperatureDefaults(&config, rawConfig)
-	applyMissingDeviceDefaults(&config, rawConfig)
-	normalizePercentConfig(&config)
+	normalizeSpeedConfig(&config)
 
 	m.config = config
 	return true
@@ -246,7 +258,7 @@ func applyLegacyPortableSettings(cfg *types.AppConfig, legacy legacyPortableSett
 		cfg.SmartControl = types.GetDefaultSmartControlConfig(curve)
 	}
 
-	normalizePercentConfig(cfg)
+	normalizeSpeedConfig(cfg)
 }
 
 func parseLegacyFanCurve(raw string, minSpeed int) []types.FanCurvePoint {
@@ -331,7 +343,7 @@ func applyMissingSmartControlDefaults(cfg *types.AppConfig, rawConfig map[string
 		return
 	}
 
-	defaults := types.GetDefaultSmartControlConfig(cfg.FanCurve)
+	defaults := types.GetDefaultSmartControlConfigForUnit(cfg.FanCurve, types.DeviceProfileSpeedUnit(cfg))
 	rawSmartControl, ok := rawConfig["smartControl"]
 	if !ok {
 		cfg.SmartControl.FilterTransientSpike = defaults.FilterTransientSpike
@@ -407,6 +419,12 @@ func applyMissingDeviceDefaults(cfg *types.AppConfig, rawConfig map[string]json.
 	}
 
 	defaults := types.GetDefaultConfig(false)
+	if _, ok := rawConfig["activeDeviceProfileId"]; !ok {
+		cfg.ActiveDeviceProfileID = defaults.ActiveDeviceProfileID
+	}
+	if _, ok := rawConfig["activeDeviceProfileIdsByTransport"]; !ok {
+		cfg.ActiveDeviceProfileIDsByTransport = defaults.ActiveDeviceProfileIDsByTransport
+	}
 	if _, ok := rawConfig["deviceTransport"]; !ok {
 		cfg.DeviceTransport = defaults.DeviceTransport
 	}
@@ -417,34 +435,40 @@ func applyMissingDeviceDefaults(cfg *types.AppConfig, rawConfig map[string]json.
 	if strings.TrimSpace(cfg.FanControlDeviceIp) == "" {
 		cfg.FanControlDeviceIp = defaults.FanControlDeviceIp
 	}
+	if _, ok := rawConfig["deviceProfiles"]; !ok {
+		cfg.DeviceProfiles = []types.DeviceProfile{types.DefaultWiFiPercentProfile(cfg.FanControlDeviceIp)}
+	}
+	types.NormalizeDeviceProfileConfig(cfg)
 }
 
-func normalizePercentConfig(cfg *types.AppConfig) {
+func normalizeSpeedConfig(cfg *types.AppConfig) {
 	if cfg == nil {
 		return
 	}
+	types.NormalizeDeviceProfileConfig(cfg)
+	unit := types.DeviceProfileSpeedUnit(cfg)
 	cfg.DeviceTransport = types.NormalizeDeviceTransport(cfg.DeviceTransport)
 	cfg.FanControlDeviceIp = strings.TrimSpace(cfg.FanControlDeviceIp)
 	if cfg.FanControlDeviceIp == "" {
 		cfg.FanControlDeviceIp = types.DefaultFanDeviceIP
 	}
-	defaultCurve := types.GetDefaultFanCurve()
+	defaultCurve := defaultFanCurveForUnit(unit)
 	speedSanitized := false
 	for i := range cfg.FanCurve {
 		fallback := defaultFanCurveSpeedAt(defaultCurve, i, cfg.FanCurve[i].Temperature)
-		next, changed := normalizeFanSpeedSetting(cfg.FanCurve[i].RPM, fallback)
+		next, changed := normalizeFanSpeedSettingForUnit(cfg.FanCurve[i].RPM, fallback, unit)
 		cfg.FanCurve[i].RPM = next
 		speedSanitized = speedSanitized || changed
 	}
 	for i := range cfg.FanCurveProfiles {
 		for j := range cfg.FanCurveProfiles[i].Curve {
 			fallback := defaultFanCurveSpeedAt(defaultCurve, j, cfg.FanCurveProfiles[i].Curve[j].Temperature)
-			next, changed := normalizeFanSpeedSetting(cfg.FanCurveProfiles[i].Curve[j].RPM, fallback)
+			next, changed := normalizeFanSpeedSettingForUnit(cfg.FanCurveProfiles[i].Curve[j].RPM, fallback, unit)
 			cfg.FanCurveProfiles[i].Curve[j].RPM = next
 			speedSanitized = speedSanitized || changed
 		}
 	}
-	nextCustomSpeed, customSpeedChanged := normalizeFanSpeedSetting(cfg.CustomSpeedRPM, 45)
+	nextCustomSpeed, customSpeedChanged := normalizeFanSpeedSettingForUnit(cfg.CustomSpeedRPM, defaultCustomSpeedForUnit(unit), unit)
 	cfg.CustomSpeedRPM = nextCustomSpeed
 	speedSanitized = speedSanitized || customSpeedChanged
 	if speedSanitized {
@@ -453,10 +477,49 @@ func normalizePercentConfig(cfg *types.AppConfig) {
 }
 
 func normalizeFanSpeedSetting(speed, fallback int) (int, bool) {
+	return normalizeFanSpeedSettingForUnit(speed, fallback, types.FanSpeedUnitPercent)
+}
+
+func normalizeFanSpeedSettingForUnit(speed, fallback int, unit string) (int, bool) {
+	if types.IsRPMSpeedUnit(unit) {
+		minSpeed, maxSpeed := types.SpeedRangeForUnit(unit)
+		if speed < minSpeed || speed > maxSpeed {
+			return clampSpeedToUnit(fallback, unit), true
+		}
+		return speed, false
+	}
 	if speed < types.FanSpeedMinPercent || speed > types.FanSpeedMaxPercent {
 		return types.ClampFanPercent(fallback), true
 	}
 	return speed, false
+}
+
+func defaultFanCurveForUnit(unit string) []types.FanCurvePoint {
+	if types.IsRPMSpeedUnit(unit) {
+		return types.GetDefaultRPMFanCurve()
+	}
+	return types.GetDefaultFanCurve()
+}
+
+func defaultCustomSpeedForUnit(unit string) int {
+	if types.IsRPMSpeedUnit(unit) {
+		return 2000
+	}
+	return 45
+}
+
+func clampSpeedToUnit(speed int, unit string) int {
+	if types.IsRPMSpeedUnit(unit) {
+		minSpeed, maxSpeed := types.SpeedRangeForUnit(unit)
+		if speed < minSpeed {
+			return minSpeed
+		}
+		if speed > maxSpeed {
+			return maxSpeed
+		}
+		return speed
+	}
+	return types.ClampFanPercent(speed)
 }
 
 func resetLearnedPercentOffsets(cfg *types.AppConfig) {
@@ -659,9 +722,15 @@ func GetCurrentWorkingDir() string {
 
 // ValidateFanCurve 验证风扇曲线是否有效
 func ValidateFanCurve(curve []types.FanCurvePoint) error {
+	return ValidateFanCurveForUnit(curve, types.FanSpeedUnitPercent)
+}
+
+func ValidateFanCurveForUnit(curve []types.FanCurvePoint, unit string) error {
 	if len(curve) < 2 {
 		return fmt.Errorf("风扇曲线至少需要2个点")
 	}
+	minSpeed, maxSpeed := types.SpeedRangeForUnit(unit)
+	unitLabel := types.FanSpeedDisplaySuffix(unit)
 
 	for i, point := range curve {
 		if point.Temperature < 0 {
@@ -670,8 +739,8 @@ func ValidateFanCurve(curve []types.FanCurvePoint) error {
 		if point.Temperature > types.FanCurveMaxTemperature {
 			return fmt.Errorf("风扇曲线第%d个点温度超出范围(最高%d°C)", i+1, types.FanCurveMaxTemperature)
 		}
-		if point.RPM < types.FanSpeedMinPercent || point.RPM > types.FanSpeedMaxPercent {
-			return fmt.Errorf("风扇曲线第%d个点速度超出范围(0-100%%)", i+1)
+		if point.RPM < minSpeed || point.RPM > maxSpeed {
+			return fmt.Errorf("风扇曲线第%d个点速度超出范围(%d-%d%s)", i+1, minSpeed, maxSpeed, unitLabel)
 		}
 	}
 

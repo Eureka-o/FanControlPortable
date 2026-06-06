@@ -116,3 +116,163 @@ func TestWiFiSetFanSpeedRejectsDeviceFailureResponse(t *testing.T) {
 		t.Fatalf("fan data changed after rejected command: %#v", fanData)
 	}
 }
+
+func TestWiFiManagerConfigureProfileUsesCustomPercentRuntime(t *testing.T) {
+	var posted struct {
+		Percent int `json:"percent"`
+		Ticks   int `json:"ticks"`
+	}
+	setSeen := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/custom/state":
+			speed := 25
+			if setSeen {
+				speed = 56
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"fan": map[string]any{
+					"current": speed,
+					"target":  speed,
+				},
+			})
+		case "/custom/speed":
+			if r.Method != http.MethodPut {
+				t.Fatalf("custom speed method = %s, want PUT", r.Method)
+			}
+			if err := json.NewDecoder(r.Body).Decode(&posted); err != nil {
+				t.Fatalf("decode posted body: %v", err)
+			}
+			setSeen = true
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
+		case "/api/data", "/api/speed":
+			t.Fatalf("default WiFi endpoint should not be used: %s", r.URL.Path)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	profile := types.DeviceProfile{
+		ID:          "user.manager.percent",
+		DisplayName: "Manager custom percent",
+		Vendor:      "DIY",
+		Transport:   types.DeviceTransportWiFi,
+		SpeedUnit:   types.FanSpeedUnitPercent,
+		SpeedRange:  types.DefaultPercentSpeedRange(),
+		Connection: types.DeviceConnectionSettings{
+			Endpoint:      server.URL,
+			StateEndpoint: "/custom/state",
+			SpeedEndpoint: "/custom/speed",
+			HTTPMethod:    http.MethodPut,
+		},
+		Commands: []types.DeviceCommandTemplate{
+			{Name: "setSpeed", Command: `{"percent":{{percent}},"ticks":{{percentTicks}}}`, Encoding: "json"},
+		},
+		ResponseParsers: []types.DeviceResponseParser{
+			{Name: "current", Type: "json_path", Expression: "$.fan.current"},
+			{Name: "target", Type: "json_path", Expression: "$.fan.target"},
+		},
+		Capabilities: types.DefaultWiFiPercentCapabilities(),
+	}
+
+	m := NewManager(nil)
+	m.ConfigureProfile(profile, "")
+	connected, info := m.Connect()
+	if !connected {
+		t.Fatal("expected custom WiFi profile to connect")
+	}
+	if info["product"] != profile.DisplayName || info["model"] != profile.DisplayName || info["manufacturer"] != profile.Vendor {
+		t.Fatalf("connection info = %#v, want enabled WiFi user device name/vendor", info)
+	}
+	if got := m.GetModelName(); got != profile.DisplayName {
+		t.Fatalf("model name = %q, want enabled WiFi user device name %q", got, profile.DisplayName)
+	}
+	settings, err := m.QueryDeviceSettings()
+	if err != nil {
+		t.Fatalf("QueryDeviceSettings() error = %v", err)
+	}
+	if settings.Source != types.DeviceTransportWiFi || settings.Model != profile.DisplayName {
+		t.Fatalf("settings = %#v, want WiFi source and enabled user device name", settings)
+	}
+
+	if ok := m.SetTargetSpeed(555, types.FanSpeedUnitPercent); !ok {
+		t.Fatal("expected SetTargetSpeed to use custom profile runtime")
+	}
+	if posted.Percent != 56 || posted.Ticks != 555 {
+		t.Fatalf("posted body = %+v, want percent 56 ticks 555", posted)
+	}
+	fanData := m.GetCurrentFanData()
+	if fanData == nil || fanData.CurrentRPM != 56 || fanData.TargetRPM != 56 {
+		t.Fatalf("fan data = %#v, want 56/56", fanData)
+	}
+}
+
+func TestWiFiManagerConfigureProfileAllowsRPMRuntime(t *testing.T) {
+	var postedRPM int
+	setSeen := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/rpm/state":
+			rpm := 1200
+			if setSeen {
+				rpm = postedRPM
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"fan": map[string]any{"rpm": rpm}})
+		case "/rpm/set":
+			var payload map[string]int
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode rpm body: %v", err)
+			}
+			postedRPM = payload["rpm"]
+			setSeen = true
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	m := NewManager(nil)
+	m.ConfigureProfile(types.DeviceProfile{
+		ID:          "user.manager.rpm",
+		DisplayName: "Manager custom RPM",
+		Transport:   types.DeviceTransportWiFi,
+		SpeedUnit:   types.FanSpeedUnitRPM,
+		SpeedRange:  types.DefaultRPMSpeedRange(),
+		Connection: types.DeviceConnectionSettings{
+			Endpoint:      server.URL,
+			StateEndpoint: "/rpm/state",
+			SpeedEndpoint: "/rpm/set",
+			HTTPMethod:    http.MethodPost,
+		},
+		Commands: []types.DeviceCommandTemplate{
+			{Name: "setSpeed", Command: `{"rpm":{{rpm}}}`, Encoding: "json"},
+		},
+		ResponseParsers: []types.DeviceResponseParser{
+			{Name: "current rpm", Type: "json_path", Expression: "$.fan.rpm"},
+		},
+		Capabilities: types.DeviceCapabilities{
+			Transport:         types.DeviceTransportWiFi,
+			SpeedUnit:         types.FanSpeedUnitRPM,
+			SpeedRange:        types.DefaultRPMSpeedRange(),
+			SupportsReadState: true,
+			SupportsSetSpeed:  true,
+		},
+	}, "")
+
+	connected, _ := m.Connect()
+	if !connected {
+		t.Fatal("expected custom RPM WiFi profile to connect")
+	}
+	if ok := m.SetTargetSpeed(1800, types.FanSpeedUnitRPM); !ok {
+		t.Fatal("expected RPM WiFi profile target speed to be sent")
+	}
+	if postedRPM != 1800 {
+		t.Fatalf("posted RPM = %d, want 1800", postedRPM)
+	}
+	fanData := m.GetCurrentFanData()
+	if fanData == nil || fanData.CurrentRPM != 1800 || fanData.SpeedUnit != types.FanSpeedUnitRPM {
+		t.Fatalf("fan data = %#v, want 1800 RPM", fanData)
+	}
+}

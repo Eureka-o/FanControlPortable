@@ -3,9 +3,20 @@ package smartcontrol
 import "github.com/TIANLI0/THRM/internal/types"
 
 // NormalizeConfig 归一化智能控温配置。
-func NormalizeConfig(cfg types.SmartControlConfig, curve []types.FanCurvePoint, _ bool) (types.SmartControlConfig, bool) {
-	defaults := types.GetDefaultSmartControlConfig(curve)
+func NormalizeConfig(cfg types.SmartControlConfig, curve []types.FanCurvePoint, debug bool) (types.SmartControlConfig, bool) {
+	return NormalizeConfigForUnit(cfg, curve, debug, types.FanSpeedUnitPercent)
+}
+
+func NormalizeConfigForUnit(cfg types.SmartControlConfig, curve []types.FanCurvePoint, _ bool, unit string) (types.SmartControlConfig, bool) {
+	unit = types.NormalizeFanSpeedUnit(unit)
+	controlCurve := CurveForUnit(curve, unit)
 	changed := false
+	if types.IsPercentSpeedUnit(unit) {
+		var scaled bool
+		cfg, scaled = normalizeLegacyPercentTickScale(cfg)
+		changed = changed || scaled
+	}
+	defaults := types.GetDefaultSmartControlConfigForUnit(curve, unit)
 
 	if cfg.TargetTemp < 45 || cfg.TargetTemp > 90 {
 		cfg.TargetTemp = defaults.TargetTemp
@@ -19,15 +30,31 @@ func NormalizeConfig(cfg types.SmartControlConfig, curve []types.FanCurvePoint, 
 		cfg.Hysteresis = defaults.Hysteresis
 		changed = true
 	}
-	if cfg.MinRPMChange < 1 || cfg.MinRPMChange > 20 {
+	minRPMChangeMin := 1
+	minRPMChangeMax := 200
+	rampLimitMin := 1
+	rampLimitMax := 400
+	maxLearnOffsetMin := 1
+	maxLearnOffsetMax := 600
+	rampDownSlack := 100
+	if types.IsRPMSpeedUnit(unit) {
+		minRPMChangeMin = 20
+		minRPMChangeMax = 400
+		rampLimitMin = 50
+		rampLimitMax = 1200
+		maxLearnOffsetMin = 100
+		maxLearnOffsetMax = 2000
+		rampDownSlack = 300
+	}
+	if cfg.MinRPMChange < minRPMChangeMin || cfg.MinRPMChange > minRPMChangeMax {
 		cfg.MinRPMChange = defaults.MinRPMChange
 		changed = true
 	}
-	if cfg.RampUpLimit < 1 || cfg.RampUpLimit > 40 {
+	if cfg.RampUpLimit < rampLimitMin || cfg.RampUpLimit > rampLimitMax {
 		cfg.RampUpLimit = defaults.RampUpLimit
 		changed = true
 	}
-	if cfg.RampDownLimit < 1 || cfg.RampDownLimit > 40 {
+	if cfg.RampDownLimit < rampLimitMin || cfg.RampDownLimit > rampLimitMax {
 		cfg.RampDownLimit = defaults.RampDownLimit
 		changed = true
 	}
@@ -63,18 +90,18 @@ func NormalizeConfig(cfg types.SmartControlConfig, curve []types.FanCurvePoint, 
 		cfg.TrendGain = defaults.TrendGain
 		changed = true
 	}
-	if cfg.MaxLearnOffset < 1 || cfg.MaxLearnOffset > 60 {
+	if cfg.MaxLearnOffset < maxLearnOffsetMin || cfg.MaxLearnOffset > maxLearnOffsetMax {
 		cfg.MaxLearnOffset = defaults.MaxLearnOffset
 		changed = true
 	}
 
-	if len(cfg.LearnedOffsets) != len(curve) {
-		next := make([]int, len(curve))
+	if len(cfg.LearnedOffsets) != len(controlCurve) {
+		next := make([]int, len(controlCurve))
 		copy(next, cfg.LearnedOffsets)
 		cfg.LearnedOffsets = next
 		changed = true
 	}
-	if sanitized, updated := constrainOffsetsToCurveBounds(cfg.LearnedOffsets, curve, cfg.MaxLearnOffset); updated {
+	if sanitized, updated := constrainOffsetsToCurveBounds(cfg.LearnedOffsets, controlCurve, cfg.MaxLearnOffset); updated {
 		cfg.LearnedOffsets = sanitized
 		changed = true
 	}
@@ -83,14 +110,14 @@ func NormalizeConfig(cfg types.SmartControlConfig, curve []types.FanCurvePoint, 
 		changed = true
 	}
 
-	if len(cfg.LearnedOffsetsHeat) != len(curve) {
-		next := make([]int, len(curve))
+	if len(cfg.LearnedOffsetsHeat) != len(controlCurve) {
+		next := make([]int, len(controlCurve))
 		copy(next, cfg.LearnedOffsetsHeat)
 		cfg.LearnedOffsetsHeat = next
 		changed = true
 	}
-	if len(cfg.LearnedOffsetsCool) != len(curve) {
-		next := make([]int, len(curve))
+	if len(cfg.LearnedOffsetsCool) != len(controlCurve) {
+		next := make([]int, len(controlCurve))
 		copy(next, cfg.LearnedOffsetsCool)
 		cfg.LearnedOffsetsCool = next
 		changed = true
@@ -110,12 +137,36 @@ func NormalizeConfig(cfg types.SmartControlConfig, curve []types.FanCurvePoint, 
 		changed = true
 	}
 
-	if cfg.RampDownLimit > cfg.RampUpLimit+10 {
-		cfg.RampDownLimit = cfg.RampUpLimit + 10
+	if cfg.RampDownLimit > cfg.RampUpLimit+rampDownSlack {
+		cfg.RampDownLimit = cfg.RampUpLimit + rampDownSlack
 		changed = true
 	}
 
 	return cfg, changed
+}
+
+func normalizeLegacyPercentTickScale(cfg types.SmartControlConfig) (types.SmartControlConfig, bool) {
+	if cfg.MinRPMChange <= 0 || cfg.RampUpLimit <= 0 || cfg.RampDownLimit <= 0 || cfg.MaxLearnOffset <= 0 {
+		return cfg, false
+	}
+	if cfg.RampUpLimit > 40 || cfg.RampDownLimit > 40 || cfg.MaxLearnOffset > 60 {
+		return cfg, false
+	}
+	cfg.MinRPMChange *= types.PercentSpeedTicksPerPercent
+	cfg.RampUpLimit *= types.PercentSpeedTicksPerPercent
+	cfg.RampDownLimit *= types.PercentSpeedTicksPerPercent
+	cfg.MaxLearnOffset *= types.PercentSpeedTicksPerPercent
+	scaleOffsets := func(values []int) {
+		for i := range values {
+			values[i] *= types.PercentSpeedTicksPerPercent
+		}
+	}
+	scaleOffsets(cfg.LearnedOffsets)
+	scaleOffsets(cfg.LearnedOffsetsHeat)
+	scaleOffsets(cfg.LearnedOffsetsCool)
+	scaleOffsets(cfg.LearnedRateHeat)
+	scaleOffsets(cfg.LearnedRateCool)
+	return cfg, true
 }
 
 // BlendOffsets 保留旧接口所需的 Heat/Cool 融合行为。

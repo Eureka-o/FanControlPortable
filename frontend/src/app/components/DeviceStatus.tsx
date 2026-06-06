@@ -70,6 +70,19 @@ const getTranslatedWorkMode = (
   workMode: string | null | undefined,
   t: (key: string) => string,
 ) => {
+  const normalizedMode = (workMode || '').trim().toLowerCase();
+  switch (normalizedMode) {
+    case 'wifi':
+      return 'WIFI';
+    case 'ble':
+      return 'BLE';
+    case 'serial':
+      return 'COM';
+    case 'hid':
+      return 'HID';
+    default:
+      break;
+  }
   switch (workMode) {
     case '挡位工作模式':
       return t('controlPanel.overview.workModes.manual');
@@ -205,6 +218,19 @@ const HardwareIdentitySummary = memo(function HardwareIdentitySummary({
 /* ── Memo sub-components to avoid parent re-renders ── */
 
 // 温度状态 → 仪表盘弧色（CSS 变量 / 字面色值，避免依赖 Tailwind class）
+function configuredDeviceProfiles(config: types.AppConfig): types.DeviceProfile[] {
+  return Array.isArray((config as any).deviceProfiles) ? ((config as any).deviceProfiles as types.DeviceProfile[]) : [];
+}
+
+function activeDeviceProfileFromConfig(config: types.AppConfig): types.DeviceProfile | null {
+  const profiles = configuredDeviceProfiles(config);
+  if (profiles.length === 0) {
+    return null;
+  }
+  const activeId = (((config as any).activeDeviceProfileId || '') as string).trim();
+  return profiles.find((profile) => profile.id === activeId) || profiles[0] || null;
+}
+
 const getTempArcColor = (temp: number) => {
   if (temp > 85) return '#ef4444';
   if (temp > 75) return '#f97316';
@@ -544,6 +570,7 @@ export default function DeviceStatus({
     source: temperatureHistorySource,
   } = useTemperatureHistory();
   const hasBridgeWarning = isConnected && temperature?.bridgeOk === false;
+  const activeDeviceProfile = useMemo(() => activeDeviceProfileFromConfig(config), [config]);
 
   useEffect(() => {
     if (!hasBridgeWarning) {
@@ -614,7 +641,8 @@ export default function DeviceStatus({
     }
   };
 
-  const deviceModelName = deviceModel?.trim() || t('deviceStatus.device.unknown');
+  const activeDeviceName = activeDeviceProfile?.displayName?.trim() || '';
+  const deviceModelName = (isConnected ? deviceModel?.trim() : '') || activeDeviceName || deviceModel?.trim() || t('deviceStatus.device.unknown');
   const modeTitle = config.autoControl ? t('deviceStatus.mode.smartControl') : config.customSpeedEnabled ? t('deviceStatus.mode.fixedSpeed') : t('deviceStatus.mode.manualStrategy');
   const fanSpeedUnit = getFanSpeedUnit(fanData as any, config as any);
   const fanSpeedLabel = fanSpeedUnitLabel(fanSpeedUnit);
@@ -716,7 +744,7 @@ export default function DeviceStatus({
               )}
               {!isConnected && (
                 <p className={clsx('mt-1 text-xs', coreServiceError ? 'text-destructive' : 'text-muted-foreground')}>
-                  {coreServiceError ? t('deviceStatus.hero.coreUnavailable') : t('deviceStatus.hero.waitingBluetooth')}
+                  {coreServiceError ? t('deviceStatus.hero.coreUnavailable') : t('deviceStatus.hero.waitingDeviceConnection', { name: deviceModelName })}
                 </p>
               )}
             </div>
@@ -744,7 +772,7 @@ export default function DeviceStatus({
       </div>
 
       {/* ── Metric cards ── */}
-      {isConnected || hasTemperatureReading ? (
+      {isConnected ? (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -794,8 +822,8 @@ export default function DeviceStatus({
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-muted">
             <Wifi className="h-7 w-7 text-muted-foreground" />
           </div>
-          <h3 className="mb-1.5 text-lg font-semibold">{t('deviceStatus.disconnected.title')}</h3>
-          <p className="mb-5 text-base text-muted-foreground">{t('deviceStatus.disconnected.description')}</p>
+          <h3 className="mb-1.5 text-lg font-semibold">{t('deviceStatus.disconnected.titleWithDevice', { name: deviceModelName })}</h3>
+          <p className="mb-5 text-base text-muted-foreground">{t('deviceStatus.disconnected.descriptionWithDevice', { name: deviceModelName })}</p>
           <Button onClick={onConnect} size="md" icon={<RotateCw className="h-4 w-4" />}>
             {t('deviceStatus.actions.connectDevice')}
           </Button>

@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/TIANLI0/THRM/internal/deviceprofileexec"
 	"github.com/TIANLI0/THRM/internal/deviceproto"
 	"github.com/TIANLI0/THRM/internal/types"
 	"github.com/sstallion/go-hid"
@@ -56,6 +57,10 @@ type Manager struct {
 	deviceTransport string
 	wifiEndpoint    string
 	wifiHTTPClient  *http.Client
+	activeProfile   types.DeviceProfile
+	wifiExecutor    *deviceprofileexec.WiFiExecutor
+	serialDialer    deviceprofileexec.SerialDialer
+	serialExecutor  *deviceprofileexec.SerialExecutor
 	mutex           sync.RWMutex
 	logger          types.Logger
 	currentFanData  atomic.Pointer[types.FanData]
@@ -91,6 +96,8 @@ func NewManager(logger types.Logger) *Manager {
 		deviceTransport: types.DeviceTransportWiFi,
 		wifiEndpoint:    types.DefaultFanDeviceIP,
 		wifiHTTPClient:  newWiFiHTTPClient(),
+		activeProfile:   types.DefaultWiFiPercentProfile(types.DefaultFanDeviceIP),
+		serialDialer:    deviceprofileexec.DefaultSerialDialer{},
 	}
 }
 
@@ -122,6 +129,10 @@ func (m *Manager) Connect() (bool, map[string]string) {
 
 	if m.shouldUseWiFiLocked() {
 		return m.connectWiFiLocked()
+	}
+
+	if m.shouldUseSerialLocked() {
+		return m.connectSerialLocked()
 	}
 
 	// 先尝试 HID 连接 (BS2/BS2PRO/BS3/BS3PRO)
@@ -229,6 +240,18 @@ func (m *Manager) disconnect(notify bool) {
 		m.mutex.Unlock()
 
 		m.logInfo("设备连接已断开")
+		if onDisconnect {
+			m.onDisconnect()
+		}
+		return
+	}
+
+	if m.deviceType == types.DeviceTransportSerial {
+		m.disconnectSerialLocked()
+		onDisconnect := notify && m.onDisconnect != nil
+		m.mutex.Unlock()
+
+		m.logInfo("Serial controller disconnected")
 		if onDisconnect {
 			m.onDisconnect()
 		}
@@ -562,6 +585,80 @@ func (m *Manager) parseWorkMode(mode uint8) string {
 	default:
 		return fmt.Sprintf("未知模式(0x%02X)", mode)
 	}
+}
+
+func (m *Manager) SetPercentSpeed(percent int) bool {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	if m.deviceType == types.DeviceTransportSerial {
+		if !m.isConnected {
+			return false
+		}
+		if types.IsRPMSpeedUnit(m.activeProfile.SpeedUnit) {
+			m.logWarn("percent speed command rejected because the active serial profile uses RPM")
+			return false
+		}
+		return m.setSerialTargetSpeedLocked(types.NewPercentSpeed(percent))
+	}
+
+	if m.deviceType != types.DeviceTransportWiFi {
+		m.logWarn("Legacy RPM 设备不支持百分比直控: %d%%", percent)
+		return false
+	}
+	if !m.isConnected {
+		return false
+	}
+	if types.IsRPMSpeedUnit(m.activeProfile.SpeedUnit) {
+		m.logWarn("percent speed command rejected because the active WiFi profile uses RPM")
+		return false
+	}
+	return m.setWiFiSpeedLocked(types.ClampFanPercent(percent))
+}
+
+func (m *Manager) SetTargetSpeed(value int, unit string) bool {
+	unit = types.NormalizeFanSpeedUnit(unit)
+
+	m.mutex.Lock()
+	if m.deviceType == types.DeviceTransportWiFi {
+		if !m.isConnected {
+			m.mutex.Unlock()
+			return false
+		}
+		if types.IsRPMSpeedUnit(unit) {
+			if !types.IsRPMSpeedUnit(m.activeProfile.SpeedUnit) {
+				m.mutex.Unlock()
+				return false
+			}
+			ok := m.setWiFiTargetSpeedLocked(types.NewRPMSpeed(value))
+			m.mutex.Unlock()
+			return ok
+		}
+		ok := m.setWiFiTargetSpeedLocked(types.NewPercentTickSpeed(value))
+		m.mutex.Unlock()
+		return ok
+	}
+	if m.deviceType == types.DeviceTransportSerial {
+		if !m.isConnected {
+			m.mutex.Unlock()
+			return false
+		}
+		var speed types.FanSpeedValue
+		if types.IsRPMSpeedUnit(unit) {
+			speed = types.NewRPMSpeed(value)
+		} else {
+			speed = types.NewPercentTickSpeed(value)
+		}
+		ok := m.setSerialTargetSpeedLocked(speed)
+		m.mutex.Unlock()
+		return ok
+	}
+	m.mutex.Unlock()
+
+	if types.IsPercentSpeedUnit(unit) {
+		return m.SetPercentSpeed(types.PercentTicksToIntegerPercent(value))
+	}
+	return m.SetFanSpeed(value)
 }
 
 // SetFanSpeed 设置风扇转速

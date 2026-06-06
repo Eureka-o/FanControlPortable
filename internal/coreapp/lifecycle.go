@@ -44,13 +44,15 @@ func (a *CoreApp) Start() error {
 			a.logError("保存快捷键默认配置失败: %v", err)
 		}
 	}
-	if curveprofiles.NormalizeConfig(&cfg) {
+	unit := types.DeviceProfileSpeedUnit(&cfg)
+	if curveprofiles.NormalizeConfigForUnit(&cfg, unit) {
 		a.configManager.Set(cfg)
 		if err := a.configManager.Save(); err != nil {
 			a.logError("保存温控曲线方案默认配置失败: %v", err)
 		}
 	}
-	if normalizedSmart, changed := smartcontrol.NormalizeConfig(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode); changed {
+	unit = types.DeviceProfileSpeedUnit(&cfg)
+	if normalizedSmart, changed := smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, unit); changed {
 		cfg.SmartControl = normalizedSmart
 		a.configManager.Set(cfg)
 		if err := a.configManager.Save(); err != nil {
@@ -63,7 +65,7 @@ func (a *CoreApp) Start() error {
 			a.logError("保存挡位记忆默认配置失败: %v", err)
 		}
 	}
-	if types.NormalizeManualGearRPM(&cfg) {
+	if types.NormalizeManualGearRPMForUnit(&cfg, unit) {
 		a.configManager.Set(cfg)
 		if err := a.configManager.Save(); err != nil {
 			a.logError("保存挡位转速默认配置失败: %v", err)
@@ -76,7 +78,7 @@ func (a *CoreApp) Start() error {
 		}
 	}
 	a.syncManualGearLevelMemory(cfg)
-	a.deviceManager.Configure(cfg.DeviceTransport, cfg.FanControlDeviceIp)
+	a.configureDeviceManager(cfg)
 	a.logInfo("配置加载完成，配置路径: %s", cfg.ConfigPath)
 
 	// 同步调试模式配置

@@ -37,17 +37,26 @@ const (
 	ReqRefreshDeviceSettings RequestType = "RefreshDeviceSettings"
 
 	// 配置相关
-	ReqGetConfig                RequestType = "GetConfig"
-	ReqUpdateConfig             RequestType = "UpdateConfig"
-	ReqSetFanCurve              RequestType = "SetFanCurve"
-	ReqGetFanCurve              RequestType = "GetFanCurve"
-	ReqGetFanCurveProfiles      RequestType = "GetFanCurveProfiles"
-	ReqSetActiveFanCurveProfile RequestType = "SetActiveFanCurveProfile"
-	ReqSaveFanCurveProfile      RequestType = "SaveFanCurveProfile"
-	ReqDeleteFanCurveProfile    RequestType = "DeleteFanCurveProfile"
-	ReqExportFanCurveProfiles   RequestType = "ExportFanCurveProfiles"
-	ReqImportFanCurveProfiles   RequestType = "ImportFanCurveProfiles"
-	ReqResetLearnedOffsets      RequestType = "ResetLearnedOffsets"
+	ReqGetConfig                  RequestType = "GetConfig"
+	ReqUpdateConfig               RequestType = "UpdateConfig"
+	ReqSetFanCurve                RequestType = "SetFanCurve"
+	ReqGetFanCurve                RequestType = "GetFanCurve"
+	ReqGetDeviceProfiles          RequestType = "GetDeviceProfiles"
+	ReqGetSupportedDeviceProfiles RequestType = "GetSupportedDeviceProfiles"
+	ReqGetUserDeviceProfiles      RequestType = "GetUserDeviceProfiles"
+	ReqSetActiveDeviceProfile     RequestType = "SetActiveDeviceProfile"
+	ReqSaveDeviceProfile          RequestType = "SaveDeviceProfile"
+	ReqDeleteDeviceProfile        RequestType = "DeleteDeviceProfile"
+	ReqExportDeviceProfiles       RequestType = "ExportDeviceProfiles"
+	ReqImportDeviceProfiles       RequestType = "ImportDeviceProfiles"
+	ReqTestDeviceProfile          RequestType = "TestDeviceProfile"
+	ReqGetFanCurveProfiles        RequestType = "GetFanCurveProfiles"
+	ReqSetActiveFanCurveProfile   RequestType = "SetActiveFanCurveProfile"
+	ReqSaveFanCurveProfile        RequestType = "SaveFanCurveProfile"
+	ReqDeleteFanCurveProfile      RequestType = "DeleteFanCurveProfile"
+	ReqExportFanCurveProfiles     RequestType = "ExportFanCurveProfiles"
+	ReqImportFanCurveProfiles     RequestType = "ImportFanCurveProfiles"
+	ReqResetLearnedOffsets        RequestType = "ResetLearnedOffsets"
 
 	// 控制相关
 	ReqSetAutoControl    RequestType = "SetAutoControl"
@@ -717,6 +726,30 @@ type SetLightStripParams struct {
 // SetActiveFanCurveProfileParams 设置激活曲线方案参数
 type SetActiveFanCurveProfileParams struct {
 	ID string `json:"id"`
+}
+
+type SetActiveDeviceProfileParams struct {
+	ID string `json:"id"`
+}
+
+type SaveDeviceProfileParams struct {
+	Profile   types.DeviceProfile `json:"profile"`
+	SetActive bool                `json:"setActive"`
+}
+
+type DeleteDeviceProfileParams struct {
+	ID string `json:"id"`
+}
+
+type ImportDeviceProfilesParams struct {
+	Code string `json:"code"`
+}
+
+type TestDeviceProfileParams struct {
+	Profile    types.DeviceProfile `json:"profile"`
+	Action     string              `json:"action"`
+	SpeedValue float64             `json:"speedValue,omitempty"`
+	TimeoutMs  int                 `json:"timeoutMs,omitempty"`
 }
 
 // SaveFanCurveProfileParams 保存曲线方案参数

@@ -7,6 +7,27 @@ import (
 
 // CalculateTargetRPM 以基础曲线加学习偏移计算目标转速。
 func CalculateTargetRPM(currentTemp int, curve []types.FanCurvePoint, cfg types.SmartControlConfig) int {
+	return calculateTargetSpeed(currentTemp, curve, cfg, rawPercentUnit)
+}
+
+func CurveForUnit(curve []types.FanCurvePoint, unit string) []types.FanCurvePoint {
+	out := make([]types.FanCurvePoint, len(curve))
+	copy(out, curve)
+	if types.IsPercentSpeedUnit(unit) {
+		for i := range out {
+			out[i].RPM = types.PercentToTicks(out[i].RPM)
+		}
+	}
+	return out
+}
+
+func CalculateTargetSpeedForUnit(currentTemp int, curve []types.FanCurvePoint, cfg types.SmartControlConfig, unit string) int {
+	unit = types.NormalizeFanSpeedUnit(unit)
+	curve = CurveForUnit(curve, unit)
+	return calculateTargetSpeed(currentTemp, curve, cfg, unit)
+}
+
+func calculateTargetSpeed(currentTemp int, curve []types.FanCurvePoint, cfg types.SmartControlConfig, unit string) int {
 	if len(curve) == 0 {
 		return 0
 	}
@@ -17,7 +38,7 @@ func CalculateTargetRPM(currentTemp int, curve []types.FanCurvePoint, cfg types.
 	} else if biased, updated := constrainOffsetsToLearningBias(offsets, cfg.LearningBias); updated {
 		offsets = biased
 	}
-	effectiveCurve := buildEffectiveCurve(curve, offsets, effectiveOffsetCap(cfg))
+	effectiveCurve := buildEffectiveCurve(curve, offsets, effectiveOffsetCapForUnit(cfg, unit))
 	rpm := temperature.CalculateTargetRPM(currentTemp, effectiveCurve)
 	if rpm <= 0 {
 		return 0

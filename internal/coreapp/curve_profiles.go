@@ -19,7 +19,8 @@ func (a *CoreApp) fanCurveProfilesPayloadFromConfig(cfg types.AppConfig) types.F
 }
 
 func (a *CoreApp) applyCurveProfilesConfig(cfg types.AppConfig) error {
-	cfg.SmartControl, _ = smartcontrol.NormalizeConfig(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode)
+	unit := types.DeviceProfileSpeedUnit(&cfg)
+	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, unit)
 	if err := a.configManager.Update(cfg); err != nil {
 		return err
 	}
@@ -34,7 +35,7 @@ func (a *CoreApp) GetFanCurveProfiles() types.FanCurveProfilesPayload {
 	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
-	if curveprofiles.NormalizeConfig(&cfg) {
+	if curveprofiles.NormalizeConfigForUnit(&cfg, types.DeviceProfileSpeedUnit(&cfg)) {
 		a.configManager.Set(cfg)
 		if err := a.configManager.Save(); err != nil {
 			a.logError("保存温控曲线方案默认配置失败: %v", err)
@@ -48,7 +49,8 @@ func (a *CoreApp) SetActiveFanCurveProfile(profileID string) (types.FanCurveProf
 	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
-	curveprofiles.NormalizeConfig(&cfg)
+	unit := types.DeviceProfileSpeedUnit(&cfg)
+	curveprofiles.NormalizeConfigForUnit(&cfg, unit)
 
 	idx := curveprofiles.FindIndex(cfg.FanCurveProfiles, profileID)
 	if idx < 0 {
@@ -72,7 +74,8 @@ func (a *CoreApp) CycleFanCurveProfile() (types.FanCurveProfile, error) {
 	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
-	curveprofiles.NormalizeConfig(&cfg)
+	unit := types.DeviceProfileSpeedUnit(&cfg)
+	curveprofiles.NormalizeConfigForUnit(&cfg, unit)
 
 	if len(cfg.FanCurveProfiles) == 0 {
 		return types.FanCurveProfile{}, fmt.Errorf("暂无可用温控曲线方案")
@@ -99,10 +102,11 @@ func (a *CoreApp) SaveFanCurveProfile(params ipc.SaveFanCurveProfileParams) (typ
 	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
-	curveprofiles.NormalizeConfig(&cfg)
+	unit := types.DeviceProfileSpeedUnit(&cfg)
+	curveprofiles.NormalizeConfigForUnit(&cfg, unit)
 
 	curve := curveprofiles.CloneCurve(params.Curve)
-	if err := cfgpkg.ValidateFanCurve(curve); err != nil {
+	if err := cfgpkg.ValidateFanCurveForUnit(curve, unit); err != nil {
 		return types.FanCurveProfile{}, err
 	}
 
@@ -140,7 +144,8 @@ func (a *CoreApp) DeleteFanCurveProfile(profileID string) error {
 	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
-	curveprofiles.NormalizeConfig(&cfg)
+	unit := types.DeviceProfileSpeedUnit(&cfg)
+	curveprofiles.NormalizeConfigForUnit(&cfg, unit)
 
 	if len(cfg.FanCurveProfiles) <= 1 {
 		return fmt.Errorf("至少保留一个温控曲线方案")
@@ -173,7 +178,8 @@ func (a *CoreApp) ExportFanCurveProfiles() (string, error) {
 	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
-	curveprofiles.NormalizeConfig(&cfg)
+	unit := types.DeviceProfileSpeedUnit(&cfg)
+	curveprofiles.NormalizeConfigForUnit(&cfg, unit)
 	if idx := curveprofiles.FindIndex(cfg.FanCurveProfiles, cfg.ActiveFanCurveProfileID); idx >= 0 {
 		cfg.FanCurveProfiles[idx].Curve = curveprofiles.CloneCurve(cfg.FanCurve)
 	}
@@ -193,7 +199,7 @@ func (a *CoreApp) ImportFanCurveProfiles(code string) error {
 	cfg := a.configManager.Get()
 	cfg.FanCurveProfiles = curveprofiles.CloneProfiles(profiles)
 	cfg.ActiveFanCurveProfileID = activeID
-	if curveprofiles.NormalizeConfig(&cfg) {
+	if curveprofiles.NormalizeConfigForUnit(&cfg, types.DeviceProfileSpeedUnit(&cfg)) {
 		// normalized in place
 	}
 

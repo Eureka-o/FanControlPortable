@@ -9,6 +9,7 @@ const (
 	AppName               = "FanControl"
 	DisplayName           = "FanControl"
 	DeviceModelName       = "Slim压风散热器Pro"
+	DeviceTemplateName    = "FanControl WiFi 百分比控制模板"
 	ExecutableName        = "FanControl.exe"
 	CoreName              = "FanControl Core"
 	CoreExecutableName    = "FanControl Core.exe"

@@ -30,6 +30,7 @@ const (
 	DeviceTransportWiFi    = "wifi"
 	DeviceTransportHID     = "hid"
 	DeviceTransportBLE     = "ble"
+	DeviceTransportSerial  = "serial"
 	FanSpeedUnitPercent    = "percent"
 	FanSpeedUnitRPM        = "rpm"
 	DefaultFanDeviceIP     = "192.168.137.2"
@@ -41,6 +42,8 @@ func NormalizeDeviceTransport(transport string) string {
 		return DeviceTransportHID
 	case DeviceTransportBLE:
 		return DeviceTransportBLE
+	case DeviceTransportSerial:
+		return DeviceTransportSerial
 	default:
 		return DeviceTransportWiFi
 	}
@@ -407,41 +410,44 @@ type SmartControlConfig struct {
 
 // AppConfig 应用配置
 type AppConfig struct {
-	LegionFnQ                LegionFnQConfig           `json:"legionFnQ"`
-	LegionFnQSupport         LegionFnQSupportCache     `json:"legionFnQSupport"`
-	DeviceTransport          string                    `json:"deviceTransport"`          // 设备连接方式
-	FanControlDeviceIp       string                    `json:"fanControlDeviceIp"`       // WiFi 控制器地址
-	AutoControl              bool                      `json:"autoControl"`              // 智能变频开关
-	ManualGearToggleHotkey   string                    `json:"manualGearToggleHotkey"`   // 切换手动挡位快捷键
-	AutoControlToggleHotkey  string                    `json:"autoControlToggleHotkey"`  // 开关智能变频快捷键
-	CurveProfileToggleHotkey string                    `json:"curveProfileToggleHotkey"` // 切换温控曲线方案快捷键
-	ManualGearLevels         map[string]string         `json:"manualGearLevels"`         // 每个大挡位记忆的小挡位(低中高)
-	ManualGearRPM            map[string]map[string]int `json:"manualGearRpm"`            // 每个大挡位低/中/高的自定义转速
-	FanCurve                 []FanCurvePoint           `json:"fanCurve"`                 // 风扇曲线
-	FanCurveProfiles         []FanCurveProfile         `json:"fanCurveProfiles"`         // 风扇曲线方案列表
-	ActiveFanCurveProfileID  string                    `json:"activeFanCurveProfileId"`  // 当前激活曲线方案ID
-	GearLight                bool                      `json:"gearLight"`                // 挡位灯
-	PowerOnStart             bool                      `json:"powerOnStart"`             // 通电自启动
-	WindowsAutoStart         bool                      `json:"windowsAutoStart"`         // Windows开机自启动
-	ThemeMode                string                    `json:"themeMode"`                // 主题模式: system/light/dark/thrm
-	SmartStartStop           string                    `json:"smartStartStop"`           // 智能启停
-	Brightness               int                       `json:"brightness"`               // 亮度
-	TempUpdateRate           int                       `json:"tempUpdateRate"`           // 温度更新频率(秒)
-	TempSampleCount          int                       `json:"tempSampleCount"`          // 温度采样次数(用于平均)
-	TempSource               string                    `json:"tempSource"`               // 控温温度来源: max/cpu/gpu
-	GpuDevice                string                    `json:"gpuDevice"`                // GPU 设备选择: auto 或设备 key
-	CpuSensor                string                    `json:"cpuSensor"`                // CPU 传感器选择: auto 或传感器 key
-	GpuSensor                string                    `json:"gpuSensor"`                // GPU 传感器选择: auto 或传感器 key
-	ConfigPath               string                    `json:"configPath"`               // 配置文件路径
-	ManualGear               string                    `json:"manualGear"`               // 手动挡位设置
-	ManualLevel              string                    `json:"manualLevel"`              // 手动挡位级别(低中高)
-	DebugMode                bool                      `json:"debugMode"`                // 调试模式
-	GuiMonitoring            bool                      `json:"guiMonitoring"`            // GUI监控开关
-	CustomSpeedEnabled       bool                      `json:"customSpeedEnabled"`       // 自定义转速开关
-	CustomSpeedRPM           int                       `json:"customSpeedRPM"`           // 自定义转速值(无上下限)
-	IgnoreDeviceOnReconnect  bool                      `json:"ignoreDeviceOnReconnect"`  // 断连后忽略设备状态(保持APP配置)
-	SmartControl             SmartControlConfig        `json:"smartControl"`             // 学习型智能控温配置
-	LightStrip               LightStripConfig          `json:"lightStrip"`               // 灯带配置
+	LegionFnQ                         LegionFnQConfig           `json:"legionFnQ"`
+	LegionFnQSupport                  LegionFnQSupportCache     `json:"legionFnQSupport"`
+	ActiveDeviceProfileID             string                    `json:"activeDeviceProfileId"`
+	ActiveDeviceProfileIDsByTransport map[string]string         `json:"activeDeviceProfileIdsByTransport,omitempty"`
+	DeviceProfiles                    []DeviceProfile           `json:"deviceProfiles,omitempty"`
+	DeviceTransport                   string                    `json:"deviceTransport"`          // 设备连接方式
+	FanControlDeviceIp                string                    `json:"fanControlDeviceIp"`       // WiFi 控制器地址
+	AutoControl                       bool                      `json:"autoControl"`              // 智能变频开关
+	ManualGearToggleHotkey            string                    `json:"manualGearToggleHotkey"`   // 切换手动挡位快捷键
+	AutoControlToggleHotkey           string                    `json:"autoControlToggleHotkey"`  // 开关智能变频快捷键
+	CurveProfileToggleHotkey          string                    `json:"curveProfileToggleHotkey"` // 切换温控曲线方案快捷键
+	ManualGearLevels                  map[string]string         `json:"manualGearLevels"`         // 每个大挡位记忆的小挡位(低中高)
+	ManualGearRPM                     map[string]map[string]int `json:"manualGearRpm"`            // 每个大挡位低/中/高的自定义转速
+	FanCurve                          []FanCurvePoint           `json:"fanCurve"`                 // 风扇曲线
+	FanCurveProfiles                  []FanCurveProfile         `json:"fanCurveProfiles"`         // 风扇曲线方案列表
+	ActiveFanCurveProfileID           string                    `json:"activeFanCurveProfileId"`  // 当前激活曲线方案ID
+	GearLight                         bool                      `json:"gearLight"`                // 挡位灯
+	PowerOnStart                      bool                      `json:"powerOnStart"`             // 通电自启动
+	WindowsAutoStart                  bool                      `json:"windowsAutoStart"`         // Windows开机自启动
+	ThemeMode                         string                    `json:"themeMode"`                // 主题模式: system/light/dark/thrm
+	SmartStartStop                    string                    `json:"smartStartStop"`           // 智能启停
+	Brightness                        int                       `json:"brightness"`               // 亮度
+	TempUpdateRate                    int                       `json:"tempUpdateRate"`           // 温度更新频率(秒)
+	TempSampleCount                   int                       `json:"tempSampleCount"`          // 温度采样次数(用于平均)
+	TempSource                        string                    `json:"tempSource"`               // 控温温度来源: max/cpu/gpu
+	GpuDevice                         string                    `json:"gpuDevice"`                // GPU 设备选择: auto 或设备 key
+	CpuSensor                         string                    `json:"cpuSensor"`                // CPU 传感器选择: auto 或传感器 key
+	GpuSensor                         string                    `json:"gpuSensor"`                // GPU 传感器选择: auto 或传感器 key
+	ConfigPath                        string                    `json:"configPath"`               // 配置文件路径
+	ManualGear                        string                    `json:"manualGear"`               // 手动挡位设置
+	ManualLevel                       string                    `json:"manualLevel"`              // 手动挡位级别(低中高)
+	DebugMode                         bool                      `json:"debugMode"`                // 调试模式
+	GuiMonitoring                     bool                      `json:"guiMonitoring"`            // GUI监控开关
+	CustomSpeedEnabled                bool                      `json:"customSpeedEnabled"`       // 自定义转速开关
+	CustomSpeedRPM                    int                       `json:"customSpeedRPM"`           // 自定义转速值(无上下限)
+	IgnoreDeviceOnReconnect           bool                      `json:"ignoreDeviceOnReconnect"`  // 断连后忽略设备状态(保持APP配置)
+	SmartControl                      SmartControlConfig        `json:"smartControl"`             // 学习型智能控温配置
+	LightStrip                        LightStripConfig          `json:"lightStrip"`               // 灯带配置
 }
 
 // GetDefaultLightStripConfig 获取默认灯带配置
@@ -460,11 +466,43 @@ func GetDefaultLightStripConfig() LightStripConfig {
 
 // GetDefaultSmartControlConfig 获取默认智能控温配置
 func GetDefaultSmartControlConfig(curve []FanCurvePoint) SmartControlConfig {
+	return GetDefaultSmartControlConfigForUnit(curve, FanSpeedUnitPercent)
+}
+
+func GetDefaultSmartControlConfigForUnit(curve []FanCurvePoint, unit string) SmartControlConfig {
 	offsets := make([]int, len(curve))
 	heatOffsets := make([]int, len(curve))
 	coolOffsets := make([]int, len(curve))
 	heatRate := make([]int, 7)
 	coolRate := make([]int, 7)
+
+	if IsRPMSpeedUnit(unit) {
+		return SmartControlConfig{
+			Enabled:              true,
+			Learning:             true,
+			LearningBias:         LearningBiasBalanced,
+			FilterTransientSpike: true,
+			TargetTemp:           68,
+			Aggressiveness:       5,
+			Hysteresis:           2,
+			MinRPMChange:         50,
+			RampUpLimit:          220,
+			RampDownLimit:        160,
+			LearnRate:            3,
+			LearnWindow:          8,
+			LearnDelay:           3,
+			OverheatWeight:       8,
+			RPMDeltaWeight:       5,
+			NoiseWeight:          4,
+			TrendGain:            5,
+			MaxLearnOffset:       300,
+			LearnedOffsets:       offsets,
+			LearnedOffsetsHeat:   heatOffsets,
+			LearnedOffsetsCool:   coolOffsets,
+			LearnedRateHeat:      heatRate,
+			LearnedRateCool:      coolRate,
+		}
+	}
 
 	return SmartControlConfig{
 		Enabled:              true,
@@ -474,9 +512,9 @@ func GetDefaultSmartControlConfig(curve []FanCurvePoint) SmartControlConfig {
 		TargetTemp:           68,
 		Aggressiveness:       5,
 		Hysteresis:           2,
-		MinRPMChange:         2,
-		RampUpLimit:          8,
-		RampDownLimit:        6,
+		MinRPMChange:         20,
+		RampUpLimit:          80,
+		RampDownLimit:        60,
 		LearnRate:            3,
 		LearnWindow:          8,
 		LearnDelay:           3,
@@ -484,7 +522,7 @@ func GetDefaultSmartControlConfig(curve []FanCurvePoint) SmartControlConfig {
 		RPMDeltaWeight:       5,
 		NoiseWeight:          4,
 		TrendGain:            5,
-		MaxLearnOffset:       20,
+		MaxLearnOffset:       200,
 		LearnedOffsets:       offsets,
 		LearnedOffsetsHeat:   heatOffsets,
 		LearnedOffsetsCool:   coolOffsets,
@@ -664,7 +702,15 @@ func BuildGearRPMCommand(gear int, rpm int) []byte {
 
 // DefaultGearRPM 返回某挡位某级别的出厂默认转速
 func DefaultGearRPM(gear, level string) int {
-	if levels, ok := DefaultManualGearRPM[gear]; ok {
+	return DefaultGearRPMForUnit(gear, level, FanSpeedUnitPercent)
+}
+
+func DefaultGearRPMForUnit(gear, level string, unit string) int {
+	defaults := DefaultManualGearRPM
+	if IsRPMSpeedUnit(unit) {
+		defaults = CloneDefaultRPMManualGearRPM()
+	}
+	if levels, ok := defaults[gear]; ok {
 		if rpm, ok := levels[level]; ok {
 			return rpm
 		}
@@ -681,15 +727,23 @@ func (c *AppConfig) ResolveGearRPM(gear, level string) int {
 			}
 		}
 	}
-	return DefaultGearRPM(gear, level)
+	return DefaultGearRPMForUnit(gear, level, DeviceProfileSpeedUnit(c))
 }
 
 func clampManualGearRPM(rpm int) int {
-	if rpm < ManualGearMinRPM {
-		return ManualGearMinRPM
+	return clampManualGearRPMForUnit(rpm, FanSpeedUnitPercent)
+}
+
+func clampManualGearRPMForUnit(rpm int, unit string) int {
+	minRPM, maxRPM := ManualGearMinRPM, ManualGearMaxRPM
+	if IsRPMSpeedUnit(unit) {
+		minRPM, maxRPM = LegacyRPMManualGearMin, LegacyRPMManualGearMax
 	}
-	if rpm > ManualGearMaxRPM {
-		return ManualGearMaxRPM
+	if rpm < minRPM {
+		return minRPM
+	}
+	if rpm > maxRPM {
+		return maxRPM
 	}
 	return rpm
 }
@@ -698,13 +752,22 @@ func clampManualGearRPM(rpm int) int {
 // 缺失项用默认值补全; 限制在 [ManualGearMinRPM, ManualGearMaxRPM];
 // 按从低到高(静音低 -> 超频高)强制非递减。返回是否发生修改。
 func NormalizeManualGearRPM(cfg *AppConfig) bool {
+	return NormalizeManualGearRPMForUnit(cfg, DeviceProfileSpeedUnit(cfg))
+}
+
+func NormalizeManualGearRPMForUnit(cfg *AppConfig, unit string) bool {
 	if cfg == nil {
 		return false
 	}
+	unit = NormalizeFanSpeedUnit(unit)
 	changed := false
 	if cfg.ManualGearRPM == nil {
 		cfg.ManualGearRPM = map[string]map[string]int{}
 		changed = true
+	}
+	minRPM, maxRPM := ManualGearMinRPM, ManualGearMaxRPM
+	if IsRPMSpeedUnit(unit) {
+		minRPM, maxRPM = LegacyRPMManualGearMin, LegacyRPMManualGearMax
 	}
 	prev := 0
 	for _, gear := range ManualGearOrder {
@@ -716,10 +779,10 @@ func NormalizeManualGearRPM(cfg *AppConfig) bool {
 		}
 		for _, level := range ManualLevelOrder {
 			rpm, ok := levels[level]
-			if !ok || rpm < ManualGearMinRPM || rpm > ManualGearMaxRPM {
-				rpm = DefaultGearRPM(gear, level)
+			if !ok || rpm < minRPM || rpm > maxRPM {
+				rpm = DefaultGearRPMForUnit(gear, level, unit)
 			}
-			rpm = max(clampManualGearRPM(rpm), prev)
+			rpm = max(clampManualGearRPMForUnit(rpm, unit), prev)
 			if levels[level] != rpm {
 				levels[level] = rpm
 				changed = true
@@ -772,14 +835,58 @@ func GetDefaultFanCurve() []FanCurvePoint {
 	}
 }
 
+func GetDefaultRPMFanCurve() []FanCurvePoint {
+	return []FanCurvePoint{
+		{Temperature: 30, RPM: 1000},
+		{Temperature: 35, RPM: 1200},
+		{Temperature: 40, RPM: 1400},
+		{Temperature: 45, RPM: 1600},
+		{Temperature: 50, RPM: 1800},
+		{Temperature: 55, RPM: 2000},
+		{Temperature: 60, RPM: 2300},
+		{Temperature: 65, RPM: 2600},
+		{Temperature: 70, RPM: 2900},
+		{Temperature: 75, RPM: 3200},
+		{Temperature: 80, RPM: 3500},
+		{Temperature: 85, RPM: 3800},
+		{Temperature: 90, RPM: 4000},
+		{Temperature: 95, RPM: 4000},
+		{Temperature: 100, RPM: 4000},
+		{Temperature: 105, RPM: 4000},
+		{Temperature: 110, RPM: 4000},
+	}
+}
+
+func CloneDefaultRPMManualGearRPM() map[string]map[string]int {
+	return map[string]map[string]int{
+		"静音": {"低": 1300, "中": 1700, "高": 1900},
+		"标准": {"低": 2100, "中": 2400, "高": 2700},
+		"强劲": {"低": 2800, "中": 3000, "高": 3300},
+		"超频": {"低": 3500, "中": 3700, "高": 4000},
+	}
+}
+
+func CloneDefaultManualGearRPMForUnit(unit string) map[string]map[string]int {
+	if IsRPMSpeedUnit(unit) {
+		return CloneDefaultRPMManualGearRPM()
+	}
+	return CloneDefaultManualGearRPM()
+}
+
 // GetDefaultConfig 获取默认配置
 func GetDefaultConfig(isAutoStart bool) AppConfig {
 	defaultCurve := GetDefaultFanCurve()
 	defaultTempSelection := GetDefaultTemperatureSelection()
+	defaultDeviceProfile := DefaultWiFiPercentProfile(DefaultFanDeviceIP)
 
 	return AppConfig{
-		DeviceTransport:          DeviceTransportWiFi,
-		FanControlDeviceIp:       DefaultFanDeviceIP,
+		DeviceTransport:       DeviceTransportWiFi,
+		FanControlDeviceIp:    DefaultFanDeviceIP,
+		ActiveDeviceProfileID: defaultDeviceProfile.ID,
+		ActiveDeviceProfileIDsByTransport: map[string]string{
+			DeviceTransportWiFi: defaultDeviceProfile.ID,
+		},
+		DeviceProfiles:           []DeviceProfile{defaultDeviceProfile},
 		AutoControl:              false,
 		ManualGearToggleHotkey:   "Ctrl+Alt+Shift+M",
 		AutoControlToggleHotkey:  "Ctrl+Alt+Shift+A",

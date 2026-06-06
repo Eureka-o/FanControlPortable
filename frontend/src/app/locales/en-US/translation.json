@@ -1,6 +1,6 @@
 {
   "common": {
-    "appName": "FanControl 2.0",
+    "appName": "FanControl",
     "metaDescription": "A driver and control utility for portable fan controller devices.",
     "language": "Language",
     "languages": {
@@ -38,6 +38,7 @@
       "status": "Status",
       "curve": "Curve",
       "control": "Settings",
+      "devices": "Devices",
       "about": "About"
     },
     "status": {
@@ -58,6 +59,238 @@
     },
     "bridgeWarning": {
       "closeAria": "Close warning"
+    }
+  },
+  "advancedDevices": {
+    "title": "Supported devices",
+    "subtitle": "Manage device templates and user devices. Ordinary control follows the enabled device.",
+    "gate": {
+      "title": "Advanced device area",
+      "description": "This page is for supported-device records, DIY controllers, and raw protocol testing. Wrong commands or mismatched interfaces may cause device errors.",
+      "warningTitle": "Proceed only if you understand the controller details",
+      "warningBody": "Confirm the transport, speed unit, endpoints, UUIDs, frame format, checksum, and parser before sending commands or saving a device.",
+      "primary": "I understand",
+      "dialogTitle": "Confirm advanced access",
+      "dialogDescription": "The next screen can import device definitions and send raw debug commands. Keep ordinary users on the normal Status and Settings pages.",
+      "confirm": "Enter advanced devices"
+    },
+    "actions": {
+      "addDevice": "Add device",
+      "manageDevices": "Manage devices",
+      "editDevice": "Edit",
+      "batchExport": "Batch export",
+      "setActive": "Enable device",
+      "saveDevice": "Save device",
+      "generate": "Generate",
+      "send": "Send",
+      "saveDebugProfile": "Save device draft",
+      "refreshPorts": "Refresh ports",
+      "scanBle": "Scan BLE",
+      "probeGatt": "Probe GATT",
+      "applyGatt": "Apply GATT"
+    },
+    "sections": {
+      "supported": "Device template library",
+      "supportedHint": "Built-in templates are read-only baselines for packet shape, speed mapping, parsers, and transport defaults.",
+      "user": "User-entered devices",
+      "userHint": "The built-in default device plus imported or manually created devices live here and can be enabled for the current control path.",
+      "emptySupported": "No supported-device library entries were returned.",
+      "emptyUser": "The device library is empty.",
+      "importExport": "Import / export device information",
+      "importDevices": "Import device information",
+      "debug": "Debug device builder",
+      "debugHint": "Use bounded raw-command tests while building a reusable device."
+    },
+    "connectionBanner": {
+      "title": "Enabled devices by connection",
+      "description": "Each connection type can enable one device. Normal Settings only chooses the connection category and daily connection fields; protocol details stay in Devices.",
+      "noDevice": "No enabled device",
+      "addHint": "Add or import a device first",
+      "count": "{{count}} devices"
+    },
+    "status": {
+      "active": "Active",
+      "builtin": "Built-in device",
+      "template": "Template",
+      "user": "User",
+      "working": "Applying device changes..."
+    },
+    "capabilities": {
+      "read": "Read state",
+      "setSpeed": "Set speed",
+      "raw": "Raw commands",
+      "lighting": "Lighting",
+      "none": "No capability flags"
+    },
+    "transport": {
+      "wifi": "WiFi",
+      "ble": "BLE",
+      "serial": "Virtual COM",
+      "hid": "Legacy HID"
+    },
+    "speedUnit": {
+      "percent": "Percent",
+      "rpm": "RPM"
+    },
+    "fields": {
+      "name": "Device name",
+      "vendor": "Vendor",
+      "model": "Model",
+      "notes": "Notes",
+      "transport": "Connection type",
+      "speedUnit": "Speed unit",
+      "speedMin": "Minimum speed",
+      "speedMax": "Maximum speed",
+      "speedStep": "Speed step",
+      "tickScale": "Percent tick scale",
+      "endpoint": "Device address",
+      "stateEndpoint": "State endpoint",
+      "speedEndpoint": "Speed endpoint",
+      "httpMethod": "HTTP method",
+      "requestTimeoutMs": "Request timeout (ms)",
+      "minSendIntervalMs": "Min send interval (ms)",
+      "maxRetries": "Max retries",
+      "retryBackoffMs": "Retry backoff (ms)",
+      "bleAddress": "BLE address",
+      "bleNameFilter": "BLE name filter",
+      "bleService": "Service UUID",
+      "bleWrite": "Write characteristic",
+      "bleNotify": "Notify characteristic",
+      "bleWriteWithResponse": "Write with response",
+      "serialPort": "Port",
+      "serialBaud": "Baud rate",
+      "serialDataBits": "Data bits",
+      "serialStopBits": "Stop bits",
+      "serialParity": "Parity",
+      "serialDelimiter": "Frame delimiter",
+      "commandEncoding": "Command encoding",
+      "checksum": "Checksum",
+      "setSpeedCommand": "Set-speed command",
+      "readStateCommand": "Read-state command",
+      "parserType": "Parser type",
+      "parserExpression": "Parser expression",
+      "rawCommand": "Raw command",
+      "waitMs": "Wait time (ms)"
+    },
+    "hints": {
+      "tickScale": "Use 10 for 0.1% learning precision.",
+      "serialPorts": "Pick a detected COM port or type one manually if your controller uses a virtual port.",
+      "bleScan": "Scan is manual and time-bounded. FanControl uses advertised name and service UUIDs when available; write/notify characteristics can still be entered manually.",
+      "bleAddress": "Optional. Filled from scan results when available, and used for direct BLE connection or GATT probing."
+    },
+    "placeholders": {
+      "name": "My cooler",
+      "serialPortSelect": "Select detected port",
+      "serialPortManual": "Manual port, for example COM3",
+      "serialPortCustom": "{{port}} (manual)"
+    },
+    "dialog": {
+      "addTitle": "Add device",
+      "addDescription": "Create a device from a template, or enter known controller details manually.",
+      "manualTab": "Manual",
+      "importTab": "Import",
+      "libraryProfile": "Start from template",
+      "blankProfile": "Blank device",
+      "setActiveAfterSave": "Enable this device after saving",
+      "editTitle": "Edit device",
+      "editDescription": "Update the saved device name, connection details, commands, parsers, and speed settings.",
+      "manageTitle": "Manage user devices",
+      "manageDescription": "Select or delete devices created by import or manual entry. Built-in templates stay protected.",
+      "noUserProfiles": "No user devices to manage.",
+      "deleteConfirm": "Delete this device?",
+      "deleteTitle": "Delete device",
+      "deleteDescription": "This only removes the saved user device from FanControl. Built-in templates are not changed.",
+      "deleteWarning": "If this device is enabled, FanControl will switch to another device for the same connection type when possible.",
+      "deleteAction": "Delete device"
+    },
+    "validation": {
+      "nameRequired": "Enter a device name first.",
+      "importRequired": "Paste a device import code first.",
+      "rawCommandRequired": "Enter a raw command first.",
+      "serialPortsFailed": "Could not list COM ports: {{error}}",
+      "serialPortsEmpty": "No COM ports detected. You can still type the port manually.",
+      "bleScanFailed": "Could not scan BLE devices: {{error}}",
+      "bleScanEmpty": "No BLE devices were found. You can still enter the matching fields manually.",
+      "gattProbeFailed": "Could not probe BLE GATT services: {{error}}",
+      "gattProbeEmpty": "No GATT services were returned. You can still enter UUIDs manually."
+    },
+    "importExport": {
+      "description": "Device files and import codes include names, transport settings, speed units, endpoints/interfaces, command templates, parsers, and capabilities.",
+      "exportTitle": "Export",
+      "importTitle": "Import",
+      "exportPlaceholder": "Click Generate to create a string starting with FCDP1.",
+      "importPlaceholder": "Paste a string starting with FCDP1.",
+      "exportFile": "Export file",
+      "chooseFile": "Choose file",
+      "dropTitle": "Drop a device file here",
+      "dropHint": "Use a .fcdp, JSON, or text file. Import merges by device ID and keeps existing devices."
+    },
+    "ble": {
+      "scanTitle": "BLE device discovery",
+      "matched": "Matched",
+      "services": "Services",
+      "profileMatch": "Template match: {{profile}}",
+      "gattResult": "GATT services",
+      "gattUnknownDevice": "Unknown BLE device",
+      "gattNoCharacteristics": "No characteristics returned.",
+      "service": "Service",
+      "properties": {
+        "broadcast": "broadcast",
+        "read": "read",
+        "write": "write",
+        "writeWithoutResponse": "write without response",
+        "notify": "notify",
+        "indicate": "indicate",
+        "authenticatedWrite": "authenticated write",
+        "extended": "extended"
+      }
+    },
+    "profileTest": {
+      "title": "Device test",
+      "hint": "Test the current draft through a temporary backend executor. The device is not saved or enabled.",
+      "draftName": "Draft device",
+      "testSpeed": "Test speed",
+      "action": {
+        "connect": "Connect",
+        "readState": "Read status",
+        "setSpeed": "Set speed"
+      },
+      "success": "{{action}} completed",
+      "current": "Current",
+      "target": "Target",
+      "noData": "No speed data was returned.",
+      "error": "Device test failed: {{error}}"
+    },
+    "debug": {
+      "warning": "Raw commands are rate-limited by the backend path, but they still go directly to the device. Use only known-safe commands.",
+      "notConnected": "Connect a device first to send raw commands.",
+      "resultPlaceholder": "Command result will appear here.",
+      "confirmTitle": "Confirm raw command",
+      "confirmDescription": "This command will be sent through the active device path. Confirm the payload, target device, and wait time before continuing.",
+      "confirmCommand": "Command",
+      "confirmWait": "Wait after send",
+      "confirmSend": "Send raw command",
+      "saveProfileHint": "Use the last successful raw command as a starting point for a reusable device.",
+      "profileName": "{{name}} debug device",
+      "profileNotes": "Created from a raw debug command. Command: {{command}}. Wait after send: {{waitMs}} ms."
+    },
+    "toast": {
+      "loadFailed": "Failed to load devices: {{error}}",
+      "profileActivated": "Device enabled",
+      "activeFailed": "Failed to enable device: {{error}}",
+      "saved": "Device saved",
+      "deleted": "Device deleted",
+      "deleteFailed": "Failed to delete device: {{error}}",
+      "exportGenerated": "Device export code generated",
+      "exportFailed": "Failed to export devices: {{error}}",
+      "exportDownloaded": "Device file exported",
+      "copied": "Copied",
+      "importMissing": "Paste the import string first",
+      "imported": "Devices imported",
+      "importFailed": "Failed to import devices: {{error}}",
+      "importFileFailed": "Failed to read device file: {{error}}",
+      "debugSent": "Debug command sent",
+      "debugFailed": "Debug command failed: {{error}}"
     }
   },
   "store": {
@@ -156,6 +389,7 @@
     "hero": {
       "modeLine": "{{mode}} · {{description}}",
       "waitingBluetooth": "Waiting for wireless connection...",
+      "waitingDeviceConnection": "Waiting to connect {{name}}...",
       "coreUnavailable": "Core service is unavailable. Restore the background service first."
     },
     "actions": {
@@ -171,7 +405,9 @@
     },
     "disconnected": {
       "title": "Device not connected",
-      "description": "Enter the device address in Settings, then connect the cooler."
+      "description": "Enter the device address in Settings, then connect the cooler.",
+      "titleWithDevice": "{{name}} is not connected",
+      "descriptionWithDevice": "{{name}} is the enabled device. Check its connection type and address, then connect."
     },
     "bridgeWarning": {
       "default": "The temperature bridge failed to read data. Try reinitializing temperature monitoring and try again.",
@@ -476,6 +712,7 @@
       "customSpeedTitle": "Custom speed",
       "customSpeedDescription": "Fixed percentage speed for special scenarios",
       "customSpeedWarning": "Custom speed disables smart temperature control",
+      "customSpeedRangeHint": "Manual speed range is 0% to 100%. Adjust carefully for the cooling load.",
       "toasts": {
         "profileSwitched": "Temperature curve switched",
         "profileSwitchFailed": "Failed to switch curve: {{error}}"
@@ -542,7 +779,63 @@
       "autoStartTip": "Running as administrator avoids a UAC prompt each time",
       "reconnectTitle": "Keep config after reconnect",
       "reconnectDescription": "Continue using the app configuration after reconnecting",
-      "reconnectTip": "Recommended to prevent fallback to the device default mode after disconnects"
+      "reconnectTip": "Recommended to prevent fallback to the device default mode after disconnects",
+      "deviceConnection": {
+        "title": "Device connection",
+        "description": "Choose the active connection for normal FanControl control. Device templates stay in Devices.",
+        "overviewLabel": "Device address",
+        "transportLabel": "Connection",
+        "profileLabel": "Profile",
+        "activeProfile": "Active",
+        "noActiveProfile": "No active profile",
+        "noProfilesOption": "No profile",
+        "addressLabel": "IP address",
+        "addressPlaceholder": "e.g. 192.168.1.50",
+        "stateEndpointLabel": "State endpoint",
+        "speedEndpointLabel": "Speed endpoint",
+        "wifiHint": "WiFi only needs an IP address here. Advanced packet, protocol, and parser details are managed in Devices.",
+        "bleNameFilter": "Name filter",
+        "bleService": "Service UUID",
+        "bleWrite": "Write UUID",
+        "bleNotify": "Notify UUID",
+        "bleHint": "BLE scan can help match the enabled BLE device. UUID and protocol details stay in Devices.",
+        "bleScan": "Scan BLE",
+        "bleScanFailed": "BLE scan failed: {{error}}",
+        "bleScanEmpty": "No BLE devices were found. Keep the current device or add details in Devices.",
+        "bleMatched": "Matched",
+        "bleServices": "Services",
+        "bleProfileMatch": "Profile: {{profile}}",
+        "serialPort": "Port",
+        "serialBaud": "Baud",
+        "serialFrame": "Frame",
+        "serialDelimiter": "Delimiter",
+        "serialHint": "Choose the COM port and baud rate here. Advanced protocol, commands, and parsers stay in Devices.",
+        "hidHint": "Legacy HID uses the isolated RPM path and remains available only for compatible devices.",
+        "notConfigured": "Not configured",
+        "toasts": {
+          "loadFailed": "Failed to load device profiles: {{error}}",
+          "profileRequired": "Add or import a device for this connection type in Devices first.",
+          "transportSaved": "Connection enabled",
+          "transportFailed": "Failed to update connection type: {{error}}",
+          "profileSaved": "Device enabled",
+          "profileFailed": "Failed to enable device: {{error}}",
+          "wifiSaved": "WiFi connection saved",
+          "wifiFailed": "Failed to save WiFi connection: {{error}}",
+          "bleScanFailed": "Failed to scan BLE devices: {{error}}",
+          "bleSaved": "BLE device details saved",
+          "bleSaveFailed": "Failed to save BLE device details: {{error}}",
+          "serialSaved": "Serial connection saved",
+          "serialFailed": "Failed to save serial connection: {{error}}",
+          "serialPortRequired": "Enter a COM port or virtual port name.",
+          "serialBaudInvalid": "Enter a valid baud rate."
+        },
+        "enabledDeviceLabel": "Enabled device",
+        "noEnabledDevice": "No enabled device",
+        "serialPortPlaceholder": "COM3 or virtual port name",
+        "serialDetectPorts": "Detect ports",
+        "serialPortsFailed": "Could not list COM ports: {{error}}",
+        "serialPortsEmpty": "No COM ports detected. You can still type a virtual port manually."
+      }
     },
     "offline": {
       "message": "Device is not connected. Some features are unavailable."
@@ -552,10 +845,15 @@
       "modeTitle": "Debug mode",
       "modeDescription": "Enable verbose logging",
       "refresh": "Refresh debug info",
+      "commandPlaceholder": "27 or 5A A5 27 02 29",
+      "sendCommand": "Send",
+      "dangerousCommandWarning": "High-risk command 0x{{command}}: this directly touches low-level firmware or debug registers. Misuse may make the device behave abnormally or become unusable. Confirm before sending.",
+      "rawCommandWarning": "Raw commands are sent directly to device firmware. Wrong commands may cause abnormal device behavior, so proceed carefully.",
       "pawnTitle": "PawnIO driver",
       "pawnDescription": "Temperature reading looks wrong? Try reinstalling the PawnIO driver.",
       "reinstall": "Reinstall PawnIO",
       "toasts": {
+        "commandSent": "Sent {{frame}}",
         "reinstallExecuted": "PawnIO installer executed",
         "uninstallWarning": "PawnIO uninstall step returned a notice: {{warning}}",
         "bridgeWarning": "Temperature monitor reinitialization failed: {{warning}}",

@@ -27,7 +27,72 @@ const (
 	offsetSmoothPullLimit      = 3
 	offsetSmoothSelfWeight     = 0.7
 	offsetSmoothNeighborWeight = 0.15
+
+	rawPercentUnit = "percent-raw"
 )
+
+type learningTuning struct {
+	hardOffsetCap       int
+	stableRPMBand       int
+	minRPMSpanForEff    int
+	effFloorPerRPM      float64
+	effCeilPerRPM       float64
+	defaultEffPerRPM    float64
+	maxLearnStep        int
+	learnStepDeadRPM    int
+	minSafetyStep       int
+	offsetSmoothPullMax int
+}
+
+func learningTuningForUnit(unit string) learningTuning {
+	if unit == rawPercentUnit {
+		return learningTuning{
+			hardOffsetCap:       60,
+			stableRPMBand:       8,
+			minRPMSpanForEff:    8,
+			effFloorPerRPM:      0.03,
+			effCeilPerRPM:       1.2,
+			defaultEffPerRPM:    0.20,
+			maxLearnStep:        8,
+			learnStepDeadRPM:    1,
+			minSafetyStep:       2,
+			offsetSmoothPullMax: 3,
+		}
+	}
+	if types.IsRPMSpeedUnit(unit) {
+		return learningTuning{
+			hardOffsetCap:       600,
+			stableRPMBand:       120,
+			minRPMSpanForEff:    80,
+			effFloorPerRPM:      0.0008,
+			effCeilPerRPM:       0.05,
+			defaultEffPerRPM:    0.008,
+			maxLearnStep:        80,
+			learnStepDeadRPM:    20,
+			minSafetyStep:       20,
+			offsetSmoothPullMax: 30,
+		}
+	}
+	return learningTuning{
+		hardOffsetCap:       600,
+		stableRPMBand:       80,
+		minRPMSpanForEff:    80,
+		effFloorPerRPM:      0.003,
+		effCeilPerRPM:       0.12,
+		defaultEffPerRPM:    0.020,
+		maxLearnStep:        80,
+		learnStepDeadRPM:    10,
+		minSafetyStep:       20,
+		offsetSmoothPullMax: 30,
+	}
+}
+
+func normalizeLearningUnit(unit string) string {
+	if unit == rawPercentUnit {
+		return rawPercentUnit
+	}
+	return types.NormalizeFanSpeedUnit(unit)
+}
 
 // eqPoint 记录一次稳态 (转速, 温度) 平衡点。
 type eqPoint struct {
@@ -48,6 +113,7 @@ type SteadyResult struct {
 // StableObserver 为每个曲线点累积稳态采样，并维护 (转速,温度) 平衡点历史。
 type StableObserver struct {
 	curveLen   int
+	unit       string
 	samples    [][]int     // 每个温度桶的温度采样
 	rpmSamples [][]int     // 与 samples 平行的转速采样
 	history    [][]eqPoint // 每个温度桶最近的稳态平衡点
@@ -59,12 +125,29 @@ type StableObserver struct {
 
 // NewStableObserver 创建针对当前曲线长度的观察者。
 func NewStableObserver(curveLen int) *StableObserver {
+	return NewStableObserverForUnit(curveLen, rawPercentUnit)
+}
+
+func NewStableObserverForUnit(curveLen int, unit string) *StableObserver {
 	if curveLen <= 0 {
 		curveLen = 1
 	}
-	o := &StableObserver{curveLen: curveLen}
+	o := &StableObserver{curveLen: curveLen, unit: normalizeLearningUnit(unit)}
 	o.allocBuffers(curveLen)
 	return o
+}
+
+func (o *StableObserver) SetUnit(unit string) bool {
+	if o == nil {
+		return false
+	}
+	next := normalizeLearningUnit(unit)
+	if o.unit == next {
+		return false
+	}
+	o.unit = next
+	o.Reset()
+	return true
 }
 
 func (o *StableObserver) allocBuffers(curveLen int) {
@@ -120,8 +203,8 @@ func stableSampleDelay(cfg types.SmartControlConfig) int {
 	return clampInt(delay, 0, 8)
 }
 
-func stableRPMRange(cfg types.SmartControlConfig) int {
-	return max(stableRPMBand, cfg.MinRPMChange)
+func stableRPMRangeForUnit(cfg types.SmartControlConfig, unit string) int {
+	return max(learningTuningForUnit(unit).stableRPMBand, cfg.MinRPMChange)
 }
 
 // CurveLen 返回当前观察者的曲线长度。
@@ -161,7 +244,7 @@ func (o *StableObserver) Observe(temp, effectiveRPM int, curve []types.FanCurveP
 	}
 	window := stableSampleWindow(cfg)
 	delay := stableSampleDelay(cfg)
-	rpmBand := stableRPMRange(cfg)
+	rpmBand := stableRPMRangeForUnit(cfg, o.unit)
 
 	if o.seen[idx] {
 		tempJump := absInt(temp-o.lastTemps[idx]) > stableTempBand+1
@@ -243,7 +326,7 @@ func (o *StableObserver) recordEquilibrium(idx, rpm, temp int) {
 	}
 	hist := o.history[idx]
 	for i := range hist {
-		if absInt(hist[i].rpm-rpm) < minRPMSpanForEff {
+		if absInt(hist[i].rpm-rpm) < learningTuningForUnit(o.unit).minRPMSpanForEff {
 			hist[i] = eqPoint{rpm: rpm, temp: temp}
 			o.history[idx] = hist
 			return
@@ -266,6 +349,7 @@ func (o *StableObserver) localEfficiency(idx int) (float64, bool) {
 	if len(hist) < 2 {
 		return 0, false
 	}
+	tuning := learningTuningForUnit(o.unit)
 	lo, hi := hist[0], hist[0]
 	for _, p := range hist[1:] {
 		if p.rpm < lo.rpm {
@@ -276,17 +360,17 @@ func (o *StableObserver) localEfficiency(idx int) (float64, bool) {
 		}
 	}
 	span := hi.rpm - lo.rpm
-	if span < minRPMSpanForEff {
+	if span < tuning.minRPMSpanForEff {
 		return 0, false
 	}
 	// 低转速点温度应更高；冷却有效时 (lo.temp - hi.temp) > 0。
 	eff := float64(lo.temp-hi.temp) / float64(span)
-	if eff < effFloorPerRPM {
+	if eff < tuning.effFloorPerRPM {
 		// 冷却几乎无效（甚至负相关）：视为最低效率，让寻优倾向于降转速省噪音。
-		eff = effFloorPerRPM
+		eff = tuning.effFloorPerRPM
 	}
-	if eff > effCeilPerRPM {
-		eff = effCeilPerRPM
+	if eff > tuning.effCeilPerRPM {
+		eff = tuning.effCeilPerRPM
 	}
 	return eff, true
 }
@@ -304,9 +388,14 @@ func alphaFromLearnRate(learnRate int) float64 {
 
 // effectiveOffsetCap 取 cfg.MaxLearnOffset 和 hardOffsetCap 的较小值。
 func effectiveOffsetCap(cfg types.SmartControlConfig) int {
+	return effectiveOffsetCapForUnit(cfg, rawPercentUnit)
+}
+
+func effectiveOffsetCapForUnit(cfg types.SmartControlConfig, unit string) int {
+	tuning := learningTuningForUnit(unit)
 	cap := cfg.MaxLearnOffset
-	if cap <= 0 || cap > hardOffsetCap {
-		cap = hardOffsetCap
+	if cap <= 0 || cap > tuning.hardOffsetCap {
+		cap = tuning.hardOffsetCap
 	}
 	return cap
 }
@@ -336,23 +425,28 @@ func comfortBandWidth(cfg types.SmartControlConfig) int {
 //
 // 冷却效率 eff (°C/RPM) 把“温度误差”换算成“转速需求”，使步长物理合理、收敛快且不易过冲。
 func solveLearnStep(steadyTemp int, eff float64, haveEff bool, cfg types.SmartControlConfig) int {
+	return solveLearnStepForUnit(steadyTemp, eff, haveEff, cfg, rawPercentUnit)
+}
+
+func solveLearnStepForUnit(steadyTemp int, eff float64, haveEff bool, cfg types.SmartControlConfig, unit string) int {
+	tuning := learningTuningForUnit(unit)
 	ceiling := targetTempCeiling(cfg)
 	lowTarget := ceiling - comfortBandWidth(cfg)
 	alpha := alphaFromLearnRate(cfg.LearnRate)
 
-	if !haveEff || eff < effFloorPerRPM {
-		eff = defaultEffPerRPM
+	if !haveEff || eff < tuning.effFloorPerRPM {
+		eff = tuning.defaultEffPerRPM
 	}
-	if eff > effCeilPerRPM {
-		eff = effCeilPerRPM
+	if eff > tuning.effCeilPerRPM {
+		eff = tuning.effCeilPerRPM
 	}
 
 	var step float64
 	switch {
 	case steadyTemp > ceiling:
 		step = alpha * float64(steadyTemp-ceiling) / eff
-		if step < minSafetyStep {
-			step = minSafetyStep
+		if step < float64(tuning.minSafetyStep) {
+			step = float64(tuning.minSafetyStep)
 		}
 	case steadyTemp < lowTarget:
 		step = -alpha * float64(lowTarget-steadyTemp) / eff
@@ -360,15 +454,15 @@ func solveLearnStep(steadyTemp int, eff float64, haveEff bool, cfg types.SmartCo
 		return 0
 	}
 
-	if step > maxLearnStep {
-		step = maxLearnStep
+	if step > float64(tuning.maxLearnStep) {
+		step = float64(tuning.maxLearnStep)
 	}
-	if step < -maxLearnStep {
-		step = -maxLearnStep
+	if step < -float64(tuning.maxLearnStep) {
+		step = -float64(tuning.maxLearnStep)
 	}
 
 	delta := roundFloat(step)
-	if steadyTemp <= ceiling && absInt(delta) < learnStepDeadRPM {
+	if steadyTemp <= ceiling && absInt(delta) < tuning.learnStepDeadRPM {
 		return 0
 	}
 	return delta
@@ -384,9 +478,23 @@ func LearnSteadyOffset(
 	prevOffsets []int,
 	cfg types.SmartControlConfig,
 ) ([]int, bool) {
+	return LearnSteadyOffsetForUnit(bucketIdx, steadyMeanTemp, localEff, haveEff, curve, prevOffsets, cfg, rawPercentUnit)
+}
+
+func LearnSteadyOffsetForUnit(
+	bucketIdx int,
+	steadyMeanTemp int,
+	localEff float64,
+	haveEff bool,
+	curve []types.FanCurvePoint,
+	prevOffsets []int,
+	cfg types.SmartControlConfig,
+	unit string,
+) ([]int, bool) {
 	if bucketIdx < 0 || bucketIdx >= len(curve) {
 		return prevOffsets, false
 	}
+	unit = normalizeLearningUnit(unit)
 
 	offsets := make([]int, len(curve))
 	for i := range offsets {
@@ -395,13 +503,14 @@ func LearnSteadyOffset(
 		}
 	}
 
-	mainDelta := solveLearnStep(steadyMeanTemp, localEff, haveEff, cfg)
+	mainDelta := solveLearnStepForUnit(steadyMeanTemp, localEff, haveEff, cfg, unit)
 	if mainDelta == 0 {
 		return offsets, false
 	}
 
-	cap := effectiveOffsetCap(cfg)
+	cap := effectiveOffsetCapForUnit(cfg, unit)
 	leftMin, rightMax := GetCurveRPMBounds(curve)
+	tuning := learningTuningForUnit(unit)
 
 	apply := func(idx, delta int) {
 		if idx < 0 || idx >= len(offsets) || delta == 0 {
@@ -420,7 +529,7 @@ func LearnSteadyOffset(
 		offsets = biased
 	}
 
-	smoothOffsets(curve, offsets, cap, leftMin, rightMax)
+	smoothOffsetsWithPullLimit(curve, offsets, cap, leftMin, rightMax, tuning.offsetSmoothPullMax)
 	if biased, updated := constrainOffsetsToLearningBias(offsets, cfg.LearningBias); updated {
 		offsets = biased
 	}
@@ -428,7 +537,7 @@ func LearnSteadyOffset(
 	if biased, updated := constrainOffsetsToLearningBias(offsets, cfg.LearningBias); updated {
 		offsets = biased
 	}
-	smoothOffsets(curve, offsets, cap, leftMin, rightMax)
+	smoothOffsetsWithPullLimit(curve, offsets, cap, leftMin, rightMax, tuning.offsetSmoothPullMax)
 	if biased, updated := constrainOffsetsToLearningBias(offsets, cfg.LearningBias); updated {
 		offsets = biased
 	}
@@ -453,6 +562,10 @@ func roundFloat(v float64) int {
 }
 
 func smoothOffsets(curve []types.FanCurvePoint, offsets []int, cap, leftMin, rightMax int) {
+	smoothOffsetsWithPullLimit(curve, offsets, cap, leftMin, rightMax, offsetSmoothPullLimit)
+}
+
+func smoothOffsetsWithPullLimit(curve []types.FanCurvePoint, offsets []int, cap, leftMin, rightMax, pullLimit int) {
 	limit := min(len(offsets), len(curve))
 	if limit < 3 {
 		return
@@ -468,10 +581,10 @@ func smoothOffsets(curve []types.FanCurvePoint, offsets []int, cap, leftMin, rig
 					offsetSmoothNeighborWeight*float64(offsets[i+1]),
 			)
 			pull := target - offsets[i]
-			if pull > offsetSmoothPullLimit {
-				target = offsets[i] + offsetSmoothPullLimit
-			} else if pull < -offsetSmoothPullLimit {
-				target = offsets[i] - offsetSmoothPullLimit
+			if pull > pullLimit {
+				target = offsets[i] + pullLimit
+			} else if pull < -pullLimit {
+				target = offsets[i] - pullLimit
 			}
 			work[i] = clampOffsetForPoint(target, curve[i].RPM, leftMin, rightMax, cap)
 		}

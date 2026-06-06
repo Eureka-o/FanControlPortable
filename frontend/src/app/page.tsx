@@ -6,6 +6,7 @@ import { useShallow } from 'zustand/react/shallow';
 import AppFatalError from './components/AppFatalError';
 import AppLoadingSkeleton from './components/AppLoadingSkeleton';
 import AboutPanel from './components/AboutPanel';
+import AdvancedDevicesPanel from './components/AdvancedDevicesPanel';
 import AppShell from './components/AppShell';
 import ControlPanel from './components/ControlPanel';
 import DeviceStatus from './components/DeviceStatus';
@@ -107,6 +108,13 @@ export default function Home() {
           legionFnQSupported={view.legionFnQSupported}
           deviceModel={view.deviceModel}
           deviceSettings={view.deviceSettings}
+        />
+      }
+      devicesContent={
+        <AdvancedDevicesPanel
+          config={safeConfig}
+          isConnected={view.isConnected}
+          onConfigChange={updateConfig}
         />
       }
       aboutContent={<AboutPanel />}

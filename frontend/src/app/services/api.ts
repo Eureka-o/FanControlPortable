@@ -75,7 +75,63 @@ class ApiService {
     return await UpdateConfig(config);
   }
 
+  async getDeviceProfiles(): Promise<types.DeviceProfilesPayload> {
+    return await (window as any).go?.main?.App?.GetDeviceProfiles();
+  }
+
+  async getSupportedDeviceProfiles(): Promise<types.DeviceProfile[]> {
+    const profiles = await (window as any).go?.main?.App?.GetSupportedDeviceProfiles?.();
+    return Array.isArray(profiles) ? profiles as types.DeviceProfile[] : [];
+  }
+
+  async getUserDeviceProfiles(): Promise<types.DeviceProfile[]> {
+    const profiles = await (window as any).go?.main?.App?.GetUserDeviceProfiles?.();
+    return Array.isArray(profiles) ? profiles as types.DeviceProfile[] : [];
+  }
+
+  async setActiveDeviceProfile(profileID: string): Promise<types.DeviceProfile> {
+    return await (window as any).go?.main?.App?.SetActiveDeviceProfile(profileID);
+  }
+
+  async saveDeviceProfile(profile: types.DeviceProfile, setActive: boolean): Promise<types.DeviceProfile> {
+    return await (window as any).go?.main?.App?.SaveDeviceProfile(profile, setActive);
+  }
+
+  async deleteDeviceProfile(profileID: string): Promise<void> {
+    return await (window as any).go?.main?.App?.DeleteDeviceProfile(profileID);
+  }
+
+  async exportDeviceProfiles(): Promise<string> {
+    return await (window as any).go?.main?.App?.ExportDeviceProfiles();
+  }
+
+  async exportDeviceProfilesToFile(): Promise<string> {
+    return await (window as any).go?.main?.App?.ExportDeviceProfilesToFile?.();
+  }
+
+  async importDeviceProfiles(code: string): Promise<void> {
+    return await (window as any).go?.main?.App?.ImportDeviceProfiles(code);
+  }
+
+  async testDeviceProfile(params: types.DeviceProfileTestParams): Promise<types.DeviceProfileTestResult> {
+    return await (window as any).go?.main?.App?.TestDeviceProfile(params);
+  }
+
+  async listSerialPorts(): Promise<types.SerialPortInfo[]> {
+    const ports = await (window as any).go?.main?.App?.ListSerialPorts?.();
+    return Array.isArray(ports) ? ports as types.SerialPortInfo[] : [];
+  }
+
   // 风扇曲线
+  async scanBLEDevices(params: types.BLEScanParams): Promise<types.BLEDeviceInfo[]> {
+    const devices = await (window as any).go?.main?.App?.ScanBLEDevices?.(params);
+    return Array.isArray(devices) ? devices as types.BLEDeviceInfo[] : [];
+  }
+
+  async probeBLEGATT(params: types.BLEGATTProbeParams): Promise<types.BLEGATTProbeResult> {
+    return await (window as any).go?.main?.App?.ProbeBLEGATT?.(params);
+  }
+
   async setFanCurve(curve: types.FanCurvePoint[]): Promise<void> {
     return await SetFanCurve(curve);
   }

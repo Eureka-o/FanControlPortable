@@ -142,7 +142,7 @@ Var LegacyRenameNoticeNeeded
 Function .onInit
     StrCpy $LegacyRenameNoticeNeeded "0"
    !insertmacro wails.checkArchitecture
-   
+
    # Check for .NET Framework 4.7.2 or later
    !insertmacro CheckNetFramework 472
    Pop $0
@@ -150,7 +150,7 @@ Function .onInit
        MessageBox MB_OK|MB_ICONSTOP "$(THRM_STR_REQUIRE_DOTNET)"
        Abort
    ${EndIf}
-   
+
     # Check for existing installation and set install directory
    Call DetectExistingInstallation
 FunctionEnd
@@ -171,7 +171,7 @@ FunctionEnd
 Function DetectExistingInstallation
     DetailPrint "$(THRM_STR_CHECKING_INSTALL)"
     SetRegView 64
-    
+
     Push $R0
     Push $R1
     Push $R2
@@ -238,7 +238,7 @@ Function DetectExistingInstallation
         DetailPrint "$(THRM_STR_FOUND_LEGACY_INSTALL) $INSTDIR"
         Goto found_installation
     ${EndIf}
-    
+
     ${If} ${FileExists} "$PROGRAMFILES32\${INFO_PRODUCTNAME}\${PRODUCT_EXECUTABLE}"
         StrCpy $INSTDIR "$PROGRAMFILES32\${INFO_PRODUCTNAME}"
         DetailPrint "$(THRM_STR_FOUND_INSTALL) $INSTDIR"
@@ -257,7 +257,7 @@ Function DetectExistingInstallation
 
     found_installation:
     DetailPrint "$(THRM_STR_UPGRADE_TARGET) $INSTDIR"
-    
+
     end_detection:
     Pop $R2
     Pop $R1
@@ -280,17 +280,17 @@ Function TrimQuotes
     Exch $R0 ; Original string
     Push $R1
     Push $R2
-    
+
     StrCpy $R1 $R0 1 ; First char
     StrCmp $R1 '"' 0 +2
     StrCpy $R0 $R0 "" 1 ; Remove first quote
-    
+
     StrLen $R2 $R0
     IntOp $R2 $R2 - 1
     StrCpy $R1 $R0 1 $R2 ; Last char
     StrCmp $R1 '"' 0 +2
     StrCpy $R0 $R0 $R2 ; Remove last quote
-    
+
     Pop $R2
     Pop $R1
     Exch $R0 ; Trimmed string
@@ -321,7 +321,7 @@ Function StopRunningInstances
         DetailPrint "$(THRM_STR_CLOSE_APP)"
         Sleep 2000
     ${EndIf}
-    
+
     # Force kill if still running (ignore errors)
     nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "${PRODUCT_EXECUTABLE}" /T'
     Pop $0
@@ -350,24 +350,29 @@ Function StopRunningInstances
     nsExec::ExecToStack '"$SYSDIR\schtasks.exe" /delete /tn "${LEGACY_PRODUCTNAME}" /f'
     Pop $0
     Pop $1
-    
+
     # Wait a moment for processes to fully terminate
     DetailPrint "$(THRM_STR_WAIT_TERMINATE)"
     Sleep 2000
-    
+
     DetailPrint "$(THRM_STR_PROCESS_DONE)"
 FunctionEnd
 
 # Function to backup user data before upgrade
 Function BackupUserData
     DetailPrint "$(THRM_STR_BACKUP_CONFIG)"
-    
+
     # Backup configuration files if they exist
+    ${If} ${FileExists} "$INSTDIR\config\config.json"
+        CopyFiles "$INSTDIR\config\config.json" "$TEMP\fancontrol_config_dir_backup.json"
+        DetailPrint "$(THRM_STR_BACKUP_CONFIG_DONE)"
+    ${EndIf}
+
     ${If} ${FileExists} "$INSTDIR\config.json"
         CopyFiles "$INSTDIR\config.json" "$TEMP\fancontrol_config_backup.json"
         DetailPrint "$(THRM_STR_BACKUP_CONFIG_DONE)"
     ${EndIf}
-    
+
     # Backup other important user files if needed
     ${If} ${FileExists} "$INSTDIR\settings.ini"
         CopyFiles "$INSTDIR\settings.ini" "$TEMP\fancontrol_settings_backup.ini"
@@ -378,13 +383,19 @@ FunctionEnd
 # Function to restore user data after upgrade
 Function RestoreUserData
     DetailPrint "$(THRM_STR_RESTORE_CONFIG)"
-    
+
     # Restore configuration files if backup exists
+    ${If} ${FileExists} "$TEMP\fancontrol_config_dir_backup.json"
+        CreateDirectory "$INSTDIR\config"
+        CopyFiles "$TEMP\fancontrol_config_dir_backup.json" "$INSTDIR\config\config.json"
+        DetailPrint "$(THRM_STR_RESTORE_CONFIG_DONE)"
+    ${EndIf}
+
     ${If} ${FileExists} "$TEMP\fancontrol_config_backup.json"
         CopyFiles "$TEMP\fancontrol_config_backup.json" "$INSTDIR\config.json"
         DetailPrint "$(THRM_STR_RESTORE_CONFIG_DONE)"
     ${EndIf}
-    
+
     ${If} ${FileExists} "$TEMP\fancontrol_settings_backup.ini"
         CopyFiles "$TEMP\fancontrol_settings_backup.ini" "$INSTDIR\settings.ini"
         Delete "$TEMP\fancontrol_settings_backup.ini"
@@ -415,6 +426,10 @@ FunctionEnd
 Section "$(THRM_STR_SECTION_MAIN)" SEC_MAIN
     SectionIn RO  # Read-only, cannot be deselected
     !insertmacro wails.setShellContext
+
+    Delete "$TEMP\fancontrol_config_dir_backup.json"
+    Delete "$TEMP\fancontrol_config_backup.json"
+    Delete "$TEMP\fancontrol_settings_backup.ini"
 
     StrCpy $0 "0"
 
@@ -451,34 +466,34 @@ Section "$(THRM_STR_SECTION_MAIN)" SEC_MAIN
         Delete "$INSTDIR\logs\*.log"  # Keep log structure but remove old logs
     ${Else}
         DetailPrint "$(THRM_STR_FRESH_INSTALL) $INSTDIR"
-        
+
         # Ensure old instances are completely stopped before installing
         Call StopRunningInstances
-        
+
         # Clean up any leftover files from previous installation
         DetailPrint "$(THRM_STR_CLEAN_LEFTOVERS)"
         RMDir /r "$INSTDIR\bridge"
         Delete "$INSTDIR\logs\*.*"
     ${EndIf}
-    
+
     !insertmacro wails.webview2runtime
 
     SetOutPath $INSTDIR
 
     !insertmacro wails.files
-    
+
     # Copy core service executable
     DetailPrint "$(THRM_STR_INSTALLING_CORE)"
     File "/oname=FanControl Core.exe" "${CORE_EXECUTABLE_SOURCE}"
-    
+
     # Copy bridge directory and its contents
     DetailPrint "$(THRM_STR_INSTALLING_BRIDGE)"
     SetOutPath $INSTDIR\bridge
     File /r "..\..\bin\bridge\*.*"
-    
+
     # Return to main install directory
     SetOutPath $INSTDIR
-    
+
     # Restore user data if this was an upgrade
     Call RestoreUserData
 
@@ -495,17 +510,22 @@ Section "$(THRM_STR_SECTION_MAIN)" SEC_MAIN
 
     !insertmacro wails.writeUninstaller
     Call WriteCurrentVersionInfo
-    
+
     DetailPrint "$(THRM_STR_INSTALL_COMPLETE)"
 
     ${If} $LegacyRenameNoticeNeeded == "1"
         DetailPrint "$(THRM_STR_UPGRADE_RENAME_DONE)"
+    ${ElseIf} ${FileExists} "$TEMP\fancontrol_config_dir_backup.json"
+        DetailPrint "$(THRM_STR_UPGRADE_SETTINGS_DONE)"
     ${ElseIf} ${FileExists} "$TEMP\fancontrol_config_backup.json"
         DetailPrint "$(THRM_STR_UPGRADE_SETTINGS_DONE)"
     ${Else}
         DetailPrint "$(THRM_STR_INSTALL_SUCCESS)"
     ${EndIf}
 
+    ${If} ${FileExists} "$TEMP\fancontrol_config_dir_backup.json"
+        Delete "$TEMP\fancontrol_config_dir_backup.json"
+    ${EndIf}
     ${If} ${FileExists} "$TEMP\fancontrol_config_backup.json"
         Delete "$TEMP\fancontrol_config_backup.json"
     ${EndIf}
@@ -514,7 +534,7 @@ SectionEnd
 # Auto-start section (selected by default)
 Section "$(THRM_STR_SECTION_AUTOSTART)" SEC_AUTOSTART
     DetailPrint "$(THRM_STR_CONFIG_AUTOSTART)"
-    
+
     # First, remove our existing auto-start entries to ensure clean state.
     DetailPrint "$(THRM_STR_CLEAN_AUTOSTART)"
     nsExec::ExecToStack '"$SYSDIR\schtasks.exe" /delete /tn "FanControl" /f'
@@ -527,10 +547,10 @@ Section "$(THRM_STR_SECTION_AUTOSTART)" SEC_AUTOSTART
     DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "FanControl"
     DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${LEGACY_PRODUCTNAME}"
     DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "${LEGACY_PRODUCTNAME}"
-    
+
     # Create new scheduled task for auto-start with admin privileges
     DetailPrint "$(THRM_STR_CREATE_AUTOSTART_TASK)"
-    
+
     # Use schtasks to create a task that runs at logon with highest privileges
     # The task starts FanControl Core.exe with --autostart after 15 seconds.
     nsExec::ExecToStack '"$SYSDIR\schtasks.exe" /create /tn "FanControl" /tr "\"$INSTDIR\FanControl Core.exe\" --autostart" /sc onlogon /delay 0000:15 /rl highest /f'
@@ -644,7 +664,7 @@ Section "uninstall"
 
     # Stop running instances before uninstalling
     DetailPrint "$(THRM_STR_UNINSTALL_STOP)"
-    
+
     DetailPrint "$(THRM_STR_STOP_CORE)"
     nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "FanControl Core.exe" /T'
     Pop $0
@@ -653,7 +673,7 @@ Section "uninstall"
     nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "FanControl Core.exe" /T'
     Pop $0
     Pop $1
-    
+
     # Stop main application (ignore errors)
     DetailPrint "$(THRM_STR_STOP_APP)"
     nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "${PRODUCT_EXECUTABLE}" /T'
@@ -684,25 +704,25 @@ Section "uninstall"
     Pop $1
 
     # PawnIO owns the shared R0 driver lifecycle; do not stop/delete it from uninstall.
-    
+
     # Remove auto-start entries
     DetailPrint "$(THRM_STR_REMOVE_AUTOSTART)"
-    
+
     nsExec::ExecToStack '"$SYSDIR\schtasks.exe" /delete /tn "FanControl" /f'
     Pop $0
     Pop $1
     nsExec::ExecToStack '"$SYSDIR\schtasks.exe" /delete /tn "${LEGACY_PRODUCTNAME}" /f'
     Pop $0
     Pop $1
-    
+
     DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "FanControl"
     DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "FanControl"
     DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${LEGACY_PRODUCTNAME}"
     DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "${LEGACY_PRODUCTNAME}"
-    
+
     Delete "$SMSTARTUP\FanControl.lnk"
     Delete "$SMSTARTUP\${LEGACY_PRODUCTNAME}.lnk"
-    
+
     # Wait for processes to fully terminate
     Sleep 2000
 
@@ -718,15 +738,15 @@ Section "uninstall"
 
     # Remove installation directory and all contents
     DetailPrint "$(THRM_STR_REMOVE_INSTALL_FILES)"
-    
+
     # Remove bridge directory.
     DetailPrint "$(THRM_STR_REMOVE_BRIDGE)"
     RMDir /r "$INSTDIR\bridge"
-    
+
     # Remove logs directory
     DetailPrint "$(THRM_STR_REMOVE_LOGS)"
     RMDir /r "$INSTDIR\logs"
-    
+
     # Remove entire installation directory
     DetailPrint "$(THRM_STR_REMOVE_DIR)"
     RMDir /r $INSTDIR
@@ -743,9 +763,9 @@ Section "uninstall"
     !insertmacro wails.unassociateCustomProtocols
 
     !insertmacro wails.deleteUninstaller
-    
+
     DetailPrint "$(THRM_STR_UNINSTALL_COMPLETE)"
-    
+
     # Optional: Ask user if they want to remove configuration files
     MessageBox MB_YESNO|MB_ICONQUESTION "$(THRM_STR_UNINSTALL_REMOVE_CONFIG)" IDNO skip_config
     RMDir /r "$APPDATA\FanControl"

@@ -20,8 +20,10 @@ import {
   Flame,
   Clock3,
   BarChart3,
+  Bluetooth,
   Spline,
   Sparkles,
+  Signal,
   X,
   RotateCw,
 } from 'lucide-react';
@@ -30,9 +32,16 @@ import { types } from '../../../wailsjs/go/models';
 import { toast } from 'sonner';
 import { DebugInfo, type DeviceDebugCommandResult, type DeviceSettings, type ThemeMeta } from '../types/app';
 import { type AppLocale, useLocale } from '../lib/i18n';
+import { fanSpeedUnitLabel, getFanSpeedUnit, readCurrentFanSpeed } from '../lib/fan-speed';
 import { getManualGearLabel, getManualLevelLabel } from '../lib/manualGearPresets';
 import FanCurveProfileSelect from './FanCurveProfileSelect';
 import { ToggleSwitch, Button, Select, Slider } from './ui/index';
+import {
+  formatSpeedRange,
+  normalizeTransport,
+  summarizeConnection,
+  type DeviceTransport,
+} from './devices/profile-utils';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -118,6 +127,8 @@ function getRequiredColorCount(mode: string): number {
 const LEGION_POWER_MODE_VALUES = ['Quiet', 'Balance', 'Performance', 'Extreme', 'GodMode'] as const;
 const FAN_GEAR_VALUES = ['静音', '标准', '强劲', '超频'] as const;
 const FAN_LEVEL_VALUES = ['低', '中', '高'] as const;
+const DEVICE_TRANSPORT_VALUES: DeviceTransport[] = ['wifi', 'ble', 'serial', 'hid'];
+const DEFAULT_SERIAL_BAUD_RATE = 115200;
 
 // 高危调试命令：直接读写固件底层/调试寄存器，误用可能导致设备异常甚至变砖，需在发送前红色提醒。
 const DANGEROUS_DEBUG_COMMANDS = new Set<number>([0xed, 0xee, 0xf0, 0xf1, 0xf2]);
@@ -195,6 +206,19 @@ function translateWorkMode(
   workMode: string | null | undefined,
   t: (key: string, options?: Record<string, unknown>) => string,
 ) {
+  const normalizedMode = (workMode || '').trim().toLowerCase();
+  switch (normalizedMode) {
+    case 'wifi':
+      return 'WIFI';
+    case 'ble':
+      return 'BLE';
+    case 'serial':
+      return 'COM';
+    case 'hid':
+      return 'HID';
+    default:
+      break;
+  }
   switch (workMode) {
     case '挡位工作模式':
       return t('controlPanel.overview.workModes.manual');
@@ -327,7 +351,7 @@ function SettingRow({
   disabled?: boolean;
 }) {
   return (
-    <div className={clsx('flex items-center justify-between gap-4 px-5 py-4', disabled && 'opacity-50')}>
+    <div className={clsx('flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between', disabled && 'opacity-50')}>
       <div className="flex items-center gap-3 min-w-0">
         {icon && (
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
@@ -340,7 +364,7 @@ function SettingRow({
           {tip && <div className="mt-0.5 text-xs text-primary/80">{tip}</div>}
         </div>
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="w-full sm:w-auto sm:shrink-0">{children}</div>
     </div>
   );
 }
@@ -428,6 +452,74 @@ function SelectionField({
 
 /* ── Main ControlPanel ── */
 
+function configuredDeviceProfiles(config: types.AppConfig): types.DeviceProfile[] {
+  return Array.isArray((config as any).deviceProfiles) ? ((config as any).deviceProfiles as types.DeviceProfile[]) : [];
+}
+
+function activeProfileIdsByTransportFromConfig(config: types.AppConfig): Record<string, string> {
+  const raw = (config as any).activeDeviceProfileIdsByTransport;
+  return raw && typeof raw === 'object' ? raw as Record<string, string> : {};
+}
+
+function profileLabel(profile: types.DeviceProfile) {
+  return profile.displayName || profile.id || 'Device profile';
+}
+
+function profileConnection(profile?: types.DeviceProfile | null): types.DeviceConnectionSettings {
+  return (profile?.connection || {}) as types.DeviceConnectionSettings;
+}
+
+function profileForTransport(profiles: types.DeviceProfile[], transport: DeviceTransport) {
+  return profiles.find((profile) => normalizeTransport(profile.transport) === transport) || null;
+}
+
+function activeProfileForTransport(
+  profiles: types.DeviceProfile[],
+  activeIdsByTransport: Record<string, string>,
+  transport: DeviceTransport,
+) {
+  const activeId = activeIdsByTransport[transport] || '';
+  return profiles.find((profile) => profile.id === activeId && normalizeTransport(profile.transport) === transport)
+    || profileForTransport(profiles, transport);
+}
+
+function bleDeviceTitle(device: types.BLEDeviceInfo) {
+  return device.name || device.address || 'BLE';
+}
+
+function bleDeviceServices(device: types.BLEDeviceInfo) {
+  const services = device.serviceUuids || [];
+  if (services.length === 0) return '';
+  const visible = services.slice(0, 2).join(' / ');
+  return services.length > 2 ? `${visible} +${services.length - 2}` : visible;
+}
+
+function serialPortName(port: types.SerialPortInfo) {
+  return port.name || port.path || '';
+}
+
+function serialPortLabel(port: types.SerialPortInfo) {
+  const name = serialPortName(port);
+  const displayName = port.displayName || name;
+  return displayName && name && displayName !== name ? `${displayName} (${name})` : displayName || name;
+}
+
+function profileWithBLEDevice(profile: types.DeviceProfile, device: types.BLEDeviceInfo) {
+  const connection = profileConnection(profile);
+  return types.DeviceProfile.createFrom({
+    ...profile,
+    transport: 'ble',
+    connection: types.DeviceConnectionSettings.createFrom({
+      ...(connection || {}),
+      endpoint: device.address || connection.endpoint,
+      bleNameFilter: device.suggestedNameFilter || device.name || connection.bleNameFilter,
+      bleServiceUuid: device.suggestedServiceUuid || device.serviceUuids?.[0] || connection.bleServiceUuid,
+      bleWriteCharacteristic: device.suggestedWriteCharacteristic || device.writeCharacteristicUuids?.[0] || connection.bleWriteCharacteristic,
+      bleNotifyCharacteristic: device.suggestedNotifyCharacteristic || device.notifyCharacteristicUuids?.[0] || connection.bleNotifyCharacteristic,
+    }),
+  });
+}
+
 export default function ControlPanel({ config, onConfigChange, isConnected, fanData, temperature, legionFnQSupported, deviceModel }: ControlPanelProps) {
   const { t } = useTranslation();
   const { locale, setLocale } = useLocale();
@@ -447,6 +539,24 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     Math.max(0, Math.min(100, Number((config as any).customSpeedRPM ?? 50))),
   );
   const [deviceIpInput, setDeviceIpInput] = useState<string>(((config as any).fanControlDeviceIp || '') as string);
+  const overviewSpeedUnit = getFanSpeedUnit(fanData as any, config as any);
+  const overviewSpeedLabel = fanSpeedUnitLabel(overviewSpeedUnit);
+  const overviewFanSpeed = readCurrentFanSpeed(fanData, overviewSpeedUnit)
+    ?? ((config as any).customSpeedEnabled ? customSpeedInput : undefined);
+  const [deviceTransportInput, setDeviceTransportInput] = useState<DeviceTransport>(normalizeTransport((config as any).deviceTransport));
+  const [deviceProfiles, setDeviceProfiles] = useState<types.DeviceProfile[]>(() => configuredDeviceProfiles(config));
+  const [activeDeviceProfileId, setActiveDeviceProfileId] = useState<string>(((config as any).activeDeviceProfileId || '') as string);
+  const [activeDeviceProfileIdsByTransport, setActiveDeviceProfileIdsByTransport] = useState<Record<string, string>>(
+    () => activeProfileIdsByTransportFromConfig(config),
+  );
+  const [serialPortInput, setSerialPortInput] = useState('');
+  const [serialBaudInput, setSerialBaudInput] = useState(String(DEFAULT_SERIAL_BAUD_RATE));
+  const [serialPorts, setSerialPorts] = useState<types.SerialPortInfo[]>([]);
+  const [serialPortsError, setSerialPortsError] = useState('');
+  const [serialPortsLoaded, setSerialPortsLoaded] = useState(false);
+  const [bleSettingsDevices, setBLESettingsDevices] = useState<types.BLEDeviceInfo[]>([]);
+  const [bleSettingsScanError, setBLESettingsScanError] = useState('');
+  const [bleSettingsScanCompleted, setBLESettingsScanCompleted] = useState(false);
   const [lightStripConfig, setLightStripConfig] = useState<types.LightStripConfig>(() => normalizeLightStripConfig(config));
   const [manualHotkeyInput, setManualHotkeyInput] = useState(
     normalizeHotkeyForDisplay((config as any).manualGearToggleHotkey)
@@ -461,6 +571,32 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const [curveProfiles, setCurveProfiles] = useState<CurveProfile[]>([]);
   const [curveProfileLoading, setCurveProfileLoading] = useState(false);
   const [temperatureHistoryEnabled, setTemperatureHistoryEnabled] = useState(false);
+
+  const configDeviceProfiles = useMemo(() => configuredDeviceProfiles(config), [config]);
+  const availableDeviceProfiles = useMemo(
+    () => (deviceProfiles.length > 0 ? deviceProfiles : configDeviceProfiles),
+    [configDeviceProfiles, deviceProfiles],
+  );
+  const activeDeviceProfile = useMemo(
+    () => availableDeviceProfiles.find((profile) => profile.id === activeDeviceProfileId)
+      || availableDeviceProfiles.find((profile) => profile.id === ((config as any).activeDeviceProfileId || ''))
+      || availableDeviceProfiles[0]
+      || null,
+    [activeDeviceProfileId, availableDeviceProfiles, config],
+  );
+  const activeDeviceTransport = normalizeTransport(activeDeviceProfile?.transport || (config as any).deviceTransport);
+  const selectedTransportProfiles = useMemo(
+    () => availableDeviceProfiles.filter((profile) => normalizeTransport(profile.transport) === deviceTransportInput),
+    [availableDeviceProfiles, deviceTransportInput],
+  );
+  const selectedTransportProfile = useMemo(
+    () => activeProfileForTransport(availableDeviceProfiles, activeDeviceProfileIdsByTransport, deviceTransportInput),
+    [activeDeviceProfileIdsByTransport, availableDeviceProfiles, deviceTransportInput],
+  );
+  const activeConnection = profileConnection(selectedTransportProfile || activeDeviceProfile);
+  const bleSettingsProfile = deviceTransportInput === 'ble'
+    ? selectedTransportProfile || profileForTransport(availableDeviceProfiles, 'ble')
+    : null;
 
   const activeCurveProfileId = ((config as any).activeFanCurveProfileId || '') as string;
   const isBs1 = deviceModel === 'BS1';
@@ -556,10 +692,67 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     ]),
     [locale, t],
   );
+  const deviceTransportOptions = useMemo(
+    () => DEVICE_TRANSPORT_VALUES.map((value) => ({ value, label: t(`advancedDevices.transport.${value}`) })),
+    [locale, t],
+  );
 
   const setLoading = (key: string, value: boolean) => setLoadingStates((prev) => ({ ...prev, [key]: value }));
 
   /* ── Handlers (same logic as before) ── */
+
+  const refreshDeviceConfig = useCallback(async () => {
+    const latest = await apiService.getConfig();
+    const nextConfig = types.AppConfig.createFrom(latest);
+    onConfigChange(nextConfig);
+    return nextConfig;
+  }, [onConfigChange]);
+
+  const loadDeviceProfiles = useCallback(async () => {
+    setLoading('deviceProfiles', true);
+    try {
+      const payload = await apiService.getDeviceProfiles();
+      const profiles = Array.isArray(payload?.profiles) ? payload.profiles : [];
+      setDeviceProfiles(profiles);
+      setActiveDeviceProfileId(payload?.activeId || profiles[0]?.id || '');
+      setActiveDeviceProfileIdsByTransport((payload?.activeIdsByTransport || {}) as Record<string, string>);
+      return profiles;
+    } catch (error) {
+      toast.error(t('controlPanel.system.deviceConnection.toasts.loadFailed', { error: getErrorMessage(error) }));
+      return [];
+    } finally {
+      setLoading('deviceProfiles', false);
+    }
+  }, [t]);
+
+  const handleDeviceTransportChange = useCallback(async (value: string | number) => {
+    const transport = normalizeTransport(String(value));
+    setDeviceTransportInput(transport);
+    setLoading('deviceConnection', true);
+    try {
+      const existingProfile = activeProfileForTransport(availableDeviceProfiles, activeDeviceProfileIdsByTransport, transport);
+      if (existingProfile) {
+        const profile = await apiService.setActiveDeviceProfile(existingProfile.id);
+        setActiveDeviceProfileId(profile.id);
+      } else if (transport === 'wifi' || transport === 'ble' || transport === 'hid') {
+        const newCfg = types.AppConfig.createFrom({
+          ...config,
+          deviceTransport: transport,
+        });
+        await apiService.updateConfig(newCfg);
+      } else {
+        toast.info(t('controlPanel.system.deviceConnection.toasts.profileRequired'));
+        return;
+      }
+      await refreshDeviceConfig();
+      await loadDeviceProfiles();
+      toast.success(t('controlPanel.system.deviceConnection.toasts.transportSaved'));
+    } catch (error) {
+      toast.error(t('controlPanel.system.deviceConnection.toasts.transportFailed', { error: getErrorMessage(error) }));
+    } finally {
+      setLoading('deviceConnection', false);
+    }
+  }, [activeDeviceProfileIdsByTransport, availableDeviceProfiles, config, loadDeviceProfiles, refreshDeviceConfig, t]);
 
   const handleAutoControlChange = useCallback(async (enabled: boolean) => {
     setLoading('autoControl', true);
@@ -651,13 +844,13 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     try {
       const result = await apiService.sendDeviceDebugCommand(hexCommand, 900);
       setDebugCommandResult(result);
-      toast.success(`已发送 ${result.frameHex}`);
+      toast.success(t('controlPanel.debug.toasts.commandSent', { frame: result.frameHex }));
     } catch (error) {
       toast.error(getErrorMessage(error));
     } finally {
       setDebugCommandLoading(false);
     }
-  }, [config.debugMode, debugCommandInput, isConnected]);
+  }, [config.debugMode, debugCommandInput, isConnected, t]);
 
   const handleReinstallPawnIO = useCallback(async () => {
     setLoading('pawnIOReinstall', true);
@@ -774,23 +967,181 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     }
   }, []);
 
-  const handleDeviceIpSave = useCallback(async () => {
+  const handleWiFiConnectionSave = useCallback(async () => {
     setLoading('deviceIp', true);
     try {
       const nextIp = deviceIpInput.trim();
+      const wifiProfile = activeDeviceTransport === 'wifi'
+        ? activeDeviceProfile
+        : activeProfileForTransport(availableDeviceProfiles, activeDeviceProfileIdsByTransport, 'wifi');
+      const wifiConnection = profileConnection(wifiProfile);
+      const stateEndpoint = wifiConnection.stateEndpoint || '/api/data';
+      const speedEndpoint = wifiConnection.speedEndpoint || '/api/speed';
+      const nextProfiles = wifiProfile
+        ? availableDeviceProfiles.map((profile) => {
+          if (profile.id !== wifiProfile.id) {
+            return profile;
+          }
+          return types.DeviceProfile.createFrom({
+            ...profile,
+            connection: types.DeviceConnectionSettings.createFrom({
+              ...(profile.connection || {}),
+              endpoint: nextIp,
+              stateEndpoint,
+              speedEndpoint,
+            }),
+          });
+        })
+        : configuredDeviceProfiles(config);
       const newCfg = types.AppConfig.createFrom({
         ...config,
+        activeDeviceProfileId: wifiProfile?.id || (config as any).activeDeviceProfileId,
+        deviceProfiles: nextProfiles,
+        deviceTransport: 'wifi',
         fanControlDeviceIp: nextIp,
       });
       await apiService.updateConfig(newCfg);
-      onConfigChange(newCfg);
-      toast.success('设备地址已保存');
-    } catch (e) {
-      toast.error(`设备地址保存失败：${getErrorMessage(e)}`);
+      await refreshDeviceConfig();
+      await loadDeviceProfiles();
+      toast.success(t('controlPanel.system.deviceConnection.toasts.wifiSaved'));
+    } catch (error) {
+      toast.error(t('controlPanel.system.deviceConnection.toasts.wifiFailed', { error: getErrorMessage(error) }));
     } finally {
       setLoading('deviceIp', false);
     }
-  }, [config, deviceIpInput, onConfigChange]);
+  }, [
+    activeDeviceProfile,
+    activeDeviceProfileIdsByTransport,
+    activeDeviceTransport,
+    availableDeviceProfiles,
+    config,
+    deviceIpInput,
+    loadDeviceProfiles,
+    refreshDeviceConfig,
+    t,
+  ]);
+
+  const loadSerialPorts = useCallback(async (notify = false) => {
+    setLoading('serialPorts', true);
+    setSerialPortsError('');
+    try {
+      const ports = await apiService.listSerialPorts();
+      setSerialPorts(ports.map((port) => types.SerialPortInfo.createFrom(port)).filter((port) => serialPortName(port)));
+      setSerialPortsLoaded(true);
+      if (notify && ports.length === 0) {
+        toast.info(t('controlPanel.system.deviceConnection.serialPortsEmpty'));
+      }
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setSerialPorts([]);
+      setSerialPortsLoaded(true);
+      setSerialPortsError(message);
+      if (notify) {
+        toast.error(t('controlPanel.system.deviceConnection.serialPortsFailed', { error: message }));
+      }
+    } finally {
+      setLoading('serialPorts', false);
+    }
+  }, [t]);
+
+  const handleSerialConnectionSave = useCallback(async () => {
+    const serialProfile = deviceTransportInput === 'serial'
+      ? selectedTransportProfile || profileForTransport(availableDeviceProfiles, 'serial')
+      : profileForTransport(availableDeviceProfiles, 'serial');
+    const nextPort = serialPortInput.trim();
+    const nextBaud = Number(serialBaudInput);
+
+    if (!serialProfile) {
+      toast.info(t('controlPanel.system.deviceConnection.toasts.profileRequired'));
+      return;
+    }
+    if (!nextPort) {
+      toast.error(t('controlPanel.system.deviceConnection.toasts.serialPortRequired'));
+      return;
+    }
+    if (!Number.isFinite(nextBaud) || nextBaud <= 0) {
+      toast.error(t('controlPanel.system.deviceConnection.toasts.serialBaudInvalid'));
+      return;
+    }
+
+    setLoading('serialConnection', true);
+    try {
+      const saved = await apiService.saveDeviceProfile(types.DeviceProfile.createFrom({
+        ...serialProfile,
+        transport: 'serial',
+        connection: types.DeviceConnectionSettings.createFrom({
+          ...(serialProfile.connection || {}),
+          serialPort: nextPort,
+          serialBaudRate: Math.round(nextBaud),
+        }),
+      }), true);
+      setActiveDeviceProfileId(saved.id);
+      setDeviceTransportInput('serial');
+      await refreshDeviceConfig();
+      await loadDeviceProfiles();
+      toast.success(t('controlPanel.system.deviceConnection.toasts.serialSaved'));
+    } catch (error) {
+      toast.error(t('controlPanel.system.deviceConnection.toasts.serialFailed', { error: getErrorMessage(error) }));
+    } finally {
+      setLoading('serialConnection', false);
+    }
+  }, [
+    availableDeviceProfiles,
+    deviceTransportInput,
+    loadDeviceProfiles,
+    refreshDeviceConfig,
+    selectedTransportProfile,
+    serialBaudInput,
+    serialPortInput,
+    t,
+  ]);
+
+  const handleBLESettingsScan = useCallback(async () => {
+    setLoading('bleSettingsScan', true);
+    setBLESettingsScanError('');
+    setBLESettingsScanCompleted(false);
+    try {
+      const connection = profileConnection(bleSettingsProfile);
+      const devices = await apiService.scanBLEDevices(types.BLEScanParams.createFrom({
+        timeoutMs: 5000,
+        nameFilter: connection.bleNameFilter,
+        serviceUuid: connection.bleServiceUuid,
+        writeCharacteristicUuid: connection.bleWriteCharacteristic,
+        notifyCharacteristicUuid: connection.bleNotifyCharacteristic,
+        profiles: selectedTransportProfiles,
+      }));
+      setBLESettingsDevices(devices.map((device) => types.BLEDeviceInfo.createFrom(device)));
+      setBLESettingsScanCompleted(true);
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setBLESettingsDevices([]);
+      setBLESettingsScanError(message);
+      setBLESettingsScanCompleted(true);
+      toast.error(t('controlPanel.system.deviceConnection.toasts.bleScanFailed', { error: message }));
+    } finally {
+      setLoading('bleSettingsScan', false);
+    }
+  }, [bleSettingsProfile, selectedTransportProfiles, t]);
+
+  const handleBLESettingsDeviceApply = useCallback(async (device: types.BLEDeviceInfo) => {
+    if (!bleSettingsProfile) {
+      toast.info(t('controlPanel.system.deviceConnection.toasts.profileRequired'));
+      return;
+    }
+    setLoading('bleSettingsApply', true);
+    try {
+      const saved = await apiService.saveDeviceProfile(profileWithBLEDevice(bleSettingsProfile, device), true);
+      setActiveDeviceProfileId(saved.id);
+      setDeviceTransportInput('ble');
+      await refreshDeviceConfig();
+      await loadDeviceProfiles();
+      toast.success(t('controlPanel.system.deviceConnection.toasts.bleSaved'));
+    } catch (error) {
+      toast.error(t('controlPanel.system.deviceConnection.toasts.bleSaveFailed', { error: getErrorMessage(error) }));
+    } finally {
+      setLoading('bleSettingsApply', false);
+    }
+  }, [bleSettingsProfile, loadDeviceProfiles, refreshDeviceConfig, t]);
 
   const updateLegionFnQConfig = useCallback(async (patch: any) => {
     if (!legionFnQSupported) return;
@@ -884,11 +1235,40 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     return () => window.clearInterval(i);
   }, []);
   useEffect(() => { loadCurveProfiles(); }, [loadCurveProfiles]);
+  useEffect(() => { void loadDeviceProfiles(); }, [loadDeviceProfiles]);
   useEffect(() => { setLightStripConfig(normalizeLightStripConfig(config)); }, [config]);
   useEffect(() => {
     setCustomSpeedInput(Math.max(0, Math.min(100, Number((config as any).customSpeedRPM ?? 50))));
-    setDeviceIpInput(((config as any).fanControlDeviceIp || '') as string);
-  }, [(config as any).customSpeedRPM, (config as any).fanControlDeviceIp]);
+  }, [(config as any).customSpeedRPM]);
+  useEffect(() => {
+    const profiles = configuredDeviceProfiles(config);
+    if (profiles.length > 0) {
+      setDeviceProfiles(profiles);
+    }
+    setActiveDeviceProfileId(((config as any).activeDeviceProfileId || activeDeviceProfile?.id || '') as string);
+    setActiveDeviceProfileIdsByTransport(activeProfileIdsByTransportFromConfig(config));
+    setDeviceTransportInput(activeDeviceTransport);
+    setDeviceIpInput(activeConnection.endpoint || ((config as any).fanControlDeviceIp || '') as string);
+    setSerialPortInput(activeConnection.serialPort || '');
+    setSerialBaudInput(String(activeConnection.serialBaudRate || DEFAULT_SERIAL_BAUD_RATE));
+  }, [
+    activeConnection.endpoint,
+    activeConnection.serialBaudRate,
+    activeConnection.serialPort,
+    activeDeviceProfile?.id,
+    activeDeviceTransport,
+    config,
+  ]);
+  useEffect(() => {
+    setBLESettingsDevices([]);
+    setBLESettingsScanError('');
+    setBLESettingsScanCompleted(false);
+  }, [deviceTransportInput, selectedTransportProfile?.id]);
+  useEffect(() => {
+    if (deviceTransportInput === 'serial' && !serialPortsLoaded) {
+      void loadSerialPorts(false);
+    }
+  }, [deviceTransportInput, loadSerialPorts, serialPortsLoaded]);
   useEffect(() => {
     setManualHotkeyInput(normalizeHotkeyForDisplay((config as any).manualGearToggleHotkey));
     setAutoHotkeyInput(normalizeHotkeyForDisplay((config as any).autoControlToggleHotkey));
@@ -1071,14 +1451,14 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
               <div className="mt-1 text-xs text-muted-foreground">{t('controlPanel.overview.cpuGpuTemperature', { cpu: temperature?.cpuTemp ?? '--', gpu: temperature?.gpuTemp ?? '--' })}</div>
             </div>
             <div className="rounded-xl border border-border/70 bg-muted/30 p-4 text-center">
-              <div className="text-sm text-muted-foreground">当前风速</div>
-              <div className="mt-1 text-2xl font-semibold tabular-nums text-primary">{(config as any).customSpeedEnabled ? customSpeedInput : '--'}%</div>
-              <div className="mt-1 text-xs text-muted-foreground">{config.autoControl ? '自动调速' : '手动控制'}</div>
+              <div className="text-sm text-muted-foreground">{t('controlPanel.overview.currentRpm')}</div>
+              <div className="mt-1 text-2xl font-semibold tabular-nums text-primary">{overviewFanSpeed ?? '--'}{overviewSpeedLabel}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{config.autoControl ? t('appShell.status.smartControl') : t('appShell.status.manualMode')}</div>
             </div>
             <div className="rounded-xl border border-border/70 bg-muted/30 p-4 text-center">
-              <div className="text-sm text-muted-foreground">设备地址</div>
+              <div className="text-sm text-muted-foreground">{t('controlPanel.system.deviceConnection.overviewLabel')}</div>
               <div className="mt-1 text-2xl font-semibold tabular-nums text-primary">{deviceIpInput || '--'}</div>
-              <div className="mt-1 text-xs text-muted-foreground">{isConnected ? '已连接' : '未连接'}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{isConnected ? t('appShell.status.connected') : t('appShell.status.offline')}</div>
             </div>
           </div>
         </section>
@@ -1175,8 +1555,8 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
           {/* Auto control */}
           <SettingRow
             icon={config.autoControl ? <Play className="h-4 w-4 text-emerald-500" /> : <Pause className="h-4 w-4" />}
-            title="自动调速"
-            description="根据温度策略自动调整风扇速度。"
+            title={t('controlPanel.fan.autoControlTitle')}
+            description={t('controlPanel.fan.autoControlDescription')}
             disabled={(config as any).customSpeedEnabled}
           >
             <ToggleSwitch
@@ -1200,8 +1580,8 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
               >
                 <SettingRow
                   icon={<BarChart3 className="h-4 w-4" />}
-                  title="温度平滑"
-                  description="减少瞬时温度波动对自动调速的影响。"
+                  title={t('controlPanel.fan.sampleSmoothingTitle')}
+                  description={t('controlPanel.fan.sampleSmoothingDescription')}
                 >
                   <div className="w-32">
                     <Select
@@ -1224,8 +1604,8 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                     <BarChart3 className="h-4 w-4" />
                   </div>
                   <div className="min-w-0">
-                    <div className="text-base font-medium text-foreground">温度来源</div>
-                    <div className="text-sm text-muted-foreground">选择用于自动调速的温度基准。</div>
+                    <div className="text-base font-medium text-foreground">{t('controlPanel.fan.temperatureBaselineTitle')}</div>
+                    <div className="text-sm text-muted-foreground">{t('controlPanel.fan.temperatureBaselineDescription')}</div>
                   </div>
                 </div>
                 <div className="w-full md:w-40">
@@ -1320,8 +1700,8 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
 
           <SettingRow
             icon={<TriangleAlert className={clsx('h-4 w-4', (config.smartControl as any)?.filterTransientSpike !== false ? 'text-blue-500' : 'text-muted-foreground')} />}
-            title="突发温度过滤"
-            description="忽略短时间尖峰，避免风扇频繁波动。"
+            title={t('controlPanel.fan.transientSpikeFilterTitle')}
+            description={t('controlPanel.fan.transientSpikeFilterDescription')}
           >
             <ToggleSwitch
               enabled={(config.smartControl as any)?.filterTransientSpike !== false}
@@ -1335,8 +1715,8 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
 
           <SettingRow
             icon={<Sparkles className={clsx('h-4 w-4', (config.smartControl as any)?.learning ? 'text-amber-500' : 'text-muted-foreground')} />}
-            title="自适应调速"
-            description="根据近期温度变化微调风扇曲线。"
+            title={t('controlPanel.fan.learningTitle')}
+            description={t('controlPanel.fan.learningDescription')}
           >
             <ToggleSwitch
               enabled={!!(config.smartControl as any)?.learning}
@@ -1350,8 +1730,8 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
 
           <SettingRow
             icon={<BarChart3 className="h-4 w-4" />}
-            title="温度记录"
-            description="记录近期温度和风速变化，便于观察控制效果。"
+            title={t('controlPanel.fan.temperatureHistoryTitle')}
+            description={t('controlPanel.fan.temperatureHistoryDescription')}
           >
             <ToggleSwitch
               enabled={temperatureHistoryEnabled}
@@ -1365,8 +1745,8 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
 
           <SettingRow
             icon={<Spline className="h-4 w-4" />}
-            title="曲线方案"
-            description="选择当前使用的风扇控制曲线。"
+            title={t('controlPanel.fan.curveProfileTitle')}
+            description={t('controlPanel.fan.curveProfileDescription')}
           >
             <FanCurveProfileSelect
               profiles={curveProfiles}
@@ -1387,8 +1767,8 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                   <Flame className="h-4 w-4" />
                 </div>
                 <div>
-                  <div className="text-base font-medium text-foreground">手动风速</div>
-                  <div className="text-sm text-muted-foreground">启用后使用固定百分比风速，并暂停自动调速。</div>
+                  <div className="text-base font-medium text-foreground">{t('controlPanel.fan.customSpeedTitle')}</div>
+                  <div className="text-sm text-muted-foreground">{t('controlPanel.fan.customSpeedDescription')}</div>
                 </div>
               </div>
               <ToggleSwitch
@@ -1419,11 +1799,11 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                     />
                     <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">%</span>
                     <Button variant="primary" size="sm" onClick={() => handleCustomSpeedApply(true, customSpeedInput)} className="bg-amber-600 hover:bg-amber-700 text-white">
-                      应用
+                      {t('common.actions.apply')}
                     </Button>
                   </div>
                   <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">
-                    手动风速范围为 0% 到 100%，请根据散热需求谨慎设置。
+                    {t('controlPanel.fan.customSpeedRangeHint')}
                   </p>
                 </motion.div>
               )}
@@ -1564,27 +1944,250 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
         <Section title={t('controlPanel.system.sectionTitle')} icon={Monitor}>
           <SettingRow
             icon={<Monitor className="h-4 w-4 text-primary" />}
-            title="设备地址"
-            description="填写无线风扇控制器的局域网地址。"
+            title={t('controlPanel.system.deviceConnection.title')}
+            description={t('controlPanel.system.deviceConnection.description')}
           >
-            <div className="flex w-[280px] max-w-full items-center gap-2">
-              <input
-                value={deviceIpInput}
-                onChange={(event) => setDeviceIpInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') void handleDeviceIpSave();
-                }}
-                placeholder="例如 192.168.1.50"
-                className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none ring-offset-background transition-colors focus-visible:ring-2 focus-visible:ring-ring"
-              />
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleDeviceIpSave}
-                loading={loadingStates.deviceIp}
-              >
-                保存
-              </Button>
+            <div className="w-full space-y-3 sm:w-[520px]">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[160px_minmax(0,1fr)]">
+                <SelectionField label={t('controlPanel.system.deviceConnection.transportLabel')}>
+                  <Select
+                    value={deviceTransportInput}
+                    onChange={handleDeviceTransportChange}
+                    options={deviceTransportOptions}
+                    disabled={loadingStates.deviceConnection}
+                    size="sm"
+                  />
+                </SelectionField>
+                <SelectionField
+                  label={t('controlPanel.system.deviceConnection.enabledDeviceLabel')}
+                  hint={selectedTransportProfile ? `${summarizeConnection(selectedTransportProfile)} · ${formatSpeedRange(selectedTransportProfile)}` : t('controlPanel.system.deviceConnection.noEnabledDevice')}
+                >
+                  <div className="flex min-h-10 items-center rounded-md border border-border bg-muted/35 px-3 text-sm text-foreground">
+                    <span className="truncate">{selectedTransportProfile ? profileLabel(selectedTransportProfile) : t('controlPanel.system.deviceConnection.noEnabledDevice')}</span>
+                  </div>
+                </SelectionField>
+              </div>
+
+              {deviceTransportInput === 'wifi' && (
+                <div className="space-y-2 rounded-xl border border-border/70 bg-background/45 p-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                    <div className="min-w-0 flex-1">
+                      <SelectionField label={t('controlPanel.system.deviceConnection.addressLabel')}>
+                        <input
+                          value={deviceIpInput}
+                          onChange={(event) => setDeviceIpInput(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') void handleWiFiConnectionSave();
+                          }}
+                          placeholder={t('controlPanel.system.deviceConnection.addressPlaceholder')}
+                          className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none ring-offset-background transition-colors focus-visible:ring-2 focus-visible:ring-ring"
+                        />
+                      </SelectionField>
+                    </div>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={handleWiFiConnectionSave}
+                      loading={loadingStates.deviceIp}
+                      className="shrink-0"
+                    >
+                      {t('common.actions.save')}
+                    </Button>
+                  </div>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {t('controlPanel.system.deviceConnection.wifiHint')}
+                  </p>
+                </div>
+              )}
+
+              {deviceTransportInput === 'ble' && (
+                <div className="space-y-3 rounded-xl border border-border/70 bg-background/45 p-3 text-xs">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div>
+                      <div className="font-medium text-muted-foreground">{t('controlPanel.system.deviceConnection.bleNameFilter')}</div>
+                      <div className="mt-1 truncate text-foreground">{activeConnection.bleNameFilter || t('controlPanel.system.deviceConnection.notConfigured')}</div>
+                    </div>
+                    <div>
+                      <div className="font-medium text-muted-foreground">{t('controlPanel.system.deviceConnection.bleService')}</div>
+                      <div className="mt-1 truncate text-foreground">{activeConnection.bleServiceUuid || t('controlPanel.system.deviceConnection.notConfigured')}</div>
+                    </div>
+                    <div>
+                      <div className="font-medium text-muted-foreground">{t('controlPanel.system.deviceConnection.bleWrite')}</div>
+                      <div className="mt-1 truncate text-foreground">{activeConnection.bleWriteCharacteristic || t('controlPanel.system.deviceConnection.notConfigured')}</div>
+                    </div>
+                    <div>
+                      <div className="font-medium text-muted-foreground">{t('controlPanel.system.deviceConnection.bleNotify')}</div>
+                      <div className="mt-1 truncate text-foreground">{activeConnection.bleNotifyCharacteristic || t('controlPanel.system.deviceConnection.notConfigured')}</div>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2 border-t border-border/60 pt-3 sm:flex-row sm:items-start sm:justify-between">
+                    <p className="min-w-0 flex-1 leading-relaxed text-muted-foreground">{t('controlPanel.system.deviceConnection.bleHint')}</p>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => void handleBLESettingsScan()}
+                      loading={loadingStates.bleSettingsScan}
+                      disabled={!bleSettingsProfile || loadingStates.bleSettingsApply}
+                      icon={<Bluetooth className="h-4 w-4" />}
+                      title={t('controlPanel.system.deviceConnection.bleScan')}
+                      className="shrink-0"
+                    >
+                      {t('controlPanel.system.deviceConnection.bleScan')}
+                    </Button>
+                  </div>
+                  {bleSettingsScanError && (
+                    <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
+                      {t('controlPanel.system.deviceConnection.bleScanFailed', { error: bleSettingsScanError })}
+                    </div>
+                  )}
+                  {bleSettingsDevices.length > 0 && (
+                    <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
+                      {bleSettingsDevices.map((device) => {
+                        const services = bleDeviceServices(device);
+                        const profileMatch = device.matchedProfileDisplayName || device.matchedProfileId || '';
+                        return (
+                          <button
+                            key={device.address}
+                            type="button"
+                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-left transition-colors hover:border-primary/40 hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-60"
+                            onClick={() => void handleBLESettingsDeviceApply(device)}
+                            disabled={loadingStates.bleSettingsApply}
+                          >
+                            <div className="flex min-w-0 items-center justify-between gap-2">
+                              <span className="truncate text-sm font-medium text-foreground">{bleDeviceTitle(device)}</span>
+                              {device.matched && (
+                                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">
+                                  <CheckCircle2 className="h-3 w-3" />
+                                  {t('controlPanel.system.deviceConnection.bleMatched')}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                              <span>{device.address}</span>
+                              <span className="inline-flex items-center gap-1">
+                                <Signal className="h-3 w-3" />
+                                {device.rssi} dBm
+                              </span>
+                            </div>
+                            {services && (
+                              <div className="mt-1 truncate text-[11px] text-muted-foreground">
+                                {t('controlPanel.system.deviceConnection.bleServices')}: {services}
+                              </div>
+                            )}
+                            {profileMatch && (
+                              <div className="mt-1 truncate text-[11px] text-primary">
+                                {t('controlPanel.system.deviceConnection.bleProfileMatch', { profile: profileMatch })}
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {bleSettingsScanCompleted && !loadingStates.bleSettingsScan && !bleSettingsScanError && bleSettingsDevices.length === 0 && (
+                    <div className="rounded-lg border border-border/70 bg-background px-3 py-2 text-muted-foreground">
+                      {t('controlPanel.system.deviceConnection.bleScanEmpty')}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {deviceTransportInput === 'serial' && (
+                <div className="space-y-3 rounded-xl border border-border/70 bg-background/45 p-3 text-xs">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                    <div className="min-w-0 flex-1">
+                      <SelectionField label={t('controlPanel.system.deviceConnection.serialPort')}>
+                        <input
+                          value={serialPortInput}
+                          onChange={(event) => setSerialPortInput(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') void handleSerialConnectionSave();
+                          }}
+                          placeholder={t('controlPanel.system.deviceConnection.serialPortPlaceholder')}
+                          className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none ring-offset-background transition-colors focus-visible:ring-2 focus-visible:ring-ring"
+                        />
+                      </SelectionField>
+                    </div>
+                    <div className="min-w-0 sm:w-32">
+                      <SelectionField label={t('controlPanel.system.deviceConnection.serialBaud')}>
+                        <input
+                          type="number"
+                          min={1}
+                          value={serialBaudInput}
+                          onChange={(event) => setSerialBaudInput(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') void handleSerialConnectionSave();
+                          }}
+                          placeholder={`${DEFAULT_SERIAL_BAUD_RATE}`}
+                          className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none ring-offset-background transition-colors focus-visible:ring-2 focus-visible:ring-ring"
+                        />
+                      </SelectionField>
+                    </div>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={handleSerialConnectionSave}
+                      loading={loadingStates.serialConnection}
+                      className="shrink-0 sm:mb-[18px]"
+                    >
+                      {t('common.actions.save')}
+                    </Button>
+                  </div>
+                  <div className="space-y-2 border-t border-border/60 pt-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <p className="min-w-0 flex-1 leading-relaxed text-muted-foreground">{t('controlPanel.system.deviceConnection.serialHint')}</p>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void loadSerialPorts(true)}
+                        loading={loadingStates.serialPorts}
+                        icon={<RotateCw className="h-4 w-4" />}
+                        className="shrink-0"
+                      >
+                        {t('controlPanel.system.deviceConnection.serialDetectPorts')}
+                      </Button>
+                    </div>
+                    {serialPorts.length > 0 && (
+                      <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto pr-1">
+                        {serialPorts.map((port) => {
+                          const name = serialPortName(port);
+                          return (
+                            <button
+                              key={name}
+                              type="button"
+                              onClick={() => setSerialPortInput(name)}
+                              className={clsx(
+                                'rounded-md border px-2 py-1 text-[11px] transition-colors',
+                                serialPortInput.trim().toLowerCase() === name.toLowerCase()
+                                  ? 'border-primary bg-primary/10 text-primary'
+                                  : 'border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground',
+                              )}
+                            >
+                              {serialPortLabel(port)}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {serialPortsError && (
+                      <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
+                        {t('controlPanel.system.deviceConnection.serialPortsFailed', { error: serialPortsError })}
+                      </div>
+                    )}
+                    {serialPortsLoaded && !loadingStates.serialPorts && !serialPortsError && serialPorts.length === 0 && (
+                      <div className="rounded-lg border border-border/70 bg-background px-3 py-2 text-muted-foreground">
+                        {t('controlPanel.system.deviceConnection.serialPortsEmpty')}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {deviceTransportInput === 'hid' && (
+                <div className="rounded-xl border border-border/70 bg-background/45 p-3 text-xs leading-relaxed text-muted-foreground">
+                  {t('controlPanel.system.deviceConnection.hidHint')}
+                </div>
+              )}
             </div>
           </SettingRow>
 
@@ -1784,7 +2387,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                       onKeyDown={(event) => {
                         if (event.key === 'Enter') void sendDeviceDebugCommand();
                       }}
-                      placeholder="27 或 5A A5 27 02 29"
+                      placeholder={t('controlPanel.debug.commandPlaceholder')}
                       className={clsx(
                         'h-9 min-w-0 flex-1 rounded-md border bg-background px-3 font-mono text-xs outline-none ring-offset-background transition-colors focus-visible:ring-2',
                         isDangerousDebugCommand
@@ -1800,17 +2403,17 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                       disabled={!isConnected || !config.debugMode}
                       icon={<Play className="h-3.5 w-3.5" />}
                     >
-                      发送
+                      {t('controlPanel.debug.sendCommand')}
                     </Button>
                   </div>
                   <div className="mt-2 flex items-start gap-1.5 text-[11px] leading-relaxed text-red-600 dark:text-red-400">
                     <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0" />
                     {isDangerousDebugCommand ? (
                       <span className="font-semibold">
-                        高危命令 0x{debugCommandByte?.toString(16).toUpperCase().padStart(2, '0')}：直接操作固件底层/调试寄存器，误用可能导致设备异常甚至变砖，请确认后再发送。
+                        {t('controlPanel.debug.dangerousCommandWarning', { command: debugCommandByte?.toString(16).toUpperCase().padStart(2, '0') })}
                       </span>
                     ) : (
-                      <span>原始命令会直接下发到设备固件，错误命令可能导致设备异常，请谨慎操作。</span>
+                      <span>{t('controlPanel.debug.rawCommandWarning')}</span>
                     )}
                   </div>
                   {debugCommandResult && (

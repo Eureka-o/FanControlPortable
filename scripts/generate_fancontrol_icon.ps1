@@ -1,5 +1,6 @@
 param(
-    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot ".."))
+    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")),
+    [string]$SourceImage = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,6 +44,26 @@ function New-RoundedRectPath {
     return $path
 }
 
+function New-HexagonPath {
+    param(
+        [float]$CenterX,
+        [float]$CenterY,
+        [float]$Radius
+    )
+
+    $path = [System.Drawing.Drawing2D.GraphicsPath]::new()
+    $points = @()
+    for ($i = 0; $i -lt 6; $i++) {
+        $angle = (-90 + $i * 60) * [Math]::PI / 180
+        $points += [System.Drawing.PointF]::new(
+            [float]($CenterX + [Math]::Cos($angle) * $Radius),
+            [float]($CenterY + [Math]::Sin($angle) * $Radius)
+        )
+    }
+    $path.AddPolygon([System.Drawing.PointF[]]$points)
+    return $path
+}
+
 function Add-FanBlade {
     param(
         [System.Drawing.Graphics]$Graphics,
@@ -55,16 +76,16 @@ function Add-FanBlade {
     $path = [System.Drawing.Drawing2D.GraphicsPath]::new()
     $path.StartFigure()
     $path.AddBezier(
-        [System.Drawing.PointF]::new($Center + 14 * $Scale, $Center - 10 * $Scale),
-        [System.Drawing.PointF]::new($Center + 78 * $Scale, $Center - 46 * $Scale),
-        [System.Drawing.PointF]::new($Center + 136 * $Scale, $Center - 20 * $Scale),
-        [System.Drawing.PointF]::new($Center + 148 * $Scale, $Center + 36 * $Scale)
+        [System.Drawing.PointF]::new($Center + 25 * $Scale, $Center - 18 * $Scale),
+        [System.Drawing.PointF]::new($Center + 94 * $Scale, $Center - 70 * $Scale),
+        [System.Drawing.PointF]::new($Center + 178 * $Scale, $Center - 34 * $Scale),
+        [System.Drawing.PointF]::new($Center + 186 * $Scale, $Center + 48 * $Scale)
     )
     $path.AddBezier(
-        [System.Drawing.PointF]::new($Center + 148 * $Scale, $Center + 36 * $Scale),
-        [System.Drawing.PointF]::new($Center + 90 * $Scale, $Center + 62 * $Scale),
-        [System.Drawing.PointF]::new($Center + 36 * $Scale, $Center + 36 * $Scale),
-        [System.Drawing.PointF]::new($Center + 8 * $Scale, $Center + 10 * $Scale)
+        [System.Drawing.PointF]::new($Center + 186 * $Scale, $Center + 48 * $Scale),
+        [System.Drawing.PointF]::new($Center + 112 * $Scale, $Center + 84 * $Scale),
+        [System.Drawing.PointF]::new($Center + 48 * $Scale, $Center + 48 * $Scale),
+        [System.Drawing.PointF]::new($Center + 10 * $Scale, $Center + 16 * $Scale)
     )
     $path.CloseFigure()
 
@@ -87,53 +108,109 @@ function New-AppIcon {
     $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
     $g.Clear([System.Drawing.Color]::Transparent)
 
-    $shadowRect = [System.Drawing.RectangleF]::new($Size * 0.07, $Size * 0.09, $Size * 0.86, $Size * 0.84)
-    $shadowPath = New-RoundedRectPath $shadowRect ($Size * 0.2)
-    $shadowBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(32, 52, 96, 132))
+    $shadowRect = [System.Drawing.RectangleF]::new($Size * 0.072, $Size * 0.088, $Size * 0.856, $Size * 0.842)
+    $shadowPath = New-RoundedRectPath $shadowRect ($Size * 0.205)
+    $shadowBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(38, 18, 55, 94))
     $g.FillPath($shadowBrush, $shadowPath)
 
     $rect = [System.Drawing.RectangleF]::new($Size * 0.055, $Size * 0.055, $Size * 0.89, $Size * 0.89)
     $bgPath = New-RoundedRectPath $rect ($Size * 0.21)
     $bgBrush = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
         $rect,
-        [System.Drawing.Color]::FromArgb(255, 252, 254, 255),
-        [System.Drawing.Color]::FromArgb(255, 230, 244, 252),
+        [System.Drawing.Color]::FromArgb(255, 255, 255, 255),
+        [System.Drawing.Color]::FromArgb(255, 224, 237, 248),
         135
     )
     $g.FillPath($bgBrush, $bgPath)
 
-    $rimPen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(180, 179, 213, 233), [Math]::Max(2, $Size * 0.01))
+    $innerGlowRect = [System.Drawing.RectangleF]::new($Size * 0.083, $Size * 0.083, $Size * 0.834, $Size * 0.834)
+    $innerGlowPath = New-RoundedRectPath $innerGlowRect ($Size * 0.19)
+    $innerGlowPen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(150, 255, 255, 255), [Math]::Max(2, $Size * 0.018))
+    $g.DrawPath($innerGlowPen, $innerGlowPath)
+
+    $rimPen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(230, 36, 95, 178), [Math]::Max(3, $Size * 0.014))
     $g.DrawPath($rimPen, $bgPath)
 
-    $accentRect = [System.Drawing.RectangleF]::new($Size * 0.66, $Size * 0.15, $Size * 0.17, $Size * 0.045)
+    $accentRect = [System.Drawing.RectangleF]::new($Size * 0.655, $Size * 0.15, $Size * 0.18, $Size * 0.047)
     $accentPath = New-RoundedRectPath $accentRect ($Size * 0.022)
-    $accentBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(185, 58, 155, 207))
+    $accentBrush = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
+        $accentRect,
+        [System.Drawing.Color]::FromArgb(255, 0, 95, 255),
+        [System.Drawing.Color]::FromArgb(255, 75, 202, 255),
+        0
+    )
     $g.FillPath($accentBrush, $accentPath)
 
     $scale = $Size / 1024.0
     $center = $Size / 2.0
-    $bladeBrush = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
+    $hexPath = New-HexagonPath ([float]$center) ([float]($center + $Size * 0.015)) ([float]($Size * 0.295))
+    $hexShadow = New-HexagonPath ([float]($center + $Size * 0.012)) ([float]($center + $Size * 0.033)) ([float]($Size * 0.295))
+    $hexShadowPen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(66, 8, 24, 50), [Math]::Max(12, $Size * 0.078))
+    $hexShadowPen.LineJoin = [System.Drawing.Drawing2D.LineJoin]::Round
+    $g.DrawPath($hexShadowPen, $hexShadow)
+
+    $hexBrush = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
         [System.Drawing.RectangleF]::new($Size * 0.22, $Size * 0.22, $Size * 0.56, $Size * 0.56),
-        [System.Drawing.Color]::FromArgb(238, 40, 138, 196),
-        [System.Drawing.Color]::FromArgb(238, 98, 211, 218),
+        [System.Drawing.Color]::FromArgb(255, 4, 12, 30),
+        [System.Drawing.Color]::FromArgb(255, 27, 43, 72),
+        35
+    )
+    $hexPen = [System.Drawing.Pen]::new($hexBrush, [Math]::Max(14, $Size * 0.074))
+    $hexPen.LineJoin = [System.Drawing.Drawing2D.LineJoin]::Round
+    $g.DrawPath($hexPen, $hexPath)
+
+    $hexHighlightPen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(72, 96, 148, 216), [Math]::Max(4, $Size * 0.013))
+    $hexHighlightPen.LineJoin = [System.Drawing.Drawing2D.LineJoin]::Round
+    $matrix = [System.Drawing.Drawing2D.Matrix]::new()
+    $matrix.Translate([float](-$Size * 0.012), [float](-$Size * 0.014))
+    $hexPath.Transform($matrix)
+    $g.DrawPath($hexHighlightPen, $hexPath)
+    $matrix.Dispose()
+
+    $fanShadowBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(70, 0, 58, 130))
+    foreach ($angle in @(0, 120, 240)) {
+        $state = $g.Save()
+        $g.TranslateTransform([float]($Size * 0.015), [float]($Size * 0.022))
+        Add-FanBlade $g $center $scale $angle $fanShadowBrush
+        $g.Restore($state)
+    }
+
+    $bladeBrush = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
+        [System.Drawing.RectangleF]::new($Size * 0.29, $Size * 0.29, $Size * 0.42, $Size * 0.42),
+        [System.Drawing.Color]::FromArgb(255, 0, 92, 255),
+        [System.Drawing.Color]::FromArgb(255, 52, 220, 235),
         35
     )
     foreach ($angle in @(0, 120, 240)) {
         Add-FanBlade $g $center $scale $angle $bladeBrush
     }
 
-    $ringPen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(190, 62, 158, 207), [Math]::Max(4, $Size * 0.018))
-    $g.DrawEllipse($ringPen, $Size * 0.275, $Size * 0.275, $Size * 0.45, $Size * 0.45)
+    $ringPen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(255, 20, 84, 170), [Math]::Max(6, $Size * 0.025))
+    $g.DrawEllipse($ringPen, $Size * 0.357, $Size * 0.357, $Size * 0.286, $Size * 0.286)
 
-    $hubBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(255, 248, 253, 255))
-    $hubPen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(230, 44, 145, 197), [Math]::Max(3, $Size * 0.014))
-    $g.FillEllipse($hubBrush, $Size * 0.425, $Size * 0.425, $Size * 0.15, $Size * 0.15)
-    $g.DrawEllipse($hubPen, $Size * 0.425, $Size * 0.425, $Size * 0.15, $Size * 0.15)
+    $ringHighlightPen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(145, 145, 231, 255), [Math]::Max(3, $Size * 0.01))
+    $g.DrawArc($ringHighlightPen, $Size * 0.363, $Size * 0.363, $Size * 0.274, $Size * 0.274, 210, 145)
 
-    $innerBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(255, 65, 177, 211))
-    $g.FillEllipse($innerBrush, $Size * 0.482, $Size * 0.482, $Size * 0.036, $Size * 0.036)
+    $hubRect = [System.Drawing.RectangleF]::new($Size * 0.415, $Size * 0.415, $Size * 0.17, $Size * 0.17)
+    $hubBrush = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
+        $hubRect,
+        [System.Drawing.Color]::FromArgb(255, 255, 255, 255),
+        [System.Drawing.Color]::FromArgb(255, 206, 232, 246),
+        135
+    )
+    $hubPen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(255, 8, 70, 150), [Math]::Max(4, $Size * 0.018))
+    $g.FillEllipse($hubBrush, $hubRect)
+    $g.DrawEllipse($hubPen, $hubRect)
 
-    foreach ($obj in @($innerBrush, $hubPen, $hubBrush, $ringPen, $bladeBrush, $accentBrush, $accentPath, $rimPen, $bgBrush, $bgPath, $shadowBrush, $shadowPath, $g)) {
+    $innerBrush = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
+        [System.Drawing.RectangleF]::new($Size * 0.472, $Size * 0.472, $Size * 0.056, $Size * 0.056),
+        [System.Drawing.Color]::FromArgb(255, 0, 112, 255),
+        [System.Drawing.Color]::FromArgb(255, 91, 225, 242),
+        35
+    )
+    $g.FillEllipse($innerBrush, $Size * 0.472, $Size * 0.472, $Size * 0.056, $Size * 0.056)
+
+    foreach ($obj in @($innerBrush, $hubPen, $hubBrush, $ringHighlightPen, $ringPen, $bladeBrush, $fanShadowBrush, $hexHighlightPen, $hexPen, $hexBrush, $hexShadowPen, $hexShadow, $hexPath, $accentBrush, $accentPath, $innerGlowPen, $innerGlowPath, $rimPen, $bgBrush, $bgPath, $shadowBrush, $shadowPath, $g)) {
         $obj.Dispose()
     }
     return $canvas
@@ -244,7 +321,22 @@ New-DirectoryIfMissing (Join-Path $RepoRoot "frontend\src\app")
 New-DirectoryIfMissing $brandDir
 New-DirectoryIfMissing $distBrandDir
 
-$icon = New-AppIcon 1024
+$sourceIconPath = $SourceImage
+if ([string]::IsNullOrWhiteSpace($sourceIconPath)) {
+    $candidate = Join-Path $RepoRoot "build\appicon.png"
+    if (Test-Path $candidate) {
+        $sourceIconPath = $candidate
+    }
+}
+
+if (-not [string]::IsNullOrWhiteSpace($sourceIconPath)) {
+    $sourceIconPath = [string](Resolve-Path -LiteralPath $sourceIconPath)
+    $sourceIcon = [System.Drawing.Bitmap]::new($sourceIconPath)
+    $icon = Resize-Bitmap $sourceIcon 1024 1024
+    $sourceIcon.Dispose()
+} else {
+    $icon = New-AppIcon 1024
+}
 $icon.Save((Join-Path $RepoRoot "build\appicon.png"), [System.Drawing.Imaging.ImageFormat]::Png)
 $icon.Save((Join-Path $brandDir "appicon.png"), [System.Drawing.Imaging.ImageFormat]::Png)
 $icon.Save((Join-Path $brandDir "mark.png"), [System.Drawing.Imaging.ImageFormat]::Png)

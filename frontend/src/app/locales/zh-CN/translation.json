@@ -1,6 +1,6 @@
 {
   "common": {
-    "appName": "FanControl 2.0",
+    "appName": "FanControl",
     "metaDescription": "面向便携式风扇控制器的驱动与控制工具",
     "language": "语言",
     "languages": {
@@ -38,6 +38,7 @@
       "status": "状态",
       "curve": "曲线",
       "control": "设置",
+      "devices": "设备",
       "about": "关于"
     },
     "status": {
@@ -58,6 +59,238 @@
     },
     "bridgeWarning": {
       "closeAria": "关闭告警"
+    }
+  },
+  "advancedDevices": {
+    "title": "已支持设备",
+    "subtitle": "管理内置模板和已录入设备。普通控制流程会跟随已启用设备切换。",
+    "gate": {
+      "title": "高级设备区域",
+      "description": "此页面用于已支持设备记录、DIY 主控适配和原始协议测试。错误命令或接口不匹配可能导致设备异常。",
+      "warningTitle": "请确认你了解主控信息后再继续",
+      "warningBody": "发送命令或保存设备前，请确认连接方式、速度单位、接口地址、UUID、帧格式、校验和响应解析规则。",
+      "primary": "我已知悉",
+      "dialogTitle": "确认进入高级区域",
+      "dialogDescription": "下一页可以导入设备信息并发送原始调试命令。普通用户应继续使用状态页和设置页。",
+      "confirm": "进入高级设备"
+    },
+    "actions": {
+      "addDevice": "新增设备",
+      "manageDevices": "管理设备",
+      "editDevice": "编辑",
+      "batchExport": "批量导出",
+      "setActive": "启用设备",
+      "saveDevice": "保存设备",
+      "generate": "生成",
+      "send": "发送",
+      "saveDebugProfile": "保存为设备草稿",
+      "refreshPorts": "刷新端口",
+      "scanBle": "扫描 BLE",
+      "probeGatt": "探测 GATT",
+      "applyGatt": "应用 GATT 建议"
+    },
+    "sections": {
+      "supported": "设备模板库",
+      "supportedHint": "内置模板是只读基线，用于提供发包形状、速度映射、解析规则和连接默认值，可作为新建设备的参考。",
+      "user": "设备库",
+      "userHint": "内置默认设备、导入设备和手动创建设备会显示在这里，并可启用为当前控制路径。",
+      "emptySupported": "后端没有返回设备模板条目。",
+      "emptyUser": "设备库为空。",
+      "importExport": "导入 / 导出设备信息",
+      "importDevices": "导入设备信息",
+      "debug": "调试生成设备",
+      "debugHint": "创建设备时，可在这里进行有边界的原始命令测试。"
+    },
+    "connectionBanner": {
+      "title": "按连接方式启用设备",
+      "description": "每种连接方式最多启用一个设备。普通设置页只选择连接类别和日常连接字段，协议细节仍在设备管理中维护。",
+      "noDevice": "未启用设备",
+      "addHint": "请先新增或导入设备",
+      "count": "{{count}} 个设备"
+    },
+    "status": {
+      "active": "已启用",
+      "builtin": "内置设备",
+      "template": "模板",
+      "user": "用户设备",
+      "working": "正在应用设备变更..."
+    },
+    "capabilities": {
+      "read": "读取状态",
+      "setSpeed": "设置速度",
+      "raw": "原始命令",
+      "lighting": "灯光",
+      "none": "暂无能力标记"
+    },
+    "transport": {
+      "wifi": "WiFi",
+      "ble": "蓝牙 BLE",
+      "serial": "虚拟串口",
+      "hid": "旧版 HID"
+    },
+    "speedUnit": {
+      "percent": "百分比",
+      "rpm": "转速 RPM"
+    },
+    "fields": {
+      "name": "设备名称",
+      "vendor": "厂商",
+      "model": "型号",
+      "notes": "备注",
+      "transport": "连接方式",
+      "speedUnit": "速度单位",
+      "speedMin": "最低速度",
+      "speedMax": "最高速度",
+      "speedStep": "速度步进",
+      "tickScale": "百分比刻度",
+      "endpoint": "设备地址",
+      "stateEndpoint": "状态接口",
+      "speedEndpoint": "速度接口",
+      "httpMethod": "HTTP 方法",
+      "requestTimeoutMs": "请求超时 (ms)",
+      "minSendIntervalMs": "最小发送间隔 (ms)",
+      "maxRetries": "最大重试次数",
+      "retryBackoffMs": "重试退避 (ms)",
+      "bleAddress": "BLE 地址",
+      "bleNameFilter": "BLE 名称匹配",
+      "bleService": "服务 UUID",
+      "bleWrite": "写入特征值",
+      "bleNotify": "通知特征值",
+      "bleWriteWithResponse": "写入后等待响应",
+      "serialPort": "端口",
+      "serialBaud": "波特率",
+      "serialDataBits": "数据位",
+      "serialStopBits": "停止位",
+      "serialParity": "校验位",
+      "serialDelimiter": "帧分隔符",
+      "commandEncoding": "命令编码",
+      "checksum": "校验方式",
+      "setSpeedCommand": "设置速度命令",
+      "readStateCommand": "读取状态命令",
+      "parserType": "解析类型",
+      "parserExpression": "解析表达式",
+      "rawCommand": "原始命令",
+      "waitMs": "等待时间 (ms)"
+    },
+    "hints": {
+      "tickScale": "填 10 表示学习精度为 0.1%。",
+      "serialPorts": "可以选择检测到的 COM 端口；如果主控使用虚拟端口，也可以手动填写。",
+      "bleScan": "扫描需要手动触发，并且有时间上限。FanControl 会优先使用广播名称和服务 UUID；写入/通知特征仍可手动填写。",
+      "bleAddress": "可选。扫描结果可自动填入，用于直接 BLE 连接或 GATT 探测。"
+    },
+    "placeholders": {
+      "name": "我的散热器",
+      "serialPortSelect": "选择检测到的端口",
+      "serialPortManual": "手动端口，例如 COM3",
+      "serialPortCustom": "{{port}}（手动）"
+    },
+    "dialog": {
+      "addTitle": "新增设备",
+      "addDescription": "可以从模板创建，也可以根据已知主控信息手动创建。",
+      "manualTab": "手动创建",
+      "importTab": "粘贴导入",
+      "libraryProfile": "从模板库开始",
+      "blankProfile": "空白设备",
+      "setActiveAfterSave": "保存后启用此设备",
+      "editTitle": "编辑设备",
+      "editDescription": "修改已保存设备的名称、连接信息、命令、解析规则和速度设置。",
+      "manageTitle": "管理用户设备",
+      "manageDescription": "选择或删除通过导入、手动录入创建的设备。内置模板会被保护。",
+      "noUserProfiles": "暂无可管理的用户设备。",
+      "deleteConfirm": "确定删除这个设备吗？",
+      "deleteTitle": "删除设备",
+      "deleteDescription": "这里只会从 FanControl 中移除已保存的用户设备，不会改动内置模板。",
+      "deleteWarning": "如果这个设备正在启用，FanControl 会尽量切换到同一连接方式下的其他设备。",
+      "deleteAction": "删除设备"
+    },
+    "validation": {
+      "nameRequired": "请先填写设备名称。",
+      "importRequired": "请先粘贴设备导入码。",
+      "rawCommandRequired": "请先输入原始命令。",
+      "serialPortsFailed": "无法列出 COM 端口：{{error}}",
+      "serialPortsEmpty": "没有检测到 COM 端口。仍然可以手动填写端口。",
+      "bleScanFailed": "无法扫描 BLE 设备：{{error}}",
+      "bleScanEmpty": "没有发现 BLE 设备。仍然可以手动填写匹配字段。",
+      "gattProbeFailed": "无法探测 BLE GATT 服务：{{error}}",
+      "gattProbeEmpty": "没有返回 GATT 服务。仍然可以手动填写 UUID。"
+    },
+      "importExport": {
+        "description": "设备信息包含名称、连接方式、速度单位、接口/特征值、发包模板、解析规则和能力标记。",
+        "exportTitle": "导出",
+        "importTitle": "导入",
+        "exportPlaceholder": "点击“生成”后会得到 FCDP1. 开头的设备导出码。",
+        "importPlaceholder": "粘贴 FCDP1. 开头的设备导入码。",
+        "exportFile": "导出文件",
+        "chooseFile": "选择文件",
+        "dropTitle": "拖入设备文件",
+        "dropHint": "支持 .fcdp、JSON 或文本文件。导入时按设备 ID 取并集，不会删除已有设备。"
+      },
+    "ble": {
+      "scanTitle": "BLE 设备发现",
+      "matched": "已匹配",
+      "services": "服务",
+      "profileMatch": "匹配：{{profile}}",
+      "gattResult": "GATT 服务",
+      "gattUnknownDevice": "未知 BLE 设备",
+      "gattNoCharacteristics": "没有返回特征值。",
+      "service": "服务",
+      "properties": {
+        "broadcast": "广播",
+        "read": "读取",
+        "write": "写入",
+        "writeWithoutResponse": "无响应写入",
+        "notify": "通知",
+        "indicate": "指示",
+        "authenticatedWrite": "认证写入",
+        "extended": "扩展"
+      }
+    },
+    "profileTest": {
+      "title": "设备测试",
+      "hint": "用当前草稿创建临时后端执行器进行测试，不会保存设备，也不会切换当前设备。",
+      "draftName": "草稿设备",
+      "testSpeed": "测试速度",
+      "action": {
+        "connect": "连接",
+        "readState": "读状态",
+        "setSpeed": "设速度"
+      },
+      "success": "{{action}}完成",
+      "current": "当前",
+      "target": "目标",
+      "noData": "设备没有返回速度数据。",
+      "error": "设备测试失败：{{error}}"
+    },
+    "debug": {
+      "warning": "原始命令会经过后端路径限速，但仍会直接发送到设备。只发送你确认安全的命令。",
+      "notConnected": "请先连接设备，再发送原始命令。",
+      "resultPlaceholder": "命令结果会显示在这里。",
+      "confirmTitle": "确认发送原始命令",
+      "confirmDescription": "这条命令会通过当前设备路径发送。继续前请确认负载内容、目标设备和等待时间。",
+      "confirmCommand": "命令内容",
+      "confirmWait": "发送后等待",
+      "confirmSend": "发送原始命令",
+      "saveProfileHint": "把最后一次成功的原始命令作为起点，保存成可复用的设备。",
+      "profileName": "{{name}} 调试设备",
+      "profileNotes": "由原始调试命令创建。命令：{{command}}。发送后等待：{{waitMs}} ms。"
+    },
+    "toast": {
+      "loadFailed": "加载设备失败：{{error}}",
+      "profileActivated": "设备已启用",
+      "activeFailed": "启用设备失败：{{error}}",
+      "saved": "设备已保存",
+      "deleted": "设备已删除",
+      "deleteFailed": "删除设备失败：{{error}}",
+        "exportGenerated": "设备导出码已生成",
+        "exportFailed": "导出设备失败：{{error}}",
+        "exportDownloaded": "设备文件已导出",
+        "copied": "已复制",
+        "importMissing": "请先粘贴设备导入码",
+        "imported": "设备已导入",
+        "importFailed": "导入设备失败：{{error}}",
+        "importFileFailed": "读取设备文件失败：{{error}}",
+        "debugSent": "调试命令已发送",
+      "debugFailed": "调试命令失败：{{error}}"
     }
   },
   "store": {
@@ -156,6 +389,7 @@
     "hero": {
       "modeLine": "{{mode}} · {{description}}",
       "waitingBluetooth": "等待无线连接…",
+      "waitingDeviceConnection": "等待连接 {{name}}…",
       "coreUnavailable": "核心服务不可用，请先恢复后台服务"
     },
     "actions": {
@@ -171,7 +405,9 @@
     },
     "disconnected": {
       "title": "设备未连接",
-      "description": "请在设置中填写设备地址并连接散热器"
+      "description": "请在设置中填写设备地址并连接散热器",
+      "titleWithDevice": "{{name}} 未连接",
+      "descriptionWithDevice": "当前启用设备为 {{name}}，确认连接方式和地址后即可连接。"
     },
     "bridgeWarning": {
       "default": "温度桥接程序读取失败，可重新初始化温度监控后重试。",
@@ -226,7 +462,7 @@
       "checkUpdate": "检查更新",
       "channelStable": "正式版",
       "channelPrerelease": "预发布",
-      "prereleaseBadge": "Pre-release",
+      "prereleaseBadge": "预发布",
       "noPrereleaseFound": "当前未找到可用的预发布版本。",
       "openReleasePage": "打开发布页",
       "updatable": "可更新",
@@ -469,13 +705,14 @@
       "learningDescription": "长时间运行后，自动微调每个温度点的目标速度，使实际温度更贴近曲线设定值。学习到的偏移随时可一键重置。",
       "learningAria": "切换自适应学习",
       "temperatureHistoryTitle": "温度历史记录",
-      "temperatureHistoryDescription": "开启后由核心服务保留最近 1 小时 CPU/GPU 温度曲线；关闭后仅在 GUI 打开期间绘制临时曲线。",
+      "temperatureHistoryDescription": "开启后由核心服务保留最近 1 小时 CPU/GPU 温度曲线；关闭后仅在主界面打开期间绘制临时曲线。",
       "temperatureHistoryAria": "切换核心温度历史记录",
       "curveProfileTitle": "曲线方案",
       "curveProfileDescription": "在设置页直接切换风扇温控曲线，避免来回切页。",
       "customSpeedTitle": "自定义速度",
       "customSpeedDescription": "固定百分比速度，适合特殊场景",
       "customSpeedWarning": "自定义速度会禁用智能温控",
+      "customSpeedRangeHint": "手动速度范围为 0% 到 100%，请根据散热需求谨慎设置。",
       "toasts": {
         "profileSwitched": "温控曲线已切换",
         "profileSwitchFailed": "切换曲线失败: {{error}}"
@@ -541,8 +778,64 @@
       "autoStartDescription": "Windows 启动时自动运行",
       "autoStartTip": "以管理员身份运行可避免每次 UAC 授权",
       "reconnectTitle": "断连保持配置",
-      "reconnectDescription": "重连后继续使用 APP 配置",
-      "reconnectTip": "推荐开启，防止断连后进入设备默认模式"
+      "reconnectDescription": "重连后继续使用应用配置",
+      "reconnectTip": "推荐开启，防止断连后进入设备默认模式",
+      "deviceConnection": {
+        "title": "设备连接",
+        "description": "选择日常 FanControl 控制使用的连接方式。设备模板和协议细节保留在设备管理。",
+        "overviewLabel": "设备地址",
+        "transportLabel": "连接方式",
+        "profileLabel": "设备配置",
+        "activeProfile": "当前",
+        "noActiveProfile": "暂无当前配置",
+        "noProfilesOption": "暂无配置",
+        "addressLabel": "IP 地址",
+        "addressPlaceholder": "例如 192.168.1.50",
+        "stateEndpointLabel": "状态接口",
+        "speedEndpointLabel": "调速接口",
+        "wifiHint": "WiFi 模式在这里只需要填写 IP。高级发包、协议和解析规则都在设备管理里维护。",
+        "bleNameFilter": "名称匹配",
+        "bleService": "服务 UUID",
+        "bleWrite": "写入 UUID",
+        "bleNotify": "通知 UUID",
+        "bleHint": "BLE 扫描用于辅助匹配已启用的 BLE 设备。UUID、发包和解析细节保留在设备管理。",
+        "bleScan": "扫描 BLE",
+        "bleScanFailed": "BLE 扫描失败：{{error}}",
+        "bleScanEmpty": "没有发现 BLE 设备。可以保留当前设备，或到设备管理补充详细信息。",
+        "bleMatched": "已匹配",
+        "bleServices": "服务",
+        "bleProfileMatch": "配置：{{profile}}",
+        "serialPort": "端口",
+        "serialBaud": "波特率",
+        "serialFrame": "帧格式",
+        "serialDelimiter": "分隔符",
+        "serialHint": "这里选择虚拟 COM/串口和波特率。高级协议、命令和解析规则保留在设备管理。",
+        "hidHint": "旧版 HID 走隔离的 RPM 路径，仅在兼容设备中可用。",
+        "notConfigured": "未配置",
+        "toasts": {
+          "loadFailed": "加载设备配置失败：{{error}}",
+          "profileRequired": "请先在设备管理里为该连接方式添加或导入设备。",
+          "transportSaved": "连接方式已启用",
+          "transportFailed": "更新连接方式失败：{{error}}",
+          "profileSaved": "设备已启用",
+          "profileFailed": "启用设备失败：{{error}}",
+          "wifiSaved": "WiFi 连接已保存",
+          "wifiFailed": "保存 WiFi 连接失败：{{error}}",
+          "bleScanFailed": "扫描 BLE 设备失败：{{error}}",
+          "bleSaved": "BLE 设备信息已保存",
+          "bleSaveFailed": "保存 BLE 设备信息失败：{{error}}",
+          "serialSaved": "串口连接已保存",
+          "serialFailed": "保存串口连接失败：{{error}}",
+          "serialPortRequired": "请填写 COM 端口或虚拟端口名。",
+          "serialBaudInvalid": "请填写有效的波特率。"
+        },
+        "enabledDeviceLabel": "启用设备",
+        "noEnabledDevice": "未启用设备",
+        "serialPortPlaceholder": "COM3 或虚拟端口名",
+        "serialDetectPorts": "检测端口",
+        "serialPortsFailed": "无法列出 COM 端口：{{error}}",
+        "serialPortsEmpty": "没有检测到 COM 端口。仍然可以手动填写虚拟端口名。"
+      }
     },
     "offline": {
       "message": "设备未连接，部分功能不可用"
@@ -552,10 +845,15 @@
       "modeTitle": "调试模式",
       "modeDescription": "启用详细日志",
       "refresh": "刷新调试信息",
+      "commandPlaceholder": "27 或 5A A5 27 02 29",
+      "sendCommand": "发送",
+      "dangerousCommandWarning": "高危命令 0x{{command}}：会直接操作固件底层或调试寄存器，误用可能导致设备异常甚至不可用，请确认后再发送。",
+      "rawCommandWarning": "原始命令会直接下发到设备固件，错误命令可能导致设备异常，请谨慎操作。",
       "pawnTitle": "PawnIO 驱动",
       "pawnDescription": "温度读取异常？尝试重新安装 PawnIO 驱动。",
       "reinstall": "重新安装 PawnIO",
       "toasts": {
+        "commandSent": "已发送 {{frame}}",
         "reinstallExecuted": "PawnIO 安装程序已执行",
         "uninstallWarning": "PawnIO 卸载步骤返回提示：{{warning}}",
         "bridgeWarning": "温度监控重新初始化失败：{{warning}}",
@@ -612,7 +910,7 @@
       "lightMode": {
         "off": {
           "label": "关闭灯光",
-          "description": "关闭所有RGB灯光"
+          "description": "关闭所有 RGB 灯光"
         },
         "smart_temp": {
           "label": "智能温控",

@@ -1,5 +1,5 @@
 export const BRAND = {
-  name: '风扇控制器',
+  name: 'FanControl',
   legacyName: '风扇控制器',
   description: '用于温度监测、风扇曲线和 WiFi 风扇速度控制的桌面工具',
   repositoryUrl: 'https://github.com/Eureka-o/FanControlPortable',

@@ -45,22 +45,37 @@ func runtimeDebugInfo() map[string]any {
 	}
 }
 
+func configSpeedToTargetUnit(speed int, unit string) int {
+	if types.IsPercentSpeedUnit(unit) {
+		return types.PercentToTicks(speed)
+	}
+	return types.ClampRPM(speed)
+}
+
 // UpdateConfig 更新配置
 func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	a.mutex.Lock()
 
 	oldCfg := a.configManager.Get()
-	oldTransport := types.NormalizeDeviceTransport(oldCfg.DeviceTransport)
-	oldEndpoint := oldCfg.FanControlDeviceIp
+	oldConnectionKey := deviceProfileConnectionKey(oldCfg)
 	wasConnected := a.isConnected
 	if len(cfg.FanCurveProfiles) == 0 && len(oldCfg.FanCurveProfiles) > 0 {
 		cfg.FanCurveProfiles = curveprofiles.CloneProfiles(oldCfg.FanCurveProfiles)
 		cfg.ActiveFanCurveProfileID = oldCfg.ActiveFanCurveProfileID
 	}
+	if len(cfg.DeviceProfiles) == 0 && len(oldCfg.DeviceProfiles) > 0 {
+		cfg.DeviceProfiles = oldCfg.DeviceProfiles
+	}
+	if cfg.ActiveDeviceProfileID == "" {
+		cfg.ActiveDeviceProfileID = oldCfg.ActiveDeviceProfileID
+	}
 	cfg.LegionFnQSupport = oldCfg.LegionFnQSupport
 	cfg.ManualGearLevels = cloneManualGearLevels(oldCfg.ManualGearLevels)
 	cfg.LightStrip, _ = normalizeLightStripConfig(cfg.LightStrip)
 	cfg.ThemeMode = types.NormalizeThemeMode(cfg.ThemeMode)
+	if cfg.DeviceTransport == "" {
+		cfg.DeviceTransport = oldCfg.DeviceTransport
+	}
 	cfg.DeviceTransport = types.NormalizeDeviceTransport(cfg.DeviceTransport)
 	if cfg.FanControlDeviceIp == "" {
 		cfg.FanControlDeviceIp = oldCfg.FanControlDeviceIp
@@ -68,31 +83,33 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	if cfg.FanControlDeviceIp == "" {
 		cfg.FanControlDeviceIp = types.DefaultFanDeviceIP
 	}
+	types.NormalizeDeviceProfileConfig(&cfg)
+	unit := types.DeviceProfileSpeedUnit(&cfg)
 	cfg.TempSource = types.NormalizeTempSource(cfg.TempSource)
 	cfg.GpuDevice = types.NormalizeDeviceSelection(cfg.GpuDevice)
 	cfg.CpuSensor = types.NormalizeSensorSelection(cfg.CpuSensor)
 	cfg.GpuSensor = types.NormalizeSensorSelection(cfg.GpuSensor)
-	curveprofiles.NormalizeConfig(&cfg)
+	curveprofiles.NormalizeConfigForUnit(&cfg, unit)
 	if idx := curveprofiles.FindIndex(cfg.FanCurveProfiles, cfg.ActiveFanCurveProfileID); idx >= 0 {
 		cfg.FanCurveProfiles[idx].Curve = curveprofiles.CloneCurve(cfg.FanCurve)
 	}
-	cfg.SmartControl, _ = smartcontrol.NormalizeConfig(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode)
+	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, unit)
 	cfg.LegionFnQ = types.NormalizeLegionFnQConfig(cfg.LegionFnQ)
 	if a.legionFnQSupportChecked.Load() && !a.legionFnQSupported.Load() && (cfg.LegionFnQ.Enabled || cfg.LegionFnQ.TakeOverFan) {
 		return fmt.Errorf("Lenovo Legion Fn+Q 仅支持拯救者设备")
 	}
 	normalizeHotkeyConfig(&cfg)
 	normalizeManualGearMemoryConfig(&cfg)
-	types.NormalizeManualGearRPM(&cfg)
-	cfg.CustomSpeedRPM = types.ClampFanPercent(cfg.CustomSpeedRPM)
+	types.NormalizeManualGearRPMForUnit(&cfg, unit)
+	cfg.CustomSpeedRPM = types.ClampSpeedForUnit(cfg.CustomSpeedRPM, unit)
 
 	cfg.ConfigPath = oldCfg.ConfigPath
 	if err := a.configManager.Update(cfg); err != nil {
 		a.mutex.Unlock()
 		return err
 	}
-	a.deviceManager.Configure(cfg.DeviceTransport, cfg.FanControlDeviceIp)
-	connectionChanged := wasConnected && (oldTransport != cfg.DeviceTransport || oldEndpoint != cfg.FanControlDeviceIp)
+	a.configureDeviceManager(cfg)
+	connectionChanged := wasConnected && oldConnectionKey != deviceProfileConnectionKey(cfg)
 	if connectionChanged {
 		a.isConnected = false
 		a.deviceSettings = nil
@@ -127,18 +144,19 @@ func (a *CoreApp) SetFanCurve(curve []types.FanCurvePoint) error {
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
 
-	if err := config.ValidateFanCurve(curve); err != nil {
+	cfg := a.configManager.Get()
+	unit := types.DeviceProfileSpeedUnit(&cfg)
+	if err := config.ValidateFanCurveForUnit(curve, unit); err != nil {
 		return err
 	}
 
-	cfg := a.configManager.Get()
-	curveprofiles.NormalizeConfig(&cfg)
+	curveprofiles.NormalizeConfigForUnit(&cfg, unit)
 	cfg.FanCurve = curveprofiles.CloneCurve(curve)
 	idx := curveprofiles.FindIndex(cfg.FanCurveProfiles, cfg.ActiveFanCurveProfileID)
 	if idx >= 0 {
 		cfg.FanCurveProfiles[idx].Curve = curveprofiles.CloneCurve(cfg.FanCurve)
 	}
-	cfg.SmartControl, _ = smartcontrol.NormalizeConfig(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode)
+	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, unit)
 	return a.configManager.Update(cfg)
 }
 
@@ -206,8 +224,9 @@ func (a *CoreApp) applyCurrentGearSetting() {
 	}
 	level := a.getRememberedManualLevel(setGear, cfg.ManualLevel)
 	rpm := cfg.ResolveGearRPM(setGear, level)
+	unit := types.DeviceProfileSpeedUnit(&cfg)
 
-	a.logInfo("应用当前挡位设置: %s %s (%d%%)", setGear, level, rpm)
+	a.logInfo("应用当前挡位设置: %s %s (%d%s)", setGear, level, rpm, types.FanSpeedDisplaySuffix(unit))
 	a.deviceManager.SetManualGearRPM(setGear, level, rpm)
 }
 
@@ -220,7 +239,8 @@ func (a *CoreApp) SetManualGear(gear, level string) bool {
 		cfg.ManualGearLevels = map[string]string{}
 	}
 	cfg.ManualGearLevels[gear] = normalizeManualLevel(level)
-	types.NormalizeManualGearRPM(&cfg)
+	unit := types.DeviceProfileSpeedUnit(&cfg)
+	types.NormalizeManualGearRPMForUnit(&cfg, unit)
 	rpm := cfg.ResolveGearRPM(gear, level)
 	a.configManager.Update(cfg)
 	a.rememberManualGearLevel(gear, level)
@@ -238,9 +258,10 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
+	unit := types.DeviceProfileSpeedUnit(&cfg)
 
 	if enabled {
-		rpm = types.ClampFanPercent(rpm)
+		rpm = types.ClampSpeedForUnit(rpm, unit)
 		if cfg.AutoControl {
 			cfg.AutoControl = false
 		}
@@ -250,7 +271,7 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 
 		if a.isConnected {
 			a.safeGo("setCustomFanSpeed", func() {
-				a.deviceManager.SetCustomFanSpeed(rpm)
+				a.deviceManager.SetTargetSpeed(configSpeedToTargetUnit(rpm, unit), unit)
 			})
 		}
 	} else {
@@ -443,7 +464,7 @@ func (a *CoreApp) SetDebugMode(enabled bool) error {
 
 	cfg := a.configManager.Get()
 	cfg.DebugMode = enabled
-	cfg.SmartControl, _ = smartcontrol.NormalizeConfig(cfg.SmartControl, cfg.FanCurve, enabled)
+	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, enabled, types.DeviceProfileSpeedUnit(&cfg))
 	a.debugMode = enabled
 
 	if a.logger != nil {

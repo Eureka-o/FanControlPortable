@@ -68,6 +68,75 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		curve := a.configManager.Get().FanCurve
 		return a.dataResponse(curve)
 
+	case ipc.ReqGetDeviceProfiles:
+		return a.dataResponse(a.GetDeviceProfiles())
+
+	case ipc.ReqGetSupportedDeviceProfiles:
+		return a.dataResponse(a.GetSupportedDeviceProfiles())
+
+	case ipc.ReqGetUserDeviceProfiles:
+		return a.dataResponse(a.GetUserDeviceProfiles())
+
+	case ipc.ReqSetActiveDeviceProfile:
+		var params ipc.SetActiveDeviceProfileParams
+		if err := json.Unmarshal(req.Data, &params); err != nil {
+			return a.errorResponse("解析参数失败: " + err.Error())
+		}
+		profile, err := a.SetActiveDeviceProfile(params.ID)
+		if err != nil {
+			return a.errorResponse(err.Error())
+		}
+		return a.dataResponse(profile)
+
+	case ipc.ReqSaveDeviceProfile:
+		var params ipc.SaveDeviceProfileParams
+		if err := json.Unmarshal(req.Data, &params); err != nil {
+			return a.errorResponse("解析参数失败: " + err.Error())
+		}
+		profile, err := a.SaveDeviceProfile(params)
+		if err != nil {
+			return a.errorResponse(err.Error())
+		}
+		return a.dataResponse(profile)
+
+	case ipc.ReqDeleteDeviceProfile:
+		var params ipc.DeleteDeviceProfileParams
+		if err := json.Unmarshal(req.Data, &params); err != nil {
+			return a.errorResponse("解析参数失败: " + err.Error())
+		}
+		if err := a.DeleteDeviceProfile(params.ID); err != nil {
+			return a.errorResponse(err.Error())
+		}
+		return a.successResponse(true)
+
+	case ipc.ReqExportDeviceProfiles:
+		code, err := a.ExportDeviceProfiles()
+		if err != nil {
+			return a.errorResponse(err.Error())
+		}
+		return a.dataResponse(code)
+
+	case ipc.ReqImportDeviceProfiles:
+		var params ipc.ImportDeviceProfilesParams
+		if err := json.Unmarshal(req.Data, &params); err != nil {
+			return a.errorResponse("解析参数失败: " + err.Error())
+		}
+		if err := a.ImportDeviceProfiles(params.Code); err != nil {
+			return a.errorResponse(err.Error())
+		}
+		return a.successResponse(true)
+
+	case ipc.ReqTestDeviceProfile:
+		var params ipc.TestDeviceProfileParams
+		if err := json.Unmarshal(req.Data, &params); err != nil {
+			return a.errorResponse("瑙ｆ瀽鍙傛暟澶辫触: " + err.Error())
+		}
+		result, err := a.TestDeviceProfile(params)
+		if err != nil {
+			return a.errorResponse(err.Error())
+		}
+		return a.dataResponse(result)
+
 	case ipc.ReqResetLearnedOffsets:
 		if err := a.ResetLearnedOffsets(); err != nil {
 			return a.errorResponse(err.Error())

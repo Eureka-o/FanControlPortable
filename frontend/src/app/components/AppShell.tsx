@@ -18,6 +18,7 @@ import {
   Info,
   Wifi,
   WifiOff,
+  Boxes,
 } from 'lucide-react';
 import { Environment, Quit, WindowIsMaximised, WindowMinimise, WindowToggleMaximise } from '../../../wailsjs/runtime/runtime';
 import { types } from '../../../wailsjs/go/models';
@@ -31,6 +32,7 @@ const MAIN_TAB_ITEMS = [
   { id: 'status', titleKey: 'appShell.tabs.status', icon: LayoutGrid },
   { id: 'curve', titleKey: 'appShell.tabs.curve', icon: LineChart },
   { id: 'control', titleKey: 'appShell.tabs.control', icon: Settings2 },
+  { id: 'devices', titleKey: 'appShell.tabs.devices', icon: Boxes },
 ] as const;
 
 const ABOUT_TAB = { id: 'about', titleKey: 'appShell.tabs.about', icon: Info } as const;
@@ -78,6 +80,7 @@ interface AppShellProps {
   statusContent: ReactNode;
   curveContent: ReactNode;
   controlContent: ReactNode;
+  devicesContent: ReactNode;
   aboutContent: ReactNode;
 }
 
@@ -435,6 +438,7 @@ export default function AppShell({
   statusContent,
   curveContent,
   controlContent,
+  devicesContent,
   aboutContent,
 }: AppShellProps) {
   const { t } = useTranslation();
@@ -509,6 +513,7 @@ export default function AppShell({
     status: statusContent,
     curve: curveContent,
     control: controlContent,
+    devices: devicesContent,
     about: aboutContent,
   };
   const transitionDirection = getTabTransitionDirection(previousActiveTabRef.current, activeTab);

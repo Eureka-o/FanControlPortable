@@ -5,11 +5,14 @@ package device
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/TIANLI0/THRM/internal/appmeta"
+	"github.com/TIANLI0/THRM/internal/deviceprofileexec"
+	"github.com/TIANLI0/THRM/internal/deviceproto"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -19,7 +22,7 @@ const (
 )
 
 // Manager is the default FanControl device manager.
-// It keeps only the WiFi HTTP transport in the normal build.
+// It keeps WiFi and profile-driven serial transports in the normal build.
 type Manager struct {
 	isConnected     bool
 	productID       uint16
@@ -27,6 +30,12 @@ type Manager struct {
 	deviceTransport string
 	wifiEndpoint    string
 	wifiHTTPClient  *http.Client
+	activeProfile   types.DeviceProfile
+	wifiExecutor    *deviceprofileexec.WiFiExecutor
+	bleConnector    deviceprofileexec.BLEConnector
+	bleExecutor     *deviceprofileexec.BLEExecutor
+	serialDialer    deviceprofileexec.SerialDialer
+	serialExecutor  *deviceprofileexec.SerialExecutor
 	mutex           sync.RWMutex
 	logger          types.Logger
 	currentFanData  atomic.Pointer[types.FanData]
@@ -45,6 +54,9 @@ func NewManager(logger types.Logger) *Manager {
 		deviceTransport: types.DeviceTransportWiFi,
 		wifiEndpoint:    types.DefaultFanDeviceIP,
 		wifiHTTPClient:  newWiFiHTTPClient(),
+		activeProfile:   types.DefaultWiFiPercentProfile(types.DefaultFanDeviceIP),
+		bleConnector:    deviceprofileexec.DefaultBLEConnector{},
+		serialDialer:    deviceprofileexec.DefaultSerialDialer{},
 	}
 }
 
@@ -66,14 +78,20 @@ func (m *Manager) Connect() (bool, map[string]string) {
 	defer m.mutex.Unlock()
 
 	if m.isConnected {
-		return true, map[string]string{
-			"manufacturer": "FanControl",
-			"product":      "FanControl",
-			"serial":       m.wifiEndpoint,
-			"model":        wifiOnlyModelName,
-			"transport":    types.DeviceTransportWiFi,
-			"endpoint":     m.wifiEndpoint,
-		}
+		return true, m.connectedInfoLocked()
+	}
+
+	if m.shouldUseWiFiLocked() {
+		return m.connectWiFiLocked()
+	}
+	if m.shouldUseSerialLocked() {
+		return m.connectSerialLocked()
+	}
+	if m.shouldUseBLELocked() {
+		return m.connectBLELocked()
+	}
+	if m.shouldUseLegacyHIDLocked() {
+		return m.connectLegacyHIDLocked()
 	}
 
 	if !m.shouldUseWiFiLocked() {
@@ -83,11 +101,11 @@ func (m *Manager) Connect() (bool, map[string]string) {
 			"product":      "FanControl",
 			"serial":       "",
 			"model":        bleReservedModel,
-			"transport":    types.DeviceTransportBLE,
+			"transport":    m.deviceTransport,
 			"endpoint":     "",
 		}
 	}
-	return m.connectWiFiLocked()
+	return false, nil
 }
 
 func (m *Manager) Disconnect() {
@@ -105,7 +123,13 @@ func (m *Manager) disconnect(notify bool) {
 		return
 	}
 
-	m.disconnectWiFiLocked()
+	if m.deviceType == types.DeviceTransportBLE {
+		m.disconnectBLELocked()
+	} else if m.deviceType == types.DeviceTransportSerial {
+		m.disconnectSerialLocked()
+	} else {
+		m.disconnectWiFiLocked()
+	}
 	shouldNotify := notify && m.onDisconnect != nil
 	m.mutex.Unlock()
 
@@ -126,7 +150,9 @@ func (m *Manager) GetProductID() uint16 {
 }
 
 func (m *Manager) GetModelName() string {
-	return wifiOnlyModelName
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+	return m.activeProfileDisplayNameLocked(wifiOnlyModelName)
 }
 
 func (m *Manager) GetDeviceType() string {
@@ -143,18 +169,86 @@ func (m *Manager) GetCurrentFanData() *types.FanData {
 	return m.currentFanData.Load()
 }
 
-func (m *Manager) SetFanSpeed(percent int) bool {
+func (m *Manager) SetPercentSpeed(percent int) bool {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	if !m.isConnected || m.deviceType != types.DeviceTransportWiFi || !m.shouldUseWiFiLocked() {
+	if !m.isConnected {
 		return false
 	}
-	return m.setWiFiSpeedLocked(types.ClampFanPercent(percent))
+	switch m.deviceType {
+	case types.DeviceTransportWiFi:
+		if !m.shouldUseWiFiLocked() {
+			return false
+		}
+		if types.IsRPMSpeedUnit(m.activeProfile.SpeedUnit) {
+			m.logWarn("percent speed command rejected because the active WiFi profile uses RPM")
+			return false
+		}
+		return m.setWiFiSpeedLocked(types.ClampFanPercent(percent))
+	case types.DeviceTransportSerial:
+		if types.IsRPMSpeedUnit(m.activeProfile.SpeedUnit) {
+			m.logWarn("percent speed command rejected because the active serial profile uses RPM")
+			return false
+		}
+		return m.setSerialTargetSpeedLocked(types.NewPercentSpeed(percent))
+	case types.DeviceTransportBLE:
+		if types.IsRPMSpeedUnit(m.activeProfile.SpeedUnit) {
+			m.logWarn("percent speed command rejected because the active BLE profile uses RPM")
+			return false
+		}
+		return m.setBLETargetSpeedLocked(types.NewPercentSpeed(percent))
+	default:
+		return false
+	}
+}
+
+func (m *Manager) SetTargetSpeed(value int, unit string) bool {
+	unit = types.NormalizeFanSpeedUnit(unit)
+
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	if !m.isConnected {
+		return false
+	}
+	if types.IsRPMSpeedUnit(unit) {
+		if m.deviceType == types.DeviceTransportWiFi {
+			if !m.shouldUseWiFiLocked() || !types.IsRPMSpeedUnit(m.activeProfile.SpeedUnit) {
+				m.logWarn("default WiFi percent profile does not support direct RPM target speed: %d", value)
+				return false
+			}
+			return m.setWiFiTargetSpeedLocked(types.NewRPMSpeed(value))
+		}
+		if m.deviceType == types.DeviceTransportSerial {
+			return m.setSerialTargetSpeedLocked(types.NewRPMSpeed(value))
+		}
+		if m.deviceType == types.DeviceTransportBLE {
+			return m.setBLETargetSpeedLocked(types.NewRPMSpeed(value))
+		}
+		return false
+	}
+	if m.deviceType == types.DeviceTransportWiFi {
+		if !m.shouldUseWiFiLocked() {
+			return false
+		}
+		return m.setWiFiTargetSpeedLocked(types.NewPercentTickSpeed(value))
+	}
+	if m.deviceType == types.DeviceTransportSerial {
+		return m.setSerialTargetSpeedLocked(types.NewPercentTickSpeed(value))
+	}
+	if m.deviceType == types.DeviceTransportBLE {
+		return m.setBLETargetSpeedLocked(types.NewPercentTickSpeed(value))
+	}
+	return false
+}
+
+func (m *Manager) SetFanSpeed(percent int) bool {
+	return m.SetPercentSpeed(percent)
 }
 
 func (m *Manager) SetCustomFanSpeed(percent int) bool {
-	return m.SetFanSpeed(percent)
+	return m.SetPercentSpeed(percent)
 }
 
 func (m *Manager) EnterAutoMode() error {
@@ -167,13 +261,19 @@ func (m *Manager) EnterAutoMode() error {
 func (m *Manager) SetManualGear(gear, level string) bool {
 	fanData := m.GetCurrentFanData()
 	if fanData != nil && fanData.SpeedUnit == types.FanSpeedUnitPercent && fanData.TargetRPM > 0 && fanData.TargetRPM <= types.FanSpeedMaxPercent {
-		return m.SetFanSpeed(int(fanData.TargetRPM))
+		return m.SetPercentSpeed(int(fanData.TargetRPM))
 	}
-	return m.SetFanSpeed(50)
+	return m.SetPercentSpeed(50)
 }
 
 func (m *Manager) SetManualGearRPM(gear, level string, rpm int) bool {
-	return m.SetFanSpeed(rpm)
+	m.mutex.RLock()
+	unit := types.NormalizeFanSpeedUnit(m.activeProfile.SpeedUnit)
+	m.mutex.RUnlock()
+	if types.IsRPMSpeedUnit(unit) {
+		return m.SetTargetSpeed(rpm, unit)
+	}
+	return m.SetPercentSpeed(rpm)
 }
 
 func (m *Manager) SetGearLight(enabled bool) bool {
@@ -201,11 +301,20 @@ func (m *Manager) SetRGBOff() bool {
 }
 
 func (m *Manager) QueryDeviceSettings() (types.DeviceSettings, error) {
+	m.mutex.RLock()
+	available := m.isConnected
+	source := m.deviceType
+	if source == "" {
+		source = m.deviceTransport
+	}
+	model := m.activeProfileDisplayNameLocked(wifiOnlyModelName)
+	m.mutex.RUnlock()
+
 	settings := types.DeviceSettings{
-		Available: m.IsConnected(),
-		Source:    types.DeviceTransportWiFi,
+		Available: available,
+		Source:    source,
 		ReadAt:    time.Now().Format("2006-01-02 15:04:05"),
-		Model:     wifiOnlyModelName,
+		Model:     model,
 	}
 
 	fanData := m.GetCurrentFanData()
@@ -225,24 +334,88 @@ func (m *Manager) QueryDeviceSettings() (types.DeviceSettings, error) {
 	return settings, nil
 }
 
+func (m *Manager) activeProfileDisplayNameLocked(fallback string) string {
+	displayName := strings.TrimSpace(m.activeProfile.DisplayName)
+	if displayName != "" {
+		return displayName
+	}
+	model := strings.TrimSpace(m.activeProfile.Model)
+	if model != "" {
+		return model
+	}
+	fallback = strings.TrimSpace(fallback)
+	if fallback != "" {
+		return fallback
+	}
+	return appmeta.DeviceModelName
+}
+
+func (m *Manager) activeProfileVendorLocked() string {
+	vendor := strings.TrimSpace(m.activeProfile.Vendor)
+	if vendor != "" {
+		return vendor
+	}
+	return "FanControl"
+}
+
 func DebugCommandPresets() []types.DeviceDebugCommandPreset {
 	return []types.DeviceDebugCommandPreset{}
+}
+
+func (m *Manager) currentDebugSeq() uint64 {
+	m.debugMutex.Lock()
+	defer m.debugMutex.Unlock()
+	return m.debugSeq
+}
+
+func (m *Manager) recordDebugFrame(direction, transport string, raw []byte) uint64 {
+	debugFrame := newDeviceDebugFrame(direction, transport, raw)
+	m.debugMutex.Lock()
+	defer m.debugMutex.Unlock()
+	return appendBoundedDebugFrame(&m.debugSeq, &m.debugFrames, debugFrame)
+}
+
+func (m *Manager) debugFramesAfter(seq uint64) []types.DeviceDebugFrame {
+	m.debugMutex.Lock()
+	defer m.debugMutex.Unlock()
+	return debugFramesAfterSeq(m.debugFrames, seq)
 }
 
 func (m *Manager) GetDebugFrames() []types.DeviceDebugFrame {
 	m.debugMutex.Lock()
 	defer m.debugMutex.Unlock()
-	frames := make([]types.DeviceDebugFrame, len(m.debugFrames))
-	copy(frames, m.debugFrames)
-	return frames
+	return cloneDebugFrames(m.debugFrames)
 }
 
 func (m *Manager) SendDebugCommand(input string, waitMs int) (types.DeviceDebugCommandResult, error) {
+	if waitMs < 0 {
+		waitMs = 0
+	}
+	if waitMs > 5000 {
+		waitMs = 5000
+	}
+
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return types.DeviceDebugCommandResult{}, fmt.Errorf("raw debug command is empty")
+	}
+
+	raw := []byte(trimmed)
+	rawHex := trimmed
+	if frame, err := deviceproto.NormalizeDebugInput(trimmed); err == nil {
+		raw = frame
+		rawHex = deviceproto.Hex(frame)
+	}
+
+	startSeq := m.currentDebugSeq()
+	m.recordDebugFrame("tx", types.DeviceTransportWiFi, raw)
+
 	return types.DeviceDebugCommandResult{
 		Transport: types.DeviceTransportWiFi,
 		InputHex:  input,
+		RawHex:    rawHex,
 		WaitMs:    waitMs,
-		Frames:    m.GetDebugFrames(),
+		Frames:    m.debugFramesAfter(startSeq),
 	}, fmt.Errorf("网络风扇控制器不支持原始协议调试命令")
 }
 
