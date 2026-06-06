@@ -70,8 +70,24 @@ func TestLegacyRPMProfileUsesRPMAndHID(t *testing.T) {
 	if profile.Transport != DeviceTransportHID || profile.SpeedUnit != FanSpeedUnitRPM {
 		t.Fatalf("profile transport/unit = %q/%q, want hid/rpm", profile.Transport, profile.SpeedUnit)
 	}
-	if !profile.Capabilities.SupportsDebugFrames || !profile.Capabilities.SupportsRawCommands {
-		t.Fatalf("legacy RPM profile should expose debug/raw command capabilities: %#v", profile.Capabilities)
+	if profile.Capabilities.SupportsDebugFrames || profile.Capabilities.SupportsRawCommands ||
+		profile.Capabilities.SupportsLighting || profile.Capabilities.SupportsPowerOnStart || profile.Capabilities.SupportsSmartStartStop {
+		t.Fatalf("legacy RPM profile should not expose non-speed capabilities until whitelisted: %#v", profile.Capabilities)
+	}
+}
+
+func TestLegacyBLEProfileDoesNotInheritNonSpeedCapabilities(t *testing.T) {
+	profile := NormalizeDeviceProfile(LegacyRPMProfileForTransport(DeviceTransportBLE), "")
+
+	if profile.Transport != DeviceTransportBLE || profile.SpeedUnit != FanSpeedUnitRPM {
+		t.Fatalf("profile transport/unit = %q/%q, want ble/rpm", profile.Transport, profile.SpeedUnit)
+	}
+	if !profile.Capabilities.SupportsReadState || !profile.Capabilities.SupportsSetSpeed {
+		t.Fatalf("legacy BLE profile should keep speed-control capabilities: %#v", profile.Capabilities)
+	}
+	if profile.Capabilities.SupportsDebugFrames || profile.Capabilities.SupportsRawCommands ||
+		profile.Capabilities.SupportsLighting || profile.Capabilities.SupportsPowerOnStart || profile.Capabilities.SupportsSmartStartStop {
+		t.Fatalf("legacy BLE profile should not expose non-speed capabilities until whitelisted: %#v", profile.Capabilities)
 	}
 }
 
@@ -273,5 +289,43 @@ func TestNormalizeDeviceProfileConfigUsesRememberedProfileForTransport(t *testin
 	}
 	if cfg.ActiveDeviceProfileIDsByTransport[DeviceTransportWiFi] != DefaultWiFiPercentProfileID {
 		t.Fatalf("remembered wifi profile = %q, want %q", cfg.ActiveDeviceProfileIDsByTransport[DeviceTransportWiFi], DefaultWiFiPercentProfileID)
+	}
+}
+
+func TestActiveDeviceProfilePrefersRequestedTransportOverStaleGlobalActiveID(t *testing.T) {
+	cfg := &AppConfig{
+		DeviceTransport:       DeviceTransportHID,
+		FanControlDeviceIp:    "10.0.0.25",
+		ActiveDeviceProfileID: DefaultWiFiPercentProfileID,
+		DeviceProfiles: []DeviceProfile{
+			DefaultWiFiPercentProfile("10.0.0.25"),
+			LegacyRPMProfile(),
+		},
+		ActiveDeviceProfileIDsByTransport: map[string]string{
+			DeviceTransportWiFi: DefaultWiFiPercentProfileID,
+			DeviceTransportHID:  LegacyRPMProfileID,
+		},
+	}
+
+	active := ActiveDeviceProfile(cfg)
+	if active.Transport != DeviceTransportHID || active.SpeedUnit != FanSpeedUnitRPM {
+		t.Fatalf("active profile transport/unit = %q/%q, want hid/rpm", active.Transport, active.SpeedUnit)
+	}
+	if DeviceProfileSpeedUnit(cfg) != FanSpeedUnitRPM {
+		t.Fatalf("configured speed unit = %q, want rpm", DeviceProfileSpeedUnit(cfg))
+	}
+}
+
+func TestActiveDeviceProfileUsesRequestedBuiltInRPMProfileWhenMissingFromConfig(t *testing.T) {
+	cfg := &AppConfig{
+		DeviceTransport:       DeviceTransportHID,
+		FanControlDeviceIp:    "10.0.0.25",
+		ActiveDeviceProfileID: DefaultWiFiPercentProfileID,
+		DeviceProfiles:        []DeviceProfile{DefaultWiFiPercentProfile("10.0.0.25")},
+	}
+
+	active := ActiveDeviceProfile(cfg)
+	if active.Transport != DeviceTransportHID || active.SpeedUnit != FanSpeedUnitRPM {
+		t.Fatalf("active profile transport/unit = %q/%q, want hid/rpm", active.Transport, active.SpeedUnit)
 	}
 }

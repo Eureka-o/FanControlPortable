@@ -65,6 +65,7 @@ export default function Home() {
       isConnected={view.isConnected}
       fanData={view.fanData}
       temperature={view.temperature}
+      config={safeConfig}
       autoControl={safeConfig.autoControl}
       error={view.error}
       bridgeWarning={view.bridgeWarning}
@@ -106,8 +107,6 @@ export default function Home() {
           fanData={view.fanData}
           temperature={view.temperature}
           legionFnQSupported={view.legionFnQSupported}
-          deviceModel={view.deviceModel}
-          deviceSettings={view.deviceSettings}
         />
       }
       devicesContent={

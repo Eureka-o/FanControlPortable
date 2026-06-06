@@ -277,27 +277,27 @@ func (m *Manager) SetManualGearRPM(gear, level string, rpm int) bool {
 }
 
 func (m *Manager) SetGearLight(enabled bool) bool {
-	return true
+	return false
 }
 
 func (m *Manager) SetPowerOnStart(enabled bool) bool {
-	return true
+	return false
 }
 
 func (m *Manager) SetSmartStartStop(mode string) bool {
-	return true
+	return false
 }
 
 func (m *Manager) SetBrightness(percentage int) bool {
-	return true
+	return false
 }
 
 func (m *Manager) SetLightStrip(cfg types.LightStripConfig) error {
-	return nil
+	return fmt.Errorf("active device does not support lighting")
 }
 
 func (m *Manager) SetRGBOff() bool {
-	return true
+	return false
 }
 
 func (m *Manager) QueryDeviceSettings() (types.DeviceSettings, error) {

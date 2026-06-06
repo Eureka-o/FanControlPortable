@@ -118,8 +118,11 @@
     "capabilities": {
       "read": "读取状态",
       "setSpeed": "设置速度",
+      "debugFrames": "调试帧",
       "raw": "原始命令",
       "lighting": "灯光",
+      "powerOnStart": "通电自启",
+      "smartStartStop": "智能启停",
       "none": "暂无能力标记"
     },
     "transport": {
@@ -447,7 +450,7 @@
   },
   "aboutPanel": {
     "title": "关于 {{name}}",
-    "description": "{{name}} 用于连接 Slim 压风散热器 Pro，读取实时温度并下发 0-100% 风速控制。",
+    "description": "{{name}} 面向多种散热控制设备，可按设备档案选择 WiFi、BLE、虚拟串口/COM 或 legacy HID/RPM，并根据设备能力读取状态、下发风速控制。",
     "images": {
       "logoAlt": "{{name}} 标志",
       "wordmarkAlt": "{{name}} 字标",
@@ -488,7 +491,7 @@
         },
         {
           "question": "当前支持哪些设备？",
-          "answer": "当前版本面向使用 WiFi HTTP 接口的风扇控制器，默认地址为 192.168.137.2。软件会通过 /api/data 读取状态，并通过 /api/speed 下发 0-100% 速度。"
+          "answer": "当前默认支持 Slim 压风散热器 Pro 的 WiFi HTTP 控制，同时提供设备档案和模板机制，用于适配 WiFi、BLE、虚拟串口/COM 和 legacy HID/RPM 设备。不同 DIY 设备需要按主控协议填写正确的连接、发包和解析信息。"
         },
         {
           "question": "原有配置还能继续使用吗？",
@@ -532,11 +535,11 @@
       "title": "手动挡位",
       "bs1SliderHint": "4 控制点滑块",
       "defaultSliderHint": "12 控制点滑块",
-      "pointTooltip": "{{gear}} {{level}} · {{rpm}}%",
+      "pointTooltip": "{{gear}} {{level}} · {{speed}}",
       "pointIndex": "{{index}}档",
       "customize": "自定义速度",
       "editTitle": "自定义挡位速度",
-      "editHint": "12 个挡位从低到高需依次递增，上限 {{max}}%",
+      "editHint": "12 个挡位从低到高需依次递增，上限 {{max}}",
       "restoreDefault": "恢复默认",
       "rpmSaved": "挡位速度已保存",
       "rpmSaveFailed": "保存挡位速度失败: {{error}}",
@@ -710,9 +713,9 @@
       "curveProfileTitle": "曲线方案",
       "curveProfileDescription": "在设置页直接切换风扇温控曲线，避免来回切页。",
       "customSpeedTitle": "自定义速度",
-      "customSpeedDescription": "固定百分比速度，适合特殊场景",
+      "customSpeedDescription": "固定当前设备速度，适合特殊场景",
       "customSpeedWarning": "自定义速度会禁用智能温控",
-      "customSpeedRangeHint": "手动速度范围为 0% 到 100%，请根据散热需求谨慎设置。",
+      "customSpeedRangeHint": "手动速度范围为 {{min}} 到 {{max}}，请根据散热需求谨慎设置。",
       "toasts": {
         "profileSwitched": "温控曲线已切换",
         "profileSwitchFailed": "切换曲线失败: {{error}}"
@@ -865,7 +868,7 @@
       "enabledTitle": "启用后：",
       "bullets": {
         "disableAutoControl": "• 智能温控将被禁用",
-        "fixedSpeed": "风扇将以固定百分比速度运行",
+        "fixedSpeed": "风扇将以固定速度运行",
         "insufficientCooling": "• 可能导致散热不足"
       },
       "speedLabel": "设置速度",

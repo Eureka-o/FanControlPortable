@@ -135,16 +135,20 @@ export const getEffectiveManualGearPresets = (
 };
 
 // 校验并补全 12 个自定义转速：限制在 [MIN, MAX] 且按从低到高强制非递减
-export const normalizeManualGearRpmMap = (custom?: ManualGearRpmMap | null): ManualGearRpmMap => {
+export const normalizeManualGearRpmMap = (
+  custom?: ManualGearRpmMap | null,
+  minValue = MANUAL_GEAR_RPM_MIN,
+  maxValue = MANUAL_GEAR_RPM_MAX,
+): ManualGearRpmMap => {
   const out: ManualGearRpmMap = {};
-  let prev = 0;
+  let prev = minValue;
   for (const preset of MANUAL_GEAR_PRESETS) {
     out[preset.gear] = {};
     for (const lv of preset.levels) {
       let v = Math.round(Number(custom?.[preset.gear]?.[lv.level] ?? lv.rpm));
-      if (!Number.isFinite(v) || v < MANUAL_GEAR_RPM_MIN || v > MANUAL_GEAR_RPM_MAX) v = lv.rpm;
-      if (v < MANUAL_GEAR_RPM_MIN) v = MANUAL_GEAR_RPM_MIN;
-      if (v > MANUAL_GEAR_RPM_MAX) v = MANUAL_GEAR_RPM_MAX;
+      if (!Number.isFinite(v) || v < minValue || v > maxValue) v = Math.max(minValue, Math.min(maxValue, lv.rpm));
+      if (v < minValue) v = minValue;
+      if (v > maxValue) v = maxValue;
       if (v < prev) v = prev;
       out[preset.gear][lv.level] = v;
       prev = v;

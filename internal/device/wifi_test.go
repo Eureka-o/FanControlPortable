@@ -117,6 +117,30 @@ func TestWiFiSetFanSpeedRejectsDeviceFailureResponse(t *testing.T) {
 	}
 }
 
+func TestWiFiManagerRejectsNonSpeedFeatureCommandsByDefault(t *testing.T) {
+	m := NewManager(nil)
+	m.Configure(types.DeviceTransportWiFi, "192.168.1.50")
+
+	if m.SetGearLight(true) {
+		t.Fatal("default WiFi profile must not report gear-light support")
+	}
+	if m.SetPowerOnStart(true) {
+		t.Fatal("default WiFi profile must not report power-on-start support")
+	}
+	if m.SetSmartStartStop("immediate") {
+		t.Fatal("default WiFi profile must not report smart start/stop support")
+	}
+	if m.SetBrightness(80) {
+		t.Fatal("default WiFi profile must not report lighting brightness support")
+	}
+	if err := m.SetLightStrip(types.GetDefaultLightStripConfig()); err == nil {
+		t.Fatal("default WiFi profile must not report light-strip support")
+	}
+	if m.SetRGBOff() {
+		t.Fatal("default WiFi profile must not report RGB support")
+	}
+}
+
 func TestWiFiManagerConfigureProfileUsesCustomPercentRuntime(t *testing.T) {
 	var posted struct {
 		Percent int `json:"percent"`

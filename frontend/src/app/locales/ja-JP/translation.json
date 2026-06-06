@@ -118,8 +118,11 @@
     "capabilities": {
       "read": "状態取得",
       "setSpeed": "速度設定",
+      "debugFrames": "デバッグフレーム",
       "raw": "Raw コマンド",
       "lighting": "ライト制御",
+      "powerOnStart": "通電時起動",
+      "smartStartStop": "スマート起停",
       "none": "機能フラグなし"
     },
     "transport": {
@@ -447,7 +450,7 @@
   },
   "aboutPanel": {
     "title": "{{name}} について",
-    "description": "{{name}} は Slim 圧風クーラー Pro に接続し、温度を読み取り、0-100% のファン速度を送信します。",
+    "description": "{{name}} は WiFi、BLE、仮想 COM/シリアル、legacy HID/RPM などのデバイスプロファイルに対応し、各デバイスの機能に応じて状態取得と速度制御を行います。",
     "images": {
       "logoAlt": "{{name}} ロゴ",
       "wordmarkAlt": "{{name}} ワードマーク",
@@ -488,7 +491,7 @@
         },
         {
           "question": "現在対応しているデバイスはどんなのがありますか？",
-          "answer": "このバージョンは WiFi HTTP インターフェースを持つファンコントローラー向けです。既定アドレスは 192.168.137.2 で、/api/data から状態を読み取り、/api/speed へ 0-100% の速度を送信します。"
+          "answer": "内蔵の既定デバイスは WiFi HTTP 接続の Slim 圧風クーラー Pro です。FanControl は WiFi、BLE、仮想 COM/シリアル、legacy HID/RPM 向けのデバイスプロファイルとテンプレートも備えています。DIY デバイスでは MCU のプロトコルに合わせて接続、パケット、解析設定を正しく入力する必要があります。"
         },
         {
           "question": "既存の設定はそのまま使えますか？",
@@ -532,11 +535,11 @@
       "title": "マニュアル",
       "bs1SliderHint": "4 段制御",
       "defaultSliderHint": "12 段制御",
-      "pointTooltip": "{{gear}} {{level}} · {{rpm}}%",
+      "pointTooltip": "{{gear}} {{level}} · {{speed}}",
       "pointIndex": "{{index}}ギア",
       "customize": "カスタム速度",
       "editTitle": "ギア速度をカスタマイズ",
-      "editHint": "12 段階は低い順に増加させる必要があります。上限 {{max}}%",
+      "editHint": "12 段階は低い順に増加させる必要があります。上限 {{max}}",
       "restoreDefault": "初期値に戻す",
       "rpmSaved": "ギア速度を保存しました",
       "rpmSaveFailed": "ギア速度の保存に失敗: {{error}}",
@@ -710,9 +713,9 @@
       "curveProfileTitle": "カーブプロファイル",
       "curveProfileDescription": "タブを切り替えずに設定画面から直接ファン制御カーブを変更できます。",
       "customSpeedTitle": "カスタム速度",
-      "customSpeedDescription": "特殊な場面向けの固定パーセント速度です",
+      "customSpeedDescription": "特殊な場面向けに、現在のデバイス速度を固定します",
       "customSpeedWarning": "カスタム速度はスマート温度制御を無効にします",
-      "customSpeedRangeHint": "手動速度の範囲は 0% から 100% です。冷却状態を見ながら慎重に設定してください。",
+      "customSpeedRangeHint": "手動速度の範囲は {{min}} から {{max}} です。冷却状態を見ながら慎重に設定してください。",
       "toasts": {
         "profileSwitched": "温度カーブを切り替えました",
         "profileSwitchFailed": "カーブの切り替えに失敗しました: {{error}}"
@@ -865,7 +868,7 @@
       "enabledTitle": "有効にすると:",
       "bullets": {
         "disableAutoControl": "• スマート温度制御が無効になります",
-        "fixedSpeed": "ファンは固定パーセント速度で動作します",
+        "fixedSpeed": "ファンは固定速度で動作します",
         "insufficientCooling": "• 冷却不足につながる可能性があります"
       },
       "speedLabel": "速度を設定",

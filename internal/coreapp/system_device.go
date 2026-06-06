@@ -445,7 +445,7 @@ func (a *CoreApp) reapplyConfigAfterReconnect() {
 	}
 
 	// 重新应用通电自启动配置（BS1 和 BS2/BS2PRO 都支持）
-	if cfg.PowerOnStart {
+	if cfg.PowerOnStart && a.activeDeviceCapabilities().SupportsPowerOnStart {
 		a.logInfo("重新开启通电自启动")
 		if !a.deviceManager.SetPowerOnStart(true) {
 			a.logError("重新开启通电自启动失败")

@@ -20,7 +20,16 @@ import { types } from '../../../wailsjs/go/models';
 import { apiService } from '../services/api';
 import { useTemperatureHistory } from '../hooks/useTemperatureHistory';
 import { type TemperatureHistoryPoint } from '../lib/temperature-history';
-import { fanSpeedUnitLabel, getFanSpeedUnit, readCurrentFanSpeed, readTargetFanSpeed, sanitizeFanSpeed } from '../lib/fan-speed';
+import {
+  clampFanSpeedToRange,
+  fanSpeedUnitLabel,
+  formatFanSpeedValue,
+  getFanSpeedRange,
+  getFanSpeedTicks,
+  getFanSpeedUnit,
+  readCurrentFanSpeed,
+  readTargetFanSpeed,
+} from '../lib/fan-speed';
 import type { DeviceSettings } from '../types/app';
 import { useTranslation } from 'react-i18next';
 import { ToggleSwitch, Button } from './ui/index';
@@ -58,11 +67,13 @@ const getTempStatus = (temp: number) => {
   return { color: 'text-primary', bg: 'bg-primary', labelKey: 'deviceStatus.tempStatus.good' };
 };
 
-const getFanSpinDuration = (speed?: number) => {
+const getFanSpinDuration = (speed?: number, minSpeed = 0, maxSpeed = 100) => {
   if (!speed || speed <= 0) return 0;
-  if (speed >= 90) return 0.45;
-  if (speed >= 70) return 0.7;
-  if (speed >= 40) return 1;
+  const speedSpan = Math.max(1, maxSpeed - minSpeed);
+  const percent = Math.max(0, Math.min(100, ((speed - minSpeed) / speedSpan) * 100));
+  if (percent >= 90) return 0.45;
+  if (percent >= 70) return 0.7;
+  if (percent >= 40) return 1;
   return 1.35;
 };
 
@@ -285,13 +296,18 @@ const FanSpeedDisplay = memo(function FanSpeedDisplay({
   currentSpeed,
   targetSpeed,
   unit,
+  minSpeed,
+  maxSpeed,
 }: {
   currentSpeed: number | undefined;
   targetSpeed: number | undefined;
   unit: string;
+  minSpeed: number;
+  maxSpeed: number;
 }) {
   const { t } = useTranslation();
-  const ratio = Math.min(1, Math.max(0, (currentSpeed || 0) / 100));
+  const speedSpan = Math.max(1, maxSpeed - minSpeed);
+  const ratio = Math.min(1, Math.max(0, ((currentSpeed ?? minSpeed) - minSpeed) / speedSpan));
   const unitLabel = unit || '%';
   const subLabel = t('deviceStatus.fan.targetSummary', { target: targetSpeed ?? '--', unit: unitLabel });
 
@@ -313,10 +329,16 @@ const FanSpeedDisplay = memo(function FanSpeedDisplay({
 const MiniFanCurveChart = memo(function MiniFanCurveChart({
   curve,
   currentTemp,
+  minSpeed,
+  maxSpeed,
+  unitLabel,
   onOpen,
 }: {
   curve: types.FanCurvePoint[] | undefined;
   currentTemp: number | undefined;
+  minSpeed: number;
+  maxSpeed: number;
+  unitLabel: string;
   onOpen?: () => void;
 }) {
   const { t } = useTranslation();
@@ -325,17 +347,19 @@ const MiniFanCurveChart = memo(function MiniFanCurveChart({
     const points = Array.isArray(curve)
       ? curve.filter((point) => typeof point.temperature === 'number' && typeof point.rpm === 'number')
       : [];
-    const source = points.length > 0 ? points : [
-      { temperature: 20, rpm: 20 },
-      { temperature: 40, rpm: 35 },
-      { temperature: 60, rpm: 55 },
-      { temperature: 80, rpm: 75 },
-      { temperature: 110, rpm: 100 },
+    const maxPointSpeed = points.reduce((max, point) => Math.max(max, point.rpm), 0);
+    const effectivePoints = maxSpeed > 100 && maxPointSpeed <= 100 ? [] : points;
+    const fallbackSpeed = (ratio: number) => Math.round(minSpeed + (maxSpeed - minSpeed) * ratio);
+    const source = effectivePoints.length > 0 ? effectivePoints : [
+      { temperature: 20, rpm: fallbackSpeed(0.2) },
+      { temperature: 40, rpm: fallbackSpeed(0.35) },
+      { temperature: 60, rpm: fallbackSpeed(0.55) },
+      { temperature: 80, rpm: fallbackSpeed(0.75) },
+      { temperature: 110, rpm: maxSpeed },
     ];
     // 单遍扫描计算 min/max，避免旧实现 4 次 Math.min/Math.max(...source.map(...)) 重建临时数组。
     let minTemp = 20;
     let maxTemp = 110;
-    const maxRpm = 100;
     for (const p of source) {
       if (p.temperature < minTemp) minTemp = p.temperature;
       if (p.temperature > maxTemp) maxTemp = p.temperature;
@@ -346,15 +370,16 @@ const MiniFanCurveChart = memo(function MiniFanCurveChart({
     const plotWidth = width - pad.left - pad.right;
     const plotHeight = height - pad.top - pad.bottom;
     const tempRange = Math.max(1, maxTemp - minTemp);
+    const speedRange = Math.max(1, maxSpeed - minSpeed);
     const xForTemp = (temp: number) => pad.left + ((temp - minTemp) / tempRange) * plotWidth;
-    const yForRpm = (rpm: number) => pad.top + plotHeight - (Math.max(0, Math.min(100, rpm)) / maxRpm) * plotHeight;
+    const yForRpm = (rpm: number) => pad.top + plotHeight - ((Math.max(minSpeed, Math.min(maxSpeed, rpm)) - minSpeed) / speedRange) * plotHeight;
     const linePoints = source
       .map((point) => `${xForTemp(point.temperature).toFixed(1)},${yForRpm(point.rpm).toFixed(1)}`)
       .join(' ');
     const areaPoints = `${pad.left},${pad.top + plotHeight} ${linePoints} ${pad.left + plotWidth},${pad.top + plotHeight}`;
-    const yTicks: number[] = [0, 20, 40, 60, 80, 100];
-    return { width, height, pad, plotWidth, plotHeight, minTemp, maxTemp, maxRpm, xForTemp, yForRpm, linePoints, areaPoints, yTicks };
-  }, [curve]);
+    const yTicks: number[] = getFanSpeedTicks(minSpeed, maxSpeed);
+    return { width, height, pad, plotWidth, plotHeight, minTemp, maxTemp, xForTemp, yForRpm, linePoints, areaPoints, yTicks };
+  }, [curve, maxSpeed, minSpeed]);
 
   const { width, height, pad, plotWidth, plotHeight, minTemp, maxTemp, xForTemp, yForRpm, linePoints, areaPoints, yTicks } = geometry;
 
@@ -374,7 +399,7 @@ const MiniFanCurveChart = memo(function MiniFanCurveChart({
       <div className="mb-2 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-xs font-semibold text-foreground">{t('deviceStatus.chart.fanCurve')}</div>
-          <div className="text-[11px] text-muted-foreground">%</div>
+          <div className="text-[11px] text-muted-foreground">{unitLabel}</div>
         </div>
         {onOpen && (
           <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
@@ -390,7 +415,7 @@ const MiniFanCurveChart = memo(function MiniFanCurveChart({
             return (
               <g key={tick}>
                 <line x1={pad.left} y1={y} x2={pad.left + plotWidth} y2={y} stroke="var(--chart-grid)" strokeWidth="1" />
-                <text x={pad.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="var(--chart-tick)">{tick}</text>
+                <text x={pad.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="var(--chart-tick)">{formatFanSpeedValue(tick)}</text>
               </g>
             );
           })}
@@ -411,11 +436,15 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
   points,
   enabled,
   source,
+  minSpeed,
+  maxSpeed,
   onOpen,
 }: {
   points: Array<{ timestamp: number; cpuTemp: number; gpuTemp: number; fanRpm: number }>;
   enabled: boolean;
   source: 'core' | 'session';
+  minSpeed: number;
+  maxSpeed: number;
   onOpen?: () => void;
 }) {
   const { t } = useTranslation();
@@ -428,7 +457,7 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
     const plotHeight = height - pad.top - pad.bottom;
     let minTemp = 35;
     let maxTemp = 80;
-    const maxFanRpm = 100;
+    const speedRange = Math.max(1, maxSpeed - minSpeed);
 
     for (const point of points) {
       if (point.cpuTemp > 0) {
@@ -453,7 +482,7 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
       return pad.left + ((timestamp - minTs) / rangeTs) * plotWidth;
     };
     const yForTemp = (temp: number) => pad.top + plotHeight - ((temp - minY) / rangeY) * plotHeight;
-    const yForFan = (rpm: number) => pad.top + plotHeight - (Math.max(0, Math.min(100, rpm)) / maxFanRpm) * plotHeight;
+    const yForFan = (rpm: number) => pad.top + plotHeight - ((Math.max(minSpeed, Math.min(maxSpeed, rpm)) - minSpeed) / speedRange) * plotHeight;
     const buildPath = (selector: (point: TemperatureHistoryPoint) => number, projectY: (value: number) => number) => {
       let path = '';
       let started = false;
@@ -480,7 +509,7 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
       fanPath: buildPath((point) => point.fanRpm, yForFan),
       gridLines: [0.2, 0.5, 0.8],
     };
-  }, [points]);
+  }, [maxSpeed, minSpeed, points]);
   const { width, height, pad, plotWidth, plotHeight, cpuPath, gpuPath, fanPath, gridLines } = chart;
   const handlePanelKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (!onOpen) return;
@@ -646,15 +675,17 @@ export default function DeviceStatus({
   const modeTitle = config.autoControl ? t('deviceStatus.mode.smartControl') : config.customSpeedEnabled ? t('deviceStatus.mode.fixedSpeed') : t('deviceStatus.mode.manualStrategy');
   const fanSpeedUnit = getFanSpeedUnit(fanData as any, config as any);
   const fanSpeedLabel = fanSpeedUnitLabel(fanSpeedUnit);
-  const currentFanSpeed = readCurrentFanSpeed(fanData, fanSpeedUnit);
-  const targetFanSpeed = readTargetFanSpeed(fanData, fanSpeedUnit);
+  const fanSpeedRange = useMemo(() => getFanSpeedRange(config as any, fanSpeedUnit), [config, fanSpeedUnit]);
+  const currentFanSpeed = clampFanSpeedToRange(readCurrentFanSpeed(fanData, fanSpeedUnit, config as any), fanSpeedRange);
+  const targetFanSpeed = clampFanSpeedToRange(readTargetFanSpeed(fanData, fanSpeedUnit, config as any), fanSpeedRange);
+  const fixedModeSpeed = clampFanSpeedToRange(config.customSpeedRPM, fanSpeedRange, currentFanSpeed);
   const modeDesc = config.autoControl
     ? t('deviceStatus.mode.smartDescription')
     : config.customSpeedEnabled
-      ? t('deviceStatus.mode.fixedDescription', { speed: sanitizeFanSpeed(config.customSpeedRPM, fanSpeedUnit) ?? currentFanSpeed ?? '--', unit: fanSpeedLabel })
+      ? t('deviceStatus.mode.fixedDescription', { speed: fixedModeSpeed ?? '--', unit: fanSpeedLabel })
       : t('deviceStatus.mode.manualDescription');
   const modeDisplayTitle = activeCurveProfileName ? t('deviceStatus.mode.withProfile', { mode: modeTitle, profile: activeCurveProfileName }) : modeTitle;
-  const fanSpinDuration = getFanSpinDuration(currentFanSpeed);
+  const fanSpinDuration = getFanSpinDuration(currentFanSpeed, fanSpeedRange.min, fanSpeedRange.max);
   // 温度就绪判定：后端首次推送（updateTime > 0）且该路传感器读到非零值。
   // 单独按通路判 — 只有 GPU 没装独显时仍会保持 0，但 CPU 已就绪则只显示 GPU 占位。
   const tempPushed = (temperature?.updateTime ?? 0) > 0;
@@ -809,6 +840,8 @@ export default function DeviceStatus({
               currentSpeed={currentFanSpeed}
               targetSpeed={targetFanSpeed}
               unit={fanSpeedLabel}
+              minSpeed={fanSpeedRange.min}
+              maxSpeed={fanSpeedRange.max}
             />
           </div>
         </motion.div>
@@ -941,11 +974,20 @@ export default function DeviceStatus({
           transition={{ delay: 0.2, duration: 0.3 }}
           className="grid grid-cols-1 items-stretch gap-2.5 lg:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.95fr)]"
         >
-          <MiniFanCurveChart curve={config.fanCurve} currentTemp={referenceTemp} onOpen={onOpenCurveEditor} />
+          <MiniFanCurveChart
+            curve={config.fanCurve}
+            currentTemp={referenceTemp}
+            minSpeed={fanSpeedRange.min}
+            maxSpeed={fanSpeedRange.max}
+            unitLabel={fanSpeedLabel}
+            onOpen={onOpenCurveEditor}
+          />
           <TemperatureHistoryPanel
             points={temperatureHistory}
             enabled={temperatureHistoryEnabled}
             source={temperatureHistorySource}
+            minSpeed={fanSpeedRange.min}
+            maxSpeed={fanSpeedRange.max}
             onOpen={onOpenHistoryDetails}
           />
         </motion.div>

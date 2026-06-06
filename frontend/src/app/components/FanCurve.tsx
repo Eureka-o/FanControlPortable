@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/input';
 import { apiService } from '../services/api';
 import { useTemperatureHistory } from '../hooks/useTemperatureHistory';
 import { useLocale } from '../lib/i18n';
+import { getConfiguredFanSpeedUnit, getFanSpeedRange, getFanSpeedTicks, fanSpeedUnitLabel } from '../lib/fan-speed';
 import { type HistorySeriesKey } from '../lib/temperature-history';
 import type { CurveFocusTarget } from '../store/app-store';
 import { types } from '../../../wailsjs/go/models';
@@ -50,8 +51,6 @@ import {
   normalizeManualGearRpmMap,
   getManualGearLabel,
   getManualLevelLabel,
-  MANUAL_GEAR_RPM_MIN,
-  MANUAL_GEAR_RPM_MAX,
   type ManualGearRpmMap,
 } from '../lib/manualGearPresets';
 
@@ -66,6 +65,13 @@ const DEFAULT_FAN_CURVE: types.FanCurvePoint[] = [
   { temperature: 60, rpm: 55 }, { temperature: 65, rpm: 62 }, { temperature: 70, rpm: 70 }, { temperature: 75, rpm: 78 },
   { temperature: 80, rpm: 86 }, { temperature: 85, rpm: 92 }, { temperature: 90, rpm: 96 }, { temperature: 95, rpm: 100 },
   { temperature: 100, rpm: 100 }, { temperature: 105, rpm: 100 }, { temperature: 110, rpm: 100 },
+];
+const DEFAULT_RPM_FAN_CURVE: types.FanCurvePoint[] = [
+  { temperature: 30, rpm: 1000 }, { temperature: 35, rpm: 1200 }, { temperature: 40, rpm: 1400 }, { temperature: 45, rpm: 1600 },
+  { temperature: 50, rpm: 1800 }, { temperature: 55, rpm: 2000 }, { temperature: 60, rpm: 2300 }, { temperature: 65, rpm: 2600 },
+  { temperature: 70, rpm: 2900 }, { temperature: 75, rpm: 3200 }, { temperature: 80, rpm: 3500 }, { temperature: 85, rpm: 3800 },
+  { temperature: 90, rpm: 4000 }, { temperature: 95, rpm: 4000 }, { temperature: 100, rpm: 4000 }, { temperature: 105, rpm: 4000 },
+  { temperature: 110, rpm: 4000 },
 ];
 const SMART_CONTROL_TARGET_TEMP_MIN = 45;
 const SMART_CONTROL_TARGET_TEMP_MAX = 90;
@@ -95,17 +101,36 @@ function normalizeTargetTemp(value: number) {
   return Math.max(SMART_CONTROL_TARGET_TEMP_MIN, Math.min(SMART_CONTROL_TARGET_TEMP_MAX, Math.round(value)));
 }
 
-function normalizeSpeedPercent(value: number) {
-  return Math.max(0, Math.min(100, Math.round(value)));
+function normalizeSpeedValue(value: number, minSpeed: number, maxSpeed: number) {
+  return Math.max(minSpeed, Math.min(maxSpeed, Math.round(value)));
 }
 
-function normalizeCurvePoint(point: types.FanCurvePoint): types.FanCurvePoint {
-  return { temperature: Math.round(point.temperature), rpm: normalizeSpeedPercent(point.rpm) };
+function learnedOffsetTicksToPercent(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.round(value) / 10;
 }
 
-function interpolateCurveSpeed(curve: types.FanCurvePoint[], temperature: number) {
+function learnedOffsetForDisplay(value: number, speedUnit: string) {
+  return speedUnit === 'percent' ? learnedOffsetTicksToPercent(value) : value;
+}
+
+function formatSpeedValue(value: number) {
+  if (!Number.isFinite(value)) {
+    return '0';
+  }
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+function normalizeCurvePoint(point: types.FanCurvePoint, minSpeed: number, maxSpeed: number): types.FanCurvePoint {
+  return { temperature: Math.round(point.temperature), rpm: normalizeSpeedValue(point.rpm, minSpeed, maxSpeed) };
+}
+
+function interpolateCurveSpeed(curve: types.FanCurvePoint[], temperature: number, fallbackCurve: types.FanCurvePoint[], minSpeed: number, maxSpeed: number) {
   if (curve.length === 0) {
-    return DEFAULT_FAN_CURVE.find((point) => point.temperature === temperature)?.rpm ?? 45;
+    return fallbackCurve.find((point) => point.temperature === temperature)?.rpm ?? minSpeed;
   }
 
   if (temperature <= curve[0].temperature) {
@@ -125,17 +150,17 @@ function interpolateCurveSpeed(curve: types.FanCurvePoint[], temperature: number
     }
     if (temperature > left.temperature && temperature < right.temperature) {
       const ratio = (temperature - left.temperature) / (right.temperature - left.temperature);
-      return normalizeSpeedPercent(left.rpm + (right.rpm - left.rpm) * ratio);
+      return normalizeSpeedValue(left.rpm + (right.rpm - left.rpm) * ratio, minSpeed, maxSpeed);
     }
   }
 
   return last.rpm;
 }
 
-function normalizeFanCurve(curve: types.FanCurvePoint[] | null | undefined): types.FanCurvePoint[] {
+function normalizeFanCurve(curve: types.FanCurvePoint[] | null | undefined, minSpeed = 0, maxSpeed = 100, fallbackCurve = DEFAULT_FAN_CURVE): types.FanCurvePoint[] {
   const source = Array.isArray(curve)
     ? curve
-      .map(normalizeCurvePoint)
+      .map((point) => normalizeCurvePoint(point, minSpeed, maxSpeed))
       .filter((point) => point.temperature >= FAN_CURVE_MIN_TEMP && point.temperature <= FAN_CURVE_MAX_TEMP)
       .sort((left, right) => left.temperature - right.temperature)
     : [];
@@ -150,10 +175,10 @@ function normalizeFanCurve(curve: types.FanCurvePoint[] | null | undefined): typ
     return points;
   }, []);
 
-  const base = unique.length > 0 ? unique : DEFAULT_FAN_CURVE;
+  const base = unique.length > 0 ? unique : fallbackCurve;
   return FAN_CURVE_TEMPERATURE_TICKS.map((temperature) => ({
     temperature,
-    rpm: interpolateCurveSpeed(base, temperature),
+    rpm: interpolateCurveSpeed(base, temperature, fallbackCurve, minSpeed, maxSpeed),
   }));
 }
 
@@ -169,7 +194,7 @@ function syncCurveSpeedAtIndex(
     return { curve, changed: false };
   }
 
-  const normalizedSpeed = Math.max(minSpeed, Math.min(maxSpeed, normalizeSpeedPercent(targetSpeed)));
+  const normalizedSpeed = normalizeSpeedValue(targetSpeed, minSpeed, maxSpeed);
   const nextCurve = [...curve];
   let changed = false;
 
@@ -323,9 +348,9 @@ const ConfigTooltipLabel = memo(function ConfigTooltipLabel({ label, description
 /* ── Draggable chart point ── */
 
 const DraggablePoint = memo(function DraggablePoint({
-  cx, cy, index, speed, onDragStart, isActive,
+  cx, cy, index, speed, unitSuffix, onDragStart, isActive,
 }: {
-  cx: number; cy: number; index: number; temperature: number; speed: number;
+  cx: number; cy: number; index: number; temperature: number; speed: number; unitSuffix: string;
   onDragStart: (index: number) => void; isActive: boolean;
 }) {
   const handleMouseDown = useCallback((e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); onDragStart(index); }, [index, onDragStart]);
@@ -341,7 +366,7 @@ const DraggablePoint = memo(function DraggablePoint({
       {isActive && (
         <g>
           <rect x={cx - 35} y={cy - 35} width={70} height={24} rx={4} fill="var(--chart-primary-active)" opacity={0.95} />
-          <text x={cx} y={cy - 19} textAnchor="middle" fill="white" fontSize={12} fontWeight={600}>{speed}%</text>
+          <text x={cx} y={cy - 19} textAnchor="middle" fill="white" fontSize={12} fontWeight={600}>{formatSpeedValue(speed)}{unitSuffix}</text>
         </g>
       )}
     </g>
@@ -381,7 +406,15 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
   const chartBoundsRef = useRef<{ top: number; bottom: number; left: number; right: number; yMin: number; yMax: number } | null>(null);
   const dragFrameRef = useRef<number | null>(null);
   const pendingDragYRef = useRef<number | null>(null);
-  const speedRange = useMemo(() => ({ min: 0, max: 100, ticks: [0, 20, 40, 60, 80, 100] }), []);
+  const speedUnit = useMemo(() => getConfiguredFanSpeedUnit(config as any), [config]);
+  const speedUnitSuffix = fanSpeedUnitLabel(speedUnit);
+  const configuredSpeedRange = useMemo(() => getFanSpeedRange(config as any, speedUnit), [config, speedUnit]);
+  const speedRange = useMemo(() => ({
+    min: configuredSpeedRange.min,
+    max: configuredSpeedRange.max,
+    ticks: getFanSpeedTicks(configuredSpeedRange.min, configuredSpeedRange.max),
+  }), [configuredSpeedRange.max, configuredSpeedRange.min]);
+  const defaultCurve = speedUnit === 'rpm' ? DEFAULT_RPM_FAN_CURVE : DEFAULT_FAN_CURVE;
   const {
     points: temperatureHistory,
     enabled: temperatureHistoryEnabled,
@@ -417,13 +450,13 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
       const current = profiles.find((p) => p.id === activeId) ?? profiles[0];
       if (current) {
         setProfileNameInput(current.name || '');
-        setLocalCurve(normalizeFanCurve(current.curve));
+        setLocalCurve(normalizeFanCurve(current.curve, speedRange.min, speedRange.max, defaultCurve));
         setHasUnsavedChanges(false);
       }
     } catch {
       /* noop */
     }
-  }, []);
+  }, [defaultCurve, speedRange.max, speedRange.min]);
 
   const curveSpeedBounds = useMemo(() => {
     const source = localCurve.length > 0 ? localCurve : (config.fanCurve ?? []);
@@ -512,7 +545,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
   const learnedOffsetSummary = useMemo(() => {
     const sourceCurve = localCurve.length > 0 ? localCurve : (config.fanCurve || []);
     return (smartControl.learnedOffsets || [])
-      .map((value, index) => ({ value: constrainOffsetByLearningBias(typeof value === 'number' ? value : 0, currentLearningBias), index }))
+      .map((value, index) => ({
+        value: learnedOffsetForDisplay(constrainOffsetByLearningBias(typeof value === 'number' ? value : 0, currentLearningBias), speedUnit),
+        index,
+      }))
       .filter((item) => item.value !== 0 && item.index < sourceCurve.length)
       .sort((left, right) => Math.abs(right.value) - Math.abs(left.value))
       .slice(0, 4)
@@ -520,7 +556,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
         ...item,
         temperature: sourceCurve[item.index]?.temperature,
       }));
-  }, [config.fanCurve, currentLearningBias, localCurve, smartControl.learnedOffsets]);
+  }, [config.fanCurve, currentLearningBias, localCurve, smartControl.learnedOffsets, speedUnit]);
 
   const detailHistoryPoints = useMemo(() => temperatureHistory.slice(-720), [temperatureHistory]);
 
@@ -534,16 +570,14 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
     return [min, Math.max(min + 10, max)];
   }, [detailHistoryPoints]);
 
-  const historyFanMax = useMemo(() => {
-    return 100;
-  }, []);
+  const historyFanMax = useMemo(() => speedRange.max, [speedRange.max]);
 
   const historySummary = useMemo(() => {
     const latest = temperatureHistory[temperatureHistory.length - 1] ?? null;
     const first = temperatureHistory[0] ?? null;
     const cpuValues = temperatureHistory.map((point) => point.cpuTemp).filter((value) => value > 0);
     const gpuValues = temperatureHistory.map((point) => point.gpuTemp).filter((value) => value > 0);
-    const fanValues = temperatureHistory.map((point) => normalizeSpeedPercent(point.fanRpm)).filter((value) => value > 0);
+    const fanValues = temperatureHistory.map((point) => normalizeSpeedValue(point.fanRpm, speedRange.min, speedRange.max)).filter((value) => value > 0);
     const average = (values: number[]) => values.length > 0 ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
 
     return {
@@ -558,8 +592,11 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
       fanPeak: fanValues.length > 0 ? Math.max(...fanValues) : 0,
       fanAverage: average(fanValues),
     };
-  }, [locale, t, temperatureHistory]);
-  const historyChartData = useMemo(() => detailHistoryPoints.map((point) => ({ ...point, fanRpm: normalizeSpeedPercent(point.fanRpm) })), [detailHistoryPoints]);
+  }, [locale, speedRange.max, speedRange.min, t, temperatureHistory]);
+  const historyChartData = useMemo(
+    () => detailHistoryPoints.map((point) => ({ ...point, fanRpm: normalizeSpeedValue(point.fanRpm, speedRange.min, speedRange.max) })),
+    [detailHistoryPoints, speedRange.max, speedRange.min],
+  );
 
   const historySeriesMeta = useMemo(() => ([
     { key: 'cpu' as const, label: t('fanCurve.history.series.cpu'), color: '#2f6df6' },
@@ -577,11 +614,11 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
   /* ── Init ── */
 
   useEffect(() => {
-    if (!isInitialized && config.fanCurve && config.fanCurve.length > 0) {
-      setLocalCurve(normalizeFanCurve(config.fanCurve));
+    if ((!isInitialized || !hasUnsavedChanges) && !isInteracting && config.fanCurve && config.fanCurve.length > 0) {
+      setLocalCurve(normalizeFanCurve(config.fanCurve, speedRange.min, speedRange.max, defaultCurve));
       setIsInitialized(true);
     }
-  }, [config.fanCurve, isInitialized]);
+  }, [config.fanCurve, defaultCurve, hasUnsavedChanges, isInitialized, isInteracting, speedRange.max, speedRange.min]);
 
   useEffect(() => {
     loadCurveProfiles().catch(() => {});
@@ -598,7 +635,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
   const chartData = useMemo(() => {
     const offsets = smartControl.learnedOffsets || [];
     return localCurve.map((point, index) => {
-      const offset = constrainOffsetByLearningBias(offsets[index] ?? 0, currentLearningBias);
+      const offset = learnedOffsetForDisplay(constrainOffsetByLearningBias(offsets[index] ?? 0, currentLearningBias), speedUnit);
       return {
         temperature: point.temperature,
         rpm: point.rpm,
@@ -606,7 +643,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
         index,
       };
     });
-  }, [curveSpeedBounds.max, curveSpeedBounds.min, currentLearningBias, localCurve, smartControl.learnedOffsets]);
+  }, [curveSpeedBounds.max, curveSpeedBounds.min, currentLearningBias, localCurve, smartControl.learnedOffsets, speedUnit]);
 
   const hasLearnedOffsets = learnedOffsetSummary.length > 0;
   const showCoupledCurve = config.autoControl && !!smartControl.learning && hasLearnedOffsets;
@@ -705,7 +742,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
     if (isSaving) return;
     try {
       setIsSaving(true);
-      const curveToSave = normalizeFanCurve(localCurve);
+      const curveToSave = normalizeFanCurve(localCurve, speedRange.min, speedRange.max, defaultCurve);
       const profileID = activeProfileId || (((config as any).activeFanCurveProfileId || '') as string);
       const profileName = activeProfile?.name || t('fanCurve.profiles.currentCurveName');
       await apiService.saveFanCurveProfile(profileID, profileName, curveToSave, true);
@@ -862,9 +899,9 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
   }, [importCode, loadCurveProfiles, syncConfigFromBackend, t]);
 
   const resetCurve = useCallback(() => {
-    setLocalCurve(DEFAULT_FAN_CURVE.map(normalizeCurvePoint));
+    setLocalCurve(normalizeFanCurve(defaultCurve, speedRange.min, speedRange.max, defaultCurve));
     setHasUnsavedChanges(true);
-  }, []);
+  }, [defaultCurve, speedRange.max, speedRange.min]);
 
   /* ── Auto control / smart control handlers ── */
 
@@ -1020,11 +1057,11 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
       base[preset.gear] = {};
       preset.levels.forEach((lv) => {
         const value = source?.[preset.gear]?.[lv.level];
-        base[preset.gear][lv.level] = typeof value === 'number' && value >= MANUAL_GEAR_RPM_MIN ? value : lv.rpm;
+        base[preset.gear][lv.level] = typeof value === 'number' && value >= speedRange.min && value <= speedRange.max ? value : lv.rpm;
       });
     });
     return base;
-  }, []);
+  }, [speedRange.max, speedRange.min]);
 
   const openGearEditor = useCallback(() => {
     setDraftGearRpm(buildDraftFrom(customGearRpm));
@@ -1041,7 +1078,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
   const saveGearRpm = useCallback(async () => {
     setGearRpmSaving(true);
     try {
-      const normalized = normalizeManualGearRpmMap(draftGearRpm);
+      const normalized = normalizeManualGearRpmMap(draftGearRpm, speedRange.min, speedRange.max);
       const next = types.AppConfig.createFrom({ ...config, manualGearRpm: normalized });
       await apiService.updateConfig(next);
       onConfigChange(next);
@@ -1053,13 +1090,13 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
     } finally {
       setGearRpmSaving(false);
     }
-  }, [config, draftGearRpm, onConfigChange, t]);
+  }, [config, draftGearRpm, onConfigChange, speedRange.max, speedRange.min, t]);
 
   const CustomDot = useCallback((props: any): React.ReactElement<SVGElement> => {
     const { cx, cy, index, payload } = props;
     if (cx === undefined || cy === undefined) return <g />;
-    return <DraggablePoint key={`dot-${index}`} cx={cx} cy={cy} index={index} temperature={payload.temperature} speed={payload.rpm} onDragStart={handleDragStart} isActive={dragIndex === index} />;
-  }, [dragIndex, handleDragStart]);
+    return <DraggablePoint key={`dot-${index}`} cx={cx} cy={cy} index={index} temperature={payload.temperature} speed={payload.rpm} unitSuffix={speedUnitSuffix} onDragStart={handleDragStart} isActive={dragIndex === index} />;
+  }, [dragIndex, handleDragStart, speedUnitSuffix]);
 
   /* ═══════════════════ RENDER ═══════════════════ */
 
@@ -1142,7 +1179,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                           {getManualGearLabel(preset.gear)}
                         </div>
                         <div className={clsx('mt-1 text-base font-semibold tabular-nums', preset.colorClass)}>
-                          {activeLevel.rpm}%
+                          {activeLevel.rpm}{speedUnitSuffix}
                         </div>
                       </button>
                     );
@@ -1163,7 +1200,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                             type="button"
                             onClick={() => handleManualPointSelect(index)}
                             className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center"
-                            title={t('fanCurve.manualGear.pointTooltip', { gear: getManualGearLabel(point.gear), level: getManualLevelLabel(point.level), rpm: point.rpm })}
+                            title={t('fanCurve.manualGear.pointTooltip', { gear: getManualGearLabel(point.gear), level: getManualLevelLabel(point.level), speed: `${formatSpeedValue(point.rpm)}${speedUnitSuffix}` })}
                           >
                             <span
                               className={clsx(
@@ -1196,7 +1233,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>{t('fanCurve.manualGear.editTitle')}</DialogTitle>
-              <DialogDescription>{t('fanCurve.manualGear.editHint', { max: MANUAL_GEAR_RPM_MAX })}</DialogDescription>
+              <DialogDescription>{t('fanCurve.manualGear.editHint', { max: `${formatSpeedValue(speedRange.max)}${speedUnitSuffix}` })}</DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
               {MANUAL_GEAR_PRESETS.map((preset) => (
@@ -1209,10 +1246,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                         <NumberInput
                           value={draftGearRpm[preset.gear]?.[lv.level] ?? lv.rpm}
                           onChange={(value) => setDraftRpm(preset.gear, lv.level, value)}
-                          min={MANUAL_GEAR_RPM_MIN}
-                          max={MANUAL_GEAR_RPM_MAX}
+                          min={speedRange.min}
+                          max={speedRange.max}
                           step={1}
-                          suffix="%"
+                          suffix={speedUnitSuffix}
                         />
                       </div>
                     ))}
@@ -1245,11 +1282,11 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                 <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                   <XAxis dataKey="temperature" type="number" domain={[temperatureRange.min, temperatureRange.max]} ticks={temperatureRange.ticks} interval={0} minTickGap={0} tickLine={false} axisLine={{ stroke: 'var(--chart-axis)' }} tick={{ fill: 'var(--chart-tick)', fontSize: 10 }} label={{ value: t('fanCurve.chart.axes.temperature'), position: 'insideBottom', offset: -10, fill: 'var(--chart-tick)', fontSize: 12 }} />
-                  <YAxis type="number" domain={[speedRange.min, speedRange.max]} ticks={speedRange.ticks} tickLine={false} axisLine={{ stroke: 'var(--chart-axis)' }} tick={{ fill: 'var(--chart-tick)', fontSize: 11 }} label={{ value: '速度（%）', angle: -90, position: 'insideLeft', fill: 'var(--chart-tick)', fontSize: 12 }} />
+                  <YAxis type="number" domain={[speedRange.min, speedRange.max]} ticks={speedRange.ticks} tickLine={false} axisLine={{ stroke: 'var(--chart-axis)' }} tick={{ fill: 'var(--chart-tick)', fontSize: 11 }} label={{ value: `速度（${speedUnitSuffix}）`, angle: -90, position: 'insideLeft', fill: 'var(--chart-tick)', fontSize: 12 }} />
                   <RechartsTooltip
                     formatter={(value, name) => {
                       const numericValue = Number(value ?? 0);
-                      return name === 'coupledRpm' ? [`${numericValue}%`, '学习曲线'] : [`${numericValue}%`, '基础曲线'];
+                      return name === 'coupledRpm' ? [`${formatSpeedValue(numericValue)}${speedUnitSuffix}`, '学习曲线'] : [`${formatSpeedValue(numericValue)}${speedUnitSuffix}`, '基础曲线'];
                     }}
                     labelFormatter={(v) => t('fanCurve.chart.temperatureLabel', { temperature: v })}
                     contentStyle={{ backgroundColor: 'var(--chart-tooltip-bg)', border: '1px solid', borderColor: 'var(--chart-tooltip-border)', borderRadius: '8px', boxShadow: 'var(--chart-tooltip-shadow)', padding: '8px 12px', color: 'var(--chart-tooltip-text)' }}
@@ -1276,7 +1313,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                   <div className="text-sm font-medium text-foreground">{t('fanCurve.learning.title')}</div>
                   {!smartControl.learning && <Badge variant="info">{t('fanCurve.learning.paused')}</Badge>}
                 </div>
-                <div className="text-xs leading-relaxed text-muted-foreground">根据温度变化微调百分比曲线。</div>
+                <div className="text-xs leading-relaxed text-muted-foreground">根据温度变化微调当前设备速度曲线。</div>
               </div>
             </div>
             <ToggleSwitch
@@ -1341,7 +1378,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div className="min-w-0">
                 <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.learning.offsetTitle')}</div>
-                <div className="mt-1 text-xs leading-relaxed text-muted-foreground">当前学习曲线相对基础曲线的主要百分比修正点。</div>
+                <div className="mt-1 text-xs leading-relaxed text-muted-foreground">当前学习曲线相对基础曲线的主要速度修正点。</div>
               </div>
               <Button
                 variant="secondary"
@@ -1361,7 +1398,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                   <div key={item.index} className="rounded-lg border border-border/70 bg-card/70 px-3 py-2 tabular-nums">
                     <span>{item.temperature}°C </span>
                     <span className={clsx('font-semibold', item.value > 0 ? 'text-orange-500' : 'text-blue-500')}>
-                      {item.value > 0 ? '+' : ''}{item.value}%
+                      {item.value > 0 ? '+' : ''}{formatSpeedValue(item.value)}{speedUnitSuffix}
                     </span>
                   </div>
                 ))}
@@ -1374,7 +1411,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
 
         {/* ── Tips ── */}
         <div className="flex flex-wrap gap-2">
-          <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur-lg">拖动蓝色点调整速度百分比</span>
+          <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur-lg">拖动蓝色点调整速度（{speedUnitSuffix}）</span>
           {showCoupledCurve && <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur-lg">{t('fanCurve.hints.curveLegend')}</span>}
         </div>
 
@@ -1384,7 +1421,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
               <History className="h-4 w-4 text-primary" />
               <div>
                 <div className="text-sm font-medium text-foreground">{t('fanCurve.history.detailsTitle')}</div>
-                <div className="text-xs text-muted-foreground">查看温度与风扇百分比的近期变化。</div>
+                <div className="text-xs text-muted-foreground">查看温度与风扇速度的近期变化。</div>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -1409,7 +1446,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                 {[
                   [t('fanCurve.history.summary.cpuPeak'), historySummary.cpuPeak ? `${historySummary.cpuPeak}°C` : '--', historySummary.cpuAverage ? t('fanCurve.history.summary.averageTemperature', { value: historySummary.cpuAverage }) : t('fanCurve.history.summary.noCpuTemperature')],
                   [t('fanCurve.history.summary.gpuPeak'), historySummary.gpuPeak ? `${historySummary.gpuPeak}°C` : '--', historySummary.gpuAverage ? t('fanCurve.history.summary.averageTemperature', { value: historySummary.gpuAverage }) : t('fanCurve.history.summary.noGpuTemperature')],
-                  ['风扇峰值', historySummary.fanPeak ? `${historySummary.fanPeak}%` : '--', historySummary.fanAverage ? `平均 ${historySummary.fanAverage}%` : '暂无风扇数据'],
+                  ['风扇峰值', historySummary.fanPeak ? `${historySummary.fanPeak}${speedUnitSuffix}` : '--', historySummary.fanAverage ? `平均 ${historySummary.fanAverage}${speedUnitSuffix}` : '暂无风扇数据'],
                 ].map(([label, value, hint]) => (
                   <div key={label} className="rounded-xl border border-border/70 bg-background/35 p-3">
                     <div className="text-[11px] text-muted-foreground">{label}</div>
@@ -1483,7 +1520,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                           formatter={(value, name) => {
                             const numericValue = Number(value ?? 0);
                             if (name === 'fanRpm') {
-                              return [`${numericValue}%`, '风扇'];
+                              return [`${formatSpeedValue(numericValue)}${speedUnitSuffix}`, '风扇'];
                             }
                             return [`${numericValue} °C`, name === 'cpuTemp' ? t('fanCurve.history.series.cpu') : t('fanCurve.history.series.gpu')];
                           }}

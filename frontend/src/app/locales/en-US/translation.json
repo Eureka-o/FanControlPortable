@@ -118,8 +118,11 @@
     "capabilities": {
       "read": "Read state",
       "setSpeed": "Set speed",
+      "debugFrames": "Debug frames",
       "raw": "Raw commands",
       "lighting": "Lighting",
+      "powerOnStart": "Power-on start",
+      "smartStartStop": "Smart start/stop",
       "none": "No capability flags"
     },
     "transport": {
@@ -447,7 +450,7 @@
   },
   "aboutPanel": {
     "title": "About {{name}}",
-    "description": "{{name}} connects to Slim pressure fan cooler Pro, reads live temperature, and sends 0-100% fan speed commands.",
+    "description": "{{name}} supports multiple cooler and fan-controller profiles across WiFi, BLE, virtual COM/serial, and legacy HID/RPM paths, reading state and sending speed commands according to each device capability.",
     "images": {
       "logoAlt": "{{name}} logo",
       "wordmarkAlt": "{{name}} wordmark",
@@ -488,7 +491,7 @@
         },
         {
           "question": "Which devices are currently supported?",
-          "answer": "This version targets fan controllers that expose a WiFi HTTP interface. The default address is 192.168.137.2; the app reads status from /api/data and sends 0-100% speed through /api/speed."
+          "answer": "The built-in default device is Slim pressure fan cooler Pro over WiFi HTTP. FanControl also provides device profiles and templates for WiFi, BLE, virtual COM/serial, and legacy HID/RPM controllers; DIY devices need correct connection, packet, and parser settings for their MCU protocol."
         },
         {
           "question": "Can existing settings continue to work?",
@@ -532,11 +535,11 @@
       "title": "Manual gear",
       "bs1SliderHint": "4 control points",
       "defaultSliderHint": "12 control points",
-      "pointTooltip": "{{gear}} {{level}} · {{rpm}}%",
+      "pointTooltip": "{{gear}} {{level}} · {{speed}}",
       "pointIndex": "Level {{index}}",
       "customize": "Custom speed",
       "editTitle": "Customize gear speed",
-      "editHint": "The 12 gears must increase from low to high, max {{max}}%",
+      "editHint": "The 12 gears must increase from low to high, max {{max}}",
       "restoreDefault": "Restore defaults",
       "rpmSaved": "Gear speed saved",
       "rpmSaveFailed": "Failed to save gear speed: {{error}}",
@@ -710,9 +713,9 @@
       "curveProfileTitle": "Curve profile",
       "curveProfileDescription": "Switch fan control curves directly from settings without changing pages.",
       "customSpeedTitle": "Custom speed",
-      "customSpeedDescription": "Fixed percentage speed for special scenarios",
+      "customSpeedDescription": "Fixed speed for the current device in special scenarios",
       "customSpeedWarning": "Custom speed disables smart temperature control",
-      "customSpeedRangeHint": "Manual speed range is 0% to 100%. Adjust carefully for the cooling load.",
+      "customSpeedRangeHint": "Manual speed range is {{min}} to {{max}}. Adjust carefully for the cooling load.",
       "toasts": {
         "profileSwitched": "Temperature curve switched",
         "profileSwitchFailed": "Failed to switch curve: {{error}}"
@@ -865,7 +868,7 @@
       "enabledTitle": "After enabling:",
       "bullets": {
         "disableAutoControl": "• Smart temperature control will be disabled",
-        "fixedSpeed": "The fan will run at a fixed percentage speed",
+        "fixedSpeed": "The fan will run at a fixed speed",
         "insufficientCooling": "• Cooling may become insufficient"
       },
       "speedLabel": "Set speed",

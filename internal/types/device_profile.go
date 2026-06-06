@@ -241,11 +241,11 @@ func LegacyRPMCapabilities() DeviceCapabilities {
 		SupportsSetSpeed:       true,
 		SupportsManualGears:    true,
 		SupportsCustomSpeed:    true,
-		SupportsDebugFrames:    true,
-		SupportsRawCommands:    true,
-		SupportsLighting:       true,
-		SupportsPowerOnStart:   true,
-		SupportsSmartStartStop: true,
+		SupportsDebugFrames:    false,
+		SupportsRawCommands:    false,
+		SupportsLighting:       false,
+		SupportsPowerOnStart:   false,
+		SupportsSmartStartStop: false,
 	}
 }
 
@@ -419,6 +419,37 @@ func DeviceProfileSpeedUnit(cfg *AppConfig) string {
 func ActiveDeviceProfile(cfg *AppConfig) DeviceProfile {
 	if cfg == nil {
 		return DefaultWiFiPercentProfile(DefaultFanDeviceIP)
+	}
+	transport := NormalizeDeviceTransport(cfg.DeviceTransport)
+	if transport != "" {
+		if id := activeDeviceProfileIDFromTransportMap(cfg.DeviceProfiles, cfg.ActiveDeviceProfileIDsByTransport, transport); id != "" {
+			for _, profile := range cfg.DeviceProfiles {
+				if profile.ID == id {
+					return NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp)
+				}
+			}
+		}
+		activeID := strings.TrimSpace(cfg.ActiveDeviceProfileID)
+		if activeID != "" {
+			for _, profile := range cfg.DeviceProfiles {
+				if profile.ID == activeID && NormalizeDeviceTransport(profile.Transport) == transport {
+					return NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp)
+				}
+			}
+		}
+		if id := firstDeviceProfileIDForTransport(cfg.DeviceProfiles, transport); id != "" {
+			for _, profile := range cfg.DeviceProfiles {
+				if profile.ID == id {
+					return NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp)
+				}
+			}
+		}
+		switch transport {
+		case DeviceTransportWiFi:
+			return DefaultWiFiPercentProfile(cfg.FanControlDeviceIp)
+		case DeviceTransportBLE, DeviceTransportHID:
+			return LegacyRPMProfileForTransport(transport)
+		}
 	}
 	activeID := strings.TrimSpace(cfg.ActiveDeviceProfileID)
 	for _, profile := range cfg.DeviceProfiles {
@@ -598,6 +629,24 @@ func NormalizeDeviceProfileConfig(cfg *AppConfig) bool {
 	}
 
 	active := ActiveDeviceProfile(cfg)
+	activeExists := false
+	for _, profile := range cfg.DeviceProfiles {
+		if profile.ID == active.ID && profile.ID != "" {
+			activeExists = true
+			break
+		}
+	}
+	if !activeExists {
+		if builtInID, added := upsertBuiltInProfileForTransport(cfg, active.Transport); added {
+			cfg.ActiveDeviceProfileID = builtInID
+			changed = true
+			active = ActiveDeviceProfile(cfg)
+		}
+	}
+	if active.ID != "" && cfg.ActiveDeviceProfileID != active.ID {
+		cfg.ActiveDeviceProfileID = active.ID
+		changed = true
+	}
 	if setActiveDeviceProfileIDForTransport(cfg, active) {
 		changed = true
 	}

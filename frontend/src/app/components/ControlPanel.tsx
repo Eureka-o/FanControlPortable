@@ -30,9 +30,17 @@ import {
 import { apiService } from '../services/api';
 import { types } from '../../../wailsjs/go/models';
 import { toast } from 'sonner';
-import { DebugInfo, type DeviceDebugCommandResult, type DeviceSettings, type ThemeMeta } from '../types/app';
+import { DebugInfo, type DeviceDebugCommandResult, type ThemeMeta } from '../types/app';
 import { type AppLocale, useLocale } from '../lib/i18n';
-import { fanSpeedUnitLabel, getFanSpeedUnit, readCurrentFanSpeed } from '../lib/fan-speed';
+import {
+  clampFanSpeedToRange,
+  fanSpeedUnitLabel,
+  formatFanSpeedValue,
+  getActiveDeviceProfile,
+  getFanSpeedRange,
+  getFanSpeedUnit,
+  readCurrentFanSpeed,
+} from '../lib/fan-speed';
 import { getManualGearLabel, getManualLevelLabel } from '../lib/manualGearPresets';
 import FanCurveProfileSelect from './FanCurveProfileSelect';
 import { ToggleSwitch, Button, Select, Slider } from './ui/index';
@@ -53,8 +61,6 @@ interface ControlPanelProps {
   fanData: types.FanData | null;
   temperature: types.TemperatureData | null;
   legionFnQSupported: boolean;
-  deviceModel: string | null;
-  deviceSettings: DeviceSettings | null;
 }
 
 type CurveProfile = { id: string; name: string; curve: types.FanCurvePoint[] };
@@ -520,7 +526,7 @@ function profileWithBLEDevice(profile: types.DeviceProfile, device: types.BLEDev
   });
 }
 
-export default function ControlPanel({ config, onConfigChange, isConnected, fanData, temperature, legionFnQSupported, deviceModel }: ControlPanelProps) {
+export default function ControlPanel({ config, onConfigChange, isConnected, fanData, temperature, legionFnQSupported }: ControlPanelProps) {
   const { t } = useTranslation();
   const { locale, setLocale } = useLocale();
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
@@ -535,14 +541,25 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const [showCustomSpeedWarning, setShowCustomSpeedWarning] = useState(false);
   // 安装目录/用户目录下发现的自定义主题（用于「界面主题」下拉动态渲染）
   const [customThemes, setCustomThemes] = useState<ThemeMeta[]>([]);
-  const [customSpeedInput, setCustomSpeedInput] = useState<number>(
-    Math.max(0, Math.min(100, Number((config as any).customSpeedRPM ?? 50))),
-  );
-  const [deviceIpInput, setDeviceIpInput] = useState<string>(((config as any).fanControlDeviceIp || '') as string);
   const overviewSpeedUnit = getFanSpeedUnit(fanData as any, config as any);
   const overviewSpeedLabel = fanSpeedUnitLabel(overviewSpeedUnit);
-  const overviewFanSpeed = readCurrentFanSpeed(fanData, overviewSpeedUnit)
-    ?? ((config as any).customSpeedEnabled ? customSpeedInput : undefined);
+  const overviewSpeedRange = useMemo(() => getFanSpeedRange(config as any, overviewSpeedUnit), [config, overviewSpeedUnit]);
+  const defaultCustomSpeed = useMemo(() => {
+    const fallback = overviewSpeedUnit === 'rpm' ? 2000 : 45;
+    return clampFanSpeedToRange(fallback, overviewSpeedRange, overviewSpeedRange.min) ?? overviewSpeedRange.min;
+  }, [overviewSpeedRange, overviewSpeedUnit]);
+  const [customSpeedInput, setCustomSpeedInput] = useState<string>(
+    () => String(clampFanSpeedToRange((config as any).customSpeedRPM, overviewSpeedRange, defaultCustomSpeed) ?? defaultCustomSpeed),
+  );
+  const [deviceIpInput, setDeviceIpInput] = useState<string>(((config as any).fanControlDeviceIp || '') as string);
+  const customSpeedInputValue = useMemo(
+    () => clampFanSpeedToRange(customSpeedInput, overviewSpeedRange, defaultCustomSpeed) ?? defaultCustomSpeed,
+    [customSpeedInput, defaultCustomSpeed, overviewSpeedRange],
+  );
+  const overviewFanSpeed = clampFanSpeedToRange(readCurrentFanSpeed(fanData, overviewSpeedUnit, config as any), overviewSpeedRange)
+    ?? ((config as any).customSpeedEnabled ? customSpeedInputValue : undefined);
+  const customSpeedMinLabel = `${formatFanSpeedValue(overviewSpeedRange.min)}${overviewSpeedLabel}`;
+  const customSpeedMaxLabel = `${formatFanSpeedValue(overviewSpeedRange.max)}${overviewSpeedLabel}`;
   const [deviceTransportInput, setDeviceTransportInput] = useState<DeviceTransport>(normalizeTransport((config as any).deviceTransport));
   const [deviceProfiles, setDeviceProfiles] = useState<types.DeviceProfile[]>(() => configuredDeviceProfiles(config));
   const [activeDeviceProfileId, setActiveDeviceProfileId] = useState<string>(((config as any).activeDeviceProfileId || '') as string);
@@ -597,9 +614,20 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const bleSettingsProfile = deviceTransportInput === 'ble'
     ? selectedTransportProfile || profileForTransport(availableDeviceProfiles, 'ble')
     : null;
+  const currentDeviceProfile = useMemo(
+    () => getActiveDeviceProfile(config as any) as types.DeviceProfile | undefined,
+    [config],
+  );
+  const currentDeviceCapabilities = currentDeviceProfile?.capabilities;
+  const currentDeviceSupportsCustomSpeed = currentDeviceCapabilities
+    ? currentDeviceCapabilities.supportsCustomSpeed || currentDeviceCapabilities.supportsSetSpeed
+    : true;
+  const currentDeviceSupportsLighting = !!currentDeviceCapabilities?.supportsLighting;
+  const currentDeviceSupportsPowerOnStart = !!currentDeviceCapabilities?.supportsPowerOnStart;
+  const currentDeviceSupportsSmartStartStop = !!currentDeviceCapabilities?.supportsSmartStartStop;
+  const currentDeviceHasDeviceSettings = currentDeviceSupportsLighting || currentDeviceSupportsPowerOnStart || currentDeviceSupportsSmartStartStop;
 
   const activeCurveProfileId = ((config as any).activeFanCurveProfileId || '') as string;
-  const isBs1 = deviceModel === 'BS1';
   const currentTempSource = (((config as any).tempSource as string) || 'max') as 'max' | 'cpu' | 'gpu';
   const cpuSensors = useMemo(() => (Array.isArray(temperature?.cpuSensors) ? temperature.cpuSensors : []), [temperature?.cpuSensors]);
   const gpuSensors = useMemo(() => (Array.isArray(temperature?.gpuSensors) ? temperature.gpuSensors : []), [temperature?.gpuSensors]);
@@ -762,19 +790,19 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     } catch { /* noop */ } finally { setLoading('autoControl', false); }
   }, [config, onConfigChange]);
 
-  const handleCustomSpeedApply = useCallback(async (enabled: boolean, percent: number) => {
+  const handleCustomSpeedApply = useCallback(async (enabled: boolean, speed: unknown) => {
     setLoading('customSpeed', true);
-    const safePercent = Math.max(0, Math.min(100, Math.round(Number.isFinite(percent) ? percent : 0)));
+    const safeSpeed = clampFanSpeedToRange(speed, overviewSpeedRange, defaultCustomSpeed) ?? defaultCustomSpeed;
     try {
-      await apiService.setCustomSpeed(enabled, safePercent);
+      await apiService.setCustomSpeed(enabled, safeSpeed);
       onConfigChange(types.AppConfig.createFrom({
         ...config,
         customSpeedEnabled: enabled,
-        customSpeedRPM: safePercent,
+        customSpeedRPM: safeSpeed,
         autoControl: enabled ? false : config.autoControl,
       }));
     } catch { /* noop */ } finally { setLoading('customSpeed', false); }
-  }, [config, onConfigChange]);
+  }, [config, defaultCustomSpeed, onConfigChange, overviewSpeedRange]);
 
   const handleCustomSpeedToggle = useCallback((enabled: boolean) => {
     if (enabled) setShowCustomSpeedWarning(true);
@@ -1238,8 +1266,8 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   useEffect(() => { void loadDeviceProfiles(); }, [loadDeviceProfiles]);
   useEffect(() => { setLightStripConfig(normalizeLightStripConfig(config)); }, [config]);
   useEffect(() => {
-    setCustomSpeedInput(Math.max(0, Math.min(100, Number((config as any).customSpeedRPM ?? 50))));
-  }, [(config as any).customSpeedRPM]);
+    setCustomSpeedInput(String(clampFanSpeedToRange((config as any).customSpeedRPM, overviewSpeedRange, defaultCustomSpeed) ?? defaultCustomSpeed));
+  }, [(config as any).customSpeedRPM, defaultCustomSpeed, overviewSpeedRange]);
   useEffect(() => {
     const profiles = configuredDeviceProfiles(config);
     if (profiles.length > 0) {
@@ -1464,7 +1492,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
         </section>
 
         {/* ═══════════ 1. 灯光效果 ═══════════ */}
-        {false && (
+        {currentDeviceSupportsLighting && (
         <Section title={t('controlPanel.light.sectionTitle')} icon={Sparkles}>
           <div className="space-y-4 p-5">
             <div className="grid grid-cols-2 gap-3">
@@ -1757,6 +1785,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
           </SettingRow>
 
           {/* Custom speed */}
+          {currentDeviceSupportsCustomSpeed && (
           <div className="px-5 py-4">
             <div className="flex items-center justify-between">
               <div className="flex min-w-0 items-center gap-3">
@@ -1793,27 +1822,28 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                     <input
                       type="number"
                       value={customSpeedInput}
-                      onChange={(e) => setCustomSpeedInput(Math.max(0, Math.min(100, Number(e.target.value))))}
+                      onChange={(e) => setCustomSpeedInput(e.target.value)}
                       className="flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:ring-2 focus:ring-amber-500/50 focus:border-transparent"
-                      min={0} max={100} step={1}
+                      min={overviewSpeedRange.min} max={overviewSpeedRange.max} step={overviewSpeedRange.step}
                     />
-                    <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">%</span>
+                    <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">{overviewSpeedLabel}</span>
                     <Button variant="primary" size="sm" onClick={() => handleCustomSpeedApply(true, customSpeedInput)} className="bg-amber-600 hover:bg-amber-700 text-white">
                       {t('common.actions.apply')}
                     </Button>
                   </div>
                   <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">
-                    {t('controlPanel.fan.customSpeedRangeHint')}
+                    {t('controlPanel.fan.customSpeedRangeHint', { min: customSpeedMinLabel, max: customSpeedMaxLabel })}
                   </p>
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
+          )}
         </Section>
 
         {/* ═══════════ 3. 设备设置 ═══════════ */}
-        {false && <Section title={t('controlPanel.device.sectionTitle')} icon={Zap}>
-          {!isBs1 && (
+        {currentDeviceHasDeviceSettings && <Section title={t('controlPanel.device.sectionTitle')} icon={Zap}>
+          {currentDeviceSupportsLighting && (
           <SettingRow
             icon={<Lightbulb className={clsx('h-4 w-4', config.gearLight ? 'text-yellow-500' : '')} />}
             title={t('controlPanel.device.gearLightTitle')}
@@ -1830,6 +1860,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
           </SettingRow>
           )}
 
+          {currentDeviceSupportsPowerOnStart && (
           <SettingRow
             icon={<Power className={clsx('h-4 w-4', config.powerOnStart ? 'text-primary' : '')} />}
             title={t('controlPanel.device.powerOnStartTitle')}
@@ -1844,8 +1875,9 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
               size="sm"
             />
           </SettingRow>
+          )}
 
-          {!isBs1 && (
+          {currentDeviceSupportsSmartStartStop && (
           <SettingRow
             icon={<Zap className="h-4 w-4" />}
             title={t('controlPanel.device.smartStartStopTitle')}
@@ -2469,7 +2501,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
 
               <div className="mb-5 rounded-xl bg-muted/60 p-3 text-center">
                 <span className="text-xs text-muted-foreground">{t('controlPanel.customSpeedDialog.speedLabel')}</span>
-                <div className="text-xl font-bold text-amber-600">{customSpeedInput}%</div>
+                <div className="text-xl font-bold text-amber-600">{formatFanSpeedValue(customSpeedInputValue)}{overviewSpeedLabel}</div>
               </div>
 
               <div className="flex gap-3">

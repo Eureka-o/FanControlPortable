@@ -25,7 +25,7 @@ import { types } from '../../../wailsjs/go/models';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { BRAND } from '../lib/brand';
-import { fanSpeedUnitLabel, getFanSpeedUnit, readCurrentFanSpeed } from '../lib/fan-speed';
+import { clampFanSpeedToRange, fanSpeedUnitLabel, getFanSpeedRange, getFanSpeedUnit, readCurrentFanSpeed } from '../lib/fan-speed';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 const MAIN_TAB_ITEMS = [
@@ -73,6 +73,7 @@ interface AppShellProps {
   isConnected: boolean;
   fanData: types.FanData | null;
   temperature: types.TemperatureData | null;
+  config: types.AppConfig;
   autoControl: boolean;
   error: string | null;
   bridgeWarning: string | null;
@@ -91,9 +92,10 @@ function getTempColor(temp?: number) {
   return 'text-primary';
 }
 
-function getFanSpinDuration(rpm?: number) {
-  if (!rpm || rpm <= 0) return 0;
-  const percent = Math.max(0, Math.min(100, rpm));
+function getFanSpinDuration(speed?: number, minSpeed = 0, maxSpeed = 100) {
+  if (!speed || speed <= 0) return 0;
+  const speedSpan = Math.max(1, maxSpeed - minSpeed);
+  const percent = Math.max(0, Math.min(100, ((speed - minSpeed) / speedSpan) * 100));
   if (percent >= 90) return 0.48;
   if (percent >= 70) return 0.72;
   if (percent >= 45) return 1;
@@ -190,20 +192,23 @@ function StatusBadges({
   isConnected,
   fanData,
   temperature,
+  config,
   autoControl,
   compact = false,
 }: {
   isConnected: boolean;
   fanData: types.FanData | null;
   temperature: types.TemperatureData | null;
+  config: types.AppConfig;
   autoControl: boolean;
   compact?: boolean;
 }) {
   const { t } = useTranslation();
-  const fanSpeedUnit = getFanSpeedUnit(fanData as any);
-  const fanSpeed = readCurrentFanSpeed(fanData, fanSpeedUnit);
+  const fanSpeedUnit = getFanSpeedUnit(fanData as any, config as any);
+  const fanSpeedRange = getFanSpeedRange(config as any, fanSpeedUnit);
+  const fanSpeed = clampFanSpeedToRange(readCurrentFanSpeed(fanData, fanSpeedUnit, config as any), fanSpeedRange);
   const fanSpeedLabel = fanSpeedUnitLabel(fanSpeedUnit);
-  const fanSpinDuration = getFanSpinDuration(fanSpeed);
+  const fanSpinDuration = getFanSpinDuration(fanSpeed, fanSpeedRange.min, fanSpeedRange.max);
   const baseClass = compact
     ? 'inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium'
     : 'inline-flex h-8 items-center gap-1.5 rounded-xl border px-3 text-[13px] font-medium';
@@ -431,6 +436,7 @@ export default function AppShell({
   isConnected,
   fanData,
   temperature,
+  config,
   autoControl,
   error,
   bridgeWarning,
@@ -539,7 +545,7 @@ export default function AppShell({
           restoreLabel={t('appShell.titleBar.restore')}
           closeLabel={t('appShell.titleBar.close')}
           isMaximised={isMaximised}
-          leftSlot={<StatusBadges isConnected={isConnected} fanData={fanData} temperature={temperature} autoControl={autoControl} compact />}
+          leftSlot={<StatusBadges isConnected={isConnected} fanData={fanData} temperature={temperature} config={config} autoControl={autoControl} compact />}
           onMinimise={() => WindowMinimise()}
           onToggleMaximise={handleToggleMaximise}
           onClose={() => Quit()}
@@ -627,7 +633,7 @@ export default function AppShell({
             style={DRAG_STYLE}
           >
             <div className="mx-auto flex min-h-9 max-w-[1120px] min-[1680px]:max-w-[1280px] min-[2200px]:max-w-[1480px] items-center justify-start gap-3" style={NO_DRAG_STYLE}>
-              <StatusBadges isConnected={isConnected} fanData={fanData} temperature={temperature} autoControl={autoControl} />
+              <StatusBadges isConnected={isConnected} fanData={fanData} temperature={temperature} config={config} autoControl={autoControl} />
             </div>
           </header>
         )}

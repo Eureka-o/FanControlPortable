@@ -39,6 +39,19 @@ func defaultCurveForUnit(unit string) []types.FanCurvePoint {
 	return types.GetDefaultFanCurve()
 }
 
+func looksLikePercentCurveInRPMMode(curve []types.FanCurvePoint, unit string) bool {
+	if !types.IsRPMSpeedUnit(unit) || len(curve) == 0 {
+		return false
+	}
+	maxSpeed := curve[0].RPM
+	for i := 1; i < len(curve); i++ {
+		if curve[i].RPM > maxSpeed {
+			maxSpeed = curve[i].RPM
+		}
+	}
+	return maxSpeed <= types.FanSpeedMaxPercent
+}
+
 func extendCurveRightEdgeForUnit(curve []types.FanCurvePoint, unit string) ([]types.FanCurvePoint, bool) {
 	if len(curve) == 0 {
 		return nil, false
@@ -155,8 +168,16 @@ func NormalizeConfigForUnit(cfg *types.AppConfig, unit string) bool {
 		baseCurve = defaultCurveForUnit(unit)
 		changed = true
 	}
+	if looksLikePercentCurveInRPMMode(baseCurve, unit) {
+		baseCurve = defaultCurveForUnit(unit)
+		changed = true
+	}
 	if extendedCurve, extended := extendCurveRightEdgeForUnit(baseCurve, unit); extended {
 		baseCurve = extendedCurve
+		changed = true
+	}
+	if err := cfgpkg.ValidateFanCurveForUnit(baseCurve, unit); err != nil {
+		baseCurve = defaultCurveForUnit(unit)
 		changed = true
 	}
 
@@ -191,7 +212,10 @@ func NormalizeConfigForUnit(cfg *types.AppConfig, unit string) bool {
 			changed = true
 		}
 
-		if err := cfgpkg.ValidateFanCurveForUnit(profile.Curve, unit); err != nil {
+		if looksLikePercentCurveInRPMMode(profile.Curve, unit) {
+			profile.Curve = CloneCurve(baseCurve)
+			changed = true
+		} else if err := cfgpkg.ValidateFanCurveForUnit(profile.Curve, unit); err != nil {
 			profile.Curve = CloneCurve(baseCurve)
 			changed = true
 		}

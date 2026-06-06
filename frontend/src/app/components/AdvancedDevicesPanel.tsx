@@ -181,8 +181,13 @@ function CapabilityPills({ profile }: { profile: types.DeviceProfile }) {
   const items = [
     caps?.supportsReadState ? t('advancedDevices.capabilities.read') : '',
     caps?.supportsSetSpeed ? t('advancedDevices.capabilities.setSpeed') : '',
+    caps?.supportsManualGears ? t('fanCurve.manualGear.title') : '',
+    caps?.supportsCustomSpeed ? t('controlPanel.fan.customSpeedTitle') : '',
+    caps?.supportsDebugFrames ? t('advancedDevices.capabilities.debugFrames') : '',
     caps?.supportsRawCommands ? t('advancedDevices.capabilities.raw') : '',
     caps?.supportsLighting ? t('advancedDevices.capabilities.lighting') : '',
+    caps?.supportsPowerOnStart ? t('advancedDevices.capabilities.powerOnStart') : '',
+    caps?.supportsSmartStartStop ? t('advancedDevices.capabilities.smartStartStop') : '',
   ].filter(Boolean);
 
   if (items.length === 0) {

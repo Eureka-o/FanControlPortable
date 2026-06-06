@@ -52,6 +52,11 @@ func configSpeedToTargetUnit(speed int, unit string) int {
 	return types.ClampRPM(speed)
 }
 
+func (a *CoreApp) activeDeviceCapabilities() types.DeviceCapabilities {
+	cfg := a.configManager.Get()
+	return types.ActiveDeviceProfile(&cfg).Capabilities
+}
+
 // UpdateConfig 更新配置
 func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	a.mutex.Lock()
@@ -290,6 +295,9 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 
 // SetGearLight 设置挡位灯
 func (a *CoreApp) SetGearLight(enabled bool) bool {
+	if !a.activeDeviceCapabilities().SupportsLighting {
+		return false
+	}
 	if !a.deviceManager.SetGearLight(enabled) {
 		return false
 	}
@@ -307,6 +315,9 @@ func (a *CoreApp) SetGearLight(enabled bool) bool {
 
 // SetPowerOnStart 设置通电自启动
 func (a *CoreApp) SetPowerOnStart(enabled bool) bool {
+	if !a.activeDeviceCapabilities().SupportsPowerOnStart {
+		return false
+	}
 	if !a.deviceManager.SetPowerOnStart(enabled) {
 		return false
 	}
@@ -324,6 +335,9 @@ func (a *CoreApp) SetPowerOnStart(enabled bool) bool {
 
 // SetSmartStartStop 设置智能启停
 func (a *CoreApp) SetSmartStartStop(mode string) bool {
+	if !a.activeDeviceCapabilities().SupportsSmartStartStop {
+		return false
+	}
 	if !a.deviceManager.SetSmartStartStop(mode) {
 		return false
 	}
@@ -341,6 +355,9 @@ func (a *CoreApp) SetSmartStartStop(mode string) bool {
 
 // SetBrightness 设置亮度
 func (a *CoreApp) SetBrightness(percentage int) bool {
+	if !a.activeDeviceCapabilities().SupportsLighting {
+		return false
+	}
 	if !a.deviceManager.SetBrightness(percentage) {
 		return false
 	}
@@ -358,6 +375,9 @@ func (a *CoreApp) SetBrightness(percentage int) bool {
 
 // SetLightStrip 设置灯带
 func (a *CoreApp) SetLightStrip(lightCfg types.LightStripConfig) error {
+	if !a.activeDeviceCapabilities().SupportsLighting {
+		return fmt.Errorf("active device does not support lighting")
+	}
 	lightCfg, _ = normalizeLightStripConfig(lightCfg)
 
 	cfg := a.configManager.Get()
@@ -381,6 +401,9 @@ func (a *CoreApp) SetLightStrip(lightCfg types.LightStripConfig) error {
 }
 
 func (a *CoreApp) applyConfiguredLightStrip() error {
+	if !a.activeDeviceCapabilities().SupportsLighting {
+		return nil
+	}
 	cfg := a.configManager.Get()
 	lightCfg, changed := normalizeLightStripConfig(cfg.LightStrip)
 
