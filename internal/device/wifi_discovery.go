@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/TIANLI0/THRM/internal/types"
@@ -18,9 +19,9 @@ import (
 
 const (
 	wifiDiscoveryDefaultTimeout = 450 * time.Millisecond
-	wifiDiscoveryDeepTimeout    = 550 * time.Millisecond
+	wifiDiscoveryDeepTimeout    = 180 * time.Millisecond
 	wifiDiscoveryNormalLimit    = 8 * time.Second
-	wifiDiscoveryDeepLimit      = 45 * time.Second
+	wifiDiscoveryDeepLimit      = 75 * time.Second
 	wifiDiscoveryDynamicLimit   = 6 * time.Second
 )
 
@@ -38,12 +39,15 @@ type wifiDiscoveryCandidate struct {
 	Network  string
 }
 
-func DiscoverWiFiDevices(ctx context.Context, params types.WiFiDiscoveryParams) types.WiFiDiscoveryResult {
+func DiscoverWiFiDevices(ctx context.Context, params types.WiFiDiscoveryParams) (result types.WiFiDiscoveryResult) {
 	start := time.Now()
 	mode := normalizeWiFiDiscoveryMode(params.Mode)
-	result := types.WiFiDiscoveryResult{Mode: mode}
+	result = types.WiFiDiscoveryResult{Mode: mode}
 	defer func() {
 		result.ElapsedMs = time.Since(start).Milliseconds()
+		if params.Control != nil && params.Control.IsCanceled() {
+			result.Canceled = true
+		}
 	}()
 
 	timeout := wifiDiscoveryTimeout(params.TimeoutMs, mode)
@@ -68,8 +72,9 @@ func DiscoverWiFiDevices(ctx context.Context, params types.WiFiDiscoveryParams) 
 
 	client := newWiFiDiscoveryHTTPClient(timeout)
 	stateEndpoint := normalizeWiFiDiscoveryStateEndpoint(params.StateEndpoint)
-	devices := scanWiFiDiscoveryCandidates(ctx, client, candidates, stateEndpoint, params)
+	devices, scannedCount := scanWiFiDiscoveryCandidatesByMode(ctx, client, candidates, stateEndpoint, params, mode)
 	result.Devices = devices
+	result.ScannedCount = scannedCount
 	result.Found = len(devices) > 0
 	return result
 }
@@ -124,7 +129,7 @@ func newWiFiDiscoveryHTTPClient(timeout time.Duration) *http.Client {
 			TLSHandshakeTimeout:   timeout,
 			ResponseHeaderTimeout: timeout,
 			IdleConnTimeout:       10 * time.Second,
-			MaxIdleConns:          128,
+			MaxIdleConns:          512,
 			MaxIdleConnsPerHost:   4,
 		},
 	}
@@ -179,6 +184,11 @@ func buildWiFiDiscoveryCandidates(params types.WiFiDiscoveryParams, mode string)
 			})
 		}
 	}
+	addSubnetScopes := func(source string, subnets []string) {
+		for _, subnet := range subnets {
+			addScope(source, subnet+".0/24", subnetHosts(subnet))
+		}
+	}
 
 	if mode != types.WiFiDiscoveryModeDynamic && base.Host != "" {
 		if addCandidate("exact", base.Host, base.Host) {
@@ -203,9 +213,8 @@ func buildWiFiDiscoveryCandidates(params types.WiFiDiscoveryParams, mode string)
 	addScope("deviceAP", "192.168.4.1-2", []string{"192.168.4.1", "192.168.4.2"})
 
 	if mode == types.WiFiDiscoveryModeDeep {
-		for _, subnet := range []string{"192.168.0", "192.168.1", "192.168.2", "192.168.4"} {
-			addScope("commonSubnet", subnet+".0/24", subnetHosts(subnet))
-		}
+		addSubnetScopes("commonSubnet", commonWiFiDiscoverySubnets())
+		addSubnetScopes("expandedSubnet", expandedWiFiDiscoverySubnets())
 	}
 
 	return candidates, scopes, nil
@@ -252,6 +261,77 @@ func subnetHosts(subnet string) []string {
 		out = append(out, fmt.Sprintf("%s.%d", subnet, i))
 	}
 	return out
+}
+
+func commonWiFiDiscoverySubnets() []string {
+	return []string{
+		"192.168.0",
+		"192.168.1",
+		"192.168.2",
+		"192.168.3",
+		"192.168.4",
+		"192.168.5",
+		"192.168.10",
+		"192.168.31",
+		"192.168.50",
+		"192.168.88",
+		"192.168.100",
+		"192.168.137",
+		"10.0.0",
+		"10.0.1",
+		"10.1.1",
+		"10.10.0",
+		"10.10.10",
+		"172.16.0",
+		"172.20.10",
+		"172.31.0",
+	}
+}
+
+func expandedWiFiDiscoverySubnets() []string {
+	seen := map[string]bool{}
+	subnets := make([]string, 0, 320)
+	add := func(subnet string) {
+		subnet = strings.TrimSpace(subnet)
+		if subnet == "" || seen[subnet] {
+			return
+		}
+		seen[subnet] = true
+		subnets = append(subnets, subnet)
+	}
+	for i := 0; i <= 255; i++ {
+		add(fmt.Sprintf("192.168.%d", i))
+	}
+	for _, subnet := range commonWiFiDiscoverySubnets() {
+		add(subnet)
+	}
+	for _, subnet := range []string{
+		"10.0.2",
+		"10.0.4",
+		"10.0.8",
+		"10.0.10",
+		"10.0.20",
+		"10.0.50",
+		"10.0.88",
+		"10.0.100",
+		"10.0.137",
+		"10.1.0",
+		"10.1.2",
+		"10.10.1",
+		"10.137.137",
+		"172.16.1",
+		"172.16.2",
+		"172.16.4",
+		"172.16.10",
+		"172.16.20",
+		"172.20.0",
+		"172.20.1",
+		"172.31.1",
+		"172.31.137",
+	} {
+		add(subnet)
+	}
+	return subnets
 }
 
 func localIPv4Subnets24() []string {
@@ -316,13 +396,49 @@ func normalizeWiFiDiscoveryStateEndpoint(path string) string {
 	return path
 }
 
+func scanWiFiDiscoveryCandidatesByMode(
+	ctx context.Context,
+	client *http.Client,
+	candidates []wifiDiscoveryCandidate,
+	stateEndpoint string,
+	params types.WiFiDiscoveryParams,
+	mode string,
+) ([]types.WiFiDiscoveredDevice, int) {
+	if mode != types.WiFiDiscoveryModeDeep {
+		return scanWiFiDiscoveryCandidates(ctx, client, candidates, stateEndpoint, params)
+	}
+
+	common, expanded := splitWiFiDiscoveryCandidates(candidates)
+	devices, scannedCount := scanWiFiDiscoveryCandidates(ctx, client, common, stateEndpoint, params)
+	if len(devices) > 0 || ctx.Err() != nil || len(expanded) == 0 {
+		return devices, scannedCount
+	}
+
+	expandedDevices, expandedScannedCount := scanWiFiDiscoveryCandidates(ctx, client, expanded, stateEndpoint, params)
+	devices = append(devices, expandedDevices...)
+	return devices, scannedCount + expandedScannedCount
+}
+
+func splitWiFiDiscoveryCandidates(candidates []wifiDiscoveryCandidate) ([]wifiDiscoveryCandidate, []wifiDiscoveryCandidate) {
+	common := make([]wifiDiscoveryCandidate, 0, len(candidates))
+	expanded := make([]wifiDiscoveryCandidate, 0)
+	for _, candidate := range candidates {
+		if candidate.Source == "expandedSubnet" {
+			expanded = append(expanded, candidate)
+			continue
+		}
+		common = append(common, candidate)
+	}
+	return common, expanded
+}
+
 func scanWiFiDiscoveryCandidates(
 	ctx context.Context,
 	client *http.Client,
 	candidates []wifiDiscoveryCandidate,
 	stateEndpoint string,
 	params types.WiFiDiscoveryParams,
-) []types.WiFiDiscoveredDevice {
+) ([]types.WiFiDiscoveredDevice, int) {
 	workerCount := 64
 	if len(candidates) < workerCount {
 		workerCount = len(candidates)
@@ -333,15 +449,23 @@ func scanWiFiDiscoveryCandidates(
 	if len(candidates) > 800 {
 		workerCount = 96
 	}
+	if len(candidates) > 50000 {
+		workerCount = 384
+	}
 
 	jobs := make(chan wifiDiscoveryCandidate)
 	results := make(chan types.WiFiDiscoveredDevice, len(candidates))
 	var wg sync.WaitGroup
+	var scannedCount int64
 	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for candidate := range jobs {
+				if !params.Control.Wait(ctx) {
+					continue
+				}
+				atomic.AddInt64(&scannedCount, 1)
 				device, ok := probeWiFiDiscoveryCandidate(ctx, client, candidate, stateEndpoint, params)
 				if ok {
 					results <- device
@@ -352,6 +476,9 @@ func scanWiFiDiscoveryCandidates(
 
 dispatch:
 	for _, candidate := range candidates {
+		if !params.Control.Wait(ctx) {
+			break dispatch
+		}
 		select {
 		case <-ctx.Done():
 			break dispatch
@@ -372,7 +499,7 @@ dispatch:
 		}
 		return devices[i].Endpoint < devices[j].Endpoint
 	})
-	return devices
+	return devices, int(atomic.LoadInt64(&scannedCount))
 }
 
 func wifiDiscoverySourceRank(source string) int {
@@ -389,6 +516,8 @@ func wifiDiscoverySourceRank(source string) int {
 		return 4
 	case "commonSubnet":
 		return 5
+	case "expandedSubnet":
+		return 6
 	default:
 		return 9
 	}

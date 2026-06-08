@@ -848,6 +848,21 @@ This checklist records the planned direction for turning FanControl into an exte
 - [x] Deep scan uses a longer IPC timeout, while normal control/config IPC calls keep the existing short timeout.
 - [x] Version metadata for this line is now `2.1.3`.
 
+### 2026-06-08 FanControl 2.1.4 WiFi Scan Display And Deep Scan Expansion
+
+- [x] Version metadata for this line is now `2.1.4`.
+- [x] WiFi scan results include `scannedCount` so the UI can distinguish total candidates from addresses actually checked before a result or timeout.
+- [x] WiFi scan elapsed-time display now treats invalid values as empty and updates live while a scan is running.
+- [x] Normal WiFi scan remains lightweight: exact endpoint, saved `/24`, active adapter `/24`, Windows hotspot, and device AP checks.
+- [x] Deep scan is staged: first check saved/current/common LAN ranges, then only expand to wider candidate ranges if no device is found.
+- [x] Expanded deep scan now covers all `192.168.0.0/24` through `192.168.255.0/24` ranges plus additional common `10.x` and `172.16-31.x` style LAN ranges.
+- [x] Deep scan UI shows a spinner, elapsed time, estimated progress, and after the common-range phase displays copy that the search range is being expanded and may be slower.
+- [x] Fixed WiFi scan elapsed time reporting so completed scans no longer show `0ms` because of a non-named Go return value.
+- [x] Deep scan can be paused, resumed, or canceled through a separate IPC control request; control requests use a separate GUI IPC connection so they are not blocked by the long-running scan request.
+- [x] Settings `Find device IP` description no longer truncates like a clipped sentence, and the `Deep scan` action is reserved to the left of `Find IP` to avoid button layout jump.
+- [x] Chinese and Japanese scan strings were repaired where prior draft text had been written as question marks.
+- [x] README and 2.1.4 release notes describe the WiFi scan display fixes and staged deep-scan behavior without SHA256 hashes.
+
 ## Definition Of Done
 
 - [x] Adding a new simple WiFi percent device does not require editing smart-control internals.

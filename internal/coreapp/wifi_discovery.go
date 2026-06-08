@@ -10,11 +10,33 @@ import (
 )
 
 func (a *CoreApp) ScanWiFiDevices(mode string) types.WiFiDiscoveryResult {
+	if a.wifiScanControl == nil {
+		a.wifiScanControl = types.NewWiFiDiscoveryControl()
+	}
+	a.wifiScanControl.Reset()
 	cfg := a.configManager.Get()
 	types.NormalizeDeviceProfileConfig(&cfg)
 	profile := activeWiFiProfile(cfg)
 	params := wifiDiscoveryParamsFromProfile(profile, cfg.FanControlDeviceIp, mode)
+	params.Control = a.wifiScanControl
 	return device.DiscoverWiFiDevices(context.Background(), params)
+}
+
+func (a *CoreApp) ControlWiFiScan(action string) bool {
+	if a.wifiScanControl == nil {
+		a.wifiScanControl = types.NewWiFiDiscoveryControl()
+	}
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case types.WiFiScanControlPause:
+		a.wifiScanControl.Pause()
+	case types.WiFiScanControlResume:
+		a.wifiScanControl.Resume()
+	case types.WiFiScanControlCancel:
+		a.wifiScanControl.Cancel()
+	default:
+		return false
+	}
+	return true
 }
 
 func (a *CoreApp) recoverDynamicWiFiEndpoint(cfg *types.AppConfig) bool {

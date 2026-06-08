@@ -46,7 +46,7 @@ func (a *App) AutoScanDevices() map[string]any {
 func (a *App) ScanWiFiDevices(mode string) types.WiFiDiscoveryResult {
 	timeout := 12 * time.Second
 	if mode == types.WiFiDiscoveryModeDeep {
-		timeout = 60 * time.Second
+		timeout = 90 * time.Second
 	}
 	resp, err := a.sendRequestWithTimeout(ipc.ReqScanWiFiDevices, ipc.ScanWiFiDevicesParams{Mode: mode}, timeout)
 	if err != nil {
@@ -62,6 +62,26 @@ func (a *App) ScanWiFiDevices(mode string) types.WiFiDiscoveryResult {
 		return types.WiFiDiscoveryResult{Mode: mode, Error: err.Error()}
 	}
 	return result
+}
+
+func (a *App) ControlWiFiScan(action string) bool {
+	controlClient := ipc.NewClient(nil)
+	if err := controlClient.Connect(); err != nil {
+		guiLogger.Errorf("WiFi scan control connect failed: %v", err)
+		return false
+	}
+	defer controlClient.Close()
+
+	resp, err := controlClient.SendRequestWithTimeout(ipc.ReqControlWiFiScan, ipc.ControlWiFiScanParams{Action: action}, 3*time.Second)
+	if err != nil {
+		guiLogger.Errorf("WiFi scan control request failed: %v", err)
+		return false
+	}
+	if !resp.Success {
+		guiLogger.Errorf("WiFi scan control failed: %s", resp.Error)
+		return false
+	}
+	return true
 }
 
 func (a *App) DisconnectDevice() error {

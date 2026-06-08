@@ -33,6 +33,7 @@ const (
 	ReqConnect               RequestType = "Connect"
 	ReqAutoScanDevices       RequestType = "AutoScanDevices"
 	ReqScanWiFiDevices       RequestType = "ScanWiFiDevices"
+	ReqControlWiFiScan       RequestType = "ControlWiFiScan"
 	ReqDisconnect            RequestType = "Disconnect"
 	ReqGetDeviceStatus       RequestType = "GetDeviceStatus"
 	ReqGetCurrentFanData     RequestType = "GetCurrentFanData"
@@ -763,6 +764,10 @@ type TestDeviceProfileParams struct {
 
 type ScanWiFiDevicesParams struct {
 	Mode string `json:"mode"`
+}
+
+type ControlWiFiScanParams struct {
+	Action string `json:"action"`
 }
 
 // SaveFanCurveProfileParams 保存曲线方案参数

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/TIANLI0/THRM/internal/types"
 )
@@ -46,6 +47,61 @@ func TestDiscoverWiFiDevicesFindsDefaultStateEndpoint(t *testing.T) {
 	}
 }
 
+func TestDiscoverWiFiDevicesReportsElapsedMs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(15 * time.Millisecond)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"speed":       50,
+			"wifiControl": true,
+		})
+	}))
+	defer server.Close()
+	endpoint := strings.Replace(server.URL, "127.0.0.1", "localhost", 1)
+
+	result := DiscoverWiFiDevices(context.Background(), types.WiFiDiscoveryParams{
+		Mode:      types.WiFiDiscoveryModeNormal,
+		Endpoint:  endpoint,
+		TimeoutMs: 120,
+	})
+	if result.ElapsedMs <= 0 {
+		t.Fatalf("ElapsedMs = %d, want positive elapsed time", result.ElapsedMs)
+	}
+}
+
+func TestPausedWiFiDiscoveryCanBeCanceled(t *testing.T) {
+	control := types.NewWiFiDiscoveryControl()
+	control.Pause()
+
+	done := make(chan types.WiFiDiscoveryResult, 1)
+	go func() {
+		done <- DiscoverWiFiDevices(context.Background(), types.WiFiDiscoveryParams{
+			Mode:      types.WiFiDiscoveryModeDeep,
+			Endpoint:  "192.0.2.44",
+			TimeoutMs: 120,
+			Control:   control,
+		})
+	}()
+
+	select {
+	case result := <-done:
+		t.Fatalf("scan completed while paused: %#v", result)
+	case <-time.After(80 * time.Millisecond):
+	}
+
+	control.Cancel()
+	select {
+	case result := <-done:
+		if !result.Canceled {
+			t.Fatalf("Canceled = false, result = %#v", result)
+		}
+		if result.ScannedCount != 0 {
+			t.Fatalf("ScannedCount = %d, want 0 while canceled from paused state", result.ScannedCount)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("scan did not stop after cancel")
+	}
+}
+
 func TestDynamicWiFiDiscoveryCandidatesOnlyUseSavedSubnet(t *testing.T) {
 	candidates, scopes, err := buildWiFiDiscoveryCandidates(types.WiFiDiscoveryParams{
 		Mode:     types.WiFiDiscoveryModeDynamic,
@@ -71,21 +127,32 @@ func TestDynamicWiFiDiscoveryCandidatesOnlyUseSavedSubnet(t *testing.T) {
 }
 
 func TestDeepWiFiDiscoveryAddsCommonSubnets(t *testing.T) {
-	_, scopes, err := buildWiFiDiscoveryCandidates(types.WiFiDiscoveryParams{
+	candidates, scopes, err := buildWiFiDiscoveryCandidates(types.WiFiDiscoveryParams{
 		Mode:     types.WiFiDiscoveryModeDeep,
 		Endpoint: "10.8.0.20",
 	}, types.WiFiDiscoveryModeDeep)
 	if err != nil {
 		t.Fatalf("buildWiFiDiscoveryCandidates() error = %v", err)
 	}
-	foundCommon := false
+	if len(candidates) < 60000 {
+		t.Fatalf("deep scan candidate count = %d, want at least 60000", len(candidates))
+	}
+	required := map[string]string{
+		"192.168.1.0/24":  "commonSubnet",
+		"10.0.0.0/24":     "commonSubnet",
+		"10.137.137.0/24": "expandedSubnet",
+		"172.16.0.0/24":   "commonSubnet",
+		"172.31.137.0/24": "expandedSubnet",
+	}
+	found := map[string]bool{}
 	for _, scope := range scopes {
-		if scope.Source == "commonSubnet" && scope.Network == "192.168.1.0/24" {
-			foundCommon = true
-			break
+		if required[scope.Network] == scope.Source {
+			found[scope.Network] = true
 		}
 	}
-	if !foundCommon {
-		t.Fatalf("deep scan scopes did not include 192.168.1.0/24: %#v", scopes)
+	for network, source := range required {
+		if !found[network] {
+			t.Fatalf("deep scan scopes did not include %s as %s: %#v", network, source, scopes)
+		}
 	}
 }
