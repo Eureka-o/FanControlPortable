@@ -39,6 +39,7 @@ type CoreApp struct {
 	pluginManager    *plugins.Manager
 	logger           *logger.CustomLogger
 	ipcServer        *ipc.Server
+	wifiScanControl  *types.WiFiDiscoveryControl
 
 	isConnected             bool
 	monitoringTemp          atomic.Bool
@@ -151,6 +152,7 @@ func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 		autostartManager:   autostartMgr,
 		pluginManager:      pluginMgr,
 		logger:             customLogger,
+		wifiScanControl:    types.NewWiFiDiscoveryControl(),
 		isConnected:        false,
 		stopMonitoring:     make(chan bool, 1),
 		lastDeviceMode:     "",

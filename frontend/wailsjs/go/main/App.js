@@ -14,6 +14,10 @@ export function ConnectDevice() {
   return window['go']['main']['App']['ConnectDevice']();
 }
 
+export function ControlWiFiScan(arg1) {
+  return window['go']['main']['App']['ControlWiFiScan'](arg1);
+}
+
 export function DeleteDeviceProfile(arg1) {
   return window['go']['main']['App']['DeleteDeviceProfile'](arg1);
 }

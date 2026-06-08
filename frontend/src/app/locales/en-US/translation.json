@@ -505,10 +505,11 @@
     },
     "sponsor": {
       "button": "Support",
-      "title": "WeChat Pay",
+      "title": "Support",
       "pinned": "Pinned",
       "methods": {
-        "wechat": "WeChat Pay"
+        "wechat": "WeChat",
+        "alipay": "Alipay"
       }
     }
   },
@@ -878,6 +879,7 @@
           "wifiScanFound": "Found {{count}} available WiFi device(s)",
           "wifiScanEmpty": "No available WiFi device found yet",
           "wifiScanFailed": "Failed to find WiFi devices: {{error}}",
+          "wifiScanCanceled": "WiFi deep scan stopped",
           "dynamicIpEnabled": "Dynamic IP compatibility enabled",
           "dynamicIpDisabled": "Dynamic IP compatibility disabled",
           "bleScanFailed": "Failed to scan BLE devices: {{error}}",
@@ -900,13 +902,16 @@
         "connectedDevicesDescription": "Current device state for this connection path.",
         "connectedDevicesEmpty": "No device is currently connected through this compatibility mode.",
         "wifiScanTitle": "Find device IP",
-        "wifiScanDescription": "Find an available IP through the current saved WiFi device state endpoint. Normal search checks the current address, same subnet, active adapters, and Windows hotspot first; deep scan appears after no match is found.",
+        "wifiScanDescription": "Find an available IP through the current saved WiFi device state endpoint. Normal search checks the current address, same subnet, active adapters, and Windows hotspot first; deep scan checks common subnets first, then expands the search range if needed.",
         "wifiScanAction": "Find IP",
         "wifiDeepScanAction": "Deep scan",
+        "wifiScanPauseAction": "Pause",
+        "wifiScanResumeAction": "Resume",
+        "wifiScanCancelAction": "Stop",
         "wifiScanResultsTitle": "Scanned devices",
-        "wifiScanResultsEmpty": "No device was found by normal search. Make sure it is powered on and on the same network, then try deep scan or enter the IP manually.",
+        "wifiScanResultsEmpty": "No device was found yet. Make sure it is powered on and on the same network, then try deep scan; expanded deep scan may be slower.",
         "wifiScanRunning": "Looking for WiFi devices. Current saved address and common LAN ranges are checked first.",
-        "wifiScanSummary": "Checked {{count}} candidate address(es) in {{elapsed}}.",
+        "wifiScanSummary": "Checked {{scanned}} / {{count}} candidate address(es) in {{elapsed}}.",
         "wifiScanFailed": "Search failed: {{error}}",
         "wifiScanUseAction": "Use this IP",
         "wifiScanSpeed": "Speed {{speed}}%",
@@ -918,7 +923,8 @@
           "windowsHotspot": "Windows hotspot",
           "deviceAP": "Device hotspot",
           "commonSubnet": "Common subnet",
-          "unknown": "Unknown source"
+          "unknown": "Unknown source",
+          "expandedSubnet": "Expanded subnet"
         },
         "wifiManualAddAction": "Add",
         "wifiDynamicIPTitle": "Dynamic IP compatibility",
@@ -930,7 +936,14 @@
         "wifiReconnectPending": "Reserved for the future WiFi scanning implementation. It does not scan in the background yet.",
         "serialInterfaceTitle": "Interface info",
         "serialInterfaceDescription": "Serial interface details are maintained in Advanced Device Settings; Settings only reads the selected device summary.",
-        "serialInterfaceManagedInDevices": "Edit port, baud rate, packet protocol, and parser rules in Advanced Device Settings."
+        "serialInterfaceManagedInDevices": "Edit port, baud rate, packet protocol, and parser rules in Advanced Device Settings.",
+        "wifiScanElapsed": "Elapsed {{elapsed}}",
+        "wifiScanRunningNormal": "Finding WiFi devices",
+        "wifiScanRunningDeep": "Checking common subnets",
+        "wifiScanPaused": "Deep scan paused",
+        "wifiScanCanceling": "Stopping deep scan",
+        "wifiScanProgressLabel": "Estimated progress {{percent}}%",
+        "wifiScanRunningExpanded": "Expanding the search range; this may be slower"
       }
     },
     "offline": {

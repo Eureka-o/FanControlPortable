@@ -1,4 +1,4 @@
-﻿export namespace theme {
+export namespace theme {
 
 	export class Meta {
 	    id: string;
@@ -1513,9 +1513,11 @@ export namespace types {
 	export class WiFiDiscoveryResult {
 	    mode: string;
 	    found: boolean;
+	    canceled?: boolean;
 	    devices?: WiFiDiscoveredDevice[];
 	    scopes?: WiFiDiscoveryScope[];
 	    candidateCount: number;
+	    scannedCount: number;
 	    elapsedMs: number;
 	    error?: string;
 
@@ -1527,9 +1529,11 @@ export namespace types {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.mode = source["mode"];
 	        this.found = source["found"];
+	        this.canceled = source["canceled"];
 	        this.devices = this.convertValues(source["devices"], WiFiDiscoveredDevice);
 	        this.scopes = this.convertValues(source["scopes"], WiFiDiscoveryScope);
 	        this.candidateCount = source["candidateCount"];
+	        this.scannedCount = source["scannedCount"];
 	        this.elapsedMs = source["elapsedMs"];
 	        this.error = source["error"];
 	    }

@@ -30,6 +30,16 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		}
 		return a.dataResponse(a.ScanWiFiDevices(params.Mode))
 
+	case ipc.ReqControlWiFiScan:
+		var params ipc.ControlWiFiScanParams
+		if err := json.Unmarshal(req.Data, &params); err != nil {
+			return a.errorResponse("解析 WiFi 扫描控制参数失败: " + err.Error())
+		}
+		if !a.ControlWiFiScan(params.Action) {
+			return a.errorResponse("不支持的 WiFi 扫描控制动作")
+		}
+		return a.successResponse(true)
+
 	case ipc.ReqDisconnect:
 		a.DisconnectDevice()
 		return a.successResponse(true)

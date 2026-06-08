@@ -13,9 +13,9 @@
   "info": {
     "companyName": "Eureka-o",
     "productName": "FanControl",
-    "productVersion": "2.1.3",
+    "productVersion": "2.1.4",
     "copyright": "Copyright (c) 2026 Eureka-o",
-    "comments": "FanControl 2.1.3"
+    "comments": "FanControl 2.1.4"
   },
   "nsisType": "multiple"
 }

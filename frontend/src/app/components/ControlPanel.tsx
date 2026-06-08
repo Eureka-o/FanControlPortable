@@ -518,7 +518,7 @@ function CompatibilitySubmenuRow({
           )}
           <div className="min-w-0">
             <div className="text-base font-medium text-foreground">{title}</div>
-            {description && <div className="text-sm leading-relaxed text-muted-foreground md:line-clamp-2">{description}</div>}
+            {description && <div className="text-sm leading-relaxed text-muted-foreground">{description}</div>}
             {tip && <div className="mt-0.5 text-xs leading-relaxed text-primary/80">{tip}</div>}
           </div>
         </div>
@@ -658,7 +658,7 @@ function wifiDiscoveryDevices(result: WiFiDiscoveryResult | null) {
 }
 
 function wifiDiscoveryElapsedLabel(elapsedMs?: number) {
-  if (!elapsedMs || elapsedMs <= 0) return '';
+  if (typeof elapsedMs !== 'number' || Number.isNaN(elapsedMs) || elapsedMs < 0) return '';
   if (elapsedMs < 1000) return `${Math.round(elapsedMs)}ms`;
   return `${(elapsedMs / 1000).toFixed(1)}s`;
 }
@@ -671,6 +671,7 @@ function wifiDiscoverySourceKey(source?: string) {
     case 'windowsHotspot':
     case 'deviceAP':
     case 'commonSubnet':
+    case 'expandedSubnet':
       return `controlPanel.system.deviceConnection.wifiScanSources.${source}`;
     default:
       return 'controlPanel.system.deviceConnection.wifiScanSources.unknown';
@@ -727,6 +728,12 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const [wifiScanResult, setWiFiScanResult] = useState<WiFiDiscoveryResult | null>(null);
   const [wifiScanError, setWiFiScanError] = useState('');
   const [wifiScanMode, setWiFiScanMode] = useState<'normal' | 'deep' | null>(null);
+  const [wifiScanStartedAt, setWiFiScanStartedAt] = useState<number | null>(null);
+  const [wifiScanNow, setWiFiScanNow] = useState<number>(() => Date.now());
+  const [wifiScanPaused, setWiFiScanPaused] = useState(false);
+  const [wifiScanPausedAt, setWiFiScanPausedAt] = useState<number | null>(null);
+  const [wifiScanPausedTotalMs, setWiFiScanPausedTotalMs] = useState(0);
+  const [wifiScanCanceling, setWiFiScanCanceling] = useState(false);
   const [wifiNormalScanAttempted, setWiFiNormalScanAttempted] = useState(false);
   const [lightStripConfig, setLightStripConfig] = useState<types.LightStripConfig>(() => normalizeLightStripConfig(config));
   const [manualHotkeyInput, setManualHotkeyInput] = useState(
@@ -777,7 +784,34 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     return autoScanResult?.deviceInfo ? [autoScanResult.deviceInfo] : [];
   }, [autoScanResult]);
   const wifiScannedDevices = useMemo(() => wifiDiscoveryDevices(wifiScanResult), [wifiScanResult]);
-  const showWiFiDeepScanAction = wifiNormalScanAttempted && !loadingStates.wifiScan && wifiScannedDevices.length === 0;
+  const showWiFiDeepScanAction = wifiNormalScanAttempted
+    && wifiScannedDevices.length === 0
+    && (!loadingStates.wifiScan || wifiScanMode === 'deep');
+  const wifiScanLiveElapsedMs = loadingStates.wifiScan && wifiScanStartedAt !== null
+    ? Math.max(0, wifiScanNow - wifiScanStartedAt)
+    : undefined;
+  const wifiScanCurrentPausedMs = loadingStates.wifiScan && wifiScanPaused && wifiScanPausedAt !== null
+    ? Math.max(0, wifiScanNow - wifiScanPausedAt)
+    : 0;
+  const wifiScanActiveElapsedMs = typeof wifiScanLiveElapsedMs === 'number'
+    ? Math.max(0, wifiScanLiveElapsedMs - wifiScanPausedTotalMs - wifiScanCurrentPausedMs)
+    : undefined;
+  const wifiScanElapsedText = loadingStates.wifiScan
+    ? wifiDiscoveryElapsedLabel(wifiScanLiveElapsedMs) || '0ms'
+    : wifiDiscoveryElapsedLabel(wifiScanResult?.elapsedMs);
+  const wifiScanProgressLimitMs = wifiScanMode === 'deep' ? 75000 : 8000;
+  const wifiScanProgressPercent = loadingStates.wifiScan
+    ? Math.min(96, Math.max(4, Math.round(((wifiScanActiveElapsedMs || 0) / wifiScanProgressLimitMs) * 100)))
+    : 100;
+  const wifiScanRunningKey = wifiScanCanceling
+    ? 'controlPanel.system.deviceConnection.wifiScanCanceling'
+    : wifiScanPaused
+    ? 'controlPanel.system.deviceConnection.wifiScanPaused'
+    : wifiScanMode === 'deep'
+    ? (wifiScanActiveElapsedMs || 0) >= 12000
+      ? 'controlPanel.system.deviceConnection.wifiScanRunningExpanded'
+      : 'controlPanel.system.deviceConnection.wifiScanRunningDeep'
+    : 'controlPanel.system.deviceConnection.wifiScanRunningNormal';
   const showDiscoveredDevicesPanel = bleSettingsScanCompleted || !!bleSettingsScanError || autoScannedDevices.length > 0;
   const nativePairedProfiles = useMemo(
     () => availableDeviceProfiles.filter(isUserVisibleNativeProfile),
@@ -1304,6 +1338,13 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     }
     setLoading('wifiScan', true);
     setWiFiScanMode(mode);
+    const startedAt = Date.now();
+    setWiFiScanStartedAt(startedAt);
+    setWiFiScanNow(startedAt);
+    setWiFiScanPaused(false);
+    setWiFiScanPausedAt(null);
+    setWiFiScanPausedTotalMs(0);
+    setWiFiScanCanceling(false);
     setWiFiScanError('');
     if (mode === 'normal') {
       setWiFiScanResult(null);
@@ -1311,13 +1352,21 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     }
     try {
       const result = await apiService.scanWiFiDevices(mode);
-      setWiFiScanResult(result);
-      if (result.error) {
-        setWiFiScanError(result.error);
-        toast.error(t('controlPanel.system.deviceConnection.toasts.wifiScanFailed', { error: result.error }));
+      const elapsedMs = typeof result.elapsedMs === 'number' && result.elapsedMs > 0
+        ? result.elapsedMs
+        : Date.now() - startedAt;
+      const normalizedResult = { ...result, elapsedMs };
+      setWiFiScanResult(normalizedResult);
+      if (normalizedResult.canceled) {
+        toast.info(t('controlPanel.system.deviceConnection.toasts.wifiScanCanceled'));
         return;
       }
-      const count = result.devices?.length || 0;
+      if (normalizedResult.error) {
+        setWiFiScanError(normalizedResult.error);
+        toast.error(t('controlPanel.system.deviceConnection.toasts.wifiScanFailed', { error: normalizedResult.error }));
+        return;
+      }
+      const count = normalizedResult.devices?.length || 0;
       toast.info(count > 0
         ? t('controlPanel.system.deviceConnection.toasts.wifiScanFound', { count })
         : t('controlPanel.system.deviceConnection.toasts.wifiScanEmpty'));
@@ -1328,8 +1377,42 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     } finally {
       setLoading('wifiScan', false);
       setWiFiScanMode(null);
+      setWiFiScanStartedAt(null);
+      setWiFiScanPaused(false);
+      setWiFiScanPausedAt(null);
+      setWiFiScanPausedTotalMs(0);
+      setWiFiScanCanceling(false);
     }
   }, [t, wifiProfile]);
+
+  const handleWiFiScanPauseToggle = useCallback(async () => {
+    if (!loadingStates.wifiScan || wifiScanMode !== 'deep' || wifiScanCanceling) return;
+    if (wifiScanPaused) {
+      const ok = await apiService.controlWiFiScan('resume');
+      if (!ok) return;
+      if (wifiScanPausedAt !== null) {
+        setWiFiScanPausedTotalMs((value) => value + Math.max(0, Date.now() - wifiScanPausedAt));
+      }
+      setWiFiScanPaused(false);
+      setWiFiScanPausedAt(null);
+      return;
+    }
+    const ok = await apiService.controlWiFiScan('pause');
+    if (!ok) return;
+    setWiFiScanPaused(true);
+    setWiFiScanPausedAt(Date.now());
+  }, [loadingStates.wifiScan, wifiScanCanceling, wifiScanMode, wifiScanPaused, wifiScanPausedAt]);
+
+  const handleWiFiScanCancel = useCallback(async () => {
+    if (!loadingStates.wifiScan || wifiScanMode !== 'deep' || wifiScanCanceling) return;
+    setWiFiScanCanceling(true);
+    setWiFiScanPaused(false);
+    setWiFiScanPausedAt(null);
+    const ok = await apiService.controlWiFiScan('cancel');
+    if (!ok) {
+      setWiFiScanCanceling(false);
+    }
+  }, [loadingStates.wifiScan, wifiScanCanceling, wifiScanMode]);
 
   const handleWiFiDynamicIPCompatibilityChange = useCallback(async (enabled: boolean) => {
     setWiFiDynamicIPCompatibilityEnabled(enabled);
@@ -1524,8 +1607,25 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     setWiFiScanResult(null);
     setWiFiScanError('');
     setWiFiScanMode(null);
+    setWiFiScanStartedAt(null);
+    setWiFiScanPaused(false);
+    setWiFiScanPausedAt(null);
+    setWiFiScanPausedTotalMs(0);
+    setWiFiScanCanceling(false);
     setWiFiNormalScanAttempted(false);
   }, [activeDeviceProfileId]);
+  useEffect(() => {
+    if (!loadingStates.wifiScan || wifiScanStartedAt === null) return undefined;
+
+    setWiFiScanNow(Date.now());
+    const timer = window.setInterval(() => {
+      setWiFiScanNow(Date.now());
+    }, 250);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [loadingStates.wifiScan, wifiScanStartedAt]);
   useEffect(() => {
     setManualHotkeyInput(normalizeHotkeyForDisplay((config as any).manualGearToggleHotkey));
     setAutoHotkeyInput(normalizeHotkeyForDisplay((config as any).autoControlToggleHotkey));
@@ -2401,8 +2501,11 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                     icon={<Search className="h-4 w-4 text-primary" />}
                     title={t('controlPanel.system.deviceConnection.wifiScanTitle')}
                     description={t('controlPanel.system.deviceConnection.wifiScanDescription')}
-                    tip={wifiScanResult
+                    tip={loadingStates.wifiScan
+                      ? t('controlPanel.system.deviceConnection.wifiScanElapsed', { elapsed: wifiScanElapsedText })
+                      : wifiScanResult
                       ? t('controlPanel.system.deviceConnection.wifiScanSummary', {
+                        scanned: wifiScanResult.scannedCount || wifiScanResult.candidateCount || 0,
                         count: wifiScanResult.candidateCount || 0,
                         elapsed: wifiDiscoveryElapsedLabel(wifiScanResult.elapsedMs) || '-',
                       })
@@ -2410,9 +2513,54 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                     below={
                       <div className="space-y-2">
                         {loadingStates.wifiScan && (
-                          <InlineHint>
-                            {t('controlPanel.system.deviceConnection.wifiScanRunning')}
-                          </InlineHint>
+                          <div className="overflow-hidden rounded-md border border-primary/25 bg-primary/5 px-3 py-2">
+                            <div className="flex min-w-0 items-center justify-between gap-3 text-xs text-primary">
+                              <span className="flex min-w-0 items-center gap-2">
+                                <RotateCw className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                                <span className="truncate">
+                                  {t(wifiScanRunningKey)}
+                                </span>
+                              </span>
+                              <span className="shrink-0 font-medium">
+                                {t('controlPanel.system.deviceConnection.wifiScanElapsed', { elapsed: wifiScanElapsedText })}
+                              </span>
+                            </div>
+                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-primary/15">
+                              <motion.div
+                                className="h-full rounded-full bg-primary/70"
+                                initial={false}
+                                animate={{ width: `${wifiScanProgressPercent}%` }}
+                                transition={{ duration: 0.25, ease: 'easeOut' }}
+                              />
+                            </div>
+                            <div className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                              {t('controlPanel.system.deviceConnection.wifiScanProgressLabel', { percent: wifiScanProgressPercent })}
+                            </div>
+                            {wifiScanMode === 'deep' && (
+                              <div className="mt-2 flex flex-wrap justify-end gap-2">
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  icon={wifiScanPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+                                  onClick={() => void handleWiFiScanPauseToggle()}
+                                  disabled={wifiScanCanceling}
+                                >
+                                  {t(wifiScanPaused
+                                    ? 'controlPanel.system.deviceConnection.wifiScanResumeAction'
+                                    : 'controlPanel.system.deviceConnection.wifiScanPauseAction')}
+                                </Button>
+                                <Button
+                                  variant="danger"
+                                  size="sm"
+                                  icon={<X className="h-3.5 w-3.5" />}
+                                  onClick={() => void handleWiFiScanCancel()}
+                                  loading={wifiScanCanceling}
+                                >
+                                  {t('controlPanel.system.deviceConnection.wifiScanCancelAction')}
+                                </Button>
+                              </div>
+                            )}
+                          </div>
                         )}
                         {wifiScanError && (
                           <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
@@ -2475,6 +2623,22 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                   >
                     <div className="w-full space-y-2 md:w-[420px]">
                       <div className="flex flex-wrap justify-start gap-2 md:justify-end">
+                        <div className="flex min-w-[104px] justify-start md:justify-end">
+                          {showWiFiDeepScanAction ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              icon={<RotateCw className="h-4 w-4" />}
+                              onClick={() => void handleWiFiScan('deep')}
+                              loading={loadingStates.wifiScan && wifiScanMode === 'deep'}
+                              disabled={!wifiProfile || loadingStates.wifiScan}
+                            >
+                              {t('controlPanel.system.deviceConnection.wifiDeepScanAction')}
+                            </Button>
+                          ) : (
+                            <div className="h-9 w-[104px]" aria-hidden="true" />
+                          )}
+                        </div>
                         <Button
                           variant="secondary"
                           size="sm"
@@ -2485,18 +2649,6 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                         >
                           {t('controlPanel.system.deviceConnection.wifiScanAction')}
                         </Button>
-                        {showWiFiDeepScanAction && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            icon={<RotateCw className="h-4 w-4" />}
-                            onClick={() => void handleWiFiScan('deep')}
-                            loading={loadingStates.wifiScan && wifiScanMode === 'deep'}
-                            disabled={!wifiProfile || loadingStates.wifiScan}
-                          >
-                            {t('controlPanel.system.deviceConnection.wifiDeepScanAction')}
-                          </Button>
-                        )}
                       </div>
                     </div>
                   </CompatibilitySubmenuRow>

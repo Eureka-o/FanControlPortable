@@ -5,7 +5,7 @@ import { BrowserOpenURL } from '../../../wailsjs/runtime/runtime';
 import { Heart, Mail, RefreshCw, Rocket, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { BRAND } from '../lib/brand';
-import { WECHAT_PAY_QR_DATA_URL } from '../lib/support-assets';
+import { ALIPAY_QR_DATA_URL, WECHAT_PAY_QR_DATA_URL } from '../lib/support-assets';
 import { apiService } from '../services/api';
 import { Badge, Button, ScrollArea } from './ui/index';
 
@@ -257,12 +257,22 @@ export default function AboutPanel() {
                       <Heart className="h-4 w-4 text-primary" />
                       <span>{t('aboutPanel.sponsor.title')}</span>
                     </div>
-                    <img
-                      src={WECHAT_PAY_QR_DATA_URL}
-                      alt={t('aboutPanel.images.supportQrAlt', { label: t('aboutPanel.sponsor.title') })}
-                      className="mx-auto max-h-[360px] w-full max-w-[260px] rounded-2xl border border-border/70 bg-white object-contain p-2"
-                      draggable={false}
-                    />
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {[
+                        { label: t('aboutPanel.sponsor.methods.wechat'), src: WECHAT_PAY_QR_DATA_URL },
+                        { label: t('aboutPanel.sponsor.methods.alipay'), src: ALIPAY_QR_DATA_URL },
+                      ].map((item) => (
+                        <div key={item.label} className="rounded-2xl border border-border/70 bg-background/70 p-3">
+                          <div className="mb-2 text-center text-xs font-medium text-muted-foreground">{item.label}</div>
+                          <img
+                            src={item.src}
+                            alt={t('aboutPanel.images.supportQrAlt', { label: item.label })}
+                            className="mx-auto aspect-square max-h-[260px] w-full max-w-[220px] rounded-xl border border-border/70 bg-white object-contain p-2"
+                            draggable={false}
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 

@@ -91,9 +91,11 @@ export interface WiFiDiscoveryScope {
 export interface WiFiDiscoveryResult {
   mode?: string;
   found?: boolean;
+  canceled?: boolean;
   devices?: WiFiDiscoveredDevice[];
   scopes?: WiFiDiscoveryScope[];
   candidateCount?: number;
+  scannedCount?: number;
   elapsedMs?: number;
   error?: string;
 }
@@ -112,6 +114,10 @@ class ApiService {
   async scanWiFiDevices(mode: 'normal' | 'deep' = 'normal'): Promise<WiFiDiscoveryResult> {
     const result = await (window as any).go?.main?.App?.ScanWiFiDevices?.(mode);
     return result && typeof result === 'object' ? result as WiFiDiscoveryResult : { mode, found: false };
+  }
+
+  async controlWiFiScan(action: 'pause' | 'resume' | 'cancel'): Promise<boolean> {
+    return !!(await (window as any).go?.main?.App?.ControlWiFiScan?.(action));
   }
 
   async disconnectDevice(): Promise<void> {
