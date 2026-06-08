@@ -9,6 +9,15 @@ import (
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
+func findDeviceProfileForTest(profiles []types.DeviceProfile, id string) (types.DeviceProfile, bool) {
+	for _, profile := range profiles {
+		if profile.ID == id {
+			return profile, true
+		}
+	}
+	return types.DeviceProfile{}, false
+}
+
 func TestValidateFanCurveForUnitAllowsReferenceRPMCurve(t *testing.T) {
 	if err := ValidateFanCurveForUnit(types.GetDefaultRPMFanCurve(), types.FanSpeedUnitRPM); err != nil {
 		t.Fatalf("ValidateFanCurveForUnit(RPM default) returned error: %v", err)
@@ -271,14 +280,24 @@ func TestLoadUpgradeConfigPreservesDeviceProfilesAndLearningState(t *testing.T) 
 	if loaded.ActiveDeviceProfileIDsByTransport[types.DeviceTransportSerial] != serial.ID {
 		t.Fatalf("active serial device = %q, want %q", loaded.ActiveDeviceProfileIDsByTransport[types.DeviceTransportSerial], serial.ID)
 	}
-	if len(loaded.DeviceProfiles) != 2 || loaded.DeviceProfiles[0].ID != wifi.ID || loaded.DeviceProfiles[1].ID != serial.ID {
-		t.Fatalf("device profiles not preserved: %#v", loaded.DeviceProfiles)
+	loadedWiFi, ok := findDeviceProfileForTest(loaded.DeviceProfiles, wifi.ID)
+	if !ok {
+		t.Fatalf("WiFi device profile %q not preserved: %#v", wifi.ID, loaded.DeviceProfiles)
 	}
-	if loaded.DeviceProfiles[0].Connection.Endpoint != "10.8.0.77" || loaded.DeviceProfiles[0].Connection.MinSendIntervalMs != 350 {
-		t.Fatalf("WiFi profile connection not preserved: %#v", loaded.DeviceProfiles[0].Connection)
+	loadedSerial, ok := findDeviceProfileForTest(loaded.DeviceProfiles, serial.ID)
+	if !ok {
+		t.Fatalf("serial device profile %q not preserved: %#v", serial.ID, loaded.DeviceProfiles)
 	}
-	if loaded.DeviceProfiles[1].Connection.SerialPort != "COM42" || loaded.DeviceProfiles[1].Connection.SerialBaudRate != 57600 {
-		t.Fatalf("serial profile connection not preserved: %#v", loaded.DeviceProfiles[1].Connection)
+	if loadedWiFi.Connection.Endpoint != "10.8.0.77" || loadedWiFi.Connection.MinSendIntervalMs != 350 {
+		t.Fatalf("WiFi profile connection not preserved: %#v", loadedWiFi.Connection)
+	}
+	if loadedSerial.Connection.SerialPort != "COM42" || loadedSerial.Connection.SerialBaudRate != 57600 {
+		t.Fatalf("serial profile connection not preserved: %#v", loadedSerial.Connection)
+	}
+	for _, id := range []string{types.FlyDigiBS1ProfileID, types.FlyDigiBS2ProfileID, types.FlyDigiBS2PROProfileID, types.FlyDigiBS3ProfileID, types.FlyDigiBS3PROProfileID} {
+		if profile, ok := findDeviceProfileForTest(loaded.DeviceProfiles, id); ok {
+			t.Fatalf("hidden FlyDigi backend profile %q should not be appended during upgrade: %#v", id, profile)
+		}
 	}
 	if loaded.ActiveFanCurveProfileID != "gaming" || len(loaded.FanCurveProfiles) != 2 || loaded.FanCurveProfiles[1].Curve[2].RPM != 70 {
 		t.Fatalf("curve profile state not preserved: active=%q profiles=%#v", loaded.ActiveFanCurveProfileID, loaded.FanCurveProfiles)

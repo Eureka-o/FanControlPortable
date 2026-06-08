@@ -31,6 +31,8 @@ type RequestType string
 const (
 	// 设备相关
 	ReqConnect               RequestType = "Connect"
+	ReqAutoScanDevices       RequestType = "AutoScanDevices"
+	ReqScanWiFiDevices       RequestType = "ScanWiFiDevices"
 	ReqDisconnect            RequestType = "Disconnect"
 	ReqGetDeviceStatus       RequestType = "GetDeviceStatus"
 	ReqGetCurrentFanData     RequestType = "GetCurrentFanData"
@@ -560,6 +562,13 @@ func (c *Client) SetEventHandler(handler func(Event)) {
 
 // SendRequest 发送请求并等待响应
 func (c *Client) SendRequest(reqType RequestType, data any) (*Response, error) {
+	return c.SendRequestWithTimeout(reqType, data, 10*time.Second)
+}
+
+func (c *Client) SendRequestWithTimeout(reqType RequestType, data any, timeout time.Duration) (*Response, error) {
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
 	c.connMutex.RLock()
 	if !c.connected || c.conn == nil {
 		c.connMutex.RUnlock()
@@ -609,7 +618,7 @@ func (c *Client) SendRequest(reqType RequestType, data any) (*Response, error) {
 	select {
 	case resp := <-respCh:
 		return resp, nil
-	case <-time.After(10 * time.Second):
+	case <-time.After(timeout):
 		c.pendingMutex.Lock()
 		delete(c.pending, requestID)
 		c.pendingMutex.Unlock()
@@ -750,6 +759,10 @@ type TestDeviceProfileParams struct {
 	Action     string              `json:"action"`
 	SpeedValue float64             `json:"speedValue,omitempty"`
 	TimeoutMs  int                 `json:"timeoutMs,omitempty"`
+}
+
+type ScanWiFiDevicesParams struct {
+	Mode string `json:"mode"`
 }
 
 // SaveFanCurveProfileParams 保存曲线方案参数

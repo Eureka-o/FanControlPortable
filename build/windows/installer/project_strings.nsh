@@ -253,17 +253,21 @@ LangString THRM_STR_PAWNIO_DETECTED ${LANG_SIMPCHINESE} "检测到已安装 Pawn
 LangString THRM_STR_PAWNIO_DETECTED ${LANG_ENGLISH} "Detected installed PawnIO version:"
 LangString THRM_STR_PAWNIO_DETECTED ${LANG_JAPANESE} "インストール済みの PawnIO バージョンを検出しました:"
 
+LangString THRM_STR_PAWNIO_VERSION_UNKNOWN ${LANG_SIMPCHINESE} "未知"
+LangString THRM_STR_PAWNIO_VERSION_UNKNOWN ${LANG_ENGLISH} "unknown"
+LangString THRM_STR_PAWNIO_VERSION_UNKNOWN ${LANG_JAPANESE} "不明"
+
 LangString THRM_STR_PAWNIO_BUNDLED ${LANG_SIMPCHINESE} "内置版本:"
 LangString THRM_STR_PAWNIO_BUNDLED ${LANG_ENGLISH} "Bundled version:"
 LangString THRM_STR_PAWNIO_BUNDLED ${LANG_JAPANESE} "同梱バージョン:"
 
-LangString THRM_STR_PAWNIO_UPDATE ${LANG_SIMPCHINESE} "检测到 PawnIO 旧版本，将直接尝试静默更新；不会先卸载共享驱动。"
-LangString THRM_STR_PAWNIO_UPDATE ${LANG_ENGLISH} "An older PawnIO version was detected. A silent update will be attempted without uninstalling the shared driver first."
-LangString THRM_STR_PAWNIO_UPDATE ${LANG_JAPANESE} "古い PawnIO バージョンを検出しました。共有ドライバーを先に削除せず、そのままサイレント更新を試みます。"
+LangString THRM_STR_PAWNIO_UPDATE ${LANG_SIMPCHINESE} "检测到 PawnIO 已安装，普通升级不会覆盖安装共享驱动。"
+LangString THRM_STR_PAWNIO_UPDATE ${LANG_ENGLISH} "PawnIO is already installed. Normal app upgrades will not overwrite the shared driver."
+LangString THRM_STR_PAWNIO_UPDATE ${LANG_JAPANESE} "PawnIO は既にインストールされています。通常のアプリ更新では共有ドライバーを上書きしません。"
 
-LangString THRM_STR_PAWNIO_SKIP ${LANG_SIMPCHINESE} "PawnIO 已安装且版本满足要求，跳过驱动安装。"
-LangString THRM_STR_PAWNIO_SKIP ${LANG_ENGLISH} "PawnIO is already installed and satisfies the required version. Skipping driver installation."
-LangString THRM_STR_PAWNIO_SKIP ${LANG_JAPANESE} "PawnIO は既にインストールされており、必要なバージョンを満たしています。ドライバーのインストールをスキップします。"
+LangString THRM_STR_PAWNIO_SKIP ${LANG_SIMPCHINESE} "PawnIO 已安装，跳过驱动安装；如需修复，请在软件内使用“重新安装 PawnIO”。"
+LangString THRM_STR_PAWNIO_SKIP ${LANG_ENGLISH} "PawnIO is already installed. Skipping driver installation; use Reinstall PawnIO in the app if repair is needed."
+LangString THRM_STR_PAWNIO_SKIP ${LANG_JAPANESE} "PawnIO は既にインストールされています。ドライバーのインストールをスキップします。修復が必要な場合はアプリ内の「PawnIO を再インストール」を使用してください。"
 
 LangString THRM_STR_PAWNIO_SKIP_DONE ${LANG_SIMPCHINESE} "跳过 PawnIO 处理。"
 LangString THRM_STR_PAWNIO_SKIP_DONE ${LANG_ENGLISH} "Skipping PawnIO processing."

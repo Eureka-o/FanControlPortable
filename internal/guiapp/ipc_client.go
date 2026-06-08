@@ -3,6 +3,7 @@ package guiapp
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/TIANLI0/THRM/internal/appmeta"
 	"github.com/TIANLI0/THRM/internal/ipc"
@@ -140,6 +141,13 @@ func (a *App) handleCoreEvent(event ipc.Event) {
 
 // sendRequest 发送请求到核心服务
 func (a *App) sendRequest(reqType ipc.RequestType, data any) (*ipc.Response, error) {
+	return a.sendRequestWithTimeout(reqType, data, 10*time.Second)
+}
+
+func (a *App) sendRequestWithTimeout(reqType ipc.RequestType, data any, timeout time.Duration) (*ipc.Response, error) {
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
 	if !a.ipcClient.IsConnected() {
 		if !EnsureCoreServiceRunning() {
 			err := fmt.Errorf("核心服务未运行且启动失败")
@@ -155,7 +163,7 @@ func (a *App) sendRequest(reqType ipc.RequestType, data any) (*ipc.Response, err
 		a.emitCoreServiceOK()
 	}
 
-	resp, err := a.ipcClient.SendRequest(reqType, data)
+	resp, err := a.ipcClient.SendRequestWithTimeout(reqType, data, timeout)
 	if err == nil {
 		a.emitCoreServiceOK()
 		return resp, nil
@@ -175,7 +183,7 @@ func (a *App) sendRequest(reqType ipc.RequestType, data any) (*ipc.Response, err
 	}
 	a.ipcClient.SetEventHandler(a.handleCoreEvent)
 
-	resp, err = a.ipcClient.SendRequest(reqType, data)
+	resp, err = a.ipcClient.SendRequestWithTimeout(reqType, data, timeout)
 	if err != nil {
 		a.emitCoreServiceError(err.Error())
 		return nil, err

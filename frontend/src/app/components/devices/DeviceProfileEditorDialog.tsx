@@ -506,6 +506,51 @@ export default function DeviceProfileEditorDialog({
               />
             </Field>
 
+            <FieldGroup>
+              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
+                <Activity className="h-4 w-4 text-muted-foreground" />
+                {t('advancedDevices.fields.deviceFunctions')}
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <ToggleSwitch
+                  enabled={draft.supportsPowerOnStart}
+                  onChange={(enabled) => updateDraft('supportsPowerOnStart', enabled)}
+                  label={t('advancedDevices.capabilities.powerOnStart')}
+                  size="sm"
+                />
+                <ToggleSwitch
+                  enabled={draft.supportsSmartStartStop}
+                  onChange={(enabled) => updateDraft('supportsSmartStartStop', enabled)}
+                  label={t('advancedDevices.capabilities.smartStartStop')}
+                  size="sm"
+                />
+                <ToggleSwitch
+                  enabled={draft.supportsGearLight}
+                  onChange={(enabled) => updateDraft('supportsGearLight', enabled)}
+                  label={t('advancedDevices.capabilities.gearLight')}
+                  size="sm"
+                />
+                <ToggleSwitch
+                  enabled={draft.supportsLighting}
+                  onChange={(enabled) => updateDraft('supportsLighting', enabled)}
+                  label={t('advancedDevices.capabilities.lighting')}
+                  size="sm"
+                />
+                <ToggleSwitch
+                  enabled={draft.supportsBrightness}
+                  onChange={(enabled) => updateDraft('supportsBrightness', enabled)}
+                  label={t('advancedDevices.capabilities.brightness')}
+                  size="sm"
+                />
+                <ToggleSwitch
+                  enabled={draft.supportsScreen}
+                  onChange={(enabled) => updateDraft('supportsScreen', enabled)}
+                  label={t('advancedDevices.capabilities.screen')}
+                  size="sm"
+                />
+              </div>
+            </FieldGroup>
+
             {draft.transport === 'wifi' && (
               <FieldGroup>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">

@@ -61,6 +61,7 @@ func (a *CoreApp) SetActiveDeviceProfile(profileID string) (types.DeviceProfile,
 
 	cfg.ActiveDeviceProfileID = cfg.DeviceProfiles[idx].ID
 	cfg.DeviceTransport = cfg.DeviceProfiles[idx].Transport
+	markCompatibilityModeForTransport(&cfg, cfg.DeviceProfiles[idx].Transport)
 	if cfg.ActiveDeviceProfileIDsByTransport == nil {
 		cfg.ActiveDeviceProfileIDsByTransport = map[string]string{}
 	}
@@ -101,6 +102,7 @@ func (a *CoreApp) SaveDeviceProfile(params ipc.SaveDeviceProfileParams) (types.D
 	if params.SetActive || cfg.ActiveDeviceProfileID == profile.ID {
 		cfg.ActiveDeviceProfileID = profile.ID
 		cfg.DeviceTransport = profile.Transport
+		markCompatibilityModeForTransport(&cfg, profile.Transport)
 		if cfg.ActiveDeviceProfileIDsByTransport == nil {
 			cfg.ActiveDeviceProfileIDsByTransport = map[string]string{}
 		}
@@ -153,6 +155,7 @@ func (a *CoreApp) DeleteDeviceProfile(profileID string) error {
 		}
 		cfg.ActiveDeviceProfileID = cfg.DeviceProfiles[nextIdx].ID
 		cfg.DeviceTransport = cfg.DeviceProfiles[nextIdx].Transport
+		markCompatibilityModeForTransport(&cfg, cfg.DeviceProfiles[nextIdx].Transport)
 		if cfg.ActiveDeviceProfileIDsByTransport == nil {
 			cfg.ActiveDeviceProfileIDsByTransport = map[string]string{}
 		}
@@ -160,6 +163,18 @@ func (a *CoreApp) DeleteDeviceProfile(profileID string) error {
 	}
 
 	return a.UpdateConfig(cfg)
+}
+
+func markCompatibilityModeForTransport(cfg *types.AppConfig, transport string) {
+	if cfg == nil {
+		return
+	}
+	switch types.NormalizeDeviceTransport(transport) {
+	case types.DeviceTransportWiFi:
+		cfg.WiFiCompatibilityEnabled = true
+	case types.DeviceTransportSerial:
+		cfg.SerialCompatibilityEnabled = true
+	}
 }
 
 func (a *CoreApp) ExportDeviceProfiles() (string, error) {

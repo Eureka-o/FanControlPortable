@@ -11,6 +11,12 @@ import {
   Power,
   Zap,
   Monitor,
+  Wifi,
+  Usb,
+  HardDrive,
+  MapPin,
+  Plug,
+  Search,
   Cpu,
   Gpu,
   Bug,
@@ -20,14 +26,12 @@ import {
   Flame,
   Clock3,
   BarChart3,
-  Bluetooth,
   Spline,
   Sparkles,
-  Signal,
   X,
   RotateCw,
 } from 'lucide-react';
-import { apiService } from '../services/api';
+import { apiService, type AutoScanDeviceInfo, type AutoScanDevicesResult, type WiFiDiscoveredDevice, type WiFiDiscoveryResult } from '../services/api';
 import { types } from '../../../wailsjs/go/models';
 import { toast } from 'sonner';
 import { DebugInfo, type DeviceDebugCommandResult, type ThemeMeta } from '../types/app';
@@ -133,8 +137,10 @@ function getRequiredColorCount(mode: string): number {
 const LEGION_POWER_MODE_VALUES = ['Quiet', 'Balance', 'Performance', 'Extreme', 'GodMode'] as const;
 const FAN_GEAR_VALUES = ['静音', '标准', '强劲', '超频'] as const;
 const FAN_LEVEL_VALUES = ['低', '中', '高'] as const;
-const DEVICE_TRANSPORT_VALUES: DeviceTransport[] = ['wifi', 'ble', 'serial', 'hid'];
-const DEFAULT_SERIAL_BAUD_RATE = 115200;
+const EMPTY_PROFILE_SELECT_VALUE = '__fancontrol_no_profile__';
+// FlyDigi BLE/HID currently connects but cannot reliably read real RPM yet.
+// Keep the backend beta path available, but hide the normal-user entry.
+const NATIVE_DEVICE_BETA_VISIBLE = false;
 
 // 高危调试命令：直接读写固件底层/调试寄存器，误用可能导致设备异常甚至变砖，需在发送前红色提醒。
 const DANGEROUS_DEBUG_COMMANDS = new Set<number>([0xed, 0xee, 0xf0, 0xf1, 0xf2]);
@@ -325,7 +331,7 @@ function Section({
 }: {
   title: string;
   icon: React.ComponentType<{ className?: string }>;
-  children: React.ReactNode;
+  children?: React.ReactNode;
   className?: string;
 }) {
   return (
@@ -353,7 +359,7 @@ function SettingRow({
   title: string;
   description?: string;
   tip?: string;
-  children: React.ReactNode;
+  children?: React.ReactNode;
   disabled?: boolean;
 }) {
   return (
@@ -370,7 +376,7 @@ function SettingRow({
           {tip && <div className="mt-0.5 text-xs text-primary/80">{tip}</div>}
         </div>
       </div>
-      <div className="w-full sm:w-auto sm:shrink-0">{children}</div>
+      {children && <div className="w-full sm:w-auto sm:shrink-0">{children}</div>}
     </div>
   );
 }
@@ -456,7 +462,122 @@ function SelectionField({
   );
 }
 
+function ConnectionPanel({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="min-w-0 rounded-lg border border-border/70 bg-background/45 p-3">
+      <div className="mb-2 min-w-0 text-sm font-medium text-foreground">{title}</div>
+      {description && <p className="mb-3 text-xs leading-relaxed text-muted-foreground">{description}</p>}
+      {children}
+    </div>
+  );
+}
+
+function CompatibilitySubmenu({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="border-t border-border/60 bg-muted/10 px-5 py-3">
+      <div className="sm:pl-12">
+        <div className="overflow-hidden rounded-xl border border-border/70 bg-card">
+          <div className="divide-y divide-border/60">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CompatibilitySubmenuRow({
+  icon,
+  title,
+  description,
+  tip,
+  children,
+  below,
+}: {
+  icon?: React.ReactNode;
+  title: string;
+  description?: string;
+  tip?: string;
+  children?: React.ReactNode;
+  below?: React.ReactNode;
+}) {
+  return (
+    <div className="px-5 py-4">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          {icon && (
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              {icon}
+            </div>
+          )}
+          <div className="min-w-0">
+            <div className="text-base font-medium text-foreground">{title}</div>
+            {description && <div className="text-sm leading-relaxed text-muted-foreground md:line-clamp-2">{description}</div>}
+            {tip && <div className="mt-0.5 text-xs leading-relaxed text-primary/80">{tip}</div>}
+          </div>
+        </div>
+        {children && <div className="w-full md:w-auto md:shrink-0">{children}</div>}
+      </div>
+      {below && <div className={clsx('mt-3', icon && 'md:pl-12')}>{below}</div>}
+    </div>
+  );
+}
+
+function EmptyConnectionState({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-md border border-dashed border-border/80 bg-muted/20 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
+function DeviceProfileSummary({ profile }: { profile: types.DeviceProfile }) {
+  return (
+    <div className="rounded-md border border-border bg-card/70 px-3 py-2">
+      <div className="truncate text-sm font-medium text-foreground">{profileLabel(profile)}</div>
+      <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+        {`${summarizeConnection(profile)} · ${formatSpeedRange(profile)}`}
+      </div>
+    </div>
+  );
+}
+
 /* ── Main ControlPanel ── */
+
+function DeviceProfileInline({
+  profile,
+  empty,
+}: {
+  profile?: types.DeviceProfile | null;
+  empty: string;
+}) {
+  if (!profile) {
+    return <InlineHint>{empty}</InlineHint>;
+  }
+
+  return (
+    <div className="min-w-0 text-left md:max-w-[520px] md:text-right">
+      <div className="truncate text-sm font-medium text-foreground">{profileLabel(profile)}</div>
+      <div className="mt-0.5 truncate text-xs text-muted-foreground">
+        {`${summarizeConnection(profile)} · ${formatSpeedRange(profile)}`}
+      </div>
+    </div>
+  );
+}
+
+function InlineHint({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="max-w-[420px] text-sm leading-relaxed text-muted-foreground">
+      {children}
+    </div>
+  );
+}
 
 function configuredDeviceProfiles(config: types.AppConfig): types.DeviceProfile[] {
   return Array.isArray((config as any).deviceProfiles) ? ((config as any).deviceProfiles as types.DeviceProfile[]) : [];
@@ -489,41 +610,71 @@ function activeProfileForTransport(
     || profileForTransport(profiles, transport);
 }
 
-function bleDeviceTitle(device: types.BLEDeviceInfo) {
-  return device.name || device.address || 'BLE';
+function profilesForTransport(profiles: types.DeviceProfile[], transport: DeviceTransport) {
+  return profiles.filter((profile) => normalizeTransport(profile.transport) === transport);
 }
 
-function bleDeviceServices(device: types.BLEDeviceInfo) {
-  const services = device.serviceUuids || [];
-  if (services.length === 0) return '';
-  const visible = services.slice(0, 2).join(' / ');
-  return services.length > 2 ? `${visible} +${services.length - 2}` : visible;
+function profileSelectOptions(
+  profiles: types.DeviceProfile[],
+  emptyLabel: string,
+) {
+  if (profiles.length === 0) {
+    return [{ value: EMPTY_PROFILE_SELECT_VALUE, label: emptyLabel, disabled: true }];
+  }
+  return profiles.map((profile) => ({ value: profile.id, label: profileLabel(profile) }));
 }
 
-function serialPortName(port: types.SerialPortInfo) {
-  return port.name || port.path || '';
+function isEmptyProfileSelectValue(value: string | number) {
+  return String(value || '').trim() === EMPTY_PROFILE_SELECT_VALUE;
 }
 
-function serialPortLabel(port: types.SerialPortInfo) {
-  const name = serialPortName(port);
-  const displayName = port.displayName || name;
-  return displayName && name && displayName !== name ? `${displayName} (${name})` : displayName || name;
+function isUserVisibleNativeProfile(profile: types.DeviceProfile) {
+  const transport = normalizeTransport(profile.transport);
+  return (transport === 'ble' || transport === 'hid') && !profile.builtIn;
 }
 
-function profileWithBLEDevice(profile: types.DeviceProfile, device: types.BLEDeviceInfo) {
-  const connection = profileConnection(profile);
-  return types.DeviceProfile.createFrom({
-    ...profile,
-    transport: 'ble',
-    connection: types.DeviceConnectionSettings.createFrom({
-      ...(connection || {}),
-      endpoint: device.address || connection.endpoint,
-      bleNameFilter: device.suggestedNameFilter || device.name || connection.bleNameFilter,
-      bleServiceUuid: device.suggestedServiceUuid || device.serviceUuids?.[0] || connection.bleServiceUuid,
-      bleWriteCharacteristic: device.suggestedWriteCharacteristic || device.writeCharacteristicUuids?.[0] || connection.bleWriteCharacteristic,
-      bleNotifyCharacteristic: device.suggestedNotifyCharacteristic || device.notifyCharacteristicUuids?.[0] || connection.bleNotifyCharacteristic,
-    }),
-  });
+function isWiFiCompatibilityEnabled(config: types.AppConfig) {
+  const explicit = (config as any).wifiCompatibilityEnabled;
+  if (typeof explicit === 'boolean') {
+    return explicit;
+  }
+  return normalizeTransport((config as any).deviceTransport) === 'wifi' || Boolean(((config as any).fanControlDeviceIp || '').trim());
+}
+
+function isSerialCompatibilityEnabled(config: types.AppConfig) {
+  const explicit = (config as any).serialCompatibilityEnabled;
+  if (typeof explicit === 'boolean') {
+    return explicit;
+  }
+  return normalizeTransport((config as any).deviceTransport) === 'serial';
+}
+
+function isWiFiDynamicIPCompatibilityEnabled(config: types.AppConfig) {
+  return Boolean((config as any).wifiDynamicIpCompatibilityEnabled);
+}
+
+function wifiDiscoveryDevices(result: WiFiDiscoveryResult | null) {
+  return Array.isArray(result?.devices) ? result.devices.filter((device) => !!device.endpoint) : [];
+}
+
+function wifiDiscoveryElapsedLabel(elapsedMs?: number) {
+  if (!elapsedMs || elapsedMs <= 0) return '';
+  if (elapsedMs < 1000) return `${Math.round(elapsedMs)}ms`;
+  return `${(elapsedMs / 1000).toFixed(1)}s`;
+}
+
+function wifiDiscoverySourceKey(source?: string) {
+  switch (source) {
+    case 'exact':
+    case 'savedSubnet':
+    case 'adapterSubnet':
+    case 'windowsHotspot':
+    case 'deviceAP':
+    case 'commonSubnet':
+      return `controlPanel.system.deviceConnection.wifiScanSources.${source}`;
+    default:
+      return 'controlPanel.system.deviceConnection.wifiScanSources.unknown';
+  }
 }
 
 export default function ControlPanel({ config, onConfigChange, isConnected, fanData, temperature, legionFnQSupported }: ControlPanelProps) {
@@ -551,6 +702,8 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const [customSpeedInput, setCustomSpeedInput] = useState<string>(
     () => String(clampFanSpeedToRange((config as any).customSpeedRPM, overviewSpeedRange, defaultCustomSpeed) ?? defaultCustomSpeed),
   );
+  const [manualGearDraft, setManualGearDraft] = useState<string>(() => ((config as any).manualGear || '标准') as string);
+  const [manualLevelDraft, setManualLevelDraft] = useState<string>(() => ((config as any).manualLevel || '中') as string);
   const [deviceIpInput, setDeviceIpInput] = useState<string>(((config as any).fanControlDeviceIp || '') as string);
   const customSpeedInputValue = useMemo(
     () => clampFanSpeedToRange(customSpeedInput, overviewSpeedRange, defaultCustomSpeed) ?? defaultCustomSpeed,
@@ -560,20 +713,21 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     ?? ((config as any).customSpeedEnabled ? customSpeedInputValue : undefined);
   const customSpeedMinLabel = `${formatFanSpeedValue(overviewSpeedRange.min)}${overviewSpeedLabel}`;
   const customSpeedMaxLabel = `${formatFanSpeedValue(overviewSpeedRange.max)}${overviewSpeedLabel}`;
-  const [deviceTransportInput, setDeviceTransportInput] = useState<DeviceTransport>(normalizeTransport((config as any).deviceTransport));
+  const [wifiCompatibilityEnabled, setWiFiCompatibilityEnabled] = useState<boolean>(() => isWiFiCompatibilityEnabled(config));
+  const [wifiDynamicIPCompatibilityEnabled, setWiFiDynamicIPCompatibilityEnabled] = useState<boolean>(() => isWiFiDynamicIPCompatibilityEnabled(config));
+  const [serialCompatibilityEnabled, setSerialCompatibilityEnabled] = useState<boolean>(() => isSerialCompatibilityEnabled(config));
   const [deviceProfiles, setDeviceProfiles] = useState<types.DeviceProfile[]>(() => configuredDeviceProfiles(config));
   const [activeDeviceProfileId, setActiveDeviceProfileId] = useState<string>(((config as any).activeDeviceProfileId || '') as string);
   const [activeDeviceProfileIdsByTransport, setActiveDeviceProfileIdsByTransport] = useState<Record<string, string>>(
     () => activeProfileIdsByTransportFromConfig(config),
   );
-  const [serialPortInput, setSerialPortInput] = useState('');
-  const [serialBaudInput, setSerialBaudInput] = useState(String(DEFAULT_SERIAL_BAUD_RATE));
-  const [serialPorts, setSerialPorts] = useState<types.SerialPortInfo[]>([]);
-  const [serialPortsError, setSerialPortsError] = useState('');
-  const [serialPortsLoaded, setSerialPortsLoaded] = useState(false);
-  const [bleSettingsDevices, setBLESettingsDevices] = useState<types.BLEDeviceInfo[]>([]);
+  const [autoScanResult, setAutoScanResult] = useState<AutoScanDevicesResult | null>(null);
   const [bleSettingsScanError, setBLESettingsScanError] = useState('');
   const [bleSettingsScanCompleted, setBLESettingsScanCompleted] = useState(false);
+  const [wifiScanResult, setWiFiScanResult] = useState<WiFiDiscoveryResult | null>(null);
+  const [wifiScanError, setWiFiScanError] = useState('');
+  const [wifiScanMode, setWiFiScanMode] = useState<'normal' | 'deep' | null>(null);
+  const [wifiNormalScanAttempted, setWiFiNormalScanAttempted] = useState(false);
   const [lightStripConfig, setLightStripConfig] = useState<types.LightStripConfig>(() => normalizeLightStripConfig(config));
   const [manualHotkeyInput, setManualHotkeyInput] = useState(
     normalizeHotkeyForDisplay((config as any).manualGearToggleHotkey)
@@ -601,31 +755,69 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       || null,
     [activeDeviceProfileId, availableDeviceProfiles, config],
   );
-  const activeDeviceTransport = normalizeTransport(activeDeviceProfile?.transport || (config as any).deviceTransport);
-  const selectedTransportProfiles = useMemo(
-    () => availableDeviceProfiles.filter((profile) => normalizeTransport(profile.transport) === deviceTransportInput),
-    [availableDeviceProfiles, deviceTransportInput],
+  const wifiProfiles = useMemo(
+    () => profilesForTransport(availableDeviceProfiles, 'wifi'),
+    [availableDeviceProfiles],
   );
-  const selectedTransportProfile = useMemo(
-    () => activeProfileForTransport(availableDeviceProfiles, activeDeviceProfileIdsByTransport, deviceTransportInput),
-    [activeDeviceProfileIdsByTransport, availableDeviceProfiles, deviceTransportInput],
+  const serialProfiles = useMemo(
+    () => profilesForTransport(availableDeviceProfiles, 'serial'),
+    [availableDeviceProfiles],
   );
-  const activeConnection = profileConnection(selectedTransportProfile || activeDeviceProfile);
-  const bleSettingsProfile = deviceTransportInput === 'ble'
-    ? selectedTransportProfile || profileForTransport(availableDeviceProfiles, 'ble')
-    : null;
+  const wifiProfile = useMemo(
+    () => activeProfileForTransport(availableDeviceProfiles, activeDeviceProfileIdsByTransport, 'wifi'),
+    [activeDeviceProfileIdsByTransport, availableDeviceProfiles],
+  );
+  const serialProfile = useMemo(
+    () => activeProfileForTransport(availableDeviceProfiles, activeDeviceProfileIdsByTransport, 'serial'),
+    [activeDeviceProfileIdsByTransport, availableDeviceProfiles],
+  );
+  const autoScannedDevices = useMemo(() => {
+    const devices = autoScanResult?.devices || [];
+    if (devices.length > 0) return devices;
+    return autoScanResult?.deviceInfo ? [autoScanResult.deviceInfo] : [];
+  }, [autoScanResult]);
+  const wifiScannedDevices = useMemo(() => wifiDiscoveryDevices(wifiScanResult), [wifiScanResult]);
+  const showWiFiDeepScanAction = wifiNormalScanAttempted && !loadingStates.wifiScan && wifiScannedDevices.length === 0;
+  const showDiscoveredDevicesPanel = bleSettingsScanCompleted || !!bleSettingsScanError || autoScannedDevices.length > 0;
+  const nativePairedProfiles = useMemo(
+    () => availableDeviceProfiles.filter(isUserVisibleNativeProfile),
+    [availableDeviceProfiles],
+  );
+  const wifiProfileOptions = useMemo(
+    () => profileSelectOptions(wifiProfiles, t('controlPanel.system.deviceConnection.noEnabledDevice')),
+    [locale, t, wifiProfiles],
+  );
+  const serialProfileOptions = useMemo(
+    () => profileSelectOptions(serialProfiles, t('controlPanel.system.deviceConnection.noEnabledDevice')),
+    [locale, serialProfiles, t],
+  );
+  const wifiConnection = profileConnection(wifiProfile);
   const currentDeviceProfile = useMemo(
     () => getActiveDeviceProfile(config as any) as types.DeviceProfile | undefined,
     [config],
   );
+  const connectedDeviceProfile = useMemo(() => {
+    if (!isConnected) return null;
+    return currentDeviceProfile || activeDeviceProfile || null;
+  }, [activeDeviceProfile, currentDeviceProfile, isConnected]);
+  const connectedDeviceTransport = normalizeTransport(
+    connectedDeviceProfile?.transport
+      || ((fanData as any)?.transport as string)
+      || ((config as any).deviceTransport as string)
+      || '',
+  );
+  const wifiConnectedProfile = connectedDeviceTransport === 'wifi' ? connectedDeviceProfile : null;
+  const serialConnectedProfile = connectedDeviceTransport === 'serial' ? connectedDeviceProfile : null;
   const currentDeviceCapabilities = currentDeviceProfile?.capabilities;
   const currentDeviceSupportsCustomSpeed = currentDeviceCapabilities
     ? currentDeviceCapabilities.supportsCustomSpeed || currentDeviceCapabilities.supportsSetSpeed
     : true;
   const currentDeviceSupportsLighting = !!currentDeviceCapabilities?.supportsLighting;
+  const currentDeviceSupportsGearLight = !!((currentDeviceCapabilities as any)?.supportsGearLight || currentDeviceSupportsLighting);
+  const currentDeviceSupportsBrightness = !!((currentDeviceCapabilities as any)?.supportsBrightness || currentDeviceSupportsLighting);
   const currentDeviceSupportsPowerOnStart = !!currentDeviceCapabilities?.supportsPowerOnStart;
   const currentDeviceSupportsSmartStartStop = !!currentDeviceCapabilities?.supportsSmartStartStop;
-  const currentDeviceHasDeviceSettings = currentDeviceSupportsLighting || currentDeviceSupportsPowerOnStart || currentDeviceSupportsSmartStartStop;
+  const currentDeviceHasDeviceSettings = currentDeviceSupportsGearLight || currentDeviceSupportsLighting || currentDeviceSupportsPowerOnStart || currentDeviceSupportsSmartStartStop;
 
   const activeCurveProfileId = ((config as any).activeFanCurveProfileId || '') as string;
   const currentTempSource = (((config as any).tempSource as string) || 'max') as 'max' | 'cpu' | 'gpu';
@@ -720,11 +912,6 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     ]),
     [locale, t],
   );
-  const deviceTransportOptions = useMemo(
-    () => DEVICE_TRANSPORT_VALUES.map((value) => ({ value, label: t(`advancedDevices.transport.${value}`) })),
-    [locale, t],
-  );
-
   const setLoading = (key: string, value: boolean) => setLoadingStates((prev) => ({ ...prev, [key]: value }));
 
   /* ── Handlers (same logic as before) ── */
@@ -753,34 +940,68 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     }
   }, [t]);
 
-  const handleDeviceTransportChange = useCallback(async (value: string | number) => {
-    const transport = normalizeTransport(String(value));
-    setDeviceTransportInput(transport);
-    setLoading('deviceConnection', true);
+  const handleCompatibilityModeChange = useCallback(async (transport: 'wifi' | 'serial', enabled: boolean) => {
+    if (transport === 'wifi') {
+      setWiFiCompatibilityEnabled(enabled);
+    } else {
+      setSerialCompatibilityEnabled(enabled);
+    }
+    setLoading(`${transport}Compatibility`, true);
     try {
-      const existingProfile = activeProfileForTransport(availableDeviceProfiles, activeDeviceProfileIdsByTransport, transport);
-      if (existingProfile) {
-        const profile = await apiService.setActiveDeviceProfile(existingProfile.id);
-        setActiveDeviceProfileId(profile.id);
-      } else if (transport === 'wifi' || transport === 'ble' || transport === 'hid') {
-        const newCfg = types.AppConfig.createFrom({
-          ...config,
-          deviceTransport: transport,
-        });
-        await apiService.updateConfig(newCfg);
+      const newCfg = types.AppConfig.createFrom({
+        ...config,
+        wifiCompatibilityEnabled: transport === 'wifi' ? enabled : wifiCompatibilityEnabled,
+        serialCompatibilityEnabled: transport === 'serial' ? enabled : serialCompatibilityEnabled,
+      });
+      await apiService.updateConfig(newCfg);
+      onConfigChange(newCfg);
+      toast.success(t(enabled
+        ? 'controlPanel.system.deviceConnection.toasts.compatibilityEnabled'
+        : 'controlPanel.system.deviceConnection.toasts.compatibilityDisabled'));
+    } catch (error) {
+      if (transport === 'wifi') {
+        setWiFiCompatibilityEnabled(!enabled);
       } else {
-        toast.info(t('controlPanel.system.deviceConnection.toasts.profileRequired'));
-        return;
+        setSerialCompatibilityEnabled(!enabled);
+      }
+      toast.error(t('controlPanel.system.deviceConnection.toasts.transportFailed', { error: getErrorMessage(error) }));
+    } finally {
+      setLoading(`${transport}Compatibility`, false);
+    }
+  }, [config, onConfigChange, serialCompatibilityEnabled, t, wifiCompatibilityEnabled]);
+
+  const handleCompatibilityDeviceSelect = useCallback(async (transport: 'wifi' | 'serial', value: string | number) => {
+    if (isEmptyProfileSelectValue(value)) {
+      toast.info(t('controlPanel.system.deviceConnection.toasts.profileRequired'));
+      return;
+    }
+    const profileID = String(value || '').trim();
+    const profile = availableDeviceProfiles.find(
+      (item) => item.id === profileID && normalizeTransport(item.transport) === transport,
+    );
+    if (!profile) {
+      toast.info(t('controlPanel.system.deviceConnection.toasts.profileRequired'));
+      return;
+    }
+
+    setLoading(`${transport}Profile`, true);
+    try {
+      const selected = await apiService.setActiveDeviceProfile(profile.id);
+      setActiveDeviceProfileId(selected.id);
+      if (transport === 'wifi') {
+        setWiFiCompatibilityEnabled(true);
+      } else {
+        setSerialCompatibilityEnabled(true);
       }
       await refreshDeviceConfig();
       await loadDeviceProfiles();
-      toast.success(t('controlPanel.system.deviceConnection.toasts.transportSaved'));
+      toast.success(t('controlPanel.system.deviceConnection.toasts.profileSaved'));
     } catch (error) {
-      toast.error(t('controlPanel.system.deviceConnection.toasts.transportFailed', { error: getErrorMessage(error) }));
+      toast.error(t('controlPanel.system.deviceConnection.toasts.profileFailed', { error: getErrorMessage(error) }));
     } finally {
-      setLoading('deviceConnection', false);
+      setLoading(`${transport}Profile`, false);
     }
-  }, [activeDeviceProfileIdsByTransport, availableDeviceProfiles, config, loadDeviceProfiles, refreshDeviceConfig, t]);
+  }, [availableDeviceProfiles, loadDeviceProfiles, refreshDeviceConfig, t]);
 
   const handleAutoControlChange = useCallback(async (enabled: boolean) => {
     setLoading('autoControl', true);
@@ -789,6 +1010,26 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       onConfigChange(types.AppConfig.createFrom({ ...config, autoControl: enabled }));
     } catch { /* noop */ } finally { setLoading('autoControl', false); }
   }, [config, onConfigChange]);
+
+  const handleManualGearApply = useCallback(async () => {
+    const gear = FAN_GEAR_VALUES.includes(manualGearDraft as any) ? manualGearDraft : '标准';
+    const level = FAN_LEVEL_VALUES.includes(manualLevelDraft as any) ? manualLevelDraft : '中';
+    setLoading('manualGear', true);
+    try {
+      const ok = await apiService.setManualGear(gear, level);
+      if (!ok) {
+        throw new Error(t('controlPanel.fan.manualGearUnavailable'));
+      }
+      const latest = await refreshDeviceConfig();
+      setManualGearDraft(((latest as any).manualGear || gear) as string);
+      setManualLevelDraft(((latest as any).manualLevel || level) as string);
+      toast.success(t('controlPanel.fan.manualGearApplied'));
+    } catch (error) {
+      toast.error(t('controlPanel.fan.manualGearApplyFailed', { error: getErrorMessage(error) }));
+    } finally {
+      setLoading('manualGear', false);
+    }
+  }, [manualGearDraft, manualLevelDraft, refreshDeviceConfig, t]);
 
   const handleCustomSpeedApply = useCallback(async (enabled: boolean, speed: unknown) => {
     setLoading('customSpeed', true);
@@ -995,13 +1236,14 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     }
   }, []);
 
-  const handleWiFiConnectionSave = useCallback(async () => {
+  const handleWiFiConnectionSave = useCallback(async (endpointOverride?: string) => {
     setLoading('deviceIp', true);
     try {
-      const nextIp = deviceIpInput.trim();
-      const wifiProfile = activeDeviceTransport === 'wifi'
-        ? activeDeviceProfile
-        : activeProfileForTransport(availableDeviceProfiles, activeDeviceProfileIdsByTransport, 'wifi');
+      const nextIp = (endpointOverride ?? deviceIpInput).trim();
+      if (!wifiProfile) {
+        toast.info(t('controlPanel.system.deviceConnection.toasts.profileRequired'));
+        return;
+      }
       const wifiConnection = profileConnection(wifiProfile);
       const stateEndpoint = wifiConnection.stateEndpoint || '/api/data';
       const speedEndpoint = wifiConnection.speedEndpoint || '/api/speed';
@@ -1024,10 +1266,17 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       const newCfg = types.AppConfig.createFrom({
         ...config,
         activeDeviceProfileId: wifiProfile?.id || (config as any).activeDeviceProfileId,
+        activeDeviceProfileIdsByTransport: {
+          ...activeDeviceProfileIdsByTransport,
+          wifi: wifiProfile.id,
+        },
         deviceProfiles: nextProfiles,
         deviceTransport: 'wifi',
         fanControlDeviceIp: nextIp,
+        wifiCompatibilityEnabled: true,
       });
+      setDeviceIpInput(nextIp);
+      setWiFiCompatibilityEnabled(true);
       await apiService.updateConfig(newCfg);
       await refreshDeviceConfig();
       await loadDeviceProfiles();
@@ -1038,138 +1287,118 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       setLoading('deviceIp', false);
     }
   }, [
-    activeDeviceProfile,
     activeDeviceProfileIdsByTransport,
-    activeDeviceTransport,
     availableDeviceProfiles,
     config,
     deviceIpInput,
     loadDeviceProfiles,
     refreshDeviceConfig,
     t,
+    wifiProfile,
   ]);
 
-  const loadSerialPorts = useCallback(async (notify = false) => {
-    setLoading('serialPorts', true);
-    setSerialPortsError('');
+  const handleWiFiScan = useCallback(async (mode: 'normal' | 'deep') => {
+    if (!wifiProfile) {
+      toast.info(t('controlPanel.system.deviceConnection.toasts.profileRequired'));
+      return;
+    }
+    setLoading('wifiScan', true);
+    setWiFiScanMode(mode);
+    setWiFiScanError('');
+    if (mode === 'normal') {
+      setWiFiScanResult(null);
+      setWiFiNormalScanAttempted(true);
+    }
     try {
-      const ports = await apiService.listSerialPorts();
-      setSerialPorts(ports.map((port) => types.SerialPortInfo.createFrom(port)).filter((port) => serialPortName(port)));
-      setSerialPortsLoaded(true);
-      if (notify && ports.length === 0) {
-        toast.info(t('controlPanel.system.deviceConnection.serialPortsEmpty'));
+      const result = await apiService.scanWiFiDevices(mode);
+      setWiFiScanResult(result);
+      if (result.error) {
+        setWiFiScanError(result.error);
+        toast.error(t('controlPanel.system.deviceConnection.toasts.wifiScanFailed', { error: result.error }));
+        return;
       }
+      const count = result.devices?.length || 0;
+      toast.info(count > 0
+        ? t('controlPanel.system.deviceConnection.toasts.wifiScanFound', { count })
+        : t('controlPanel.system.deviceConnection.toasts.wifiScanEmpty'));
     } catch (error) {
       const message = getErrorMessage(error);
-      setSerialPorts([]);
-      setSerialPortsLoaded(true);
-      setSerialPortsError(message);
-      if (notify) {
-        toast.error(t('controlPanel.system.deviceConnection.serialPortsFailed', { error: message }));
-      }
+      setWiFiScanError(message);
+      toast.error(t('controlPanel.system.deviceConnection.toasts.wifiScanFailed', { error: message }));
     } finally {
-      setLoading('serialPorts', false);
+      setLoading('wifiScan', false);
+      setWiFiScanMode(null);
+    }
+  }, [t, wifiProfile]);
+
+  const handleWiFiDynamicIPCompatibilityChange = useCallback(async (enabled: boolean) => {
+    setWiFiDynamicIPCompatibilityEnabled(enabled);
+    setLoading('wifiDynamicIPCompatibility', true);
+    try {
+      const newCfg = types.AppConfig.createFrom({
+        ...config,
+        wifiDynamicIpCompatibilityEnabled: enabled,
+      });
+      await apiService.updateConfig(newCfg);
+      onConfigChange(newCfg);
+      toast.success(t(enabled
+        ? 'controlPanel.system.deviceConnection.toasts.dynamicIpEnabled'
+        : 'controlPanel.system.deviceConnection.toasts.dynamicIpDisabled'));
+    } catch (error) {
+      setWiFiDynamicIPCompatibilityEnabled(!enabled);
+      toast.error(t('controlPanel.system.deviceConnection.toasts.transportFailed', { error: getErrorMessage(error) }));
+    } finally {
+      setLoading('wifiDynamicIPCompatibility', false);
+    }
+  }, [config, onConfigChange, t]);
+
+  const handleAutoDeviceScan = useCallback(async () => {
+    setLoading('autoDeviceScan', true);
+    setBLESettingsScanError('');
+    setBLESettingsScanCompleted(false);
+    setAutoScanResult(null);
+    try {
+      const result = await apiService.autoScanDevices();
+      setAutoScanResult(result);
+      setBLESettingsScanCompleted(true);
+      const count = result.devices?.length || (result.deviceInfo ? 1 : 0);
+      toast.info(count > 0
+        ? t('controlPanel.system.deviceConnection.toasts.autoScanFound', { count })
+        : t('controlPanel.system.deviceConnection.toasts.autoScanEmpty'));
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setBLESettingsScanError(message);
+      setBLESettingsScanCompleted(true);
+      toast.error(t('controlPanel.system.deviceConnection.toasts.autoScanFailed', { error: message }));
+    } finally {
+      setLoading('autoDeviceScan', false);
     }
   }, [t]);
 
-  const handleSerialConnectionSave = useCallback(async () => {
-    const serialProfile = deviceTransportInput === 'serial'
-      ? selectedTransportProfile || profileForTransport(availableDeviceProfiles, 'serial')
-      : profileForTransport(availableDeviceProfiles, 'serial');
-    const nextPort = serialPortInput.trim();
-    const nextBaud = Number(serialBaudInput);
-
-    if (!serialProfile) {
-      toast.info(t('controlPanel.system.deviceConnection.toasts.profileRequired'));
+  const handleAutoScannedDeviceConnect = useCallback(async (device: AutoScanDeviceInfo) => {
+    const profileID = (device.profileId || '').trim();
+    if (!profileID) {
+      toast.error(t('controlPanel.system.deviceConnection.toasts.autoScanConnectFailed', { error: t('controlPanel.system.deviceConnection.toasts.profileRequired') }));
       return;
     }
-    if (!nextPort) {
-      toast.error(t('controlPanel.system.deviceConnection.toasts.serialPortRequired'));
-      return;
-    }
-    if (!Number.isFinite(nextBaud) || nextBaud <= 0) {
-      toast.error(t('controlPanel.system.deviceConnection.toasts.serialBaudInvalid'));
-      return;
-    }
-
-    setLoading('serialConnection', true);
+    setLoading('autoScanConnect', true);
     try {
-      const saved = await apiService.saveDeviceProfile(types.DeviceProfile.createFrom({
-        ...serialProfile,
-        transport: 'serial',
-        connection: types.DeviceConnectionSettings.createFrom({
-          ...(serialProfile.connection || {}),
-          serialPort: nextPort,
-          serialBaudRate: Math.round(nextBaud),
-        }),
-      }), true);
-      setActiveDeviceProfileId(saved.id);
-      setDeviceTransportInput('serial');
+      const profile = await apiService.setActiveDeviceProfile(profileID);
+      setActiveDeviceProfileId(profile.id);
+      const connected = await apiService.connectDevice();
       await refreshDeviceConfig();
       await loadDeviceProfiles();
-      toast.success(t('controlPanel.system.deviceConnection.toasts.serialSaved'));
+      if (connected) {
+        toast.success(t('controlPanel.system.deviceConnection.toasts.autoScanConnectedDevice', { device: device.model || device.product || profile.displayName || profileID }));
+      } else {
+        toast.error(t('controlPanel.system.deviceConnection.toasts.autoScanConnectFailed', { error: t('controlPanel.system.deviceConnection.toasts.autoScanEmpty') }));
+      }
     } catch (error) {
-      toast.error(t('controlPanel.system.deviceConnection.toasts.serialFailed', { error: getErrorMessage(error) }));
+      toast.error(t('controlPanel.system.deviceConnection.toasts.autoScanConnectFailed', { error: getErrorMessage(error) }));
     } finally {
-      setLoading('serialConnection', false);
+      setLoading('autoScanConnect', false);
     }
-  }, [
-    availableDeviceProfiles,
-    deviceTransportInput,
-    loadDeviceProfiles,
-    refreshDeviceConfig,
-    selectedTransportProfile,
-    serialBaudInput,
-    serialPortInput,
-    t,
-  ]);
-
-  const handleBLESettingsScan = useCallback(async () => {
-    setLoading('bleSettingsScan', true);
-    setBLESettingsScanError('');
-    setBLESettingsScanCompleted(false);
-    try {
-      const connection = profileConnection(bleSettingsProfile);
-      const devices = await apiService.scanBLEDevices(types.BLEScanParams.createFrom({
-        timeoutMs: 5000,
-        nameFilter: connection.bleNameFilter,
-        serviceUuid: connection.bleServiceUuid,
-        writeCharacteristicUuid: connection.bleWriteCharacteristic,
-        notifyCharacteristicUuid: connection.bleNotifyCharacteristic,
-        profiles: selectedTransportProfiles,
-      }));
-      setBLESettingsDevices(devices.map((device) => types.BLEDeviceInfo.createFrom(device)));
-      setBLESettingsScanCompleted(true);
-    } catch (error) {
-      const message = getErrorMessage(error);
-      setBLESettingsDevices([]);
-      setBLESettingsScanError(message);
-      setBLESettingsScanCompleted(true);
-      toast.error(t('controlPanel.system.deviceConnection.toasts.bleScanFailed', { error: message }));
-    } finally {
-      setLoading('bleSettingsScan', false);
-    }
-  }, [bleSettingsProfile, selectedTransportProfiles, t]);
-
-  const handleBLESettingsDeviceApply = useCallback(async (device: types.BLEDeviceInfo) => {
-    if (!bleSettingsProfile) {
-      toast.info(t('controlPanel.system.deviceConnection.toasts.profileRequired'));
-      return;
-    }
-    setLoading('bleSettingsApply', true);
-    try {
-      const saved = await apiService.saveDeviceProfile(profileWithBLEDevice(bleSettingsProfile, device), true);
-      setActiveDeviceProfileId(saved.id);
-      setDeviceTransportInput('ble');
-      await refreshDeviceConfig();
-      await loadDeviceProfiles();
-      toast.success(t('controlPanel.system.deviceConnection.toasts.bleSaved'));
-    } catch (error) {
-      toast.error(t('controlPanel.system.deviceConnection.toasts.bleSaveFailed', { error: getErrorMessage(error) }));
-    } finally {
-      setLoading('bleSettingsApply', false);
-    }
-  }, [bleSettingsProfile, loadDeviceProfiles, refreshDeviceConfig, t]);
+  }, [loadDeviceProfiles, refreshDeviceConfig, t]);
 
   const updateLegionFnQConfig = useCallback(async (patch: any) => {
     if (!legionFnQSupported) return;
@@ -1269,34 +1498,34 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     setCustomSpeedInput(String(clampFanSpeedToRange((config as any).customSpeedRPM, overviewSpeedRange, defaultCustomSpeed) ?? defaultCustomSpeed));
   }, [(config as any).customSpeedRPM, defaultCustomSpeed, overviewSpeedRange]);
   useEffect(() => {
+    setManualGearDraft(((config as any).manualGear || '标准') as string);
+    setManualLevelDraft(((config as any).manualLevel || '中') as string);
+  }, [(config as any).manualGear, (config as any).manualLevel]);
+  useEffect(() => {
     const profiles = configuredDeviceProfiles(config);
     if (profiles.length > 0) {
       setDeviceProfiles(profiles);
     }
     setActiveDeviceProfileId(((config as any).activeDeviceProfileId || activeDeviceProfile?.id || '') as string);
     setActiveDeviceProfileIdsByTransport(activeProfileIdsByTransportFromConfig(config));
-    setDeviceTransportInput(activeDeviceTransport);
-    setDeviceIpInput(activeConnection.endpoint || ((config as any).fanControlDeviceIp || '') as string);
-    setSerialPortInput(activeConnection.serialPort || '');
-    setSerialBaudInput(String(activeConnection.serialBaudRate || DEFAULT_SERIAL_BAUD_RATE));
+    setWiFiCompatibilityEnabled(isWiFiCompatibilityEnabled(config));
+    setWiFiDynamicIPCompatibilityEnabled(isWiFiDynamicIPCompatibilityEnabled(config));
+    setSerialCompatibilityEnabled(isSerialCompatibilityEnabled(config));
+    setDeviceIpInput(wifiConnection.endpoint || ((config as any).fanControlDeviceIp || '') as string);
   }, [
-    activeConnection.endpoint,
-    activeConnection.serialBaudRate,
-    activeConnection.serialPort,
     activeDeviceProfile?.id,
-    activeDeviceTransport,
     config,
+    wifiConnection.endpoint,
   ]);
   useEffect(() => {
-    setBLESettingsDevices([]);
+    setAutoScanResult(null);
     setBLESettingsScanError('');
     setBLESettingsScanCompleted(false);
-  }, [deviceTransportInput, selectedTransportProfile?.id]);
-  useEffect(() => {
-    if (deviceTransportInput === 'serial' && !serialPortsLoaded) {
-      void loadSerialPorts(false);
-    }
-  }, [deviceTransportInput, loadSerialPorts, serialPortsLoaded]);
+    setWiFiScanResult(null);
+    setWiFiScanError('');
+    setWiFiScanMode(null);
+    setWiFiNormalScanAttempted(false);
+  }, [activeDeviceProfileId]);
   useEffect(() => {
     setManualHotkeyInput(normalizeHotkeyForDisplay((config as any).manualGearToggleHotkey));
     setAutoHotkeyInput(normalizeHotkeyForDisplay((config as any).autoControlToggleHotkey));
@@ -1513,14 +1742,16 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
               />
             </div>
 
-            <Slider
-              min={0} max={100} step={1}
-              value={lightStripConfig.brightness}
-              onChange={(v) => setLightStripConfig(types.LightStripConfig.createFrom({ ...lightStripConfig, brightness: v }))}
-              label={t('controlPanel.light.brightness')}
-              valueFormatter={(v) => `${v}%`}
-              disabled={lightStripConfig.mode === 'off' || lightStripConfig.mode === 'smart_temp'}
-            />
+            {currentDeviceSupportsBrightness && (
+              <Slider
+                min={0} max={100} step={1}
+                value={lightStripConfig.brightness}
+                onChange={(v) => setLightStripConfig(types.LightStripConfig.createFrom({ ...lightStripConfig, brightness: v }))}
+                label={t('controlPanel.light.brightness')}
+                valueFormatter={(v) => `${v}%`}
+                disabled={lightStripConfig.mode === 'off' || lightStripConfig.mode === 'smart_temp'}
+              />
+            )}
 
             {lightStripConfig.mode === 'smart_temp' && (
               <div className="rounded-lg border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
@@ -1623,6 +1854,41 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
               </motion.div>
             )}
           </AnimatePresence>
+
+          <SettingRow
+            icon={<Settings className="h-4 w-4" />}
+            title={t('controlPanel.fan.manualGearTitle')}
+            description={isConnected ? t('controlPanel.fan.manualGearDescription') : t('controlPanel.fan.manualGearDisconnected')}
+            disabled={!isConnected}
+          >
+            <div className="grid w-full grid-cols-1 gap-2 sm:w-[27rem] sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+              <Select
+                value={manualGearDraft}
+                onChange={(value: string | number) => setManualGearDraft(String(value))}
+                options={fanGearOptions}
+                size="sm"
+                disabled={!isConnected || loadingStates.manualGear}
+              />
+              <Select
+                value={manualLevelDraft}
+                onChange={(value: string | number) => setManualLevelDraft(String(value))}
+                options={fanLevelOptions}
+                size="sm"
+                disabled={!isConnected || loadingStates.manualGear}
+              />
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleManualGearApply}
+                loading={loadingStates.manualGear}
+                disabled={!isConnected}
+                icon={<CheckCircle2 className="h-3.5 w-3.5" />}
+                className="w-full sm:w-auto"
+              >
+                {t('common.actions.apply')}
+              </Button>
+            </div>
+          </SettingRow>
 
           <div className="px-5 py-4">
             <div className="rounded-2xl border border-border/70 bg-muted/25 p-4">
@@ -1843,7 +2109,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
 
         {/* ═══════════ 3. 设备设置 ═══════════ */}
         {currentDeviceHasDeviceSettings && <Section title={t('controlPanel.device.sectionTitle')} icon={Zap}>
-          {currentDeviceSupportsLighting && (
+          {currentDeviceSupportsGearLight && (
           <SettingRow
             icon={<Lightbulb className={clsx('h-4 w-4', config.gearLight ? 'text-yellow-500' : '')} />}
             title={t('controlPanel.device.gearLightTitle')}
@@ -1979,32 +2245,268 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
             title={t('controlPanel.system.deviceConnection.title')}
             description={t('controlPanel.system.deviceConnection.description')}
           >
-            <div className="w-full space-y-3 sm:w-[520px]">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[160px_minmax(0,1fr)]">
-                <SelectionField label={t('controlPanel.system.deviceConnection.transportLabel')}>
-                  <Select
-                    value={deviceTransportInput}
-                    onChange={handleDeviceTransportChange}
-                    options={deviceTransportOptions}
-                    disabled={loadingStates.deviceConnection}
-                    size="sm"
-                  />
-                </SelectionField>
-                <SelectionField
-                  label={t('controlPanel.system.deviceConnection.enabledDeviceLabel')}
-                  hint={selectedTransportProfile ? `${summarizeConnection(selectedTransportProfile)} · ${formatSpeedRange(selectedTransportProfile)}` : t('controlPanel.system.deviceConnection.noEnabledDevice')}
-                >
-                  <div className="flex min-h-10 items-center rounded-md border border-border bg-muted/35 px-3 text-sm text-foreground">
-                    <span className="truncate">{selectedTransportProfile ? profileLabel(selectedTransportProfile) : t('controlPanel.system.deviceConnection.noEnabledDevice')}</span>
-                  </div>
-                </SelectionField>
-              </div>
+            <div className="w-full space-y-1.5 sm:w-52">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void handleAutoDeviceScan()}
+                loading={loadingStates.autoDeviceScan}
+                icon={<RotateCw className="h-4 w-4" />}
+                className="w-full justify-center"
+              >
+                {t('controlPanel.system.deviceConnection.scanAvailableDevices')}
+              </Button>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                {t('controlPanel.system.deviceConnection.bluetoothScanOnlyHint')}
+              </p>
+            </div>
+          </SettingRow>
 
-              {deviceTransportInput === 'wifi' && (
-                <div className="space-y-2 rounded-xl border border-border/70 bg-background/45 p-3">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                    <div className="min-w-0 flex-1">
-                      <SelectionField label={t('controlPanel.system.deviceConnection.addressLabel')}>
+          <div className={clsx('grid gap-3 px-5 py-4', showDiscoveredDevicesPanel && 'lg:grid-cols-2')}>
+            {showDiscoveredDevicesPanel && (
+              <ConnectionPanel
+                title={t('controlPanel.system.deviceConnection.discoveredDevicesTitle')}
+                description={t('controlPanel.system.deviceConnection.discoveredDevicesDescription')}
+              >
+                {bleSettingsScanError && (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                    {t('controlPanel.system.deviceConnection.bleScanFailed', { error: bleSettingsScanError })}
+                  </div>
+                )}
+                {!bleSettingsScanError && autoScannedDevices.length > 0 && (
+                  <div className="space-y-2">
+                    {autoScannedDevices.map((device) => {
+                      const key = `${device.profileId || device.model || device.productId || device.endpoint}`;
+                      return (
+                        <div
+                          key={key}
+                          className="flex min-w-0 flex-col gap-2 rounded-md border border-border bg-card/70 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium text-foreground">
+                              {device.model || device.product || t('controlPanel.system.deviceConnection.autoNativeDevice')}
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-1.5">
+                              <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                                {(device.transport || 'HID').toUpperCase()}
+                              </span>
+                              {device.productId && (
+                                <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                                  PID {device.productId}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => void handleAutoScannedDeviceConnect(device)}
+                            loading={loadingStates.autoScanConnect}
+                            className="shrink-0"
+                          >
+                            {t('controlPanel.system.deviceConnection.autoScanConnectAction')}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {!bleSettingsScanError && autoScannedDevices.length === 0 && (
+                  <EmptyConnectionState>
+                    {t('controlPanel.system.deviceConnection.autoScanEmptyState')}
+                  </EmptyConnectionState>
+                )}
+              </ConnectionPanel>
+            )}
+
+            <ConnectionPanel
+              title={t('controlPanel.system.deviceConnection.pairedDevicesTitle')}
+              description={t('controlPanel.system.deviceConnection.pairedDevicesDescription')}
+            >
+              {nativePairedProfiles.length > 0 ? (
+                <div className="space-y-2">
+                  {nativePairedProfiles.map((profile) => (
+                    <DeviceProfileSummary key={profile.id} profile={profile} />
+                  ))}
+                </div>
+              ) : (
+                <EmptyConnectionState>
+                  {t('controlPanel.system.deviceConnection.pairedDevicesEmpty')}
+                </EmptyConnectionState>
+              )}
+            </ConnectionPanel>
+          </div>
+
+          <SettingRow
+            icon={<Wifi className={clsx('h-4 w-4', wifiCompatibilityEnabled ? 'text-emerald-500' : 'text-muted-foreground')} />}
+            title={t('controlPanel.system.deviceConnection.wifiCompatibilityTitle')}
+            description={t('controlPanel.system.deviceConnection.wifiCompatibilityDescription')}
+          >
+            <ToggleSwitch
+              enabled={wifiCompatibilityEnabled}
+              onChange={(enabled) => void handleCompatibilityModeChange('wifi', enabled)}
+              loading={loadingStates.wifiCompatibility}
+              size="sm"
+              color="green"
+            />
+          </SettingRow>
+
+          <AnimatePresence>
+            {wifiCompatibilityEnabled && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <CompatibilitySubmenu>
+                  <CompatibilitySubmenuRow
+                    icon={<CheckCircle2 className="h-4 w-4 text-emerald-500" />}
+                    title={t('controlPanel.system.deviceConnection.connectedDevicesTitle')}
+                    description={t('controlPanel.system.deviceConnection.connectedDevicesDescription')}
+                  >
+                    <DeviceProfileInline
+                      profile={wifiConnectedProfile}
+                      empty={t('controlPanel.system.deviceConnection.connectedDevicesEmpty')}
+                    />
+                  </CompatibilitySubmenuRow>
+
+                  <CompatibilitySubmenuRow
+                    icon={<HardDrive className="h-4 w-4 text-primary" />}
+                    title={t('controlPanel.system.deviceConnection.pairedDevicesTitle')}
+                    description={t('controlPanel.system.deviceConnection.pairedDevicesDescription')}
+                  >
+                    <div className="w-full space-y-2 md:w-[360px]">
+                      <Select
+                        value={wifiProfile?.id || EMPTY_PROFILE_SELECT_VALUE}
+                        onChange={(value) => handleCompatibilityDeviceSelect('wifi', value)}
+                        options={wifiProfileOptions}
+                        disabled={wifiProfiles.length === 0 || loadingStates.wifiProfile}
+                        size="sm"
+                        className="w-full min-w-0"
+                      />
+                      {wifiProfile ? (
+                        <div className="text-xs leading-relaxed text-muted-foreground md:text-right">
+                          {`${summarizeConnection(wifiProfile)} · ${formatSpeedRange(wifiProfile)}`}
+                        </div>
+                      ) : (
+                        <div className="text-xs leading-relaxed text-muted-foreground md:text-right">
+                          {t('controlPanel.system.deviceConnection.pairedDevicesEmpty')}
+                        </div>
+                      )}
+                    </div>
+                  </CompatibilitySubmenuRow>
+
+                  <CompatibilitySubmenuRow
+                    icon={<Search className="h-4 w-4 text-primary" />}
+                    title={t('controlPanel.system.deviceConnection.wifiScanTitle')}
+                    description={t('controlPanel.system.deviceConnection.wifiScanDescription')}
+                    tip={wifiScanResult
+                      ? t('controlPanel.system.deviceConnection.wifiScanSummary', {
+                        count: wifiScanResult.candidateCount || 0,
+                        elapsed: wifiDiscoveryElapsedLabel(wifiScanResult.elapsedMs) || '-',
+                      })
+                      : undefined}
+                    below={
+                      <div className="space-y-2">
+                        {loadingStates.wifiScan && (
+                          <InlineHint>
+                            {t('controlPanel.system.deviceConnection.wifiScanRunning')}
+                          </InlineHint>
+                        )}
+                        {wifiScanError && (
+                          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                            {t('controlPanel.system.deviceConnection.wifiScanFailed', { error: wifiScanError })}
+                          </div>
+                        )}
+                        {!wifiScanError && wifiScannedDevices.length > 0 && (
+                          <div className="space-y-2">
+                            <div className="text-xs font-medium text-muted-foreground">
+                              {t('controlPanel.system.deviceConnection.wifiScanResultsTitle')}
+                            </div>
+                            {wifiScannedDevices.map((device) => (
+                              <div
+                                key={`${device.endpoint}-${device.source || ''}`}
+                                className="flex min-w-0 flex-col gap-2 rounded-md border border-border bg-card/70 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                              >
+                                <div className="min-w-0">
+                                  <div className="truncate text-sm font-medium text-foreground">
+                                    {device.name || (wifiProfile ? profileLabel(wifiProfile) : t('controlPanel.system.deviceConnection.autoNativeDevice'))}
+                                  </div>
+                                  <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                                    {device.endpoint}
+                                  </div>
+                                  <div className="mt-1 flex flex-wrap gap-1.5">
+                                    <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                                      {t(wifiDiscoverySourceKey(device.source))}
+                                    </span>
+                                    {typeof device.speed === 'number' && (
+                                      <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                                        {t('controlPanel.system.deviceConnection.wifiScanSpeed', { speed: device.speed })}
+                                      </span>
+                                    )}
+                                    {typeof device.latencyMs === 'number' && (
+                                      <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                                        {t('controlPanel.system.deviceConnection.wifiScanLatency', { latency: device.latencyMs })}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => void handleWiFiConnectionSave(device.endpoint)}
+                                  loading={loadingStates.deviceIp}
+                                  className="shrink-0"
+                                >
+                                  {t('controlPanel.system.deviceConnection.wifiScanUseAction')}
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {!loadingStates.wifiScan && !wifiScanError && wifiNormalScanAttempted && wifiScannedDevices.length === 0 && (
+                          <EmptyConnectionState>
+                            {t('controlPanel.system.deviceConnection.wifiScanResultsEmpty')}
+                          </EmptyConnectionState>
+                        )}
+                      </div>
+                    }
+                  >
+                    <div className="w-full space-y-2 md:w-[420px]">
+                      <div className="flex flex-wrap justify-start gap-2 md:justify-end">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          icon={<Search className="h-4 w-4" />}
+                          onClick={() => void handleWiFiScan('normal')}
+                          loading={loadingStates.wifiScan && wifiScanMode === 'normal'}
+                          disabled={!wifiProfile || loadingStates.wifiScan}
+                        >
+                          {t('controlPanel.system.deviceConnection.wifiScanAction')}
+                        </Button>
+                        {showWiFiDeepScanAction && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            icon={<RotateCw className="h-4 w-4" />}
+                            onClick={() => void handleWiFiScan('deep')}
+                            loading={loadingStates.wifiScan && wifiScanMode === 'deep'}
+                            disabled={!wifiProfile || loadingStates.wifiScan}
+                          >
+                            {t('controlPanel.system.deviceConnection.wifiDeepScanAction')}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </CompatibilitySubmenuRow>
+
+                  <CompatibilitySubmenuRow
+                    icon={<MapPin className="h-4 w-4 text-primary" />}
+                    title={t('controlPanel.system.deviceConnection.wifiManualAddTitle')}
+                    description={t('controlPanel.system.deviceConnection.wifiManualAddHint')}
+                    below={
+                      <div className="flex w-full flex-col gap-2 md:flex-row md:items-center">
                         <input
                           value={deviceIpInput}
                           onChange={(event) => setDeviceIpInput(event.target.value)}
@@ -2012,216 +2514,123 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                             if (event.key === 'Enter') void handleWiFiConnectionSave();
                           }}
                           placeholder={t('controlPanel.system.deviceConnection.addressPlaceholder')}
-                          className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none ring-offset-background transition-colors focus-visible:ring-2 focus-visible:ring-ring"
+                          aria-label={t('controlPanel.system.deviceConnection.addressPlaceholder')}
+                          className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none ring-offset-background transition-colors focus-visible:ring-2 focus-visible:ring-ring"
                         />
-                      </SelectionField>
-                    </div>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={handleWiFiConnectionSave}
-                      loading={loadingStates.deviceIp}
-                      className="shrink-0"
-                    >
-                      {t('common.actions.save')}
-                    </Button>
-                  </div>
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    {t('controlPanel.system.deviceConnection.wifiHint')}
-                  </p>
-                </div>
-              )}
-
-              {deviceTransportInput === 'ble' && (
-                <div className="space-y-3 rounded-xl border border-border/70 bg-background/45 p-3 text-xs">
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <div>
-                      <div className="font-medium text-muted-foreground">{t('controlPanel.system.deviceConnection.bleNameFilter')}</div>
-                      <div className="mt-1 truncate text-foreground">{activeConnection.bleNameFilter || t('controlPanel.system.deviceConnection.notConfigured')}</div>
-                    </div>
-                    <div>
-                      <div className="font-medium text-muted-foreground">{t('controlPanel.system.deviceConnection.bleService')}</div>
-                      <div className="mt-1 truncate text-foreground">{activeConnection.bleServiceUuid || t('controlPanel.system.deviceConnection.notConfigured')}</div>
-                    </div>
-                    <div>
-                      <div className="font-medium text-muted-foreground">{t('controlPanel.system.deviceConnection.bleWrite')}</div>
-                      <div className="mt-1 truncate text-foreground">{activeConnection.bleWriteCharacteristic || t('controlPanel.system.deviceConnection.notConfigured')}</div>
-                    </div>
-                    <div>
-                      <div className="font-medium text-muted-foreground">{t('controlPanel.system.deviceConnection.bleNotify')}</div>
-                      <div className="mt-1 truncate text-foreground">{activeConnection.bleNotifyCharacteristic || t('controlPanel.system.deviceConnection.notConfigured')}</div>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-2 border-t border-border/60 pt-3 sm:flex-row sm:items-start sm:justify-between">
-                    <p className="min-w-0 flex-1 leading-relaxed text-muted-foreground">{t('controlPanel.system.deviceConnection.bleHint')}</p>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => void handleBLESettingsScan()}
-                      loading={loadingStates.bleSettingsScan}
-                      disabled={!bleSettingsProfile || loadingStates.bleSettingsApply}
-                      icon={<Bluetooth className="h-4 w-4" />}
-                      title={t('controlPanel.system.deviceConnection.bleScan')}
-                      className="shrink-0"
-                    >
-                      {t('controlPanel.system.deviceConnection.bleScan')}
-                    </Button>
-                  </div>
-                  {bleSettingsScanError && (
-                    <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
-                      {t('controlPanel.system.deviceConnection.bleScanFailed', { error: bleSettingsScanError })}
-                    </div>
-                  )}
-                  {bleSettingsDevices.length > 0 && (
-                    <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
-                      {bleSettingsDevices.map((device) => {
-                        const services = bleDeviceServices(device);
-                        const profileMatch = device.matchedProfileDisplayName || device.matchedProfileId || '';
-                        return (
-                          <button
-                            key={device.address}
-                            type="button"
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-left transition-colors hover:border-primary/40 hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-60"
-                            onClick={() => void handleBLESettingsDeviceApply(device)}
-                            disabled={loadingStates.bleSettingsApply}
-                          >
-                            <div className="flex min-w-0 items-center justify-between gap-2">
-                              <span className="truncate text-sm font-medium text-foreground">{bleDeviceTitle(device)}</span>
-                              {device.matched && (
-                                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">
-                                  <CheckCircle2 className="h-3 w-3" />
-                                  {t('controlPanel.system.deviceConnection.bleMatched')}
-                                </span>
-                              )}
-                            </div>
-                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                              <span>{device.address}</span>
-                              <span className="inline-flex items-center gap-1">
-                                <Signal className="h-3 w-3" />
-                                {device.rssi} dBm
-                              </span>
-                            </div>
-                            {services && (
-                              <div className="mt-1 truncate text-[11px] text-muted-foreground">
-                                {t('controlPanel.system.deviceConnection.bleServices')}: {services}
-                              </div>
-                            )}
-                            {profileMatch && (
-                              <div className="mt-1 truncate text-[11px] text-primary">
-                                {t('controlPanel.system.deviceConnection.bleProfileMatch', { profile: profileMatch })}
-                              </div>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {bleSettingsScanCompleted && !loadingStates.bleSettingsScan && !bleSettingsScanError && bleSettingsDevices.length === 0 && (
-                    <div className="rounded-lg border border-border/70 bg-background px-3 py-2 text-muted-foreground">
-                      {t('controlPanel.system.deviceConnection.bleScanEmpty')}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {deviceTransportInput === 'serial' && (
-                <div className="space-y-3 rounded-xl border border-border/70 bg-background/45 p-3 text-xs">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                    <div className="min-w-0 flex-1">
-                      <SelectionField label={t('controlPanel.system.deviceConnection.serialPort')}>
-                        <input
-                          value={serialPortInput}
-                          onChange={(event) => setSerialPortInput(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') void handleSerialConnectionSave();
-                          }}
-                          placeholder={t('controlPanel.system.deviceConnection.serialPortPlaceholder')}
-                          className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none ring-offset-background transition-colors focus-visible:ring-2 focus-visible:ring-ring"
-                        />
-                      </SelectionField>
-                    </div>
-                    <div className="min-w-0 sm:w-32">
-                      <SelectionField label={t('controlPanel.system.deviceConnection.serialBaud')}>
-                        <input
-                          type="number"
-                          min={1}
-                          value={serialBaudInput}
-                          onChange={(event) => setSerialBaudInput(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') void handleSerialConnectionSave();
-                          }}
-                          placeholder={`${DEFAULT_SERIAL_BAUD_RATE}`}
-                          className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none ring-offset-background transition-colors focus-visible:ring-2 focus-visible:ring-ring"
-                        />
-                      </SelectionField>
-                    </div>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={handleSerialConnectionSave}
-                      loading={loadingStates.serialConnection}
-                      className="shrink-0 sm:mb-[18px]"
-                    >
-                      {t('common.actions.save')}
-                    </Button>
-                  </div>
-                  <div className="space-y-2 border-t border-border/60 pt-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <p className="min-w-0 flex-1 leading-relaxed text-muted-foreground">{t('controlPanel.system.deviceConnection.serialHint')}</p>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => void loadSerialPorts(true)}
-                        loading={loadingStates.serialPorts}
-                        icon={<RotateCw className="h-4 w-4" />}
-                        className="shrink-0"
-                      >
-                        {t('controlPanel.system.deviceConnection.serialDetectPorts')}
-                      </Button>
-                    </div>
-                    {serialPorts.length > 0 && (
-                      <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto pr-1">
-                        {serialPorts.map((port) => {
-                          const name = serialPortName(port);
-                          return (
-                            <button
-                              key={name}
-                              type="button"
-                              onClick={() => setSerialPortInput(name)}
-                              className={clsx(
-                                'rounded-md border px-2 py-1 text-[11px] transition-colors',
-                                serialPortInput.trim().toLowerCase() === name.toLowerCase()
-                                  ? 'border-primary bg-primary/10 text-primary'
-                                  : 'border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground',
-                              )}
-                            >
-                              {serialPortLabel(port)}
-                            </button>
-                          );
-                        })}
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => void handleWiFiConnectionSave()}
+                          loading={loadingStates.deviceIp}
+                          disabled={!wifiProfile}
+                          className="shrink-0"
+                        >
+                          {t('controlPanel.system.deviceConnection.wifiManualAddAction')}
+                        </Button>
                       </div>
-                    )}
-                    {serialPortsError && (
-                      <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
-                        {t('controlPanel.system.deviceConnection.serialPortsFailed', { error: serialPortsError })}
-                      </div>
-                    )}
-                    {serialPortsLoaded && !loadingStates.serialPorts && !serialPortsError && serialPorts.length === 0 && (
-                      <div className="rounded-lg border border-border/70 bg-background px-3 py-2 text-muted-foreground">
-                        {t('controlPanel.system.deviceConnection.serialPortsEmpty')}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+                    }
+                  />
 
-              {deviceTransportInput === 'hid' && (
-                <div className="rounded-xl border border-border/70 bg-background/45 p-3 text-xs leading-relaxed text-muted-foreground">
-                  {t('controlPanel.system.deviceConnection.hidHint')}
-                </div>
-              )}
-            </div>
+                  <CompatibilitySubmenuRow
+                    icon={<RotateCw className="h-4 w-4 text-primary" />}
+                    title={t('controlPanel.system.deviceConnection.wifiDynamicIPTitle')}
+                    description={t('controlPanel.system.deviceConnection.wifiDynamicIPDescription')}
+                    tip={t('controlPanel.system.deviceConnection.wifiDynamicIPTip')}
+                  >
+                    <ToggleSwitch
+                      enabled={wifiDynamicIPCompatibilityEnabled}
+                      onChange={(enabled) => void handleWiFiDynamicIPCompatibilityChange(enabled)}
+                      loading={loadingStates.wifiDynamicIPCompatibility}
+                      size="sm"
+                      color="green"
+                    />
+                  </CompatibilitySubmenuRow>
+                </CompatibilitySubmenu>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <SettingRow
+            icon={<Usb className={clsx('h-4 w-4', serialCompatibilityEnabled ? 'text-emerald-500' : 'text-muted-foreground')} />}
+            title={t('controlPanel.system.deviceConnection.serialCompatibilityTitle')}
+            description={t('controlPanel.system.deviceConnection.serialCompatibilityDescription')}
+          >
+            <ToggleSwitch
+              enabled={serialCompatibilityEnabled}
+              onChange={(enabled) => void handleCompatibilityModeChange('serial', enabled)}
+              loading={loadingStates.serialCompatibility}
+              size="sm"
+              color="green"
+            />
           </SettingRow>
+
+          <AnimatePresence>
+            {serialCompatibilityEnabled && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <CompatibilitySubmenu>
+                  <CompatibilitySubmenuRow
+                    icon={<CheckCircle2 className="h-4 w-4 text-emerald-500" />}
+                    title={t('controlPanel.system.deviceConnection.connectedDevicesTitle')}
+                    description={t('controlPanel.system.deviceConnection.connectedDevicesDescription')}
+                  >
+                    <DeviceProfileInline
+                      profile={serialConnectedProfile}
+                      empty={t('controlPanel.system.deviceConnection.connectedDevicesEmpty')}
+                    />
+                  </CompatibilitySubmenuRow>
+
+                  <CompatibilitySubmenuRow
+                    icon={<HardDrive className="h-4 w-4 text-primary" />}
+                    title={t('controlPanel.system.deviceConnection.pairedDevicesTitle')}
+                    description={t('controlPanel.system.deviceConnection.pairedDevicesDescription')}
+                  >
+                    <div className="w-full space-y-2 md:w-[360px]">
+                      <Select
+                        value={serialProfile?.id || EMPTY_PROFILE_SELECT_VALUE}
+                        onChange={(value) => handleCompatibilityDeviceSelect('serial', value)}
+                        options={serialProfileOptions}
+                        disabled={serialProfiles.length === 0 || loadingStates.serialProfile}
+                        size="sm"
+                        className="w-full min-w-0"
+                      />
+                      {serialProfile ? (
+                        <div className="text-xs leading-relaxed text-muted-foreground md:text-right">
+                          {`${summarizeConnection(serialProfile)} · ${formatSpeedRange(serialProfile)}`}
+                        </div>
+                      ) : (
+                        <div className="text-xs leading-relaxed text-muted-foreground md:text-right">
+                          {t('controlPanel.system.deviceConnection.pairedDevicesEmpty')}
+                        </div>
+                      )}
+                    </div>
+                  </CompatibilitySubmenuRow>
+
+                  <CompatibilitySubmenuRow
+                    icon={<Plug className="h-4 w-4 text-primary" />}
+                    title={t('controlPanel.system.deviceConnection.serialInterfaceTitle')}
+                    description={t('controlPanel.system.deviceConnection.serialInterfaceDescription')}
+                    tip={t('controlPanel.system.deviceConnection.serialInterfaceManagedInDevices')}
+                  >
+                    {serialProfile ? (
+                      <DeviceProfileInline
+                        profile={serialProfile}
+                        empty={t('controlPanel.system.deviceConnection.pairedDevicesEmpty')}
+                      />
+                    ) : (
+                      <InlineHint>
+                        {t('controlPanel.system.deviceConnection.pairedDevicesEmpty')}
+                      </InlineHint>
+                    )}
+                  </CompatibilitySubmenuRow>
+                </CompatibilitySubmenu>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <SettingRow
             icon={<Monitor className="h-4 w-4" />}

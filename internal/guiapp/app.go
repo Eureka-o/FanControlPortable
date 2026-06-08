@@ -41,6 +41,10 @@ type (
 	BLEGATTCharacteristicInfo = types.BLEGATTCharacteristicInfo
 	BLEGATTServiceInfo        = types.BLEGATTServiceInfo
 	BLEGATTProbeResult        = types.BLEGATTProbeResult
+	WiFiDiscoveryParams       = types.WiFiDiscoveryParams
+	WiFiDiscoveryScope        = types.WiFiDiscoveryScope
+	WiFiDiscoveredDevice      = types.WiFiDiscoveredDevice
+	WiFiDiscoveryResult       = types.WiFiDiscoveryResult
 	FanData                   = types.FanData
 	GearCommand               = types.GearCommand
 	TemperatureData           = types.TemperatureData

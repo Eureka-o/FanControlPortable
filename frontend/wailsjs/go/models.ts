@@ -1,4 +1,4 @@
-export namespace theme {
+﻿export namespace theme {
 
 	export class Meta {
 	    id: string;
@@ -197,7 +197,10 @@ export namespace types {
 	    supportsCustomSpeed: boolean;
 	    supportsDebugFrames: boolean;
 	    supportsRawCommands: boolean;
+	    supportsGearLight: boolean;
 	    supportsLighting: boolean;
+	    supportsBrightness: boolean;
+	    supportsScreen: boolean;
 	    supportsPowerOnStart: boolean;
 	    supportsSmartStartStop: boolean;
 
@@ -218,7 +221,10 @@ export namespace types {
 	        this.supportsCustomSpeed = source["supportsCustomSpeed"];
 	        this.supportsDebugFrames = source["supportsDebugFrames"];
 	        this.supportsRawCommands = source["supportsRawCommands"];
+	        this.supportsGearLight = source["supportsGearLight"];
 	        this.supportsLighting = source["supportsLighting"];
+	        this.supportsBrightness = source["supportsBrightness"];
+	        this.supportsScreen = source["supportsScreen"];
 	        this.supportsPowerOnStart = source["supportsPowerOnStart"];
 	        this.supportsSmartStartStop = source["supportsSmartStartStop"];
 	    }
@@ -483,6 +489,9 @@ export namespace types {
 	    deviceProfiles?: DeviceProfile[];
 	    deviceTransport: string;
 	    fanControlDeviceIp: string;
+	    wifiCompatibilityEnabled: boolean;
+	    wifiDynamicIpCompatibilityEnabled: boolean;
+	    serialCompatibilityEnabled: boolean;
 	    autoControl: boolean;
 	    manualGearToggleHotkey: string;
 	    autoControlToggleHotkey: string;
@@ -528,6 +537,9 @@ export namespace types {
 	        this.deviceProfiles = this.convertValues(source["deviceProfiles"], DeviceProfile);
 	        this.deviceTransport = source["deviceTransport"];
 	        this.fanControlDeviceIp = source["fanControlDeviceIp"];
+	        this.wifiCompatibilityEnabled = source["wifiCompatibilityEnabled"];
+	        this.wifiDynamicIpCompatibilityEnabled = source["wifiDynamicIpCompatibilityEnabled"];
+	        this.serialCompatibilityEnabled = source["serialCompatibilityEnabled"];
 	        this.autoControl = source["autoControl"];
 	        this.manualGearToggleHotkey = source["manualGearToggleHotkey"];
 	        this.autoControlToggleHotkey = source["autoControlToggleHotkey"];
@@ -1445,6 +1457,101 @@ export namespace types {
 		}
 	}
 
+
+	export class WiFiDiscoveredDevice {
+	    name: string;
+	    profileId?: string;
+	    transport: string;
+	    endpoint: string;
+	    ip: string;
+	    port?: string;
+	    source: string;
+	    network?: string;
+	    speed?: number;
+	    targetSpeed?: number;
+	    temperature?: number;
+	    latencyMs?: number;
+	    stateEndpoint?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new WiFiDiscoveredDevice(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.profileId = source["profileId"];
+	        this.transport = source["transport"];
+	        this.endpoint = source["endpoint"];
+	        this.ip = source["ip"];
+	        this.port = source["port"];
+	        this.source = source["source"];
+	        this.network = source["network"];
+	        this.speed = source["speed"];
+	        this.targetSpeed = source["targetSpeed"];
+	        this.temperature = source["temperature"];
+	        this.latencyMs = source["latencyMs"];
+	        this.stateEndpoint = source["stateEndpoint"];
+	    }
+	}
+	export class WiFiDiscoveryScope {
+	    source: string;
+	    network: string;
+	    candidateCount: number;
+
+	    static createFrom(source: any = {}) {
+	        return new WiFiDiscoveryScope(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.source = source["source"];
+	        this.network = source["network"];
+	        this.candidateCount = source["candidateCount"];
+	    }
+	}
+	export class WiFiDiscoveryResult {
+	    mode: string;
+	    found: boolean;
+	    devices?: WiFiDiscoveredDevice[];
+	    scopes?: WiFiDiscoveryScope[];
+	    candidateCount: number;
+	    elapsedMs: number;
+	    error?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new WiFiDiscoveryResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.mode = source["mode"];
+	        this.found = source["found"];
+	        this.devices = this.convertValues(source["devices"], WiFiDiscoveredDevice);
+	        this.scopes = this.convertValues(source["scopes"], WiFiDiscoveryScope);
+	        this.candidateCount = source["candidateCount"];
+	        this.elapsedMs = source["elapsedMs"];
+	        this.error = source["error"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 }
 

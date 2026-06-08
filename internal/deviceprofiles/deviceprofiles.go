@@ -98,12 +98,7 @@ func FilterActiveIDsByTransport(activeIDs map[string]string, profiles []types.De
 }
 
 func IsBuiltInProfileID(profileID string) bool {
-	switch strings.TrimSpace(profileID) {
-	case types.DefaultWiFiPercentProfileID, types.DefaultWiFiPercentTemplateProfileID, types.LegacyRPMProfileID:
-		return true
-	default:
-		return false
-	}
+	return types.IsBuiltInDeviceProfileID(profileID)
 }
 
 func GenerateID() string {

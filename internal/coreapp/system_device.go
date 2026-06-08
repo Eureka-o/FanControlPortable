@@ -360,39 +360,63 @@ func (a *CoreApp) ConnectDevice() bool {
 	a.configureDeviceManager(cfg)
 
 	success, deviceInfo := a.deviceManager.Connect()
+	if !success && a.recoverDynamicWiFiEndpoint(&cfg) {
+		success, deviceInfo = a.deviceManager.Connect()
+	}
 	if success {
-		a.mutex.Lock()
-		a.isConnected = true
-		a.mutex.Unlock()
-
-		settings, settingsErr := a.RefreshDeviceSettings()
-		if settingsErr != nil {
-			a.logError("读取设备设置失败: %v", settingsErr)
-		}
-		if deviceInfo != nil && a.ipcServer != nil {
-			eventPayload := map[string]any{}
-			for key, value := range deviceInfo {
-				eventPayload[key] = value
-			}
-			if settings != nil {
-				eventPayload["deviceSettings"] = settings
-			}
-			a.ipcServer.BroadcastEvent(ipc.EventDeviceConnected, eventPayload)
-		}
-
-		// 仅旧 HID 设备支持灯带
-		if a.deviceManager.GetDeviceType() == types.DeviceTypeHID {
-			if err := a.applyConfiguredLightStrip(); err != nil {
-				a.logError("应用灯带配置失败: %v", err)
-			}
-		}
-		a.safeGo("startTemperatureMonitoring@ConnectDevice", func() {
-			a.startTemperatureMonitoring()
-		})
+		a.finishSuccessfulDeviceConnection(deviceInfo, "ConnectDevice")
 	} else if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "连接失败")
 	}
 	return success
+}
+
+func (a *CoreApp) AutoScanDevices() map[string]any {
+	devices := a.deviceManager.ScanNativeDevices()
+	result := map[string]any{
+		"connected": a.deviceManager.IsConnected(),
+		"devices":   devices,
+		"matched":   len(devices) > 0,
+	}
+	if len(devices) == 1 {
+		result["deviceInfo"] = devices[0]
+		result["profileId"] = devices[0]["profileId"]
+		result["transport"] = devices[0]["transport"]
+	}
+	return result
+}
+
+func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string, caller string) *types.DeviceSettings {
+	a.syncConnectedBuiltInDeviceProfile(deviceInfo)
+
+	a.mutex.Lock()
+	a.isConnected = true
+	a.mutex.Unlock()
+
+	settings, settingsErr := a.RefreshDeviceSettings()
+	if settingsErr != nil {
+		a.logError("读取设备设置失败: %v", settingsErr)
+	}
+	if deviceInfo != nil && a.ipcServer != nil {
+		eventPayload := map[string]any{}
+		for key, value := range deviceInfo {
+			eventPayload[key] = value
+		}
+		if settings != nil {
+			eventPayload["deviceSettings"] = settings
+		}
+		a.ipcServer.BroadcastEvent(ipc.EventDeviceConnected, eventPayload)
+	}
+
+	if a.deviceManager.GetDeviceType() == types.DeviceTypeHID {
+		if err := a.applyConfiguredLightStrip(); err != nil {
+			a.logError("应用灯带配置失败: %v", err)
+		}
+	}
+	a.safeGo("startTemperatureMonitoring@"+caller, func() {
+		a.startTemperatureMonitoring()
+	})
+	return settings
 }
 
 // DisconnectDevice 断开设备连接
@@ -427,12 +451,14 @@ func (a *CoreApp) reapplyConfigAfterReconnect() {
 		if !a.deviceManager.SetTargetSpeed(configSpeedToTargetUnit(speed, unit), unit) {
 			a.logError("重新应用自定义转速失败")
 		}
+	} else {
+		a.applyCurrentGearSetting()
 	}
 
 	// 以下功能仅旧 HID 设备支持
 	if a.deviceManager.GetDeviceType() == types.DeviceTypeHID {
 		// 重新应用挡位灯配置
-		if cfg.GearLight {
+		if cfg.GearLight && a.activeDeviceCapabilities().AllowsGearLight() {
 			a.logInfo("重新开启挡位灯")
 			if !a.deviceManager.SetGearLight(true) {
 				a.logError("重新开启挡位灯失败")

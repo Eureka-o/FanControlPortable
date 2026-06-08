@@ -20,6 +20,16 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		success := a.ConnectDevice()
 		return a.successResponse(success)
 
+	case ipc.ReqAutoScanDevices:
+		return a.dataResponse(a.AutoScanDevices())
+
+	case ipc.ReqScanWiFiDevices:
+		var params ipc.ScanWiFiDevicesParams
+		if err := json.Unmarshal(req.Data, &params); err != nil {
+			return a.errorResponse("解析 WiFi 扫描参数失败: " + err.Error())
+		}
+		return a.dataResponse(a.ScanWiFiDevices(params.Mode))
+
 	case ipc.ReqDisconnect:
 		a.DisconnectDevice()
 		return a.successResponse(true)

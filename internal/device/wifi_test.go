@@ -117,6 +117,67 @@ func TestWiFiSetFanSpeedRejectsDeviceFailureResponse(t *testing.T) {
 	}
 }
 
+func TestRefreshWiFiStateReadsOnlyAndUpdatesFanData(t *testing.T) {
+	getCount := 0
+	postCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/data":
+			if r.Method != http.MethodGet {
+				t.Fatalf("GET /api/data got method %s", r.Method)
+			}
+			getCount++
+			speed := 30
+			target := 30
+			if getCount > 1 {
+				speed = 42
+				target = 55
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"speed":           speed,
+				"targetSpeed":     target,
+				"wifiTargetSpeed": target,
+				"wifiControl":     true,
+				"controlMode":     "wifi",
+			})
+		case "/api/speed":
+			postCount++
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status":      "success",
+				"controlMode": "wifi",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	m := NewManager(nil)
+	m.Configure(types.DeviceTransportWiFi, server.URL)
+	connected, _ := m.Connect()
+	if !connected {
+		t.Fatal("expected WiFi test device to connect")
+	}
+
+	if ok := m.RefreshWiFiState(); !ok {
+		t.Fatal("RefreshWiFiState() returned false")
+	}
+
+	if postCount != 0 {
+		t.Fatalf("POST /api/speed count = %d, want 0", postCount)
+	}
+	if getCount != 2 {
+		t.Fatalf("GET /api/data count = %d, want 2", getCount)
+	}
+	fanData := m.GetCurrentFanData()
+	if fanData == nil {
+		t.Fatal("expected fan data")
+	}
+	if fanData.CurrentRPM != 42 || fanData.TargetRPM != 55 {
+		t.Fatalf("fan data speed = current %d target %d, want 42/55", fanData.CurrentRPM, fanData.TargetRPM)
+	}
+}
+
 func TestWiFiManagerRejectsNonSpeedFeatureCommandsByDefault(t *testing.T) {
 	m := NewManager(nil)
 	m.Configure(types.DeviceTransportWiFi, "192.168.1.50")

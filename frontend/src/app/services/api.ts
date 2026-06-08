@@ -44,10 +44,74 @@ import type {
   ThemeMeta,
 } from '../types/app';
 
+export interface AutoScanDeviceInfo {
+  manufacturer?: string;
+  product?: string;
+  model?: string;
+  transport?: string;
+  endpoint?: string;
+  serial?: string;
+  productId?: string;
+  profileId?: string;
+}
+
+export interface AutoScanDevicesResult {
+  connected?: boolean;
+  matched?: boolean;
+  profileId?: string;
+  transport?: string;
+  deviceInfo?: AutoScanDeviceInfo;
+  devices?: AutoScanDeviceInfo[];
+  deviceSettings?: DeviceSettings;
+  error?: string;
+}
+
+export interface WiFiDiscoveredDevice {
+  name?: string;
+  profileId?: string;
+  transport?: string;
+  endpoint: string;
+  ip?: string;
+  port?: string;
+  source?: string;
+  network?: string;
+  speed?: number;
+  targetSpeed?: number;
+  temperature?: number;
+  latencyMs?: number;
+  stateEndpoint?: string;
+}
+
+export interface WiFiDiscoveryScope {
+  source?: string;
+  network?: string;
+  candidateCount?: number;
+}
+
+export interface WiFiDiscoveryResult {
+  mode?: string;
+  found?: boolean;
+  devices?: WiFiDiscoveredDevice[];
+  scopes?: WiFiDiscoveryScope[];
+  candidateCount?: number;
+  elapsedMs?: number;
+  error?: string;
+}
+
 class ApiService {
   // 设备连接
   async connectDevice(): Promise<boolean> {
     return await ConnectDevice();
+  }
+
+  async autoScanDevices(): Promise<AutoScanDevicesResult> {
+    const result = await (window as any).go?.main?.App?.AutoScanDevices?.();
+    return result && typeof result === 'object' ? result as AutoScanDevicesResult : { connected: false };
+  }
+
+  async scanWiFiDevices(mode: 'normal' | 'deep' = 'normal'): Promise<WiFiDiscoveryResult> {
+    const result = await (window as any).go?.main?.App?.ScanWiFiDevices?.(mode);
+    return result && typeof result === 'object' ? result as WiFiDiscoveryResult : { mode, found: false };
   }
 
   async disconnectDevice(): Promise<void> {

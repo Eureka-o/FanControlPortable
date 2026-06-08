@@ -3,6 +3,7 @@ package coreapp
 import (
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/TIANLI0/THRM/internal/ipc"
@@ -16,6 +17,7 @@ const staleBridgeUpdateThreshold = 3
 const (
 	consecutiveBridgeFailureRestartThreshold = 2
 	temperatureBridgeRestartCooldown         = 10 * time.Second
+	wifiOverviewStateRefreshInterval         = 2 * time.Second
 )
 
 func trackBridgeTemperatureStaleness(temp types.TemperatureData, lastUpdate int64, staleCount int) (int64, int, bool) {
@@ -144,6 +146,8 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	staleBridgeUpdateCount := 0
 	bridgeFailureCount := 0
 	lastBridgeRestart := time.Time{}
+	lastWiFiOverviewRefresh := time.Time{}
+	var wifiOverviewRefreshRunning atomic.Bool
 	var smartCfg types.SmartControlConfig
 	smartCfgRevision := cfgRevision - 1
 
@@ -151,13 +155,22 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	speedUnit := types.DeviceProfileSpeedUnit(&cfg)
 	steadyObserver := newStableObserverForActiveUnit(len(cfg.FanCurve), speedUnit)
 	timer := time.NewTimer(updateInterval)
+	wifiOverviewTimer := time.NewTimer(wifiOverviewStateRefreshInterval)
 	defer timer.Stop()
+	defer wifiOverviewTimer.Stop()
 
 	for a.monitoringTemp.Load() {
 		select {
 		case <-a.stopMonitoring:
 			a.monitoringTemp.Store(false)
 			return
+		case <-wifiOverviewTimer.C:
+			now := time.Now()
+			if shouldRefreshWiFiOverviewState(a.deviceManager.GetDeviceType(), now, lastWiFiOverviewRefresh, false) {
+				lastWiFiOverviewRefresh = now
+				a.refreshWiFiOverviewState(&wifiOverviewRefreshRunning)
+			}
+			wifiOverviewTimer.Reset(wifiOverviewStateRefreshInterval)
 		case <-timer.C:
 			now := time.Now()
 			gap := now.Sub(lastMonitorTick)
@@ -319,6 +332,9 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				if shouldSendTargetSpeed(targetRPM, prevTargetRPM, smartCfg.MinRPMChange, fanData, speedUnit) {
 					if a.deviceManager.SetTargetSpeed(targetRPM, speedUnit) {
 						lastTargetRPM = targetRPM
+						if a.deviceManager.GetDeviceType() == types.DeviceTransportWiFi {
+							lastWiFiOverviewRefresh = now
+						}
 					} else {
 						lastTargetRPM = -1
 						a.logError("智能控温速度下发失败，将在下个周期重试: %d%s", displaySpeedForLog(targetRPM, speedUnit), types.FanSpeedDisplaySuffix(speedUnit))
@@ -377,6 +393,26 @@ func temperatureMonitorInterval(updateRateSeconds int) time.Duration {
 		updateRateSeconds = 1
 	}
 	return time.Duration(updateRateSeconds) * time.Second
+}
+
+func shouldRefreshWiFiOverviewState(deviceType string, now, lastRefresh time.Time, readThisTick bool) bool {
+	if deviceType != types.DeviceTransportWiFi || readThisTick {
+		return false
+	}
+	return lastRefresh.IsZero() || now.Sub(lastRefresh) >= wifiOverviewStateRefreshInterval
+}
+
+func (a *CoreApp) refreshWiFiOverviewState(refreshRunning *atomic.Bool) {
+	if !refreshRunning.CompareAndSwap(false, true) {
+		return
+	}
+
+	a.safeGo("refreshWiFiOverviewState", func() {
+		defer refreshRunning.Store(false)
+		if !a.deviceManager.RefreshWiFiState() {
+			a.logDebug("实时概览刷新 WiFi 控制器状态失败，等待健康检查处理连接状态")
+		}
+	})
 }
 
 func fanDataSpeedForControlUnit(speed int, unit string) int {
