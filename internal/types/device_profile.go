@@ -31,7 +31,10 @@ type DeviceCapabilities struct {
 	SupportsCustomSpeed    bool             `json:"supportsCustomSpeed"`
 	SupportsDebugFrames    bool             `json:"supportsDebugFrames"`
 	SupportsRawCommands    bool             `json:"supportsRawCommands"`
+	SupportsGearLight      bool             `json:"supportsGearLight"`
 	SupportsLighting       bool             `json:"supportsLighting"`
+	SupportsBrightness     bool             `json:"supportsBrightness"`
+	SupportsScreen         bool             `json:"supportsScreen"`
 	SupportsPowerOnStart   bool             `json:"supportsPowerOnStart"`
 	SupportsSmartStartStop bool             `json:"supportsSmartStartStop"`
 }
@@ -224,7 +227,10 @@ func DefaultWiFiPercentCapabilities() DeviceCapabilities {
 		SupportsCustomSpeed:    true,
 		SupportsDebugFrames:    false,
 		SupportsRawCommands:    false,
+		SupportsGearLight:      false,
 		SupportsLighting:       false,
+		SupportsBrightness:     false,
+		SupportsScreen:         false,
 		SupportsPowerOnStart:   false,
 		SupportsSmartStartStop: false,
 	}
@@ -243,7 +249,10 @@ func LegacyRPMCapabilities() DeviceCapabilities {
 		SupportsCustomSpeed:    true,
 		SupportsDebugFrames:    false,
 		SupportsRawCommands:    false,
+		SupportsGearLight:      false,
 		SupportsLighting:       false,
+		SupportsBrightness:     false,
+		SupportsScreen:         false,
 		SupportsPowerOnStart:   false,
 		SupportsSmartStartStop: false,
 	}
@@ -330,6 +339,18 @@ func NormalizeDeviceCapabilities(caps DeviceCapabilities) DeviceCapabilities {
 		caps.SpeedRange = normalizePercentSpeedRange(caps.SpeedRange)
 	}
 	return caps
+}
+
+func (caps DeviceCapabilities) AllowsGearLight() bool {
+	return caps.SupportsGearLight || caps.SupportsLighting
+}
+
+func (caps DeviceCapabilities) AllowsBrightness() bool {
+	return caps.SupportsBrightness || caps.SupportsLighting
+}
+
+func (caps DeviceCapabilities) AllowsLightStrip() bool {
+	return caps.SupportsLighting
 }
 
 func normalizePercentSpeedRange(speedRange DeviceSpeedRange) DeviceSpeedRange {
@@ -591,6 +612,7 @@ func NormalizeDeviceProfileConfig(cfg *AppConfig) bool {
 			cfg.DeviceProfiles = []DeviceProfile{DefaultWiFiPercentProfile(cfg.FanControlDeviceIp)}
 			cfg.ActiveDeviceProfileID = DefaultWiFiPercentProfileID
 		}
+		ensureBuiltInDeviceProfiles(cfg)
 		setActiveDeviceProfileIDForTransport(cfg, cfg.DeviceProfiles[0])
 		return true
 	}
@@ -600,6 +622,10 @@ func NormalizeDeviceProfileConfig(cfg *AppConfig) bool {
 	normalized := make([]DeviceProfile, 0, len(cfg.DeviceProfiles))
 	for _, profile := range cfg.DeviceProfiles {
 		profile = NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp)
+		if IsFlyDigiDeviceProfileID(profile.ID) {
+			changed = true
+			continue
+		}
 		if seen[profile.ID] {
 			changed = true
 			continue
@@ -622,6 +648,9 @@ func NormalizeDeviceProfileConfig(cfg *AppConfig) bool {
 		changed = true
 	}
 	cfg.DeviceProfiles = normalized
+	if ensureBuiltInDeviceProfiles(cfg) {
+		changed = true
+	}
 	activeIDs, activeIDsChanged := normalizeActiveDeviceProfileIDsByTransport(cfg.DeviceProfiles, cfg.ActiveDeviceProfileIDsByTransport)
 	cfg.ActiveDeviceProfileIDsByTransport = activeIDs
 	if activeIDsChanged {

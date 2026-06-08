@@ -42,6 +42,12 @@ export interface DeviceProfileDraft {
   readStateCommand: string;
   parserType: string;
   parserExpression: string;
+  supportsGearLight: boolean;
+  supportsLighting: boolean;
+  supportsBrightness: boolean;
+  supportsPowerOnStart: boolean;
+  supportsSmartStartStop: boolean;
+  supportsScreen: boolean;
 }
 
 export function normalizeTransport(value?: string): DeviceTransport {
@@ -98,6 +104,12 @@ export function createEmptyProfileDraft(): DeviceProfileDraft {
     readStateCommand: '',
     parserType: 'jsonpath',
     parserExpression: '',
+    supportsGearLight: false,
+    supportsLighting: false,
+    supportsBrightness: false,
+    supportsPowerOnStart: false,
+    supportsSmartStartStop: false,
+    supportsScreen: false,
   };
 }
 
@@ -116,6 +128,8 @@ export function createDraftFromProfile(profile?: types.DeviceProfile | null): De
   const parser = (profile.responseParsers || [])[0];
   const commandEncoding = setSpeed?.encoding || base.commandEncoding;
   const checksum = commandEncoding === 'json' ? 'none' : setSpeed?.checksum || base.checksum;
+  const capabilities = profile.capabilities || {};
+  const legacyLighting = Boolean(capabilities.supportsLighting);
 
   return {
     ...base,
@@ -155,6 +169,12 @@ export function createDraftFromProfile(profile?: types.DeviceProfile | null): De
     readStateCommand: readState?.command || '',
     parserType: parser?.type || base.parserType,
     parserExpression: parser?.expression || '',
+    supportsGearLight: Boolean((capabilities as any).supportsGearLight ?? legacyLighting),
+    supportsLighting: legacyLighting,
+    supportsBrightness: Boolean((capabilities as any).supportsBrightness ?? legacyLighting),
+    supportsPowerOnStart: Boolean(capabilities.supportsPowerOnStart),
+    supportsSmartStartStop: Boolean(capabilities.supportsSmartStartStop),
+    supportsScreen: Boolean((capabilities as any).supportsScreen),
   };
 }
 
@@ -273,9 +293,12 @@ export function buildProfileFromDraft(draft: DeviceProfileDraft): types.DevicePr
       supportsCustomSpeed: supportsSetSpeed,
       supportsDebugFrames: false,
       supportsRawCommands: commands.length > 0,
-      supportsLighting: false,
-      supportsPowerOnStart: false,
-      supportsSmartStartStop: false,
+      supportsGearLight: draft.supportsGearLight,
+      supportsLighting: draft.supportsLighting,
+      supportsBrightness: draft.supportsBrightness,
+      supportsPowerOnStart: draft.supportsPowerOnStart,
+      supportsSmartStartStop: draft.supportsSmartStartStop,
+      supportsScreen: draft.supportsScreen,
     },
   });
 }

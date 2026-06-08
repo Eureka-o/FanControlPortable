@@ -1016,20 +1016,16 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
 
   const applyManualGearPreset = useCallback(async (gear: string, level: string) => {
     try {
-      await apiService.setManualGear(gear, level);
-      onConfigChange(types.AppConfig.createFrom({
-        ...config,
-        manualGear: gear,
-        manualLevel: level,
-        manualGearLevels: {
-          ...rememberedManualGearLevels,
-          [gear]: level,
-        },
-      }));
+      const ok = await apiService.setManualGear(gear, level);
+      if (!ok) {
+        throw new Error(t('fanCurve.manualGear.unavailable'));
+      }
+      const latest = await apiService.getConfig();
+      onConfigChange(types.AppConfig.createFrom(latest));
     } catch (err) {
       toast.error(t('fanCurve.manualGear.applyFailed', { error: getErrorMessage(err) }));
     }
-  }, [config, onConfigChange, rememberedManualGearLevels, t]);
+  }, [onConfigChange, t]);
 
   const handleManualPointSelect = useCallback(async (index: number) => {
     const selected = manualPoints[index];
@@ -1081,8 +1077,12 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
       const normalized = normalizeManualGearRpmMap(draftGearRpm, speedRange.min, speedRange.max);
       const next = types.AppConfig.createFrom({ ...config, manualGearRpm: normalized });
       await apiService.updateConfig(next);
-      onConfigChange(next);
-      await apiService.setManualGear(next.manualGear || '标准', next.manualLevel || '中');
+      const ok = await apiService.setManualGear(next.manualGear || '标准', next.manualLevel || '中');
+      if (!ok) {
+        throw new Error(t('fanCurve.manualGear.unavailable'));
+      }
+      const latest = await apiService.getConfig();
+      onConfigChange(types.AppConfig.createFrom(latest));
       setGearEditOpen(false);
       toast.success(t('fanCurve.manualGear.rpmSaved'));
     } catch (err) {

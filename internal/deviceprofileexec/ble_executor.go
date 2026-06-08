@@ -2,12 +2,14 @@ package deviceprofileexec
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/TIANLI0/THRM/internal/deviceproto"
 	"github.com/TIANLI0/THRM/internal/types"
 	"tinygo.org/x/bluetooth"
 )
@@ -103,6 +105,11 @@ func (e *BLEExecutor) Open(ctx context.Context) (*types.FanData, error) {
 	if err := e.ensureOpenLocked(ctx); err != nil {
 		return nil, err
 	}
+	if e.profile.ID == types.FlyDigiBS1ProfileID && !e.hasReadCommand {
+		state := e.syntheticStateLocked(types.NewRPMSpeed(0))
+		e.lastState = cloneFanData(state)
+		return state, nil
+	}
 	if e.hasReadCommand || e.canReadDirectly() {
 		return e.readStateLocked(ctx)
 	}
@@ -145,6 +152,9 @@ func (e *BLEExecutor) SetSpeed(ctx context.Context, speed types.FanSpeedValue) (
 	speed = speed.Normalized()
 	if speed.Unit != types.NormalizeFanSpeedUnit(e.profile.SpeedUnit) {
 		return nil, fmt.Errorf("speed unit %q does not match profile unit %q", speed.Unit, e.profile.SpeedUnit)
+	}
+	if e.profile.ID == types.FlyDigiBS1ProfileID {
+		return e.setFlyDigiBS1Speed(ctx, speed)
 	}
 	if !e.hasSetCommand {
 		return nil, fmt.Errorf("ble profile does not define a setSpeed command")
@@ -198,6 +208,37 @@ func (e *BLEExecutor) setSpeedOnceLocked(ctx context.Context, speed types.FanSpe
 	return e.fanDataFromBody(body, speed)
 }
 
+func (e *BLEExecutor) setFlyDigiBS1Speed(ctx context.Context, speed types.FanSpeedValue) (*types.FanData, error) {
+	if !types.IsRPMSpeedUnit(speed.Unit) {
+		return nil, fmt.Errorf("FlyDigi BS1 requires RPM speed")
+	}
+
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+
+	if err := e.ensureOpenLocked(ctx); err != nil {
+		return nil, err
+	}
+	rpm := types.ClampRPM(speed.Value)
+	if rpm > 4000 {
+		rpm = 4000
+	}
+	if err := e.writeRawLocked(ctx, deviceproto.BuildFrame(deviceproto.CmdRGBEnable, 0x01)); err != nil {
+		return nil, fmt.Errorf("enter BS1 dynamic RPM mode: %w", err)
+	}
+	if err := e.sleep(ctxWithDefault(ctx), 50*time.Millisecond); err != nil {
+		return nil, err
+	}
+	payload := make([]byte, 2)
+	binary.LittleEndian.PutUint16(payload, uint16(rpm))
+	if err := e.writeRawLocked(ctx, deviceproto.BuildFrame(deviceproto.CmdSetRealtimeRPM, payload...)); err != nil {
+		return nil, fmt.Errorf("set BS1 RPM: %w", err)
+	}
+	state := e.stateWithValues(rpm, rpm, "自动模式(实时转速)")
+	e.lastState = cloneFanData(state)
+	return state, nil
+}
+
 func (e *BLEExecutor) readStateLocked(ctx context.Context) (*types.FanData, error) {
 	if e.hasReadCommand {
 		payload, err := e.bleCommandBytes(e.readCommand, SpeedVars{})
@@ -227,6 +268,27 @@ func (e *BLEExecutor) bleCommandBytes(command types.DeviceCommandTemplate, vars 
 	return body, err
 }
 
+func (e *BLEExecutor) WriteRaw(ctx context.Context, payload []byte) error {
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	if err := e.ensureOpenLocked(ctx); err != nil {
+		return err
+	}
+	return e.writeRawLocked(ctx, payload)
+}
+
+func (e *BLEExecutor) writeRawLocked(ctx context.Context, payload []byte) error {
+	if len(payload) == 0 {
+		return fmt.Errorf("ble command is empty")
+	}
+	if err := e.waitForSendSlot(ctxWithDefault(ctx)); err != nil {
+		return err
+	}
+	opCtx, cancel := e.operationContext(ctx)
+	defer cancel()
+	return e.client.WriteBLECommand(opCtx, payload, e.writeWithResponse)
+}
+
 func (e *BLEExecutor) shouldReadSetResponse() bool {
 	return len(e.parsers.parsers) > 0
 }
@@ -249,6 +311,11 @@ func (e *BLEExecutor) readFrame(ctx context.Context) ([]byte, error) {
 }
 
 func (e *BLEExecutor) fanDataFromBody(body []byte, fallback types.FanSpeedValue) (*types.FanData, error) {
+	if e.profile.ID == types.FlyDigiBS1ProfileID {
+		if fanData, ok := parseFlyDigiBS1Notification(body); ok {
+			return fanData, nil
+		}
+	}
 	state, err := e.parsers.Parse(body)
 	if err != nil {
 		return nil, err
@@ -279,6 +346,30 @@ func (e *BLEExecutor) fanDataFromBody(body []byte, fallback types.FanSpeedValue)
 		workMode = "ble"
 	}
 	return e.stateWithValues(current, target, workMode), nil
+}
+
+func parseFlyDigiBS1Notification(body []byte) (*types.FanData, bool) {
+	frame, ok := deviceproto.ParseFrame(body)
+	if !ok || frame.Command != deviceproto.CmdStatusNotify || len(frame.Payload) < 7 {
+		return nil, false
+	}
+	mode := frame.Payload[1]
+	current := int(binary.LittleEndian.Uint16(frame.Payload[3:5]))
+	target := int(binary.LittleEndian.Uint16(frame.Payload[5:7]))
+	return &types.FanData{
+		ReportID:     frame.ReportID,
+		MagicSync:    0x5AA5,
+		Command:      frame.Command,
+		Status:       frame.Length,
+		GearSettings: frame.Payload[0],
+		CurrentMode:  mode,
+		Reserved1:    frame.Payload[2],
+		CurrentRPM:   uint16(clampUint16(current)),
+		TargetRPM:    uint16(clampUint16(target)),
+		WorkMode:     deviceproto.ModeName(mode),
+		Transport:    types.DeviceTransportBLE,
+		SpeedUnit:    types.FanSpeedUnitRPM,
+	}, true
 }
 
 func (e *BLEExecutor) syntheticStateLocked(speed types.FanSpeedValue) *types.FanData {

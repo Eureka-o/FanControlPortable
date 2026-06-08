@@ -4,6 +4,8 @@ import {types} from '../models';
 import {theme} from '../models';
 import {context} from '../models';
 
+export function AutoScanDevices():Promise<Record<string, any>>;
+
 export function CheckWindowsAutoStart():Promise<boolean>;
 
 export function ConnectDevice():Promise<boolean>;
@@ -95,6 +97,8 @@ export function SaveDeviceProfile(arg1:types.DeviceProfile,arg2:boolean):Promise
 export function SaveFanCurveProfile(arg1:string,arg2:string,arg3:Array<types.FanCurvePoint>,arg4:boolean):Promise<types.FanCurveProfile>;
 
 export function ScanBLEDevices(arg1:types.BLEScanParams):Promise<Array<types.BLEDeviceInfo>>;
+
+export function ScanWiFiDevices(arg1:string):Promise<types.WiFiDiscoveryResult>;
 
 export function SendDeviceDebugCommand(arg1:string,arg2:number):Promise<types.DeviceDebugCommandResult>;
 

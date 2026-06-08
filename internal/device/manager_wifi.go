@@ -36,12 +36,15 @@ type Manager struct {
 	bleExecutor     *deviceprofileexec.BLEExecutor
 	serialDialer    deviceprofileexec.SerialDialer
 	serialExecutor  *deviceprofileexec.SerialExecutor
+	flyDigiHID      *flyDigiHIDDevice
 	mutex           sync.RWMutex
 	logger          types.Logger
 	currentFanData  atomic.Pointer[types.FanData]
 
 	onFanDataUpdate func(data *types.FanData)
 	onDisconnect    func()
+
+	lightCmdBuf [65]byte
 
 	debugMutex  sync.Mutex
 	debugSeq    uint64
@@ -127,6 +130,8 @@ func (m *Manager) disconnect(notify bool) {
 		m.disconnectBLELocked()
 	} else if m.deviceType == types.DeviceTransportSerial {
 		m.disconnectSerialLocked()
+	} else if m.deviceType == types.DeviceTransportHID {
+		m.disconnectFlyDigiHIDLocked()
 	} else {
 		m.disconnectWiFiLocked()
 	}
@@ -146,12 +151,20 @@ func (m *Manager) IsConnected() bool {
 }
 
 func (m *Manager) GetProductID() uint16 {
-	return 0
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+	return m.productID
 }
 
 func (m *Manager) GetModelName() string {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
+	if m.deviceType == types.DeviceTransportHID {
+		return flyDigiHIDModelName(m.productID)
+	}
+	if m.deviceType == types.DeviceTransportBLE && m.activeProfile.ID == types.FlyDigiBS1ProfileID {
+		return "BS1"
+	}
 	return m.activeProfileDisplayNameLocked(wifiOnlyModelName)
 }
 
@@ -162,7 +175,9 @@ func (m *Manager) GetDeviceType() string {
 }
 
 func (m *Manager) IsBS1() bool {
-	return false
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+	return m.deviceType == types.DeviceTransportBLE && m.activeProfile.ID == types.FlyDigiBS1ProfileID
 }
 
 func (m *Manager) GetCurrentFanData() *types.FanData {
@@ -213,6 +228,9 @@ func (m *Manager) SetTargetSpeed(value int, unit string) bool {
 		return false
 	}
 	if types.IsRPMSpeedUnit(unit) {
+		if m.deviceType == types.DeviceTransportHID {
+			return m.setFlyDigiHIDTargetSpeedLocked(types.NewRPMSpeed(value))
+		}
 		if m.deviceType == types.DeviceTransportWiFi {
 			if !m.shouldUseWiFiLocked() || !types.IsRPMSpeedUnit(m.activeProfile.SpeedUnit) {
 				m.logWarn("default WiFi percent profile does not support direct RPM target speed: %d", value)
@@ -252,8 +270,14 @@ func (m *Manager) SetCustomFanSpeed(percent int) bool {
 }
 
 func (m *Manager) EnterAutoMode() error {
-	if !m.IsConnected() {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	if !m.isConnected {
 		return fmt.Errorf("设备未连接")
+	}
+	if m.deviceType == types.DeviceTransportHID {
+		return m.writeFlyDigiHIDFrameLocked(deviceproto.CmdEnterRealtimeRPM, nil, hidControlReportLen)
 	}
 	return nil
 }
@@ -270,6 +294,9 @@ func (m *Manager) SetManualGearRPM(gear, level string, rpm int) bool {
 	m.mutex.RLock()
 	unit := types.NormalizeFanSpeedUnit(m.activeProfile.SpeedUnit)
 	m.mutex.RUnlock()
+	if m.GetDeviceType() == types.DeviceTransportHID {
+		return m.setFlyDigiHIDManualGearRPM(gear, level, rpm)
+	}
 	if types.IsRPMSpeedUnit(unit) {
 		return m.SetTargetSpeed(rpm, unit)
 	}
@@ -277,26 +304,47 @@ func (m *Manager) SetManualGearRPM(gear, level string, rpm int) bool {
 }
 
 func (m *Manager) SetGearLight(enabled bool) bool {
+	if m.GetDeviceType() == types.DeviceTransportHID {
+		return m.setFlyDigiHIDGearLight(enabled)
+	}
 	return false
 }
 
 func (m *Manager) SetPowerOnStart(enabled bool) bool {
+	if m.IsBS1() {
+		return m.setFlyDigiBS1PowerOnStart(enabled)
+	}
+	if m.GetDeviceType() == types.DeviceTransportHID {
+		return m.setFlyDigiHIDPowerOnStart(enabled)
+	}
 	return false
 }
 
 func (m *Manager) SetSmartStartStop(mode string) bool {
+	if m.GetDeviceType() == types.DeviceTransportHID {
+		return m.setFlyDigiHIDSmartStartStop(mode)
+	}
 	return false
 }
 
 func (m *Manager) SetBrightness(percentage int) bool {
+	if m.GetDeviceType() == types.DeviceTransportHID {
+		return m.setFlyDigiHIDBrightness(percentage)
+	}
 	return false
 }
 
 func (m *Manager) SetLightStrip(cfg types.LightStripConfig) error {
+	if m.GetDeviceType() == types.DeviceTransportHID {
+		return m.setFlyDigiHIDLightStrip(cfg)
+	}
 	return fmt.Errorf("active device does not support lighting")
 }
 
 func (m *Manager) SetRGBOff() bool {
+	if m.GetDeviceType() == types.DeviceTransportHID {
+		return m.setFlyDigiHIDRGBOff()
+	}
 	return false
 }
 
@@ -309,6 +357,10 @@ func (m *Manager) QueryDeviceSettings() (types.DeviceSettings, error) {
 	}
 	model := m.activeProfileDisplayNameLocked(wifiOnlyModelName)
 	m.mutex.RUnlock()
+
+	if source == types.DeviceTransportHID {
+		return m.queryFlyDigiHIDDeviceSettings()
+	}
 
 	settings := types.DeviceSettings{
 		Available: available,
@@ -393,6 +445,10 @@ func (m *Manager) SendDebugCommand(input string, waitMs int) (types.DeviceDebugC
 	}
 	if waitMs > 5000 {
 		waitMs = 5000
+	}
+
+	if m.GetDeviceType() == types.DeviceTransportHID {
+		return m.sendFlyDigiHIDDebugCommand(input, waitMs)
 	}
 
 	trimmed := strings.TrimSpace(input)

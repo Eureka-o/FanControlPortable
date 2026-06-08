@@ -3,6 +3,7 @@ package guiapp
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/TIANLI0/THRM/internal/types"
@@ -24,7 +25,45 @@ func (a *App) ConnectDevice() bool {
 	return success
 }
 
+func (a *App) AutoScanDevices() map[string]any {
+	resp, err := a.sendRequest(ipc.ReqAutoScanDevices, nil)
+	if err != nil {
+		guiLogger.Errorf("自动扫描设备请求失败: %v", err)
+		return map[string]any{"connected": false, "error": err.Error()}
+	}
+	if !resp.Success {
+		guiLogger.Errorf("自动扫描设备失败: %s", resp.Error)
+		return map[string]any{"connected": false, "error": resp.Error}
+	}
+	var result map[string]any
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return map[string]any{"connected": false, "error": err.Error()}
+	}
+	return result
+}
+
 // DisconnectDevice 断开设备连接
+func (a *App) ScanWiFiDevices(mode string) types.WiFiDiscoveryResult {
+	timeout := 12 * time.Second
+	if mode == types.WiFiDiscoveryModeDeep {
+		timeout = 60 * time.Second
+	}
+	resp, err := a.sendRequestWithTimeout(ipc.ReqScanWiFiDevices, ipc.ScanWiFiDevicesParams{Mode: mode}, timeout)
+	if err != nil {
+		guiLogger.Errorf("WiFi IP scan request failed: %v", err)
+		return types.WiFiDiscoveryResult{Mode: mode, Error: err.Error()}
+	}
+	if !resp.Success {
+		guiLogger.Errorf("WiFi IP scan failed: %s", resp.Error)
+		return types.WiFiDiscoveryResult{Mode: mode, Error: resp.Error}
+	}
+	var result types.WiFiDiscoveryResult
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return types.WiFiDiscoveryResult{Mode: mode, Error: err.Error()}
+	}
+	return result
+}
+
 func (a *App) DisconnectDevice() error {
 	resp, err := a.sendRequest(ipc.ReqDisconnect, nil)
 	if err != nil {

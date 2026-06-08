@@ -259,3 +259,36 @@ func TestValidateBLEAndSerialProfiles(t *testing.T) {
 		t.Fatalf("valid serial profile returned error: %v", err)
 	}
 }
+
+func TestSupportedProfilesHideFlyDigiBackendProfiles(t *testing.T) {
+	supported := SupportedProfiles()
+	hiddenIDs := []string{
+		types.FlyDigiBS1ProfileID,
+		types.FlyDigiBS2ProfileID,
+		types.FlyDigiBS2PROProfileID,
+		types.FlyDigiBS3ProfileID,
+		types.FlyDigiBS3PROProfileID,
+	}
+	for _, id := range hiddenIDs {
+		if idx := FindIndex(supported, id); idx >= 0 {
+			t.Fatalf("supported profiles should not expose hidden FlyDigi profile %q", id)
+		}
+	}
+}
+
+func TestFlyDigiProfileIDsAreBackendOnly(t *testing.T) {
+	for _, id := range []string{
+		types.FlyDigiBS1ProfileID,
+		types.FlyDigiBS2ProfileID,
+		types.FlyDigiBS2PROProfileID,
+		types.FlyDigiBS3ProfileID,
+		types.FlyDigiBS3PROProfileID,
+	} {
+		if !types.IsFlyDigiDeviceProfileID(id) {
+			t.Fatalf("%q should be recognized as a FlyDigi backend profile ID", id)
+		}
+		if IsBuiltInProfileID(id) {
+			t.Fatalf("%q should not be treated as a persisted built-in profile ID", id)
+		}
+	}
+}

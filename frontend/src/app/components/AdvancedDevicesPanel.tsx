@@ -185,9 +185,12 @@ function CapabilityPills({ profile }: { profile: types.DeviceProfile }) {
     caps?.supportsCustomSpeed ? t('controlPanel.fan.customSpeedTitle') : '',
     caps?.supportsDebugFrames ? t('advancedDevices.capabilities.debugFrames') : '',
     caps?.supportsRawCommands ? t('advancedDevices.capabilities.raw') : '',
+    ((caps as any)?.supportsGearLight || caps?.supportsLighting) ? t('advancedDevices.capabilities.gearLight') : '',
     caps?.supportsLighting ? t('advancedDevices.capabilities.lighting') : '',
+    ((caps as any)?.supportsBrightness || caps?.supportsLighting) ? t('advancedDevices.capabilities.brightness') : '',
     caps?.supportsPowerOnStart ? t('advancedDevices.capabilities.powerOnStart') : '',
     caps?.supportsSmartStartStop ? t('advancedDevices.capabilities.smartStartStop') : '',
+    (caps as any)?.supportsScreen ? t('advancedDevices.capabilities.screen') : '',
   ].filter(Boolean);
 
   if (items.length === 0) {

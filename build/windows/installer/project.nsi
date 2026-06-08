@@ -570,6 +570,7 @@ SectionEnd
 Section "$(THRM_STR_SECTION_PAWNIO)" SEC_PAWNIO
     SectionIn RO
     DetailPrint "$(THRM_STR_PREPARE_PAWNIO)"
+    Push $5
     Push $6
     Push $7
     Push $8
@@ -584,31 +585,46 @@ Section "$(THRM_STR_SECTION_PAWNIO)" SEC_PAWNIO
         Abort
     ${EndIf}
 
-    # Detect installed PawnIO version
+    # Detect any installed PawnIO. The PawnIO setup program refuses in-place
+    # installs, so FanControl upgrades must not run it when PawnIO already exists.
+    StrCpy $5 ""
     StrCpy $6 ""
     SetRegView 64
+    ReadRegStr $5 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO" "UninstallString"
     ReadRegStr $6 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO" "DisplayVersion"
-    ${If} $6 == ""
+    ${If} $5 == ""
+        ReadRegStr $5 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO" "DisplayName"
+    ${EndIf}
+    ${If} $5 == ""
+        StrCpy $5 $6
+    ${EndIf}
+    ${If} $5 == ""
         SetRegView 32
+        ReadRegStr $5 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO" "UninstallString"
         ReadRegStr $6 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO" "DisplayVersion"
+        ${If} $5 == ""
+            ReadRegStr $5 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO" "DisplayName"
+        ${EndIf}
+        ${If} $5 == ""
+            StrCpy $5 $6
+        ${EndIf}
     ${EndIf}
     SetRegView 64
+    ${If} $5 == ""
+        ReadRegStr $5 HKLM "SYSTEM\CurrentControlSet\Services\PawnIO" "ImagePath"
+    ${EndIf}
 
     # Decide install strategy:
-    # $9 = 0 skip, 1 install/update without uninstalling the shared driver first
+    # $9 = 0 skip, 1 install. Never update over an existing PawnIO install here.
     StrCpy $9 "1"
 
-    ${If} $6 != ""
-        DetailPrint "$(THRM_STR_PAWNIO_DETECTED) $6, $(THRM_STR_PAWNIO_BUNDLED) ${PAWNIO_BUNDLED_VERSION}"
-        ${VersionCompare} "$6" "${PAWNIO_BUNDLED_VERSION}" $8
-
-        ${If} $8 == 2
-            DetailPrint "$(THRM_STR_PAWNIO_UPDATE)"
-            StrCpy $9 "1"
-        ${Else}
-            DetailPrint "$(THRM_STR_PAWNIO_SKIP)"
-            StrCpy $9 "0"
+    ${If} $5 != ""
+        ${If} $6 == ""
+            StrCpy $6 "$(THRM_STR_PAWNIO_VERSION_UNKNOWN)"
         ${EndIf}
+        DetailPrint "$(THRM_STR_PAWNIO_DETECTED) $6, $(THRM_STR_PAWNIO_BUNDLED) ${PAWNIO_BUNDLED_VERSION}"
+        DetailPrint "$(THRM_STR_PAWNIO_SKIP)"
+        StrCpy $9 "0"
     ${EndIf}
 
     ${If} $9 == "0"
@@ -650,6 +666,7 @@ Section "$(THRM_STR_SECTION_PAWNIO)" SEC_PAWNIO
     Pop $8
     Pop $7
     Pop $6
+    Pop $5
 SectionEnd
 
 # Section descriptions

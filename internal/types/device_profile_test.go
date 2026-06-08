@@ -71,7 +71,9 @@ func TestLegacyRPMProfileUsesRPMAndHID(t *testing.T) {
 		t.Fatalf("profile transport/unit = %q/%q, want hid/rpm", profile.Transport, profile.SpeedUnit)
 	}
 	if profile.Capabilities.SupportsDebugFrames || profile.Capabilities.SupportsRawCommands ||
-		profile.Capabilities.SupportsLighting || profile.Capabilities.SupportsPowerOnStart || profile.Capabilities.SupportsSmartStartStop {
+		profile.Capabilities.SupportsGearLight || profile.Capabilities.SupportsLighting ||
+		profile.Capabilities.SupportsBrightness || profile.Capabilities.SupportsScreen ||
+		profile.Capabilities.SupportsPowerOnStart || profile.Capabilities.SupportsSmartStartStop {
 		t.Fatalf("legacy RPM profile should not expose non-speed capabilities until whitelisted: %#v", profile.Capabilities)
 	}
 }
@@ -86,8 +88,59 @@ func TestLegacyBLEProfileDoesNotInheritNonSpeedCapabilities(t *testing.T) {
 		t.Fatalf("legacy BLE profile should keep speed-control capabilities: %#v", profile.Capabilities)
 	}
 	if profile.Capabilities.SupportsDebugFrames || profile.Capabilities.SupportsRawCommands ||
-		profile.Capabilities.SupportsLighting || profile.Capabilities.SupportsPowerOnStart || profile.Capabilities.SupportsSmartStartStop {
+		profile.Capabilities.SupportsGearLight || profile.Capabilities.SupportsLighting ||
+		profile.Capabilities.SupportsBrightness || profile.Capabilities.SupportsScreen ||
+		profile.Capabilities.SupportsPowerOnStart || profile.Capabilities.SupportsSmartStartStop {
 		t.Fatalf("legacy BLE profile should not expose non-speed capabilities until whitelisted: %#v", profile.Capabilities)
+	}
+}
+
+func TestFlyDigiBuiltInProfilesDeclareExpectedCapabilities(t *testing.T) {
+	bs1 := NormalizeDeviceProfile(FlyDigiBS1Profile(), "")
+	if bs1.ID != FlyDigiBS1ProfileID {
+		t.Fatalf("BS1 profile ID = %q, want %q", bs1.ID, FlyDigiBS1ProfileID)
+	}
+	if bs1.DisplayName != "飞智（FlyDigi）BS1" {
+		t.Fatalf("BS1 display name = %q", bs1.DisplayName)
+	}
+	if bs1.Transport != DeviceTransportBLE || bs1.SpeedUnit != FanSpeedUnitRPM {
+		t.Fatalf("BS1 transport/unit = %q/%q, want ble/rpm", bs1.Transport, bs1.SpeedUnit)
+	}
+	if bs1.Connection.BLEServiceUUID != "fff0" || bs1.Connection.BLEWriteCharacteristic != "fff2" || bs1.Connection.BLENotifyCharacteristic != "fff1" {
+		t.Fatalf("BS1 BLE connection = %#v, want FFF0/FFF2/FFF1", bs1.Connection)
+	}
+	if !bs1.Capabilities.SupportsPowerOnStart {
+		t.Fatalf("BS1 should support power-on-start: %#v", bs1.Capabilities)
+	}
+	if bs1.Capabilities.SupportsGearLight || bs1.Capabilities.SupportsLighting ||
+		bs1.Capabilities.SupportsBrightness || bs1.Capabilities.SupportsScreen ||
+		bs1.Capabilities.SupportsSmartStartStop {
+		t.Fatalf("BS1 should not expose lighting, screen, or smart start/stop: %#v", bs1.Capabilities)
+	}
+
+	hidProfiles := []DeviceProfile{
+		FlyDigiBS2Profile(),
+		FlyDigiBS2PROProfile(),
+		FlyDigiBS3Profile(),
+		FlyDigiBS3PROProfile(),
+	}
+	for _, raw := range hidProfiles {
+		profile := NormalizeDeviceProfile(raw, "")
+		if profile.Transport != DeviceTransportHID || profile.SpeedUnit != FanSpeedUnitRPM {
+			t.Fatalf("%s transport/unit = %q/%q, want hid/rpm", profile.ID, profile.Transport, profile.SpeedUnit)
+		}
+		if !profile.Capabilities.SupportsSetSpeed || !profile.Capabilities.SupportsReadState ||
+			!profile.Capabilities.SupportsManualGears || !profile.Capabilities.SupportsCustomSpeed {
+			t.Fatalf("%s should expose speed/read/manual/custom capabilities: %#v", profile.ID, profile.Capabilities)
+		}
+		if !profile.Capabilities.SupportsGearLight || !profile.Capabilities.SupportsLighting ||
+			!profile.Capabilities.SupportsBrightness || !profile.Capabilities.SupportsPowerOnStart ||
+			!profile.Capabilities.SupportsSmartStartStop {
+			t.Fatalf("%s should expose whitelisted HID device functions: %#v", profile.ID, profile.Capabilities)
+		}
+		if profile.Capabilities.SupportsScreen {
+			t.Fatalf("%s should not expose screen support without a verified whitelist: %#v", profile.ID, profile.Capabilities)
+		}
 	}
 }
 
@@ -114,6 +167,13 @@ func TestNormalizeDeviceProfileConfigDerivesFromOldFields(t *testing.T) {
 	}
 	if cfg.ActiveDeviceProfileID != DefaultWiFiPercentProfileID {
 		t.Fatalf("active profile = %q, want %q", cfg.ActiveDeviceProfileID, DefaultWiFiPercentProfileID)
+	}
+	for _, id := range []string{FlyDigiBS1ProfileID, FlyDigiBS2ProfileID, FlyDigiBS2PROProfileID, FlyDigiBS3ProfileID, FlyDigiBS3PROProfileID} {
+		for _, profile := range cfg.DeviceProfiles {
+			if profile.ID == id {
+				t.Fatalf("hidden FlyDigi backend profile %q should not be saved in normalized config", id)
+			}
+		}
 	}
 	active := ActiveDeviceProfile(cfg)
 	if active.Connection.Endpoint != "10.0.0.25" {
@@ -237,7 +297,7 @@ func TestNormalizeDeviceProfileConfigPreservesActiveProfileWithinRequestedTransp
 	}
 
 	if NormalizeDeviceProfileConfig(cfg) {
-		t.Fatal("expected active serial profile to already be normalized for requested transport")
+		t.Fatal("expected no hidden built-in profile injection")
 	}
 	if cfg.ActiveDeviceProfileID != second.ID {
 		t.Fatalf("active profile = %q, want %q", cfg.ActiveDeviceProfileID, second.ID)
@@ -327,5 +387,8 @@ func TestActiveDeviceProfileUsesRequestedBuiltInRPMProfileWhenMissingFromConfig(
 	active := ActiveDeviceProfile(cfg)
 	if active.Transport != DeviceTransportHID || active.SpeedUnit != FanSpeedUnitRPM {
 		t.Fatalf("active profile transport/unit = %q/%q, want hid/rpm", active.Transport, active.SpeedUnit)
+	}
+	if active.ID != LegacyRPMProfileID {
+		t.Fatalf("active HID profile = %q, want compatibility fallback %q before config normalization", active.ID, LegacyRPMProfileID)
 	}
 }

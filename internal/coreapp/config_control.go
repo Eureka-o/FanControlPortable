@@ -198,18 +198,18 @@ func (a *CoreApp) SetAutoControl(enabled bool) error {
 	if enabled {
 		a.userSetAutoControl = true
 	}
-
-	if !enabled && a.isConnected {
-		a.safeGo("applyCurrentGearSetting", func() {
-			a.applyCurrentGearSetting()
-		})
-	}
+	applyManualAfterDisable := !enabled && a.isConnected
 
 	a.configManager.Set(cfg)
 	err := a.configManager.Save()
 
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
+	}
+	if applyManualAfterDisable {
+		a.safeGo("applyCurrentGearSetting", func() {
+			a.applyCurrentGearSetting()
+		})
 	}
 
 	return err
@@ -218,12 +218,11 @@ func (a *CoreApp) SetAutoControl(enabled bool) error {
 // applyCurrentGearSetting 应用当前挡位设置
 func (a *CoreApp) applyCurrentGearSetting() {
 	fanData := a.deviceManager.GetCurrentFanData()
-	if fanData == nil {
-		return
-	}
-
 	cfg := a.configManager.Get()
-	setGear := fanData.SetGear
+	setGear := ""
+	if fanData != nil {
+		setGear = fanData.SetGear
+	}
 	if setGear == "" {
 		setGear = cfg.ManualGear
 	}
@@ -238,6 +237,8 @@ func (a *CoreApp) applyCurrentGearSetting() {
 // SetManualGear 设置手动挡位
 func (a *CoreApp) SetManualGear(gear, level string) bool {
 	cfg := a.configManager.Get()
+	cfg.AutoControl = false
+	cfg.CustomSpeedEnabled = false
 	cfg.ManualGear = gear
 	cfg.ManualLevel = level
 	if cfg.ManualGearLevels == nil {
@@ -282,6 +283,7 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 	} else {
 		cfg.CustomSpeedEnabled = false
 	}
+	applyManualAfterDisable := !enabled && a.isConnected
 
 	a.configManager.Set(cfg)
 	err := a.configManager.Save()
@@ -289,13 +291,18 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 	}
+	if applyManualAfterDisable {
+		a.safeGo("applyCurrentGearSettingAfterCustomSpeed", func() {
+			a.applyCurrentGearSetting()
+		})
+	}
 
 	return err
 }
 
 // SetGearLight 设置挡位灯
 func (a *CoreApp) SetGearLight(enabled bool) bool {
-	if !a.activeDeviceCapabilities().SupportsLighting {
+	if !a.activeDeviceCapabilities().AllowsGearLight() {
 		return false
 	}
 	if !a.deviceManager.SetGearLight(enabled) {
@@ -355,7 +362,7 @@ func (a *CoreApp) SetSmartStartStop(mode string) bool {
 
 // SetBrightness 设置亮度
 func (a *CoreApp) SetBrightness(percentage int) bool {
-	if !a.activeDeviceCapabilities().SupportsLighting {
+	if !a.activeDeviceCapabilities().AllowsBrightness() {
 		return false
 	}
 	if !a.deviceManager.SetBrightness(percentage) {
@@ -375,7 +382,7 @@ func (a *CoreApp) SetBrightness(percentage int) bool {
 
 // SetLightStrip 设置灯带
 func (a *CoreApp) SetLightStrip(lightCfg types.LightStripConfig) error {
-	if !a.activeDeviceCapabilities().SupportsLighting {
+	if !a.activeDeviceCapabilities().AllowsLightStrip() {
 		return fmt.Errorf("active device does not support lighting")
 	}
 	lightCfg, _ = normalizeLightStripConfig(lightCfg)
@@ -401,7 +408,7 @@ func (a *CoreApp) SetLightStrip(lightCfg types.LightStripConfig) error {
 }
 
 func (a *CoreApp) applyConfiguredLightStrip() error {
-	if !a.activeDeviceCapabilities().SupportsLighting {
+	if !a.activeDeviceCapabilities().AllowsLightStrip() {
 		return nil
 	}
 	cfg := a.configManager.Get()
