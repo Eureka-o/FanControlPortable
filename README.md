@@ -133,6 +133,14 @@ FanControl 是面向 Windows 的散热控制软件，用于通过设备档案连
 
 如果遇到问题，可以在 GitHub 提交 issue，或发送邮件到 `1989005183@qq.com`。
 
+## 支持项目
+
+如果 FanControl 对你有帮助，欢迎自愿赞助支持后续开发。
+
+| 微信 | 支付宝 |
+| --- | --- |
+| <img src="docs/assets/sponsor-wechat.jpg" width="220" alt="微信赞助码"> | <img src="docs/assets/sponsor-alipay.jpg" width="220" alt="支付宝赞助码"> |
+
 ## 致谢
 
 FanControl 基于 [TIANLI0/THRM](https://github.com/TIANLI0/THRM) 的开源工作进行改造和适配。感谢原作者提供的桌面端框架、托盘后台机制、温度读取思路、风扇曲线交互和安装器基础。
