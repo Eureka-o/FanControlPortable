@@ -88,6 +88,7 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	if cfg.FanControlDeviceIp == "" {
 		cfg.FanControlDeviceIp = types.DefaultFanDeviceIP
 	}
+	cfg.WiFiSmartStartStopStandbySpeed = types.ClampWiFiSmartStartStopStandbyPercent(cfg.WiFiSmartStartStopStandbySpeed)
 	types.NormalizeDeviceProfileConfig(&cfg)
 	unit := types.DeviceProfileSpeedUnit(&cfg)
 	cfg.TempSource = types.NormalizeTempSource(cfg.TempSource)

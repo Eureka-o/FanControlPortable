@@ -438,6 +438,10 @@ func applyMissingDeviceDefaults(cfg *types.AppConfig, rawConfig map[string]json.
 	if _, ok := rawConfig["wifiCompatibilityEnabled"]; !ok {
 		cfg.WiFiCompatibilityEnabled = cfg.DeviceTransport == types.DeviceTransportWiFi || strings.TrimSpace(cfg.FanControlDeviceIp) != ""
 	}
+	if _, ok := rawConfig["wifiSmartStartStopStandbySpeed"]; !ok {
+		cfg.WiFiSmartStartStopStandbySpeed = types.WiFiSmartStartStopStandbyMinPercent
+	}
+	cfg.WiFiSmartStartStopStandbySpeed = types.ClampWiFiSmartStartStopStandbyPercent(cfg.WiFiSmartStartStopStandbySpeed)
 	if _, ok := rawConfig["serialCompatibilityEnabled"]; !ok {
 		cfg.SerialCompatibilityEnabled = cfg.DeviceTransport == types.DeviceTransportSerial
 	}

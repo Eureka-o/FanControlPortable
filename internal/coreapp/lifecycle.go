@@ -172,6 +172,7 @@ func (a *CoreApp) Start() error {
 // Stop 停止核心服务
 func (a *CoreApp) Stop() {
 	a.logInfo("核心服务正在停止...")
+	a.applyWiFiSmartStartStopStandbySpeed("stop")
 	if a.powerNotifyStop != nil {
 		a.safeRun("power-notify-unregister", a.powerNotifyStop)
 		a.powerNotifyStop = nil
