@@ -491,6 +491,8 @@ export namespace types {
 	    fanControlDeviceIp: string;
 	    wifiCompatibilityEnabled: boolean;
 	    wifiDynamicIpCompatibilityEnabled: boolean;
+	    wifiSmartStartStopEnabled: boolean;
+	    wifiSmartStartStopStandbySpeed: number;
 	    serialCompatibilityEnabled: boolean;
 	    autoControl: boolean;
 	    manualGearToggleHotkey: string;
@@ -539,6 +541,8 @@ export namespace types {
 	        this.fanControlDeviceIp = source["fanControlDeviceIp"];
 	        this.wifiCompatibilityEnabled = source["wifiCompatibilityEnabled"];
 	        this.wifiDynamicIpCompatibilityEnabled = source["wifiDynamicIpCompatibilityEnabled"];
+	        this.wifiSmartStartStopEnabled = source["wifiSmartStartStopEnabled"];
+	        this.wifiSmartStartStopStandbySpeed = source["wifiSmartStartStopStandbySpeed"];
 	        this.serialCompatibilityEnabled = source["serialCompatibilityEnabled"];
 	        this.autoControl = source["autoControl"];
 	        this.manualGearToggleHotkey = source["manualGearToggleHotkey"];

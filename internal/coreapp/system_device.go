@@ -28,6 +28,7 @@ func (a *CoreApp) onShowWindowRequest() {
 // onQuitRequest 退出请求回调
 func (a *CoreApp) onQuitRequest() {
 	a.logInfo("收到退出请求")
+	a.applyWiFiSmartStartStopStandbySpeed("quit")
 
 	// 通知所有 GUI 客户端退出
 	if a.ipcServer != nil {
@@ -39,6 +40,30 @@ func (a *CoreApp) onQuitRequest() {
 	case a.quitChan <- true:
 	default:
 	}
+}
+
+func (a *CoreApp) applyWiFiSmartStartStopStandbySpeed(reason string) bool {
+	cfg := a.configManager.Get()
+	if !cfg.WiFiSmartStartStopEnabled {
+		return false
+	}
+	types.NormalizeDeviceProfileConfig(&cfg)
+	profile := types.ActiveDeviceProfile(&cfg)
+	if profile.Transport != types.DeviceTransportWiFi || !types.IsPercentSpeedUnit(profile.SpeedUnit) {
+		return false
+	}
+	if !a.wifiStandbyApplied.CompareAndSwap(false, true) {
+		return false
+	}
+
+	standbySpeed := types.ClampWiFiSmartStartStopStandbyPercent(cfg.WiFiSmartStartStopStandbySpeed)
+	a.logInfo("WiFi 智能启停(Beta): %s 前尝试设置待机转速 %d%%", reason, standbySpeed)
+	if ok := a.deviceManager.SetPercentSpeed(standbySpeed); !ok {
+		a.wifiStandbyApplied.Store(false)
+		a.logError("WiFi 智能启停(Beta): %s 前设置待机转速失败", reason)
+		return false
+	}
+	return true
 }
 
 func didDeviceSwitchToManualMode(previousMode, currentMode string) bool {
@@ -230,6 +255,7 @@ func (a *CoreApp) onSystemSuspend() {
 
 	a.autoReconnectSuppressed.Store(true)
 	a.stopTemperatureMonitoring()
+	a.applyWiFiSmartStartStopStandbySpeed("system-suspend")
 
 	a.safeRun("suspend-device-disconnect", func() {
 		a.deviceManager.DisconnectSilently()
@@ -250,6 +276,7 @@ func (a *CoreApp) onSystemSuspend() {
 // onSystemResume 收到系统唤醒通知时调用，触发设备与监控的恢复。
 func (a *CoreApp) onSystemResume() {
 	a.logInfo("收到系统唤醒通知")
+	a.wifiStandbyApplied.Store(false)
 	a.triggerResumeRecovery("power-event", 0, true)
 }
 

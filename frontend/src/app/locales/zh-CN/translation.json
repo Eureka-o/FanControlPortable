@@ -740,7 +740,13 @@
       "powerOnStartTitle": "通电自启动",
       "powerOnStartDescription": "设备通电后自动运行",
       "smartStartStopTitle": "智能启停",
-      "smartStartStopDescription": "系统关闭后何时停止散热"
+      "smartStartStopDescription": "系统关闭后何时停止散热",
+      "wifiSmartStartStopTitle": "智能启停",
+      "wifiSmartStartStopDescription": "退出、睡眠或休眠前将 WiFi 设备切到待机转速",
+      "wifiSmartStartStopTip": "Beta 功能，依赖系统关机前网络仍可用；固件心跳兜底后会更稳定。",
+      "wifiSmartStartStopStandbySpeed": "待机时转速",
+      "wifiSmartStartStopStandbySpeedDescription": "退出、睡眠或休眠前发送该速度，建议保持 1%。",
+      "betaBadge": "Beta"
     },
     "legionFnQ": {
       "sectionTitle": "拯救者 Fn+Q 联动",

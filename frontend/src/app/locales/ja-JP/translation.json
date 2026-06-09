@@ -740,7 +740,13 @@
       "powerOnStartTitle": "スタートアップ",
       "powerOnStartDescription": "デバイスに電源を入れると自動的に動作します",
       "smartStartStopTitle": "スマート起動/停止",
-      "smartStartStopDescription": "システム終了後にクーラーを停止するタイミングを選べます"
+      "smartStartStopDescription": "システム終了後にクーラーを停止するタイミングを選べます",
+      "wifiSmartStartStopTitle": "スマート起動/停止",
+      "wifiSmartStartStopDescription": "終了、スリープ、休止状態の前に WiFi デバイスを待機速度へ切り替えます",
+      "wifiSmartStartStopTip": "Beta 機能です。シャットダウン時にネットワークが利用可能な場合のみ動作し、将来のファームウェア側ハートビートでより安定します。",
+      "wifiSmartStartStopStandbySpeed": "待機時の速度",
+      "wifiSmartStartStopStandbySpeedDescription": "終了、スリープ、休止状態の前にこの速度を送信します。1% を推奨します。",
+      "betaBadge": "Beta"
     },
     "legionFnQ": {
       "sectionTitle": "Legion Fn+Q 連携",

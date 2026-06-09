@@ -164,6 +164,8 @@ const SMART_START_STOP_OPTIONS = [
   { value: 'delayed', labelKey: 'controlPanel.options.smartStartStop.delayed.label', descriptionKey: 'controlPanel.options.smartStartStop.delayed.description' },
 ];
 
+const WIFI_SMART_START_STOP_STANDBY_SPEED_OPTIONS = [1, 2, 5, 10, 15, 20];
+
 // 温度平滑度（EMA 系数）选项。
 // 数字越大平滑越强、对突发温度反应越慢；越小越灵敏但可能跟着抖。
 // 后端 α = 2/(N+1)：1→即时，5→约 5 周期窗口，10→约 10 周期窗口。
@@ -529,10 +531,16 @@ function CompatibilitySubmenuRow({
   );
 }
 
-function EmptyConnectionState({ children }: { children: React.ReactNode }) {
+function EmptyConnectionState({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-dashed border-border/80 bg-muted/20 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-      {children}
+    <div
+      className={clsx(
+        'rounded-md border border-dashed border-border/80 bg-muted/20 px-3 py-2 text-xs leading-relaxed text-muted-foreground',
+        action && 'flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'
+      )}
+    >
+      <div className="min-w-0">{children}</div>
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   );
 }
@@ -651,6 +659,12 @@ function isSerialCompatibilityEnabled(config: types.AppConfig) {
 
 function isWiFiDynamicIPCompatibilityEnabled(config: types.AppConfig) {
   return Boolean((config as any).wifiDynamicIpCompatibilityEnabled);
+}
+
+function normalizeWiFiSmartStartStopStandbySpeed(value: unknown) {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numeric)) return 1;
+  return Math.min(100, Math.max(1, Math.round(numeric)));
 }
 
 function wifiDiscoveryDevices(result: WiFiDiscoveryResult | null) {
@@ -797,7 +811,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     ? Math.max(0, wifiScanLiveElapsedMs - wifiScanPausedTotalMs - wifiScanCurrentPausedMs)
     : undefined;
   const wifiScanElapsedText = loadingStates.wifiScan
-    ? wifiDiscoveryElapsedLabel(wifiScanLiveElapsedMs) || '0ms'
+    ? wifiDiscoveryElapsedLabel(wifiScanActiveElapsedMs) || '0ms'
     : wifiDiscoveryElapsedLabel(wifiScanResult?.elapsedMs);
   const wifiScanProgressLimitMs = wifiScanMode === 'deep' ? 75000 : 8000;
   const wifiScanProgressPercent = loadingStates.wifiScan
@@ -851,7 +865,13 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const currentDeviceSupportsBrightness = !!((currentDeviceCapabilities as any)?.supportsBrightness || currentDeviceSupportsLighting);
   const currentDeviceSupportsPowerOnStart = !!currentDeviceCapabilities?.supportsPowerOnStart;
   const currentDeviceSupportsSmartStartStop = !!currentDeviceCapabilities?.supportsSmartStartStop;
-  const currentDeviceHasDeviceSettings = currentDeviceSupportsGearLight || currentDeviceSupportsLighting || currentDeviceSupportsPowerOnStart || currentDeviceSupportsSmartStartStop;
+  const currentDeviceSpeedUnit = ((currentDeviceProfile as any)?.speedUnit || (currentDeviceCapabilities as any)?.speedUnit || overviewSpeedUnit || 'percent') as string;
+  const currentDeviceSupportsWiFiSmartStartStopBeta = connectedDeviceTransport === 'wifi' && currentDeviceSpeedUnit !== 'rpm';
+  const currentDeviceHasDeviceSettings = currentDeviceSupportsGearLight
+    || currentDeviceSupportsLighting
+    || currentDeviceSupportsPowerOnStart
+    || currentDeviceSupportsSmartStartStop
+    || currentDeviceSupportsWiFiSmartStartStopBeta;
 
   const activeCurveProfileId = ((config as any).activeFanCurveProfileId || '') as string;
   const currentTempSource = (((config as any).tempSource as string) || 'max') as 'max' | 'cpu' | 'gpu';
@@ -909,6 +929,10 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const smartStartStopOptions = useMemo(
     () => SMART_START_STOP_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey), description: t(item.descriptionKey) })),
     [locale, t],
+  );
+  const wifiSmartStartStopStandbySpeedOptions = useMemo(
+    () => WIFI_SMART_START_STOP_STANDBY_SPEED_OPTIONS.map((value) => ({ value, label: `${value}%` })),
+    [],
   );
   const sampleCountOptions = useMemo(
     () => SAMPLE_COUNT_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey) })),
@@ -1127,6 +1151,37 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       if (ok) onConfigChange(types.AppConfig.createFrom({ ...config, smartStartStop: mode }));
     } catch { /* noop */ }
   }, [config, onConfigChange, isConnected]);
+
+  const handleWiFiSmartStartStopEnabledChange = useCallback(async (enabled: boolean) => {
+    setLoading('wifiSmartStartStop', true);
+    try {
+      const standbySpeed = normalizeWiFiSmartStartStopStandbySpeed((config as any).wifiSmartStartStopStandbySpeed);
+      const newCfg = types.AppConfig.createFrom({
+        ...config,
+        wifiSmartStartStopEnabled: enabled,
+        wifiSmartStartStopStandbySpeed: standbySpeed,
+      });
+      await apiService.updateConfig(newCfg);
+      onConfigChange(newCfg);
+    } catch { /* noop */ } finally {
+      setLoading('wifiSmartStartStop', false);
+    }
+  }, [config, onConfigChange]);
+
+  const handleWiFiSmartStartStopStandbySpeedChange = useCallback(async (value: string | number) => {
+    setLoading('wifiSmartStartStopStandbySpeed', true);
+    try {
+      const standbySpeed = normalizeWiFiSmartStartStopStandbySpeed(value);
+      const newCfg = types.AppConfig.createFrom({
+        ...config,
+        wifiSmartStartStopStandbySpeed: standbySpeed,
+      });
+      await apiService.updateConfig(newCfg);
+      onConfigChange(newCfg);
+    } catch { /* noop */ } finally {
+      setLoading('wifiSmartStartStopStandbySpeed', false);
+    }
+  }, [config, onConfigChange]);
 
   const toggleDebugMode = useCallback(async () => {
     try {
@@ -1390,29 +1445,38 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     if (wifiScanPaused) {
       const ok = await apiService.controlWiFiScan('resume');
       if (!ok) return;
+      const now = Date.now();
       if (wifiScanPausedAt !== null) {
-        setWiFiScanPausedTotalMs((value) => value + Math.max(0, Date.now() - wifiScanPausedAt));
+        setWiFiScanPausedTotalMs((value) => value + Math.max(0, now - wifiScanPausedAt));
       }
+      setWiFiScanNow(now);
       setWiFiScanPaused(false);
       setWiFiScanPausedAt(null);
       return;
     }
     const ok = await apiService.controlWiFiScan('pause');
     if (!ok) return;
+    const now = Date.now();
+    setWiFiScanNow(now);
     setWiFiScanPaused(true);
-    setWiFiScanPausedAt(Date.now());
+    setWiFiScanPausedAt(now);
   }, [loadingStates.wifiScan, wifiScanCanceling, wifiScanMode, wifiScanPaused, wifiScanPausedAt]);
 
   const handleWiFiScanCancel = useCallback(async () => {
     if (!loadingStates.wifiScan || wifiScanMode !== 'deep' || wifiScanCanceling) return;
+    const now = Date.now();
     setWiFiScanCanceling(true);
+    if (wifiScanPausedAt !== null) {
+      setWiFiScanPausedTotalMs((value) => value + Math.max(0, now - wifiScanPausedAt));
+    }
+    setWiFiScanNow(now);
     setWiFiScanPaused(false);
     setWiFiScanPausedAt(null);
     const ok = await apiService.controlWiFiScan('cancel');
     if (!ok) {
       setWiFiScanCanceling(false);
     }
-  }, [loadingStates.wifiScan, wifiScanCanceling, wifiScanMode]);
+  }, [loadingStates.wifiScan, wifiScanCanceling, wifiScanMode, wifiScanPausedAt]);
 
   const handleWiFiDynamicIPCompatibilityChange = useCallback(async (enabled: boolean) => {
     setWiFiDynamicIPCompatibilityEnabled(enabled);
@@ -1616,6 +1680,12 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   }, [activeDeviceProfileId]);
   useEffect(() => {
     if (!loadingStates.wifiScan || wifiScanStartedAt === null) return undefined;
+    if (wifiScanPaused && !wifiScanCanceling) {
+      if (wifiScanPausedAt !== null) {
+        setWiFiScanNow(wifiScanPausedAt);
+      }
+      return undefined;
+    }
 
     setWiFiScanNow(Date.now());
     const timer = window.setInterval(() => {
@@ -1625,7 +1695,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     return () => {
       window.clearInterval(timer);
     };
-  }, [loadingStates.wifiScan, wifiScanStartedAt]);
+  }, [loadingStates.wifiScan, wifiScanCanceling, wifiScanPaused, wifiScanPausedAt, wifiScanStartedAt]);
   useEffect(() => {
     setManualHotkeyInput(normalizeHotkeyForDisplay((config as any).manualGearToggleHotkey));
     setAutoHotkeyInput(normalizeHotkeyForDisplay((config as any).autoControlToggleHotkey));
@@ -2243,6 +2313,59 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
           </SettingRow>
           )}
 
+          {currentDeviceSupportsWiFiSmartStartStopBeta && (
+          <>
+            <SettingRow
+              icon={<Power className={clsx('h-4 w-4', (config as any).wifiSmartStartStopEnabled ? 'text-primary' : '')} />}
+              title={t('controlPanel.device.wifiSmartStartStopTitle')}
+              description={t('controlPanel.device.wifiSmartStartStopDescription')}
+              tip={t('controlPanel.device.wifiSmartStartStopTip')}
+            >
+              <div className="flex items-center justify-end gap-2">
+                <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                  {t('controlPanel.device.betaBadge')}
+                </span>
+                <ToggleSwitch
+                  enabled={!!(config as any).wifiSmartStartStopEnabled}
+                  onChange={handleWiFiSmartStartStopEnabledChange}
+                  loading={loadingStates.wifiSmartStartStop}
+                  size="sm"
+                />
+              </div>
+            </SettingRow>
+
+            <AnimatePresence>
+              {!!(config as any).wifiSmartStartStopEnabled && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden"
+                >
+                  <CompatibilitySubmenu>
+                    <CompatibilitySubmenuRow
+                      icon={<Clock3 className="h-4 w-4 text-primary" />}
+                      title={t('controlPanel.device.wifiSmartStartStopStandbySpeed')}
+                      description={t('controlPanel.device.wifiSmartStartStopStandbySpeedDescription')}
+                    >
+                      <div className="w-full md:w-32">
+                        <Select
+                          value={normalizeWiFiSmartStartStopStandbySpeed((config as any).wifiSmartStartStopStandbySpeed)}
+                          onChange={handleWiFiSmartStartStopStandbySpeedChange}
+                          options={wifiSmartStartStopStandbySpeedOptions}
+                          disabled={loadingStates.wifiSmartStartStopStandbySpeed}
+                          size="sm"
+                          className="w-full"
+                        />
+                      </div>
+                    </CompatibilitySubmenuRow>
+                  </CompatibilitySubmenu>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </>
+          )}
+
           {currentDeviceSupportsSmartStartStop && (
           <SettingRow
             icon={<Zap className="h-4 w-4" />}
@@ -2516,7 +2639,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                           <div className="overflow-hidden rounded-md border border-primary/25 bg-primary/5 px-3 py-2">
                             <div className="flex min-w-0 items-center justify-between gap-3 text-xs text-primary">
                               <span className="flex min-w-0 items-center gap-2">
-                                <RotateCw className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                                <RotateCw className={clsx('h-3.5 w-3.5 shrink-0', !wifiScanPaused && 'animate-spin')} />
                                 <span className="truncate">
                                   {t(wifiScanRunningKey)}
                                 </span>
@@ -2614,31 +2737,26 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                           </div>
                         )}
                         {!loadingStates.wifiScan && !wifiScanError && wifiNormalScanAttempted && wifiScannedDevices.length === 0 && (
-                          <EmptyConnectionState>
+                          <EmptyConnectionState
+                            action={showWiFiDeepScanAction ? (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                icon={<RotateCw className="h-4 w-4" />}
+                                onClick={() => void handleWiFiScan('deep')}
+                                disabled={!wifiProfile}
+                              >
+                                {t('controlPanel.system.deviceConnection.wifiDeepScanAction')}
+                              </Button>
+                            ) : undefined}
+                          >
                             {t('controlPanel.system.deviceConnection.wifiScanResultsEmpty')}
                           </EmptyConnectionState>
                         )}
                       </div>
                     }
                   >
-                    <div className="w-full space-y-2 md:w-[420px]">
-                      <div className="flex flex-wrap justify-start gap-2 md:justify-end">
-                        <div className="flex min-w-[104px] justify-start md:justify-end">
-                          {showWiFiDeepScanAction ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              icon={<RotateCw className="h-4 w-4" />}
-                              onClick={() => void handleWiFiScan('deep')}
-                              loading={loadingStates.wifiScan && wifiScanMode === 'deep'}
-                              disabled={!wifiProfile || loadingStates.wifiScan}
-                            >
-                              {t('controlPanel.system.deviceConnection.wifiDeepScanAction')}
-                            </Button>
-                          ) : (
-                            <div className="h-9 w-[104px]" aria-hidden="true" />
-                          )}
-                        </div>
+                    <div className="flex w-full justify-start md:w-auto md:justify-end">
                         <Button
                           variant="secondary"
                           size="sm"
@@ -2649,7 +2767,6 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                         >
                           {t('controlPanel.system.deviceConnection.wifiScanAction')}
                         </Button>
-                      </div>
                     </div>
                   </CompatibilitySubmenuRow>
 

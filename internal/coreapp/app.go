@@ -56,6 +56,7 @@ type CoreApp struct {
 	autoReconnectSuppressed atomic.Bool
 	resumeRecoveryRunning   atomic.Bool
 	systemSuspended         atomic.Bool
+	wifiStandbyApplied      atomic.Bool
 	lastResumeRecoveryUnix  int64
 
 	powerNotifyStop func()

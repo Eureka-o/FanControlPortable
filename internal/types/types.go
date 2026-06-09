@@ -12,28 +12,29 @@ type FanCurvePoint struct {
 }
 
 const (
-	FanCurveMaxTemperature = 110
-	FanSpeedMinPercent     = 0
-	FanSpeedMaxPercent     = 100
-	ThemeModeSystem        = "system"
-	ThemeModeLight         = "light"
-	ThemeModeDark          = "dark"
-	ThemeModeTHRM          = "thrm"
-	TempSourceMax          = "max"
-	TempSourceCPU          = "cpu"
-	TempSourceGPU          = "gpu"
-	TempDeviceAuto         = "auto"
-	TempSensorAuto         = "auto"
-	LearningBiasBalanced   = "balanced"
-	LearningBiasCooling    = "cooling"
-	LearningBiasQuiet      = "quiet"
-	DeviceTransportWiFi    = "wifi"
-	DeviceTransportHID     = "hid"
-	DeviceTransportBLE     = "ble"
-	DeviceTransportSerial  = "serial"
-	FanSpeedUnitPercent    = "percent"
-	FanSpeedUnitRPM        = "rpm"
-	DefaultFanDeviceIP     = "192.168.137.2"
+	FanCurveMaxTemperature              = 110
+	FanSpeedMinPercent                  = 0
+	FanSpeedMaxPercent                  = 100
+	ThemeModeSystem                     = "system"
+	ThemeModeLight                      = "light"
+	ThemeModeDark                       = "dark"
+	ThemeModeTHRM                       = "thrm"
+	TempSourceMax                       = "max"
+	TempSourceCPU                       = "cpu"
+	TempSourceGPU                       = "gpu"
+	TempDeviceAuto                      = "auto"
+	TempSensorAuto                      = "auto"
+	LearningBiasBalanced                = "balanced"
+	LearningBiasCooling                 = "cooling"
+	LearningBiasQuiet                   = "quiet"
+	DeviceTransportWiFi                 = "wifi"
+	DeviceTransportHID                  = "hid"
+	DeviceTransportBLE                  = "ble"
+	DeviceTransportSerial               = "serial"
+	FanSpeedUnitPercent                 = "percent"
+	FanSpeedUnitRPM                     = "rpm"
+	DefaultFanDeviceIP                  = "192.168.137.2"
+	WiFiSmartStartStopStandbyMinPercent = 1
 )
 
 func NormalizeDeviceTransport(transport string) string {
@@ -57,6 +58,13 @@ func ClampFanPercent(percent int) int {
 		return FanSpeedMaxPercent
 	}
 	return percent
+}
+
+func ClampWiFiSmartStartStopStandbyPercent(percent int) int {
+	if percent < WiFiSmartStartStopStandbyMinPercent {
+		return WiFiSmartStartStopStandbyMinPercent
+	}
+	return ClampFanPercent(percent)
 }
 
 // NormalizeThemeMode 归一化主题模式。
@@ -419,6 +427,8 @@ type AppConfig struct {
 	FanControlDeviceIp                string                    `json:"fanControlDeviceIp"`       // WiFi 控制器地址
 	WiFiCompatibilityEnabled          bool                      `json:"wifiCompatibilityEnabled"` // WiFi 兼容模式
 	WiFiDynamicIPCompatibilityEnabled bool                      `json:"wifiDynamicIpCompatibilityEnabled"`
+	WiFiSmartStartStopEnabled         bool                      `json:"wifiSmartStartStopEnabled"`
+	WiFiSmartStartStopStandbySpeed    int                       `json:"wifiSmartStartStopStandbySpeed"`
 	SerialCompatibilityEnabled        bool                      `json:"serialCompatibilityEnabled"` // 虚拟串口/COM 兼容模式
 	AutoControl                       bool                      `json:"autoControl"`                // 智能变频开关
 	ManualGearToggleHotkey            string                    `json:"manualGearToggleHotkey"`     // 切换手动挡位快捷键
@@ -887,6 +897,8 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		FanControlDeviceIp:                DefaultFanDeviceIP,
 		WiFiCompatibilityEnabled:          true,
 		WiFiDynamicIPCompatibilityEnabled: false,
+		WiFiSmartStartStopEnabled:         false,
+		WiFiSmartStartStopStandbySpeed:    WiFiSmartStartStopStandbyMinPercent,
 		SerialCompatibilityEnabled:        false,
 		ActiveDeviceProfileID:             defaultDeviceProfile.ID,
 		ActiveDeviceProfileIDsByTransport: map[string]string{

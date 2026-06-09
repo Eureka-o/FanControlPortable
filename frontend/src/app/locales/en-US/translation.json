@@ -740,7 +740,13 @@
       "powerOnStartTitle": "Start on power",
       "powerOnStartDescription": "Automatically run when the device receives power",
       "smartStartStopTitle": "Smart start/stop",
-      "smartStartStopDescription": "Choose when cooling stops after the system shuts down"
+      "smartStartStopDescription": "Choose when cooling stops after the system shuts down",
+      "wifiSmartStartStopTitle": "Smart start/stop",
+      "wifiSmartStartStopDescription": "Switch the WiFi device to standby speed before exit, sleep, or hibernate",
+      "wifiSmartStartStopTip": "Beta feature. It depends on the network still being available during shutdown; firmware heartbeat support will make it more reliable.",
+      "wifiSmartStartStopStandbySpeed": "Standby speed",
+      "wifiSmartStartStopStandbySpeedDescription": "FanControl sends this speed before exit, sleep, or hibernate. 1% is recommended.",
+      "betaBadge": "Beta"
     },
     "legionFnQ": {
       "sectionTitle": "Legion Fn+Q integration",

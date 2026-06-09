@@ -58,6 +58,8 @@ export interface AppConfig {
   legionFnQSupport?: LegionFnQSupportCache;
   deviceTransport?: string;
   fanControlDeviceIp?: string;
+  wifiSmartStartStopEnabled?: boolean;
+  wifiSmartStartStopStandbySpeed?: number;
   autoControl: boolean;         // 智能变频开关
   curveProfileToggleHotkey?: string; // 切换曲线方案快捷键
   fanCurve: FanCurvePoint[];   // 风扇曲线
