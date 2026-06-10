@@ -34,6 +34,8 @@ export interface FanData {
 export interface TemperatureData {
   cpuTemp: number;     // CPU温度
   gpuTemp: number;     // GPU温度
+  cpuPowerWatts?: number;
+  gpuPowerWatts?: number;
   maxTemp: number;     // 最高温度
   controlTemp?: number; // 当前控温基准温度
   controlSource?: 'max' | 'cpu' | 'gpu'; // 当前控温基准来源
@@ -106,6 +108,8 @@ export interface SmartControlConfig {
   noiseWeight: number;
   trendGain: number;
   maxLearnOffset: number;
+  temperatureRisePrediction?: boolean;
+  temperatureRisePredictionMaxBoost?: number;
   learnedOffsets: number[];
   learnedOffsetsHeat: number[];
   learnedOffsetsCool: number[];

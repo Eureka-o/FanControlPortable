@@ -100,6 +100,7 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 		cfg.FanCurveProfiles[idx].Curve = curveprofiles.CloneCurve(cfg.FanCurve)
 	}
 	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, unit)
+	syncSmartControlOffsetsForActiveProfile(&cfg)
 	cfg.LegionFnQ = types.NormalizeLegionFnQConfig(cfg.LegionFnQ)
 	if a.legionFnQSupportChecked.Load() && !a.legionFnQSupported.Load() && (cfg.LegionFnQ.Enabled || cfg.LegionFnQ.TakeOverFan) {
 		return fmt.Errorf("Lenovo Legion Fn+Q 仅支持拯救者设备")
@@ -163,6 +164,7 @@ func (a *CoreApp) SetFanCurve(curve []types.FanCurvePoint) error {
 		cfg.FanCurveProfiles[idx].Curve = curveprofiles.CloneCurve(cfg.FanCurve)
 	}
 	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, unit)
+	storeSmartControlOffsetsForActiveProfile(&cfg)
 	return a.configManager.Update(cfg)
 }
 
@@ -173,6 +175,7 @@ func (a *CoreApp) ResetLearnedOffsets() error {
 
 	cfg := a.configManager.Get()
 	cfg.SmartControl = smartcontrol.ResetLearnedState(cfg.SmartControl, cfg.FanCurve)
+	resetSmartControlOffsetsForActiveProfile(&cfg)
 	if err := a.configManager.Update(cfg); err != nil {
 		return err
 	}

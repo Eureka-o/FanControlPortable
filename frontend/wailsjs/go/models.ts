@@ -1,4 +1,4 @@
-export namespace theme {
+﻿export namespace theme {
 
 	export class Meta {
 	    id: string;
@@ -105,6 +105,9 @@ export namespace types {
 	    learnedOffsetsCool: number[];
 	    learnedRateHeat: number[];
 	    learnedRateCool: number[];
+	    learnedOffsetsByProfile?: Record<string, Array<number>>;
+	    temperatureRisePrediction: boolean;
+	    temperatureRisePredictionMaxBoost: number;
 
 	    static createFrom(source: any = {}) {
 	        return new SmartControlConfig(source);
@@ -135,6 +138,9 @@ export namespace types {
 	        this.learnedOffsetsCool = source["learnedOffsetsCool"];
 	        this.learnedRateHeat = source["learnedRateHeat"];
 	        this.learnedRateCool = source["learnedRateCool"];
+	        this.learnedOffsetsByProfile = source["learnedOffsetsByProfile"];
+	        this.temperatureRisePrediction = source["temperatureRisePrediction"];
+	        this.temperatureRisePredictionMaxBoost = source["temperatureRisePredictionMaxBoost"];
 	    }
 	}
 	export class FanCurveProfile {
@@ -904,6 +910,8 @@ export namespace types {
 	export class BridgeTemperatureData {
 	    cpuTemp: number;
 	    gpuTemp: number;
+	    cpuPowerWatts?: number;
+	    gpuPowerWatts?: number;
 	    maxTemp: number;
 	    controlTemp: number;
 	    controlSource: string;
@@ -925,6 +933,8 @@ export namespace types {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.cpuTemp = source["cpuTemp"];
 	        this.gpuTemp = source["gpuTemp"];
+	        this.cpuPowerWatts = source["cpuPowerWatts"];
+	        this.gpuPowerWatts = source["gpuPowerWatts"];
 	        this.maxTemp = source["maxTemp"];
 	        this.controlTemp = source["controlTemp"];
 	        this.controlSource = source["controlSource"];
@@ -1354,6 +1364,8 @@ export namespace types {
 	export class TemperatureData {
 	    cpuTemp: number;
 	    gpuTemp: number;
+	    cpuPowerWatts?: number;
+	    gpuPowerWatts?: number;
 	    maxTemp: number;
 	    controlTemp: number;
 	    controlSource: string;
@@ -1375,6 +1387,8 @@ export namespace types {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.cpuTemp = source["cpuTemp"];
 	        this.gpuTemp = source["gpuTemp"];
+	        this.cpuPowerWatts = source["cpuPowerWatts"];
+	        this.gpuPowerWatts = source["gpuPowerWatts"];
 	        this.maxTemp = source["maxTemp"];
 	        this.controlTemp = source["controlTemp"];
 	        this.controlSource = source["controlSource"];
@@ -1413,6 +1427,8 @@ export namespace types {
 	    cpuTemp: number;
 	    gpuTemp: number;
 	    fanRpm: number;
+	    cpuPowerWatts?: number;
+	    gpuPowerWatts?: number;
 
 	    static createFrom(source: any = {}) {
 	        return new TemperatureHistoryPoint(source);
@@ -1424,6 +1440,8 @@ export namespace types {
 	        this.cpuTemp = source["cpuTemp"];
 	        this.gpuTemp = source["gpuTemp"];
 	        this.fanRpm = source["fanRpm"];
+	        this.cpuPowerWatts = source["cpuPowerWatts"];
+	        this.gpuPowerWatts = source["gpuPowerWatts"];
 	    }
 	}
 	export class TemperatureHistoryPayload {

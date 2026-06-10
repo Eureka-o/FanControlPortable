@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -19,7 +20,9 @@ const (
 	DefaultHistoryRelativePath          = "telemetry/fancontrol-history.bin"
 	LegacyHistoryRelativePath           = "telemetry/fancontrolportable2-history.bin"
 	historyBinaryMagic                  = "THST"
-	historyBinaryVersion         uint16 = 1
+	historyBinaryVersionV1       uint16 = 1
+	historyBinaryVersionV2       uint16 = 2
+	historyBinaryVersion         uint16 = historyBinaryVersionV2
 	historyEnabledFlag           uint8  = 1
 
 	dirtyFlushThreshold = 6
@@ -115,10 +118,12 @@ func (r *HistoryRecorder) Add(temp types.TemperatureData, fanData *types.FanData
 	}
 
 	point := types.TemperatureHistoryPoint{
-		Timestamp: timestamp,
-		CPUTemp:   temp.CPUTemp,
-		GPUTemp:   temp.GPUTemp,
-		FanRPM:    fanRPM,
+		Timestamp:     timestamp,
+		CPUTemp:       temp.CPUTemp,
+		GPUTemp:       temp.GPUTemp,
+		FanRPM:        fanRPM,
+		CPUPowerWatts: normalizePowerWatts(temp.CPUPowerWatts),
+		GPUPowerWatts: normalizePowerWatts(temp.GPUPowerWatts),
 	}
 
 	var flushPayload []byte
@@ -216,7 +221,7 @@ func (r *HistoryRecorder) loadBinaryData(data []byte) error {
 	if err := binary.Read(reader, binary.LittleEndian, &version); err != nil {
 		return err
 	}
-	if version != historyBinaryVersion {
+	if version != historyBinaryVersionV1 && version != historyBinaryVersionV2 {
 		return fmt.Errorf("unsupported history version: %d", version)
 	}
 
@@ -247,6 +252,8 @@ func (r *HistoryRecorder) loadBinaryData(data []byte) error {
 		var cpuTemp int32
 		var gpuTemp int32
 		var fanRPM int32
+		var cpuPowerWatts float64
+		var gpuPowerWatts float64
 		if err := binary.Read(reader, binary.LittleEndian, &timestamp); err != nil {
 			return err
 		}
@@ -259,11 +266,21 @@ func (r *HistoryRecorder) loadBinaryData(data []byte) error {
 		if err := binary.Read(reader, binary.LittleEndian, &fanRPM); err != nil {
 			return err
 		}
+		if version >= historyBinaryVersionV2 {
+			if err := binary.Read(reader, binary.LittleEndian, &cpuPowerWatts); err != nil {
+				return err
+			}
+			if err := binary.Read(reader, binary.LittleEndian, &gpuPowerWatts); err != nil {
+				return err
+			}
+		}
 		points = append(points, types.TemperatureHistoryPoint{
-			Timestamp: normalizeTimestampMillis(timestamp),
-			CPUTemp:   int(cpuTemp),
-			GPUTemp:   int(gpuTemp),
-			FanRPM:    int(fanRPM),
+			Timestamp:     normalizeTimestampMillis(timestamp),
+			CPUTemp:       int(cpuTemp),
+			GPUTemp:       int(gpuTemp),
+			FanRPM:        int(fanRPM),
+			CPUPowerWatts: normalizePowerWatts(cpuPowerWatts),
+			GPUPowerWatts: normalizePowerWatts(gpuPowerWatts),
 		})
 	}
 
@@ -327,8 +344,8 @@ func (r *HistoryRecorder) serializeLocked() ([]byte, error) {
 	if r.enabled {
 		flags |= historyEnabledFlag
 	}
-	// header 24B + 每点 20B
-	buf := make([]byte, 0, len(historyBinaryMagic)+24+pointCount*20)
+	// header 24B + 每点 36B（v2: timestamp + CPU/GPU温度 + 风扇 + CPU/GPU功耗）
+	buf := make([]byte, 0, len(historyBinaryMagic)+24+pointCount*36)
 	buf = append(buf, historyBinaryMagic...)
 	buf = binary.LittleEndian.AppendUint16(buf, historyBinaryVersion)
 	buf = append(buf, flags, 0) // flags + reserved
@@ -340,6 +357,8 @@ func (r *HistoryRecorder) serializeLocked() ([]byte, error) {
 		buf = binary.LittleEndian.AppendUint32(buf, uint32(int32(p.CPUTemp)))
 		buf = binary.LittleEndian.AppendUint32(buf, uint32(int32(p.GPUTemp)))
 		buf = binary.LittleEndian.AppendUint32(buf, uint32(int32(p.FanRPM)))
+		buf = binary.LittleEndian.AppendUint64(buf, math.Float64bits(normalizePowerWatts(p.CPUPowerWatts)))
+		buf = binary.LittleEndian.AppendUint64(buf, math.Float64bits(normalizePowerWatts(p.GPUPowerWatts)))
 	}
 	if r.filled {
 		for _, p := range r.points[r.next:] {
@@ -354,6 +373,13 @@ func (r *HistoryRecorder) serializeLocked() ([]byte, error) {
 		}
 	}
 	return buf, nil
+}
+
+func normalizePowerWatts(value float64) float64 {
+	if value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0
+	}
+	return value
 }
 
 // writeFile 在锁外执行磁盘 IO。flushMutex 串行化多次并发 Flush 调用。

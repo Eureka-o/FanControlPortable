@@ -432,7 +432,9 @@
       "maxRpmHintAria": "最高速度提示",
       "targetSpeed": "目标速度",
       "workMode": "工作模式",
-      "tempStatus": "温度状态"
+      "tempStatus": "温度状态",
+      "cpuPower": "CPU 功耗",
+      "gpuPower": "GPU 功耗"
     }
   },
   "manualGear": {
@@ -578,6 +580,12 @@
         }
       }
     },
+    "prediction": {
+      "title": "温升预判",
+      "badge": "Beta",
+      "description": "结合功耗与温度上升趋势提前微调风速，减少升温后的响应滞后。",
+      "toggleAria": "切换温升预判"
+    },
     "hints": {
       "dragPoint": "拖拽蓝色圆点调整转速",
       "curveLegend": "实线: 基础 · 虚线: 学习"
@@ -594,7 +602,9 @@
       "series": {
         "cpu": "CPU",
         "gpu": "GPU",
-        "fan": "风扇速度"
+        "fan": "风扇速度",
+        "cpuPower": "CPU 功耗",
+        "gpuPower": "GPU 功耗"
       },
       "duration": {
         "ltOneMinute": "< 1 分钟",
@@ -610,7 +620,11 @@
         "averageFan": "平均 {{value}}%",
         "noCpuTemperature": "暂无 CPU 温度",
         "noGpuTemperature": "暂无 GPU 温度",
-        "noFanData": "暂无风扇数据"
+        "noFanData": "暂无风扇数据",
+        "cpuPowerPeak": "CPU 功耗峰值",
+        "gpuPowerPeak": "GPU 功耗峰值",
+        "averagePower": "平均 {{value}} W",
+        "noPowerData": "暂无功耗数据"
       }
     },
     "profiles": {
@@ -713,6 +727,11 @@
       "learningTitle": "自适应学习",
       "learningDescription": "长时间运行后，自动微调每个温度点的目标速度，使实际温度更贴近曲线设定值。学习到的偏移随时可一键重置。",
       "learningAria": "切换自适应学习",
+      "prediction": {
+        "title": "温升预判",
+        "description": "结合功耗与温度上升趋势提前微调风速，减少升温后的响应滞后。",
+        "toggleAria": "切换温升预判"
+      },
       "temperatureHistoryTitle": "温度历史记录",
       "temperatureHistoryDescription": "开启后由核心服务保留最近 1 小时 CPU/GPU 温度曲线；关闭后仅在主界面打开期间绘制临时曲线。",
       "temperatureHistoryAria": "切换核心温度历史记录",

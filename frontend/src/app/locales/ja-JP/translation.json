@@ -432,7 +432,9 @@
       "maxRpmHintAria": "最高速度の詳細",
       "targetSpeed": "目標速度",
       "workMode": "動作ギア",
-      "tempStatus": "温度状態"
+      "tempStatus": "温度状態",
+      "cpuPower": "CPU 電力",
+      "gpuPower": "GPU 電力"
     }
   },
   "manualGear": {
@@ -578,6 +580,12 @@
         }
       }
     },
+    "prediction": {
+      "title": "温度上昇予測",
+      "badge": "Beta",
+      "description": "消費電力と温度上昇の傾向を組み合わせ、温度が上がり切る前にファン速度を小さく先行調整します。",
+      "toggleAria": "温度上昇予測を切り替える"
+    },
     "hints": {
       "dragPoint": "ブルーポイントをドラッグして % を調整",
       "curveLegend": "実線: 基準 · 破線: 学習"
@@ -594,7 +602,9 @@
       "series": {
         "cpu": "CPU",
         "gpu": "GPU",
-        "fan": "%"
+        "fan": "%",
+        "cpuPower": "CPU 電力",
+        "gpuPower": "GPU 電力"
       },
       "duration": {
         "ltOneMinute": "< 1 分",
@@ -610,7 +620,11 @@
         "averageFan": "平均 {{value}} %",
         "noCpuTemperature": "CPU 温度データなし",
         "noGpuTemperature": "GPU 温度データなし",
-        "noFanData": "ファン %データなし"
+        "noFanData": "ファン %データなし",
+        "cpuPowerPeak": "CPU 電力最大値",
+        "gpuPowerPeak": "GPU 電力最大値",
+        "averagePower": "平均 {{value}} W",
+        "noPowerData": "電力データなし"
       }
     },
     "profiles": {
@@ -713,6 +727,11 @@
       "learningTitle": "適応学習",
       "learningDescription": "長時間の動作後、各温度ポイントの目標回転数を自動で微調整し、実際の温度をカーブの設定値に近づくようにします。学習したオフセットはいつでもリセットできます。",
       "learningAria": "適応学習を切り替える",
+      "prediction": {
+        "title": "温度上昇予測",
+        "description": "消費電力と温度上昇の傾向を組み合わせ、温度が上がり切る前にファン速度を小さく先行調整します。",
+        "toggleAria": "温度上昇予測を切り替える"
+      },
       "temperatureHistoryTitle": "温度履歴",
       "temperatureHistoryDescription": "有効にすると、バックグラウンドサービスが直近 1 時間の CPU/GPU 温度カーブを保持します。無効時は GUI が開いている間だけ一時カーブを描画します。",
       "temperatureHistoryAria": "コア温度履歴を切り替える",

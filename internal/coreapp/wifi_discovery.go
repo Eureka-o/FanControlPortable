@@ -10,6 +10,14 @@ import (
 )
 
 func (a *CoreApp) ScanWiFiDevices(mode string) types.WiFiDiscoveryResult {
+	if !a.wifiScanRunning.CompareAndSwap(false, true) {
+		return types.WiFiDiscoveryResult{
+			Mode:  mode,
+			Error: "已有 WiFi 扫描正在进行，请先等待完成或中止当前扫描",
+		}
+	}
+	defer a.wifiScanRunning.Store(false)
+
 	if a.wifiScanControl == nil {
 		a.wifiScanControl = types.NewWiFiDiscoveryControl()
 	}

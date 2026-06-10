@@ -64,7 +64,7 @@ func TestShouldSendTargetRPM(t *testing.T) {
 		{name: "skips small target change", targetRPM: 1820, prevTargetRPM: 1800, minRPMChange: 50, want: false},
 		{name: "resends when device reports zero target", targetRPM: 1800, prevTargetRPM: 1800, minRPMChange: 50, fanData: &types.FanData{TargetRPM: 0}, want: true},
 		{name: "resends when device target drifts", targetRPM: 1800, prevTargetRPM: 1800, minRPMChange: 50, fanData: &types.FanData{TargetRPM: 1700}, want: true},
-		{name: "keeps small device target drift", targetRPM: 1800, prevTargetRPM: 1800, minRPMChange: 50, fanData: &types.FanData{TargetRPM: 1775}, want: false},
+		{name: "keeps small device target drift", targetRPM: 1800, prevTargetRPM: 1800, minRPMChange: 50, fanData: &types.FanData{CurrentRPM: 1790, TargetRPM: 1775}, want: false},
 	}
 
 	for _, test := range tests {

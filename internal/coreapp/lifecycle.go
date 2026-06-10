@@ -59,6 +59,12 @@ func (a *CoreApp) Start() error {
 			a.logError("保存智能控温默认配置失败: %v", err)
 		}
 	}
+	if syncSmartControlOffsetsForActiveProfile(&cfg) {
+		a.configManager.Set(cfg)
+		if err := a.configManager.Save(); err != nil {
+			a.logError("保存学习曲线方案隔离配置失败: %v", err)
+		}
+	}
 	if normalizeManualGearMemoryConfig(&cfg) {
 		a.configManager.Set(cfg)
 		if err := a.configManager.Save(); err != nil {
@@ -264,6 +270,8 @@ func (a *CoreApp) initSystemTray() {
 				Connected:            a.isConnected,
 				CPUTemp:              a.currentTemp.CPUTemp,
 				GPUTemp:              a.currentTemp.GPUTemp,
+				CPUPowerWatts:        a.currentTemp.CPUPowerWatts,
+				GPUPowerWatts:        a.currentTemp.GPUPowerWatts,
 				CurrentRPM:           currentRPM,
 				AutoControlState:     cfg.AutoControl,
 				ActiveCurveProfileID: cfg.ActiveFanCurveProfileID,

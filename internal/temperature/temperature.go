@@ -102,6 +102,8 @@ func copyBridgeTemperatureMetadata(temp *types.TemperatureData, bridgeTemp types
 
 	temp.CPUTemp = bridgeTemp.CpuTemp
 	temp.GPUTemp = bridgeTemp.GpuTemp
+	temp.CPUPowerWatts = bridgeTemp.CpuPowerWatts
+	temp.GPUPowerWatts = bridgeTemp.GpuPowerWatts
 	temp.MaxTemp = bridgeTemp.MaxTemp
 	temp.ControlTemp = bridgeTemp.ControlTemp
 	temp.ControlSource = bridgeTemp.ControlSource

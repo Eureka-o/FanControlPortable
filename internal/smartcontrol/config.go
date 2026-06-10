@@ -94,6 +94,16 @@ func NormalizeConfigForUnit(cfg types.SmartControlConfig, curve []types.FanCurve
 		cfg.MaxLearnOffset = defaults.MaxLearnOffset
 		changed = true
 	}
+	predictionBoostMin := 10
+	predictionBoostMax := 150
+	if types.IsRPMSpeedUnit(unit) {
+		predictionBoostMin = 50
+		predictionBoostMax = 600
+	}
+	if cfg.TemperatureRisePredictionMaxBoost < predictionBoostMin || cfg.TemperatureRisePredictionMaxBoost > predictionBoostMax {
+		cfg.TemperatureRisePredictionMaxBoost = defaults.TemperatureRisePredictionMaxBoost
+		changed = true
+	}
 
 	if len(cfg.LearnedOffsets) != len(controlCurve) {
 		next := make([]int, len(controlCurve))
@@ -156,6 +166,7 @@ func normalizeLegacyPercentTickScale(cfg types.SmartControlConfig) (types.SmartC
 	cfg.RampUpLimit *= types.PercentSpeedTicksPerPercent
 	cfg.RampDownLimit *= types.PercentSpeedTicksPerPercent
 	cfg.MaxLearnOffset *= types.PercentSpeedTicksPerPercent
+	cfg.TemperatureRisePredictionMaxBoost *= types.PercentSpeedTicksPerPercent
 	scaleOffsets := func(values []int) {
 		for i := range values {
 			values[i] *= types.PercentSpeedTicksPerPercent

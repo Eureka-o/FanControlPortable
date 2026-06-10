@@ -432,7 +432,9 @@
       "maxRpmHintAria": "Maximum speed details",
       "targetSpeed": "Target speed",
       "workMode": "Work mode",
-      "tempStatus": "Temperature status"
+      "tempStatus": "Temperature status",
+      "cpuPower": "CPU power",
+      "gpuPower": "GPU power"
     }
   },
   "manualGear": {
@@ -578,6 +580,12 @@
         }
       }
     },
+    "prediction": {
+      "title": "Thermal anticipation",
+      "badge": "Beta",
+      "description": "Uses power draw and rising temperature trends to make small early fan adjustments before heat catches up.",
+      "toggleAria": "Toggle thermal anticipation"
+    },
     "hints": {
       "dragPoint": "Drag the blue points to adjust %",
       "curveLegend": "Solid: base · Dashed: learned"
@@ -594,7 +602,9 @@
       "series": {
         "cpu": "CPU",
         "gpu": "GPU",
-        "fan": "Fan %"
+        "fan": "Fan %",
+        "cpuPower": "CPU power",
+        "gpuPower": "GPU power"
       },
       "duration": {
         "ltOneMinute": "< 1 minute",
@@ -610,7 +620,11 @@
         "averageFan": "Avg {{value}} %",
         "noCpuTemperature": "No CPU temperature yet",
         "noGpuTemperature": "No GPU temperature yet",
-        "noFanData": "No fan data yet"
+        "noFanData": "No fan data yet",
+        "cpuPowerPeak": "CPU power peak",
+        "gpuPowerPeak": "GPU power peak",
+        "averagePower": "Avg {{value}} W",
+        "noPowerData": "No power data yet"
       }
     },
     "profiles": {
@@ -713,6 +727,11 @@
       "learningTitle": "Adaptive learning",
       "learningDescription": "After longer runtime, the target % at each temperature point is fine-tuned automatically so real temperatures stay closer to the configured curve. Learned offsets can be reset at any time.",
       "learningAria": "Toggle adaptive learning",
+      "prediction": {
+        "title": "Thermal anticipation",
+        "description": "Uses power draw and rising temperature trends to make small early fan adjustments before heat catches up.",
+        "toggleAria": "Toggle thermal anticipation"
+      },
       "temperatureHistoryTitle": "Temperature history",
       "temperatureHistoryDescription": "When enabled, the core service keeps the last hour of CPU/GPU temperature curves. When disabled, temporary curves are drawn only while the GUI is open.",
       "temperatureHistoryAria": "Toggle core temperature history",
