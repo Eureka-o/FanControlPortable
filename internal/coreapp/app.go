@@ -40,6 +40,7 @@ type CoreApp struct {
 	logger           *logger.CustomLogger
 	ipcServer        *ipc.Server
 	wifiScanControl  *types.WiFiDiscoveryControl
+	wifiScanRunning  atomic.Bool
 
 	isConnected             bool
 	monitoringTemp          atomic.Bool

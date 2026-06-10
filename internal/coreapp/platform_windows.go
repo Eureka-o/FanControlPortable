@@ -34,22 +34,8 @@ func (a *CoreApp) ReinstallPawnIO() (map[string]any, error) {
 		result["installedVersionBefore"] = installedVersionBefore
 	}
 
-	a.logInfo("开始重新安装 PawnIO: %s", installerPath)
+	a.logInfo("开始修复/更新 PawnIO: %s", installerPath)
 	a.bridgeManager.Stop()
-
-	if installedVersionBefore != "" {
-		a.logInfo("检测到已安装 PawnIO (版本: %s)，先执行卸载再安装", installedVersionBefore)
-		uninstallStep, uninstallErr := a.runPawnIOInstaller(installerPath, "uninstall", "-uninstall", "-silent")
-		result["uninstall"] = uninstallStep
-		if uninstallErr != nil {
-			if isPawnIOInstallerTimeout(uninstallErr) {
-				result["error"] = "PawnIO 卸载超时"
-				return result, fmt.Errorf("PawnIO 卸载超时，请稍后检查驱动状态或手动运行 %s", installerPath)
-			}
-			result["uninstallWarning"] = uninstallErr.Error()
-			a.logError("PawnIO 卸载返回错误，将继续尝试安装: %v", uninstallErr)
-		}
-	}
 
 	installStep, installErr := a.runPawnIOInstaller(installerPath, "install", "-install", "-silent")
 	result["install"] = installStep

@@ -3,9 +3,11 @@ export interface TemperatureHistoryPoint {
   cpuTemp: number;
   gpuTemp: number;
   fanRpm: number;
+  cpuPowerWatts?: number;
+  gpuPowerWatts?: number;
 }
 
-export type HistorySeriesKey = 'cpu' | 'gpu' | 'fan';
+export type HistorySeriesKey = 'cpu' | 'gpu' | 'fan' | 'cpuPower' | 'gpuPower';
 
 export const CORE_HISTORY_LIMIT = 720;
 export const SESSION_HISTORY_LIMIT = 60;
@@ -23,19 +25,43 @@ export const normalizeHistoryTimestamp = (timestamp: number | null | undefined) 
   return numeric;
 };
 
+const normalizePositiveNumber = (value: number | null | undefined) => {
+  const numeric = Number(value || 0);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+};
+
+export const historyPointEquals = (left: TemperatureHistoryPoint | null | undefined, right: TemperatureHistoryPoint | null | undefined) => {
+  if (!left || !right) return false;
+  return left.timestamp === right.timestamp &&
+    left.cpuTemp === right.cpuTemp &&
+    left.gpuTemp === right.gpuTemp &&
+    left.fanRpm === right.fanRpm &&
+    (left.cpuPowerWatts || 0) === (right.cpuPowerWatts || 0) &&
+    (left.gpuPowerWatts || 0) === (right.gpuPowerWatts || 0);
+};
+
 export const normalizeHistoryPoint = (point: Partial<TemperatureHistoryPoint> | null | undefined): TemperatureHistoryPoint | null => {
   if (!point) return null;
 
   const timestamp = normalizeHistoryTimestamp(Number(point.timestamp || 0));
-  const cpuTemp = Number(point.cpuTemp || 0);
-  const gpuTemp = Number(point.gpuTemp || 0);
-  const fanRpm = Number(point.fanRpm || 0);
+  const cpuTemp = normalizePositiveNumber(point.cpuTemp);
+  const gpuTemp = normalizePositiveNumber(point.gpuTemp);
+  const fanRpm = normalizePositiveNumber(point.fanRpm);
+  const cpuPowerWatts = normalizePositiveNumber(point.cpuPowerWatts);
+  const gpuPowerWatts = normalizePositiveNumber(point.gpuPowerWatts);
 
-  if (timestamp <= 0 || (cpuTemp <= 0 && gpuTemp <= 0 && fanRpm <= 0)) {
+  if (timestamp <= 0 || (cpuTemp <= 0 && gpuTemp <= 0 && fanRpm <= 0 && cpuPowerWatts <= 0 && gpuPowerWatts <= 0)) {
     return null;
   }
 
-  return { timestamp, cpuTemp, gpuTemp, fanRpm };
+  return {
+    timestamp,
+    cpuTemp,
+    gpuTemp,
+    fanRpm,
+    ...(cpuPowerWatts > 0 ? { cpuPowerWatts } : {}),
+    ...(gpuPowerWatts > 0 ? { gpuPowerWatts } : {}),
+  };
 };
 
 export const trimHistoryPoints = (
@@ -78,6 +104,9 @@ export const appendHistoryPoint = (
   const last = next[next.length - 1];
 
   if (last && last.timestamp === normalized.timestamp) {
+    if (historyPointEquals(last, normalized)) {
+      return points;
+    }
     next[next.length - 1] = normalized;
   } else if (last && normalized.timestamp < last.timestamp) {
     return normalizeHistoryPoints([...next, normalized]);
@@ -106,7 +135,7 @@ export const appendSampledHistoryPoint = (
 };
 
 export const createLiveHistoryPoint = (
-  payload: { updateTime?: number; cpuTemp?: number; gpuTemp?: number } | null | undefined,
+  payload: { updateTime?: number; cpuTemp?: number; gpuTemp?: number; cpuPowerWatts?: number; gpuPowerWatts?: number } | null | undefined,
   fanRpm = 0,
 ) => {
   if (!payload) return null;
@@ -116,5 +145,7 @@ export const createLiveHistoryPoint = (
     cpuTemp: Number(payload.cpuTemp || 0),
     gpuTemp: Number(payload.gpuTemp || 0),
     fanRpm: Number(fanRpm || 0),
+    cpuPowerWatts: Number(payload.cpuPowerWatts || 0),
+    gpuPowerWatts: Number(payload.gpuPowerWatts || 0),
   });
 };

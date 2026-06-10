@@ -17,6 +17,7 @@ import {
   Sparkles,
   Upload,
   Pencil,
+  Radar,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
@@ -123,6 +124,17 @@ function formatSpeedValue(value: number) {
   const rounded = Math.round(value * 10) / 10;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
+
+function formatPowerValue(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return '--';
+  }
+  const rounded = value < 10 ? Math.round(value * 10) / 10 : Math.round(value);
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+const CPU_POWER_STROKE = 'color-mix(in srgb, #0891b2 88%, var(--foreground) 12%)';
+const GPU_POWER_STROKE = 'color-mix(in srgb, #a855f7 84%, var(--foreground) 16%)';
 
 function normalizeCurvePoint(point: types.FanCurvePoint, minSpeed: number, maxSpeed: number): types.FanCurvePoint {
   return { temperature: Math.round(point.temperature), rpm: normalizeSpeedValue(point.rpm, minSpeed, maxSpeed) };
@@ -399,6 +411,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
     cpu: true,
     gpu: true,
     fan: true,
+    cpuPower: true,
+    gpuPower: true,
   });
   const chartRef = useRef<HTMLDivElement>(null);
   const curveEditorRef = useRef<HTMLDivElement>(null);
@@ -484,7 +498,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
     const normalizeRateOffsets = (source?: number[]) => Array.isArray(source) ? [...source.slice(0, 7), ...defaultRateOffsets].slice(0, 7) : defaultRateOffsets;
 
     if (!existing) {
-      return { enabled: true, learning: true, learningBias: 'balanced', filterTransientSpike: true, targetTemp: 68, aggressiveness: 5, hysteresis: 2, minRpmChange: 2, rampUpLimit: 8, rampDownLimit: 6, learnRate: 3, learnWindow: 8, learnDelay: 3, overheatWeight: 8, rpmDeltaWeight: 5, noiseWeight: 4, trendGain: 5, maxLearnOffset: 20, learnedOffsets: defaultOffsets, learnedOffsetsHeat: defaultOffsets, learnedOffsetsCool: defaultOffsets, learnedRateHeat: defaultRateOffsets, learnedRateCool: defaultRateOffsets };
+      return { enabled: true, learning: true, learningBias: 'balanced', filterTransientSpike: true, temperatureRisePrediction: false, temperatureRisePredictionMaxBoost: 60, targetTemp: 68, aggressiveness: 5, hysteresis: 2, minRpmChange: 2, rampUpLimit: 8, rampDownLimit: 6, learnRate: 3, learnWindow: 8, learnDelay: 3, overheatWeight: 8, rpmDeltaWeight: 5, noiseWeight: 4, trendGain: 5, maxLearnOffset: 20, learnedOffsets: defaultOffsets, learnedOffsetsHeat: defaultOffsets, learnedOffsetsCool: defaultOffsets, learnedRateHeat: defaultRateOffsets, learnedRateCool: defaultRateOffsets };
     }
 
     return {
@@ -492,6 +506,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
       learning: existing.learning ?? true,
       learningBias: normalizeLearningBias((existing as any).learningBias),
       filterTransientSpike: existing.filterTransientSpike ?? true,
+      temperatureRisePrediction: (existing as any).temperatureRisePrediction ?? false,
+      temperatureRisePredictionMaxBoost: (existing as any).temperatureRisePredictionMaxBoost ?? 60,
       targetTemp: normalizeTargetTemp(existing.targetTemp ?? 68),
       hysteresis: Math.max(1, existing.hysteresis ?? 2),
       learnWindow: existing.learnWindow ?? 8, learnDelay: existing.learnDelay ?? 3,
@@ -560,48 +576,135 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
 
   const detailHistoryPoints = useMemo(() => temperatureHistory.slice(-720), [temperatureHistory]);
 
-  const historyTempDomain = useMemo<[number, number]>(() => {
-    const values = detailHistoryPoints.flatMap((point) => [point.cpuTemp, point.gpuTemp]).filter((value) => value > 0);
-    if (values.length === 0) {
-      return [30, 90];
+  const historyFanMax = useMemo(() => {
+    let maxFan = speedRange.max;
+    for (const point of detailHistoryPoints) {
+      if (point.fanRpm > 0) {
+        maxFan = Math.max(maxFan, normalizeSpeedValue(point.fanRpm, speedRange.min, speedRange.max));
+      }
     }
-    const min = Math.max(0, Math.floor((Math.min(...values) - 4) / 5) * 5);
-    const max = Math.min(110, Math.ceil((Math.max(...values) + 4) / 5) * 5);
-    return [min, Math.max(min + 10, max)];
-  }, [detailHistoryPoints]);
-
-  const historyFanMax = useMemo(() => speedRange.max, [speedRange.max]);
+    return maxFan;
+  }, [detailHistoryPoints, speedRange.max, speedRange.min]);
 
   const historySummary = useMemo(() => {
     const latest = temperatureHistory[temperatureHistory.length - 1] ?? null;
     const first = temperatureHistory[0] ?? null;
-    const cpuValues = temperatureHistory.map((point) => point.cpuTemp).filter((value) => value > 0);
-    const gpuValues = temperatureHistory.map((point) => point.gpuTemp).filter((value) => value > 0);
-    const fanValues = temperatureHistory.map((point) => normalizeSpeedValue(point.fanRpm, speedRange.min, speedRange.max)).filter((value) => value > 0);
-    const average = (values: number[]) => values.length > 0 ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
+    let cpuPeak = 0;
+    let gpuPeak = 0;
+    let fanPeak = 0;
+    let cpuPowerPeak = 0;
+    let gpuPowerPeak = 0;
+    let cpuSum = 0;
+    let gpuSum = 0;
+    let fanSum = 0;
+    let cpuPowerSum = 0;
+    let gpuPowerSum = 0;
+    let cpuCount = 0;
+    let gpuCount = 0;
+    let fanCount = 0;
+    let cpuPowerCount = 0;
+    let gpuPowerCount = 0;
+
+    for (const point of temperatureHistory) {
+      if (point.cpuTemp > 0) {
+        cpuPeak = Math.max(cpuPeak, point.cpuTemp);
+        cpuSum += point.cpuTemp;
+        cpuCount += 1;
+      }
+      if (point.gpuTemp > 0) {
+        gpuPeak = Math.max(gpuPeak, point.gpuTemp);
+        gpuSum += point.gpuTemp;
+        gpuCount += 1;
+      }
+      const fan = normalizeSpeedValue(point.fanRpm, speedRange.min, speedRange.max);
+      if (fan > 0) {
+        fanPeak = Math.max(fanPeak, fan);
+        fanSum += fan;
+        fanCount += 1;
+      }
+      const cpuPower = Number(point.cpuPowerWatts || 0);
+      if (cpuPower > 0) {
+        cpuPowerPeak = Math.max(cpuPowerPeak, cpuPower);
+        cpuPowerSum += cpuPower;
+        cpuPowerCount += 1;
+      }
+      const gpuPower = Number(point.gpuPowerWatts || 0);
+      if (gpuPower > 0) {
+        gpuPowerPeak = Math.max(gpuPowerPeak, gpuPower);
+        gpuPowerSum += gpuPower;
+        gpuPowerCount += 1;
+      }
+    }
+    const average = (sum: number, count: number) => count > 0 ? Math.round(sum / count) : 0;
 
     return {
       sampleCount: temperatureHistory.length,
       latest,
       latestLabel: latest ? formatHistoryDateTime(latest.timestamp, locale) : '--',
       durationLabel: first && latest ? formatHistoryDuration(first.timestamp, latest.timestamp, t) : '--',
-      cpuPeak: cpuValues.length > 0 ? Math.max(...cpuValues) : 0,
-      cpuAverage: average(cpuValues),
-      gpuPeak: gpuValues.length > 0 ? Math.max(...gpuValues) : 0,
-      gpuAverage: average(gpuValues),
-      fanPeak: fanValues.length > 0 ? Math.max(...fanValues) : 0,
-      fanAverage: average(fanValues),
+      cpuPeak,
+      cpuAverage: average(cpuSum, cpuCount),
+      gpuPeak,
+      gpuAverage: average(gpuSum, gpuCount),
+      fanPeak,
+      fanAverage: average(fanSum, fanCount),
+      cpuPowerPeak,
+      cpuPowerAverage: average(cpuPowerSum, cpuPowerCount),
+      gpuPowerPeak,
+      gpuPowerAverage: average(gpuPowerSum, gpuPowerCount),
     };
   }, [locale, speedRange.max, speedRange.min, t, temperatureHistory]);
-  const historyChartData = useMemo(
-    () => detailHistoryPoints.map((point) => ({ ...point, fanRpm: normalizeSpeedValue(point.fanRpm, speedRange.min, speedRange.max) })),
-    [detailHistoryPoints, speedRange.max, speedRange.min],
-  );
+
+  const historyChartStats = useMemo(() => {
+    let maxPower = 0;
+    let minTemp = Number.POSITIVE_INFINITY;
+    let maxTemp = 0;
+    const data = detailHistoryPoints.map((point) => {
+      const cpuPowerWatts = Number(point.cpuPowerWatts || 0);
+      const gpuPowerWatts = Number(point.gpuPowerWatts || 0);
+      if (point.cpuTemp > 0) {
+        minTemp = Math.min(minTemp, point.cpuTemp);
+        maxTemp = Math.max(maxTemp, point.cpuTemp);
+      }
+      if (point.gpuTemp > 0) {
+        minTemp = Math.min(minTemp, point.gpuTemp);
+        maxTemp = Math.max(maxTemp, point.gpuTemp);
+      }
+      maxPower = Math.max(maxPower, cpuPowerWatts, gpuPowerWatts);
+      return {
+        ...point,
+        fanRpm: normalizeSpeedValue(point.fanRpm, speedRange.min, speedRange.max),
+        cpuPowerWatts: cpuPowerWatts > 0 ? Math.round(cpuPowerWatts * 10) / 10 : undefined,
+        gpuPowerWatts: gpuPowerWatts > 0 ? Math.round(gpuPowerWatts * 10) / 10 : undefined,
+      };
+    });
+
+    const tempDomain: [number, number] = Number.isFinite(minTemp)
+      ? [
+        Math.max(0, Math.floor((minTemp - 4) / 5) * 5),
+        Math.max(Math.max(0, Math.floor((minTemp - 4) / 5) * 5) + 10, Math.min(110, Math.ceil((maxTemp + 4) / 5) * 5)),
+      ]
+      : [30, 90];
+    const powerMax = maxPower > 0 ? Math.max(20, Math.ceil((maxPower + 10) / 10) * 10) : 20;
+
+    return {
+      data,
+      tempDomain,
+      powerMax,
+      hasPower: maxPower > 0,
+    };
+  }, [detailHistoryPoints, speedRange.max, speedRange.min]);
+  const historyChartData = historyChartStats.data;
+  const historyTempDomain = historyChartStats.tempDomain;
+  const historyPowerMax = historyChartStats.powerMax;
+  const historyHasPower = historyChartStats.hasPower;
 
   const historySeriesMeta = useMemo(() => ([
     { key: 'cpu' as const, label: t('fanCurve.history.series.cpu'), color: '#2f6df6' },
     { key: 'gpu' as const, label: t('fanCurve.history.series.gpu'), color: '#f97316' },
-    { key: 'fan' as const, label: '风扇', color: '#10b981' },
+    { key: 'fan' as const, label: t('fanCurve.history.series.fan'), color: '#10b981' },
+    { key: 'cpuPower' as const, label: t('fanCurve.history.series.cpuPower'), color: CPU_POWER_STROKE },
+    { key: 'gpuPower' as const, label: t('fanCurve.history.series.gpuPower'), color: GPU_POWER_STROKE },
   ]), [t, locale]);
 
   const toggleHistorySeries = useCallback((series: HistorySeriesKey) => {
@@ -925,6 +1028,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
 
   const handleLearningToggle = useCallback((enabled: boolean) => {
     void updateSmartControlConfig({ learning: enabled });
+  }, [updateSmartControlConfig]);
+
+  const handleTemperatureRisePredictionToggle = useCallback((enabled: boolean) => {
+    void updateSmartControlConfig({ temperatureRisePrediction: enabled } as Partial<types.SmartControlConfig>);
   }, [updateSmartControlConfig]);
 
   const handleLearningBiasChange = useCallback((value: string) => {
@@ -1306,6 +1413,36 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <Radar className="h-4 w-4 text-sky-500" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-sm font-medium text-foreground">{t('fanCurve.prediction.title')}</div>
+                  {!smartControl.temperatureRisePrediction && <Badge variant="info">{t('fanCurve.learning.paused')}</Badge>}
+                </div>
+                <div className="text-xs leading-relaxed text-muted-foreground">{t('fanCurve.prediction.description')}</div>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                {t('fanCurve.prediction.badge')}
+              </span>
+              <ToggleSwitch
+                enabled={!!smartControl.temperatureRisePrediction}
+                onChange={handleTemperatureRisePredictionToggle}
+                loading={learningConfigLoading}
+                size="sm"
+                color="blue"
+                srLabel={t('fanCurve.prediction.toggleAria')}
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                 <Sparkles className="h-4 w-4 text-amber-500" />
               </div>
               <div className="min-w-0">
@@ -1442,11 +1579,13 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
                 {[
                   [t('fanCurve.history.summary.cpuPeak'), historySummary.cpuPeak ? `${historySummary.cpuPeak}°C` : '--', historySummary.cpuAverage ? t('fanCurve.history.summary.averageTemperature', { value: historySummary.cpuAverage }) : t('fanCurve.history.summary.noCpuTemperature')],
                   [t('fanCurve.history.summary.gpuPeak'), historySummary.gpuPeak ? `${historySummary.gpuPeak}°C` : '--', historySummary.gpuAverage ? t('fanCurve.history.summary.averageTemperature', { value: historySummary.gpuAverage }) : t('fanCurve.history.summary.noGpuTemperature')],
-                  ['风扇峰值', historySummary.fanPeak ? `${historySummary.fanPeak}${speedUnitSuffix}` : '--', historySummary.fanAverage ? `平均 ${historySummary.fanAverage}${speedUnitSuffix}` : '暂无风扇数据'],
+                  [t('fanCurve.history.summary.fanPeak'), historySummary.fanPeak ? `${historySummary.fanPeak}${speedUnitSuffix}` : '--', historySummary.fanAverage ? t('fanCurve.history.summary.averageFan', { value: historySummary.fanAverage }) : t('fanCurve.history.summary.noFanData')],
+                  [t('fanCurve.history.summary.cpuPowerPeak'), historySummary.cpuPowerPeak ? `${formatPowerValue(historySummary.cpuPowerPeak)} W` : '-- W', historySummary.cpuPowerAverage ? t('fanCurve.history.summary.averagePower', { value: formatPowerValue(historySummary.cpuPowerAverage) }) : t('fanCurve.history.summary.noPowerData')],
+                  [t('fanCurve.history.summary.gpuPowerPeak'), historySummary.gpuPowerPeak ? `${formatPowerValue(historySummary.gpuPowerPeak)} W` : '-- W', historySummary.gpuPowerAverage ? t('fanCurve.history.summary.averagePower', { value: formatPowerValue(historySummary.gpuPowerAverage) }) : t('fanCurve.history.summary.noPowerData')],
                 ].map(([label, value, hint]) => (
                   <div key={label} className="rounded-xl border border-border/70 bg-background/35 p-3">
                     <div className="text-[11px] text-muted-foreground">{label}</div>
@@ -1459,7 +1598,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
               <div className="rounded-xl border border-border/70 bg-background/35 p-3 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.history.recentTrend')}</div>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                     {historySeriesMeta.map((series) => (
                       <button
                         key={series.key}
@@ -1515,12 +1654,16 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                           tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
                           width={52}
                         />
+                        <YAxis yAxisId="power" type="number" domain={[0, historyPowerMax]} hide />
                         <RechartsTooltip
                           labelFormatter={(value) => formatHistoryDateTime(Number(value), locale)}
                           formatter={(value, name) => {
                             const numericValue = Number(value ?? 0);
                             if (name === 'fanRpm') {
-                              return [`${formatSpeedValue(numericValue)}${speedUnitSuffix}`, '风扇'];
+                              return [`${formatSpeedValue(numericValue)}${speedUnitSuffix}`, t('fanCurve.history.series.fan')];
+                            }
+                            if (name === 'cpuPowerWatts' || name === 'gpuPowerWatts') {
+                              return [`${formatPowerValue(numericValue)} W`, name === 'cpuPowerWatts' ? t('fanCurve.history.series.cpuPower') : t('fanCurve.history.series.gpuPower')];
                             }
                             return [`${numericValue} °C`, name === 'cpuTemp' ? t('fanCurve.history.series.cpu') : t('fanCurve.history.series.gpu')];
                           }}
@@ -1531,6 +1674,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                         {historySeriesVisibility.cpu && <Line yAxisId="temp" type="monotone" dataKey="cpuTemp" stroke="#2f6df6" strokeWidth={2.3} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
                         {historySeriesVisibility.gpu && <Line yAxisId="temp" type="monotone" dataKey="gpuTemp" stroke="#f97316" strokeWidth={2.3} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
                         {historySeriesVisibility.fan && <Line yAxisId="fan" type="monotone" dataKey="fanRpm" stroke="#10b981" strokeWidth={2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
+                        {historyHasPower && historySeriesVisibility.cpuPower && <Line yAxisId="power" type="monotone" dataKey="cpuPowerWatts" stroke={CPU_POWER_STROKE} strokeWidth={2.2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
+                        {historyHasPower && historySeriesVisibility.gpuPower && <Line yAxisId="power" type="monotone" dataKey="gpuPowerWatts" stroke={GPU_POWER_STROKE} strokeWidth={2.2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
                       </LineChart>
                     </ResponsiveContainer>
                   </div>

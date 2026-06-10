@@ -14,6 +14,12 @@ import (
 var iconData []byte
 
 func main() {
+	closeFatalOutput, fatalLogPath := setupFatalOutput()
+	defer closeFatalOutput()
+	if fatalLogPath != "" {
+		fmt.Fprintf(os.Stderr, "fatal output: %s\n", fatalLogPath)
+	}
+
 	releaseInstanceLock, alreadyRunning, err := acquireCoreInstanceLock()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "acquire core instance lock: %v\n", err)

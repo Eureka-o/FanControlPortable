@@ -110,3 +110,42 @@ func TestTrackBridgeTemperatureStaleness(t *testing.T) {
 		})
 	}
 }
+
+func TestShouldSendTargetSpeedWakesStoppedFan(t *testing.T) {
+	tests := []struct {
+		name    string
+		fanData *types.FanData
+		unit    string
+	}{
+		{
+			name:    "rpm current zero",
+			unit:    types.FanSpeedUnitRPM,
+			fanData: &types.FanData{CurrentRPM: 0, TargetRPM: 1500},
+		},
+		{
+			name:    "rpm target zero",
+			unit:    types.FanSpeedUnitRPM,
+			fanData: &types.FanData{CurrentRPM: 1200, TargetRPM: 0},
+		},
+		{
+			name:    "percent current zero",
+			unit:    types.FanSpeedUnitPercent,
+			fanData: &types.FanData{CurrentRPM: 0, TargetRPM: 40},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if !shouldSendTargetSpeed(500, 500, 20, tt.fanData, tt.unit) {
+				t.Fatal("shouldSendTargetSpeed() should resend a positive target when device reports stopped/zero target")
+			}
+		})
+	}
+}
+
+func TestShouldSendTargetSpeedIgnoresSmallStableDrift(t *testing.T) {
+	fanData := &types.FanData{CurrentRPM: 1505, TargetRPM: 1504}
+	if shouldSendTargetSpeed(1500, 1500, 20, fanData, types.FanSpeedUnitRPM) {
+		t.Fatal("shouldSendTargetSpeed() should not resend for small stable RPM drift")
+	}
+}

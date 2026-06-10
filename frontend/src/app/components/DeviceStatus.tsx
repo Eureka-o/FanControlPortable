@@ -77,6 +77,17 @@ const getFanSpinDuration = (speed?: number, minSpeed = 0, maxSpeed = 100) => {
   return 1.35;
 };
 
+const formatPowerWatts = (watts?: number | null) => {
+  const value = Number(watts || 0);
+  if (!Number.isFinite(value) || value <= 0) return '-- W';
+  if (value < 10) return `${Math.round(value * 10) / 10} W`;
+  return `${Math.round(value)} W`;
+};
+
+const CPU_POWER_STROKE = 'color-mix(in srgb, #0891b2 88%, var(--foreground) 12%)';
+const GPU_POWER_STROKE = 'color-mix(in srgb, #a855f7 84%, var(--foreground) 16%)';
+const FAN_TREND_STROKE = 'color-mix(in srgb, var(--chart-3) 70%, var(--foreground) 30%)';
+
 const getTranslatedWorkMode = (
   workMode: string | null | undefined,
   t: (key: string) => string,
@@ -440,7 +451,7 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
   maxSpeed,
   onOpen,
 }: {
-  points: Array<{ timestamp: number; cpuTemp: number; gpuTemp: number; fanRpm: number }>;
+  points: TemperatureHistoryPoint[];
   enabled: boolean;
   source: 'core' | 'session';
   minSpeed: number;
@@ -454,9 +465,11 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
     const height = 168;
     const pad = { left: 8, right: 8, top: 10, bottom: 10 };
     const plotWidth = width - pad.left - pad.right;
+    const plotTop = pad.top;
     const plotHeight = height - pad.top - pad.bottom;
     let minTemp = 35;
     let maxTemp = 80;
+    let maxPower = 0;
     const speedRange = Math.max(1, maxSpeed - minSpeed);
 
     for (const point of points) {
@@ -468,11 +481,14 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
         minTemp = Math.min(minTemp, point.gpuTemp);
         maxTemp = Math.max(maxTemp, point.gpuTemp);
       }
+      maxPower = Math.max(maxPower, Number(point.cpuPowerWatts || 0), Number(point.gpuPowerWatts || 0));
     }
 
+    const hasPower = maxPower > 0;
     const minY = Math.max(0, Math.floor((minTemp - 6) / 5) * 5);
     const maxY = Math.min(110, Math.ceil((maxTemp + 6) / 5) * 5);
     const rangeY = Math.max(10, maxY - minY);
+    const powerMax = maxPower > 0 ? Math.max(20, Math.ceil((maxPower + 8) / 10) * 10) : 120;
     const minTs = points[0]?.timestamp ?? 0;
     const maxTs = points[points.length - 1]?.timestamp ?? minTs;
     const rangeTs = Math.max(1, maxTs - minTs);
@@ -481,8 +497,9 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
       if (rangeTs <= 1 && points.length > 1) return pad.left + (index / Math.max(1, points.length - 1)) * plotWidth;
       return pad.left + ((timestamp - minTs) / rangeTs) * plotWidth;
     };
-    const yForTemp = (temp: number) => pad.top + plotHeight - ((temp - minY) / rangeY) * plotHeight;
-    const yForFan = (rpm: number) => pad.top + plotHeight - ((Math.max(minSpeed, Math.min(maxSpeed, rpm)) - minSpeed) / speedRange) * plotHeight;
+    const yForTemp = (temp: number) => plotTop + plotHeight - ((temp - minY) / rangeY) * plotHeight;
+    const yForFan = (rpm: number) => plotTop + plotHeight - ((Math.max(minSpeed, Math.min(maxSpeed, rpm)) - minSpeed) / speedRange) * plotHeight;
+    const yForPower = (watts: number) => plotTop + plotHeight - (Math.max(0, Math.min(powerMax, watts)) / powerMax) * plotHeight;
     const buildPath = (selector: (point: TemperatureHistoryPoint) => number, projectY: (value: number) => number) => {
       let path = '';
       let started = false;
@@ -503,14 +520,18 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
       height,
       pad,
       plotWidth,
+      plotTop,
       plotHeight,
+      hasPower,
       cpuPath: buildPath((point) => point.cpuTemp, yForTemp),
       gpuPath: buildPath((point) => point.gpuTemp, yForTemp),
       fanPath: buildPath((point) => point.fanRpm, yForFan),
+      cpuPowerPath: buildPath((point) => Number(point.cpuPowerWatts || 0), yForPower),
+      gpuPowerPath: buildPath((point) => Number(point.gpuPowerWatts || 0), yForPower),
       gridLines: [0.2, 0.5, 0.8],
     };
   }, [maxSpeed, minSpeed, points]);
-  const { width, height, pad, plotWidth, plotHeight, cpuPath, gpuPath, fanPath, gridLines } = chart;
+  const { width, height, pad, plotWidth, plotTop, plotHeight, hasPower, cpuPath, gpuPath, fanPath, cpuPowerPath, gpuPowerPath, gridLines } = chart;
   const handlePanelKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (!onOpen) return;
     if (event.key === 'Enter' || event.key === ' ') {
@@ -555,17 +576,23 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
         ) : (
           <div className="h-full w-full overflow-hidden">
             <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" preserveAspectRatio="none" aria-hidden="true">
-            {gridLines.map((ratio) => {
-              const y = pad.top + plotHeight * ratio;
-              return (
-                <g key={ratio}>
-                  <line x1={pad.left} y1={y} x2={pad.left + plotWidth} y2={y} stroke="var(--chart-grid)" strokeWidth="1" opacity="0.7" />
-                </g>
-              );
-            })}
-            {cpuPath && <path d={cpuPath} fill="none" stroke="#2f6df6" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />}
-            {gpuPath && <path d={gpuPath} fill="none" stroke="#f97316" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />}
-            {fanPath && <path d={fanPath} fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
+              {gridLines.map((ratio) => {
+                const y = plotTop + plotHeight * ratio;
+                return (
+                  <g key={ratio}>
+                    <line x1={pad.left} y1={y} x2={pad.left + plotWidth} y2={y} stroke="var(--chart-grid)" strokeWidth="1" opacity="0.7" />
+                  </g>
+                );
+              })}
+              {hasPower && (
+                <>
+                  {cpuPowerPath && <path d={cpuPowerPath} fill="none" stroke={CPU_POWER_STROKE} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.9" />}
+                  {gpuPowerPath && <path d={gpuPowerPath} fill="none" stroke={GPU_POWER_STROKE} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.9" />}
+                </>
+              )}
+              {cpuPath && <path d={cpuPath} fill="none" stroke="var(--chart-primary)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />}
+              {gpuPath && <path d={gpuPath} fill="none" stroke="var(--chart-temperature-indicator)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />}
+              {fanPath && <path d={fanPath} fill="none" stroke={FAN_TREND_STROKE} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" opacity="0.45" />}
             </svg>
           </div>
         )}
@@ -922,7 +949,7 @@ export default function DeviceStatus({
             <HardwareIdentitySummary cpuModel={temperature?.cpuModel} gpuModel={temperature?.gpuModel} />
           </div>
 
-          <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2.5 md:grid-cols-5">
             <div className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3">
               <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Sparkles className="h-3.5 w-3.5" />
@@ -935,13 +962,11 @@ export default function DeviceStatus({
 
             <div className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3">
               <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Zap className="h-3.5 w-3.5" />
-                {t('deviceStatus.stats.targetSpeed')}
+                <ShieldCheck className="h-3.5 w-3.5" />
+                {t('deviceStatus.stats.tempStatus')}
               </div>
-              <div className="text-sm font-semibold tabular-nums">
-                {targetFanSpeed !== undefined && targetFanSpeed !== null
-                  ? `${targetFanSpeed}${fanSpeedLabel}`
-                  : '--'}
+              <div className={clsx('text-sm font-semibold tabular-nums', maxTempStatus.color)}>
+                {t(maxTempStatus.labelKey)}
               </div>
             </div>
 
@@ -955,11 +980,21 @@ export default function DeviceStatus({
 
             <div className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3">
               <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                {t('deviceStatus.stats.tempStatus')}
+                <Cpu className="h-3.5 w-3.5" />
+                {t('deviceStatus.stats.cpuPower')}
               </div>
-              <div className={clsx('text-sm font-semibold tabular-nums', maxTempStatus.color)}>
-                {t(maxTempStatus.labelKey)}
+              <div className="text-sm font-semibold tabular-nums">
+                {formatPowerWatts(temperature?.cpuPowerWatts)}
+              </div>
+            </div>
+
+            <div className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3">
+              <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Gpu className="h-3.5 w-3.5" />
+                {t('deviceStatus.stats.gpuPower')}
+              </div>
+              <div className="text-sm font-semibold tabular-nums">
+                {formatPowerWatts(temperature?.gpuPowerWatts)}
               </div>
             </div>
           </div>

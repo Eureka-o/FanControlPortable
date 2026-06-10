@@ -128,6 +128,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	rawTempHistory := make([]int, 0, 6)
 	recentAvgTemps := make([]int, 0, 24)
 	recentControlTemps := make([]int, 0, 24)
+	risePredictionSamples := make([]smartcontrol.RisePredictionSample, 0, 12)
 	initialSelection := types.TemperatureSelection{
 		TempSource: cfg.TempSource,
 		GpuDevice:  cfg.GpuDevice,
@@ -317,6 +318,21 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					targetRPM = min(max(targetRPM, curveMinRPM), curveMaxRPM)
 				}
 
+				risePredictionSamples = append(risePredictionSamples, smartcontrol.RisePredictionSample{
+					ControlTemp:   controlTemp,
+					CPUPowerWatts: temp.CPUPowerWatts,
+					GPUPowerWatts: temp.GPUPowerWatts,
+				})
+				if len(risePredictionSamples) > 12 {
+					risePredictionSamples = risePredictionSamples[len(risePredictionSamples)-12:]
+				}
+				if targetRPM > 0 && !spikeSuppressed {
+					predictedTarget, boost := smartcontrol.ApplyTemperatureRisePrediction(targetRPM, risePredictionSamples, smartCfg, speedUnit)
+					if boost > 0 {
+						targetRPM = min(max(predictedTarget, curveMinRPM), curveMaxRPM)
+					}
+				}
+
 				if prevTargetRPM >= 0 {
 					targetRPM = smartcontrol.ApplyRampLimit(targetRPM, prevTargetRPM, smartCfg.RampUpLimit, smartCfg.RampDownLimit)
 					if targetRPM > 0 {
@@ -348,6 +364,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 						if changed {
 							smartCfg.LearnedOffsets = newOffsets
 							cfg.SmartControl = smartCfg
+							storeSmartControlOffsetsForActiveProfile(&cfg)
 							a.configManager.Set(cfg)
 							learningDirty = true
 						}
@@ -457,6 +474,10 @@ func shouldSendTargetSpeed(targetRPM, prevTargetRPM, minRPMChange int, fanData *
 		return false
 	}
 	deviceTargetRPM := fanDataSpeedForControlUnit(int(fanData.TargetRPM), unit)
+	deviceCurrentRPM := fanDataSpeedForControlUnit(int(fanData.CurrentRPM), unit)
+	if deviceCurrentRPM == 0 {
+		return true
+	}
 	return deviceTargetRPM == 0 || absRPMDelta(targetRPM, deviceTargetRPM) >= minRPMChange
 }
 

@@ -296,8 +296,10 @@ type GearCommand struct {
 
 // TemperatureData 温度数据
 type TemperatureData struct {
-	CPUTemp           int                    `json:"cpuTemp"`           // CPU温度
-	GPUTemp           int                    `json:"gpuTemp"`           // GPU温度
+	CPUTemp           int                    `json:"cpuTemp"` // CPU温度
+	GPUTemp           int                    `json:"gpuTemp"` // GPU温度
+	CPUPowerWatts     float64                `json:"cpuPowerWatts,omitempty"`
+	GPUPowerWatts     float64                `json:"gpuPowerWatts,omitempty"`
 	MaxTemp           int                    `json:"maxTemp"`           // 最高温度
 	ControlTemp       int                    `json:"controlTemp"`       // 当前控温基准温度
 	ControlSource     string                 `json:"controlSource"`     // 当前控温基准来源
@@ -314,10 +316,12 @@ type TemperatureData struct {
 
 // TemperatureHistoryPoint CPU/GPU 温度历史点。
 type TemperatureHistoryPoint struct {
-	Timestamp int64 `json:"timestamp"`
-	CPUTemp   int   `json:"cpuTemp"`
-	GPUTemp   int   `json:"gpuTemp"`
-	FanRPM    int   `json:"fanRpm"`
+	Timestamp     int64   `json:"timestamp"`
+	CPUTemp       int     `json:"cpuTemp"`
+	GPUTemp       int     `json:"gpuTemp"`
+	FanRPM        int     `json:"fanRpm"`
+	CPUPowerWatts float64 `json:"cpuPowerWatts,omitempty"`
+	GPUPowerWatts float64 `json:"gpuPowerWatts,omitempty"`
 }
 
 // TemperatureHistoryPayload 温度历史返回载荷。
@@ -331,6 +335,8 @@ type TemperatureHistoryPayload struct {
 type BridgeTemperatureData struct {
 	CpuTemp           int                    `json:"cpuTemp"`
 	GpuTemp           int                    `json:"gpuTemp"`
+	CpuPowerWatts     float64                `json:"cpuPowerWatts,omitempty"`
+	GpuPowerWatts     float64                `json:"gpuPowerWatts,omitempty"`
 	MaxTemp           int                    `json:"maxTemp"`
 	ControlTemp       int                    `json:"controlTemp"`
 	ControlSource     string                 `json:"controlSource"`
@@ -391,29 +397,32 @@ type LegionFnQSupportCache struct {
 }
 
 type SmartControlConfig struct {
-	Enabled              bool   `json:"enabled"`              // 智能耦合控制开关
-	Learning             bool   `json:"learning"`             // 学习开关
-	LearningBias         string `json:"learningBias"`         // 学习倾向: balanced/cooling/quiet
-	FilterTransientSpike bool   `json:"filterTransientSpike"` // 是否过滤孤立温度尖峰
-	TargetTemp           int    `json:"targetTemp"`           // 目标温度(°C)
-	Aggressiveness       int    `json:"aggressiveness"`       // 响应激进度(1-10)
-	Hysteresis           int    `json:"hysteresis"`           // 滞回温差(°C)
-	MinRPMChange         int    `json:"minRpmChange"`         // 最小生效转速变化(RPM)
-	RampUpLimit          int    `json:"rampUpLimit"`          // 每次更新最大升速(RPM)
-	RampDownLimit        int    `json:"rampDownLimit"`        // 每次更新最大降速(RPM)
-	LearnRate            int    `json:"learnRate"`            // 学习速度(1-10)
-	LearnWindow          int    `json:"learnWindow"`          // 稳态学习窗口(采样点)
-	LearnDelay           int    `json:"learnDelay"`           // 学习延迟步数(处理热惯性)
-	OverheatWeight       int    `json:"overheatWeight"`       // 过热惩罚权重
-	RPMDeltaWeight       int    `json:"rpmDeltaWeight"`       // 转速变化惩罚权重
-	NoiseWeight          int    `json:"noiseWeight"`          // 高转速噪音惩罚权重
-	TrendGain            int    `json:"trendGain"`            // 温升趋势前馈增益
-	MaxLearnOffset       int    `json:"maxLearnOffset"`       // 学习偏移上限(RPM)
-	LearnedOffsets       []int  `json:"learnedOffsets"`       // 每个曲线点的学习偏移(RPM)
-	LearnedOffsetsHeat   []int  `json:"learnedOffsetsHeat"`   // 升温工况学习偏移(RPM)
-	LearnedOffsetsCool   []int  `json:"learnedOffsetsCool"`   // 降温工况学习偏移(RPM)
-	LearnedRateHeat      []int  `json:"learnedRateHeat"`      // 升温变化率学习偏置(分桶RPM)
-	LearnedRateCool      []int  `json:"learnedRateCool"`      // 降温变化率学习偏置(分桶RPM)
+	Enabled                           bool             `json:"enabled"`              // 智能耦合控制开关
+	Learning                          bool             `json:"learning"`             // 学习开关
+	LearningBias                      string           `json:"learningBias"`         // 学习倾向: balanced/cooling/quiet
+	FilterTransientSpike              bool             `json:"filterTransientSpike"` // 是否过滤孤立温度尖峰
+	TargetTemp                        int              `json:"targetTemp"`           // 目标温度(°C)
+	Aggressiveness                    int              `json:"aggressiveness"`       // 响应激进度(1-10)
+	Hysteresis                        int              `json:"hysteresis"`           // 滞回温差(°C)
+	MinRPMChange                      int              `json:"minRpmChange"`         // 最小生效转速变化(RPM)
+	RampUpLimit                       int              `json:"rampUpLimit"`          // 每次更新最大升速(RPM)
+	RampDownLimit                     int              `json:"rampDownLimit"`        // 每次更新最大降速(RPM)
+	LearnRate                         int              `json:"learnRate"`            // 学习速度(1-10)
+	LearnWindow                       int              `json:"learnWindow"`          // 稳态学习窗口(采样点)
+	LearnDelay                        int              `json:"learnDelay"`           // 学习延迟步数(处理热惯性)
+	OverheatWeight                    int              `json:"overheatWeight"`       // 过热惩罚权重
+	RPMDeltaWeight                    int              `json:"rpmDeltaWeight"`       // 转速变化惩罚权重
+	NoiseWeight                       int              `json:"noiseWeight"`          // 高转速噪音惩罚权重
+	TrendGain                         int              `json:"trendGain"`            // 温升趋势前馈增益
+	MaxLearnOffset                    int              `json:"maxLearnOffset"`       // 学习偏移上限(RPM)
+	LearnedOffsets                    []int            `json:"learnedOffsets"`       // 每个曲线点的学习偏移(RPM)
+	LearnedOffsetsHeat                []int            `json:"learnedOffsetsHeat"`   // 升温工况学习偏移(RPM)
+	LearnedOffsetsCool                []int            `json:"learnedOffsetsCool"`   // 降温工况学习偏移(RPM)
+	LearnedRateHeat                   []int            `json:"learnedRateHeat"`      // 升温变化率学习偏置(分桶RPM)
+	LearnedRateCool                   []int            `json:"learnedRateCool"`      // 降温变化率学习偏置(分桶RPM)
+	LearnedOffsetsByProfile           map[string][]int `json:"learnedOffsetsByProfile,omitempty"`
+	TemperatureRisePrediction         bool             `json:"temperatureRisePrediction"`
+	TemperatureRisePredictionMaxBoost int              `json:"temperatureRisePredictionMaxBoost"`
 }
 
 // AppConfig 应用配置
@@ -491,56 +500,60 @@ func GetDefaultSmartControlConfigForUnit(curve []FanCurvePoint, unit string) Sma
 
 	if IsRPMSpeedUnit(unit) {
 		return SmartControlConfig{
-			Enabled:              true,
-			Learning:             true,
-			LearningBias:         LearningBiasBalanced,
-			FilterTransientSpike: true,
-			TargetTemp:           68,
-			Aggressiveness:       5,
-			Hysteresis:           2,
-			MinRPMChange:         50,
-			RampUpLimit:          220,
-			RampDownLimit:        160,
-			LearnRate:            3,
-			LearnWindow:          8,
-			LearnDelay:           3,
-			OverheatWeight:       8,
-			RPMDeltaWeight:       5,
-			NoiseWeight:          4,
-			TrendGain:            5,
-			MaxLearnOffset:       300,
-			LearnedOffsets:       offsets,
-			LearnedOffsetsHeat:   heatOffsets,
-			LearnedOffsetsCool:   coolOffsets,
-			LearnedRateHeat:      heatRate,
-			LearnedRateCool:      coolRate,
+			Enabled:                           true,
+			Learning:                          true,
+			LearningBias:                      LearningBiasBalanced,
+			FilterTransientSpike:              true,
+			TargetTemp:                        68,
+			Aggressiveness:                    5,
+			Hysteresis:                        2,
+			MinRPMChange:                      50,
+			RampUpLimit:                       220,
+			RampDownLimit:                     160,
+			LearnRate:                         3,
+			LearnWindow:                       8,
+			LearnDelay:                        3,
+			OverheatWeight:                    8,
+			RPMDeltaWeight:                    5,
+			NoiseWeight:                       4,
+			TrendGain:                         5,
+			MaxLearnOffset:                    300,
+			LearnedOffsets:                    offsets,
+			LearnedOffsetsHeat:                heatOffsets,
+			LearnedOffsetsCool:                coolOffsets,
+			LearnedRateHeat:                   heatRate,
+			LearnedRateCool:                   coolRate,
+			TemperatureRisePrediction:         false,
+			TemperatureRisePredictionMaxBoost: 80,
 		}
 	}
 
 	return SmartControlConfig{
-		Enabled:              true,
-		Learning:             true,
-		LearningBias:         LearningBiasBalanced,
-		FilterTransientSpike: true,
-		TargetTemp:           68,
-		Aggressiveness:       5,
-		Hysteresis:           2,
-		MinRPMChange:         20,
-		RampUpLimit:          80,
-		RampDownLimit:        60,
-		LearnRate:            3,
-		LearnWindow:          8,
-		LearnDelay:           3,
-		OverheatWeight:       8,
-		RPMDeltaWeight:       5,
-		NoiseWeight:          4,
-		TrendGain:            5,
-		MaxLearnOffset:       200,
-		LearnedOffsets:       offsets,
-		LearnedOffsetsHeat:   heatOffsets,
-		LearnedOffsetsCool:   coolOffsets,
-		LearnedRateHeat:      heatRate,
-		LearnedRateCool:      coolRate,
+		Enabled:                           true,
+		Learning:                          true,
+		LearningBias:                      LearningBiasBalanced,
+		FilterTransientSpike:              true,
+		TargetTemp:                        68,
+		Aggressiveness:                    5,
+		Hysteresis:                        2,
+		MinRPMChange:                      20,
+		RampUpLimit:                       80,
+		RampDownLimit:                     60,
+		LearnRate:                         3,
+		LearnWindow:                       8,
+		LearnDelay:                        3,
+		OverheatWeight:                    8,
+		RPMDeltaWeight:                    5,
+		NoiseWeight:                       4,
+		TrendGain:                         5,
+		MaxLearnOffset:                    200,
+		LearnedOffsets:                    offsets,
+		LearnedOffsetsHeat:                heatOffsets,
+		LearnedOffsetsCool:                coolOffsets,
+		LearnedRateHeat:                   heatRate,
+		LearnedRateCool:                   coolRate,
+		TemperatureRisePrediction:         false,
+		TemperatureRisePredictionMaxBoost: 60,
 	}
 }
 

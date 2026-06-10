@@ -3,6 +3,7 @@ package tray
 
 import (
 	"fmt"
+	"math"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -51,6 +52,8 @@ type MenuItems struct {
 	DeviceStatus   *systray.MenuItem
 	CPUTemperature *systray.MenuItem
 	GPUTemperature *systray.MenuItem
+	CPUPower       *systray.MenuItem
+	GPUPower       *systray.MenuItem
 	FanSpeed       *systray.MenuItem
 	CurveSelect    *systray.MenuItem
 	AutoControl    *systray.MenuItem
@@ -68,6 +71,8 @@ type Status struct {
 	Connected            bool
 	CPUTemp              int
 	GPUTemp              int
+	CPUPowerWatts        float64
+	GPUPowerWatts        float64
 	CurrentRPM           uint16
 	AutoControlState     bool
 	ActiveCurveProfileID string
@@ -315,6 +320,12 @@ func (m *Manager) createMenu() (items *MenuItems, err error) {
 	items.GPUTemperature = systray.AddMenuItem("GPU 温度：无数据", "显示当前 GPU 温度")
 	items.GPUTemperature.Disable()
 
+	items.CPUPower = systray.AddMenuItem("CPU 功耗：-- W", "显示当前 CPU 功耗")
+	items.CPUPower.Disable()
+
+	items.GPUPower = systray.AddMenuItem("GPU 功耗：-- W", "显示当前 GPU 功耗")
+	items.GPUPower.Disable()
+
 	items.FanSpeed = systray.AddMenuItem("风扇速度：无数据", "显示当前风扇速度百分比")
 	items.FanSpeed.Disable()
 	items.CurveSelect = systray.AddMenuItem("温控曲线", "切换温控曲线")
@@ -422,6 +433,24 @@ func (m *Manager) runTrayActionAsync(action string, inFlight *int32, fn func()) 
 	}()
 }
 
+func formatPowerWatts(watts float64) string {
+	if watts <= 0 || math.IsNaN(watts) || math.IsInf(watts, 0) {
+		return "-- W"
+	}
+	if watts < 10 {
+		return fmt.Sprintf("%.1f W", math.Round(watts*10)/10)
+	}
+	return fmt.Sprintf("%.0f W", math.Round(watts))
+}
+
+func formatTemperatureAndPower(label string, temp int, watts float64) string {
+	tempText := "--°C"
+	if temp > 0 {
+		tempText = fmt.Sprintf("%d°C", temp)
+	}
+	return fmt.Sprintf("%s: %s / %s", label, tempText, formatPowerWatts(watts))
+}
+
 // updateMenuStatus 定期更新托盘菜单状态
 func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 	defer func() {
@@ -469,6 +498,14 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 					m.menuItems.GPUTemperature.SetTitle("GPU 温度：无数据")
 				}
 
+				if m.menuItems.CPUPower != nil {
+					m.menuItems.CPUPower.SetTitle(fmt.Sprintf("CPU 功耗：%s", formatPowerWatts(status.CPUPowerWatts)))
+				}
+
+				if m.menuItems.GPUPower != nil {
+					m.menuItems.GPUPower.SetTitle(fmt.Sprintf("GPU 功耗：%s", formatPowerWatts(status.GPUPowerWatts)))
+				}
+
 				if status.CurrentRPM > 0 {
 					m.menuItems.FanSpeed.SetTitle(fmt.Sprintf("风扇速度：%d%%", status.CurrentRPM))
 				} else {
@@ -487,14 +524,16 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 				}
 
 				if status.Connected {
+					cpuLine := formatTemperatureAndPower("CPU", status.CPUTemp, status.CPUPowerWatts)
+					gpuLine := formatTemperatureAndPower("GPU", status.GPUTemp, status.GPUPowerWatts)
 					if status.AutoControlState {
-						tooltipText := fmt.Sprintf("%s - 智能温控\nCPU: %d°C GPU: %d°C", appmeta.AppName, status.CPUTemp, status.GPUTemp)
+						tooltipText := fmt.Sprintf("%s - 智能温控\n%s\n%s", appmeta.AppName, cpuLine, gpuLine)
 						if status.CurrentRPM > 0 {
 							tooltipText += fmt.Sprintf("\n风扇速度: %d%%", status.CurrentRPM)
 						}
 						systray.SetTooltip(tooltipText)
 					} else {
-						tooltipText := appmeta.AppName + " - 手动模式"
+						tooltipText := fmt.Sprintf("%s - 手动模式\n%s\n%s", appmeta.AppName, cpuLine, gpuLine)
 						if status.CurrentRPM > 0 {
 							tooltipText += fmt.Sprintf("\n风扇速度: %d%%", status.CurrentRPM)
 						}
@@ -566,7 +605,6 @@ func (m *Manager) refreshTrayIcon() {
 		}
 
 		systray.SetIcon(m.iconData)
-		systray.SetTooltip(appmeta.AppName + " - 运行中")
 
 		m.consecutiveFails.Store(0)
 		m.lastIconRefresh.Store(time.Now().Unix())

@@ -348,6 +348,8 @@ func applyMissingSmartControlDefaults(cfg *types.AppConfig, rawConfig map[string
 	if !ok {
 		cfg.SmartControl.FilterTransientSpike = defaults.FilterTransientSpike
 		cfg.SmartControl.LearningBias = defaults.LearningBias
+		cfg.SmartControl.TemperatureRisePrediction = defaults.TemperatureRisePrediction
+		cfg.SmartControl.TemperatureRisePredictionMaxBoost = defaults.TemperatureRisePredictionMaxBoost
 		return
 	}
 
@@ -361,6 +363,12 @@ func applyMissingSmartControlDefaults(cfg *types.AppConfig, rawConfig map[string
 	}
 	if _, ok := smartControlConfig["learningBias"]; !ok {
 		cfg.SmartControl.LearningBias = defaults.LearningBias
+	}
+	if _, ok := smartControlConfig["temperatureRisePrediction"]; !ok {
+		cfg.SmartControl.TemperatureRisePrediction = defaults.TemperatureRisePrediction
+	}
+	if _, ok := smartControlConfig["temperatureRisePredictionMaxBoost"]; !ok {
+		cfg.SmartControl.TemperatureRisePredictionMaxBoost = defaults.TemperatureRisePredictionMaxBoost
 	}
 }
 
@@ -542,6 +550,7 @@ func resetLearnedPercentOffsets(cfg *types.AppConfig) {
 	cfg.SmartControl.LearnedOffsetsCool = make([]int, curveLen)
 	cfg.SmartControl.LearnedRateHeat = make([]int, 7)
 	cfg.SmartControl.LearnedRateCool = make([]int, 7)
+	cfg.SmartControl.LearnedOffsetsByProfile = nil
 }
 
 func defaultFanCurveSpeedAt(defaultCurve []types.FanCurvePoint, index int, temperature int) int {
