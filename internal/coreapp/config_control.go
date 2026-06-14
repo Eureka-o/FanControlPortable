@@ -53,6 +53,9 @@ func configSpeedToTargetUnit(speed int, unit string) int {
 }
 
 func (a *CoreApp) activeDeviceCapabilities() types.DeviceCapabilities {
+	if a.deviceManager != nil && a.deviceManager.IsConnected() {
+		return a.deviceManager.ActiveCapabilities()
+	}
 	cfg := a.configManager.Get()
 	return types.ActiveDeviceProfile(&cfg).Capabilities
 }
@@ -95,12 +98,15 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	cfg.GpuDevice = types.NormalizeDeviceSelection(cfg.GpuDevice)
 	cfg.CpuSensor = types.NormalizeSensorSelection(cfg.CpuSensor)
 	cfg.GpuSensor = types.NormalizeSensorSelection(cfg.GpuSensor)
+	prepareDeviceFanCurveStateForUpdate(&cfg, oldCfg)
 	curveprofiles.NormalizeConfigForUnit(&cfg, unit)
 	if idx := curveprofiles.FindIndex(cfg.FanCurveProfiles, cfg.ActiveFanCurveProfileID); idx >= 0 {
 		cfg.FanCurveProfiles[idx].Curve = curveprofiles.CloneCurve(cfg.FanCurve)
 	}
 	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, unit)
+	prepareSmartControlOffsetsForUpdate(&cfg, oldCfg)
 	syncSmartControlOffsetsForActiveProfile(&cfg)
+	storeActiveDeviceFanCurveState(&cfg)
 	cfg.LegionFnQ = types.NormalizeLegionFnQConfig(cfg.LegionFnQ)
 	if a.legionFnQSupportChecked.Load() && !a.legionFnQSupported.Load() && (cfg.LegionFnQ.Enabled || cfg.LegionFnQ.TakeOverFan) {
 		return fmt.Errorf("Lenovo Legion Fn+Q 仅支持拯救者设备")
@@ -165,6 +171,7 @@ func (a *CoreApp) SetFanCurve(curve []types.FanCurvePoint) error {
 	}
 	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, unit)
 	storeSmartControlOffsetsForActiveProfile(&cfg)
+	storeActiveDeviceFanCurveState(&cfg)
 	return a.configManager.Update(cfg)
 }
 
@@ -265,10 +272,10 @@ func (a *CoreApp) SetManualGear(gear, level string) bool {
 // SetCustomSpeed 设置自定义转速
 func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 	a.mutex.Lock()
-	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
 	unit := types.DeviceProfileSpeedUnit(&cfg)
+	wasConnected := a.isConnected
 
 	if enabled {
 		rpm = types.ClampSpeedForUnit(rpm, unit)
@@ -278,19 +285,22 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 
 		cfg.CustomSpeedEnabled = true
 		cfg.CustomSpeedRPM = rpm
-
-		if a.isConnected {
-			a.safeGo("setCustomFanSpeed", func() {
-				a.deviceManager.SetTargetSpeed(configSpeedToTargetUnit(rpm, unit), unit)
-			})
-		}
 	} else {
 		cfg.CustomSpeedEnabled = false
 	}
-	applyManualAfterDisable := !enabled && a.isConnected
+	applyManualAfterDisable := !enabled && wasConnected
+	a.mutex.Unlock()
 
+	if enabled && wasConnected {
+		if !a.deviceManager.SetTargetSpeed(configSpeedToTargetUnit(rpm, unit), unit) {
+			return fmt.Errorf("当前设备拒绝自定义速度下发，请确认设备仍已连接并支持 %s 控制", types.FanSpeedDisplaySuffix(unit))
+		}
+	}
+
+	a.mutex.Lock()
 	a.configManager.Set(cfg)
 	err := a.configManager.Save()
+	a.mutex.Unlock()
 
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)

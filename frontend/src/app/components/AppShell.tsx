@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Copy,
+  Download,
   LineChart,
   LayoutGrid,
   Minus,
@@ -18,7 +19,9 @@ import {
   Info,
   Wifi,
   WifiOff,
+  Bluetooth,
   Boxes,
+  Usb,
 } from 'lucide-react';
 import { Environment, Quit, WindowIsMaximised, WindowMinimise, WindowToggleMaximise } from '../../../wailsjs/runtime/runtime';
 import { types } from '../../../wailsjs/go/models';
@@ -73,10 +76,13 @@ interface AppShellProps {
   isConnected: boolean;
   fanData: types.FanData | null;
   temperature: types.TemperatureData | null;
+  runtimeDeviceProfile?: types.DeviceProfile | null;
   config: types.AppConfig;
   autoControl: boolean;
   error: string | null;
   bridgeWarning: string | null;
+  diagnosticsExporting?: boolean;
+  onExportDiagnostics?: () => void;
   onDismissBridgeWarning: () => void;
   statusContent: ReactNode;
   curveContent: ReactNode;
@@ -168,7 +174,7 @@ function TitleBar({
 }) {
   return (
     <div
-      className="glacier-titlebar absolute left-16 right-0 top-0 z-50 flex h-10 items-center justify-between bg-background"
+      className="glacier-titlebar pointer-events-auto absolute left-16 right-0 top-0 z-[9999] flex h-10 items-center justify-between bg-background"
       style={DRAG_STYLE}
       onDoubleClick={onToggleMaximise}
     >
@@ -192,6 +198,7 @@ function StatusBadges({
   isConnected,
   fanData,
   temperature,
+  runtimeDeviceProfile,
   config,
   autoControl,
   compact = false,
@@ -199,6 +206,7 @@ function StatusBadges({
   isConnected: boolean;
   fanData: types.FanData | null;
   temperature: types.TemperatureData | null;
+  runtimeDeviceProfile?: types.DeviceProfile | null;
   config: types.AppConfig;
   autoControl: boolean;
   compact?: boolean;
@@ -213,6 +221,17 @@ function StatusBadges({
     ? 'inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium'
     : 'inline-flex h-8 items-center gap-1.5 rounded-xl border px-3 text-[13px] font-medium';
   const fanSpinStyle = fanSpinDuration ? { animationDuration: `${fanSpinDuration}s` } : undefined;
+  const transport = String(
+    runtimeDeviceProfile?.transport
+      || (fanData as any)?.transport
+      || (config as any).deviceTransport
+      || '',
+  ).toLowerCase();
+  const ConnectedIcon = transport === 'ble'
+    ? Bluetooth
+    : transport === 'hid' || transport === 'serial'
+      ? Usb
+      : Wifi;
 
   return (
     <div
@@ -229,7 +248,7 @@ function StatusBadges({
             : 'border-border bg-card text-muted-foreground',
         )}
       >
-        {isConnected ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
+        {isConnected ? <ConnectedIcon className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
         {isConnected ? t('appShell.status.connected') : t('appShell.status.offline')}
       </span>
 
@@ -436,10 +455,13 @@ export default function AppShell({
   isConnected,
   fanData,
   temperature,
+  runtimeDeviceProfile,
   config,
   autoControl,
   error,
   bridgeWarning,
+  diagnosticsExporting = false,
+  onExportDiagnostics,
   onDismissBridgeWarning,
   statusContent,
   curveContent,
@@ -537,7 +559,12 @@ export default function AppShell({
   }, [activeTab]);
 
   return (
-    <div className="glacier-shell relative flex h-dvh w-full overflow-hidden bg-background text-foreground">
+    <div
+      className={clsx(
+        'glacier-shell relative flex h-dvh w-full overflow-hidden bg-background text-foreground',
+        isWindowsChrome && 'glacier-native-backdrop',
+      )}
+    >
       {isWindowsChrome && (
         <TitleBar
           minimizeLabel={t('appShell.titleBar.minimize')}
@@ -545,7 +572,7 @@ export default function AppShell({
           restoreLabel={t('appShell.titleBar.restore')}
           closeLabel={t('appShell.titleBar.close')}
           isMaximised={isMaximised}
-          leftSlot={<StatusBadges isConnected={isConnected} fanData={fanData} temperature={temperature} config={config} autoControl={autoControl} compact />}
+          leftSlot={<StatusBadges isConnected={isConnected} fanData={fanData} temperature={temperature} runtimeDeviceProfile={runtimeDeviceProfile} config={config} autoControl={autoControl} compact />}
           onMinimise={() => WindowMinimise()}
           onToggleMaximise={handleToggleMaximise}
           onClose={() => Quit()}
@@ -626,25 +653,25 @@ export default function AppShell({
         </div>
       </aside>
 
-      <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+      <section className="glacier-content relative flex min-w-0 flex-1 flex-col overflow-hidden">
         {!isWindowsChrome && (
           <header
             className="shrink-0 border-b border-border/65 bg-background/92 px-4 pb-3 pt-3 backdrop-blur-xl sm:px-5 lg:px-6"
             style={DRAG_STYLE}
           >
             <div className="mx-auto flex min-h-9 max-w-[1120px] min-[1680px]:max-w-[1280px] min-[2200px]:max-w-[1480px] items-center justify-start gap-3" style={NO_DRAG_STYLE}>
-              <StatusBadges isConnected={isConnected} fanData={fanData} temperature={temperature} config={config} autoControl={autoControl} />
+              <StatusBadges isConnected={isConnected} fanData={fanData} temperature={temperature} runtimeDeviceProfile={runtimeDeviceProfile} config={config} autoControl={autoControl} />
             </div>
           </header>
         )}
 
-        <div className="relative min-h-0 flex-1 overflow-hidden">
+        <div className="glacier-content-panel relative min-h-0 flex-1 overflow-hidden">
           <div
             ref={scrollRef}
             className="app-scroll-root app-scroll-root--hide-native h-full"
             style={NO_DRAG_STYLE}
           >
-            <div className={clsx('min-h-full px-4 pb-6 sm:px-5 lg:px-6', isWindowsChrome ? 'pt-12' : 'pt-4')}>
+            <div className="min-h-full px-4 pb-6 pt-4 sm:px-5 lg:px-6">
 
           {/* Alerts */}
           <div className="mx-auto max-w-[1120px] min-[1680px]:max-w-[1280px] min-[2200px]:max-w-[1480px]">
@@ -656,8 +683,19 @@ export default function AppShell({
                   exit={{ opacity: 0, height: 0 }}
                   className="overflow-hidden"
                 >
-                  <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2.5 text-sm text-destructive">
-                    {error}
+                  <div className="mb-3 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2.5 text-sm text-destructive">
+                    <p className="min-w-0 flex-1 leading-relaxed">{error}</p>
+                    {onExportDiagnostics && (
+                      <button
+                        type="button"
+                        disabled={diagnosticsExporting}
+                        onClick={onExportDiagnostics}
+                        className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-destructive/25 bg-background/55 px-2.5 py-1 text-xs font-medium text-destructive transition hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        {diagnosticsExporting ? t('appShell.diagnostics.exporting') : t('appShell.diagnostics.export')}
+                      </button>
+                    )}
                   </div>
                 </motion.div>
               )}
@@ -672,6 +710,17 @@ export default function AppShell({
                   <div className="mb-3 flex items-start gap-3 rounded-lg border border-amber-300/50 bg-amber-50/80 px-4 py-2.5 text-amber-800 dark:border-amber-700/40 dark:bg-amber-900/15 dark:text-amber-200">
                     <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
                     <p className="flex-1 text-sm leading-relaxed">{bridgeWarning}</p>
+                    {onExportDiagnostics && (
+                      <button
+                        type="button"
+                        disabled={diagnosticsExporting}
+                        onClick={onExportDiagnostics}
+                        className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-amber-300/70 bg-amber-100/70 px-2.5 py-1 text-xs font-medium text-amber-900 transition hover:bg-amber-200/80 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-700/70 dark:bg-amber-900/35 dark:text-amber-100 dark:hover:bg-amber-800/50"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        {diagnosticsExporting ? t('appShell.diagnostics.exporting') : t('appShell.diagnostics.export')}
+                      </button>
+                    )}
                     <button
                       type="button"
                       aria-label={t('appShell.bridgeWarning.closeAria')}

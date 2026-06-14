@@ -59,6 +59,12 @@
     },
     "bridgeWarning": {
       "closeAria": "关闭告警"
+    },
+    "diagnostics": {
+      "export": "导出诊断日志",
+      "exporting": "导出中...",
+      "exportSuccess": "诊断日志已导出",
+      "exportFailed": "导出诊断日志失败：{{error}}"
     }
   },
   "advancedDevices": {
@@ -87,7 +93,8 @@
       "refreshPorts": "刷新端口",
       "scanBle": "扫描 BLE",
       "probeGatt": "探测 GATT",
-      "applyGatt": "应用 GATT 建议"
+      "applyGatt": "应用 GATT 建议",
+      "addCustomCommand": "添加指令"
     },
     "sections": {
       "supported": "设备模板库",
@@ -113,7 +120,8 @@
       "builtin": "内置设备",
       "template": "模板",
       "user": "用户设备",
-      "working": "正在应用设备变更..."
+      "working": "正在应用设备变更...",
+      "unnamedDevice": "未命名设备"
     },
     "capabilities": {
       "read": "读取状态",
@@ -127,6 +135,15 @@
       "smartStartStop": "智能启停",
       "screen": "屏幕",
       "none": "暂无能力标记"
+    },
+    "groups": {
+      "basicInfo": "基础设备信息",
+      "deviceFunctions": "设备功能白名单",
+      "wifiConnection": "WiFi 连接配置",
+      "bleConnection": "BLE 扫描与 GATT 配置",
+      "serialConnection": "虚拟串口配置",
+      "protocol": "协议与发包模板",
+      "customCommands": "自定义控制指令"
     },
     "transport": {
       "wifi": "WiFi",
@@ -176,20 +193,46 @@
       "parserType": "解析类型",
       "parserExpression": "解析表达式",
       "deviceFunctions": "设备功能白名单",
+      "featureCommand": "功能指令模板",
+      "customCommandType": "指令类型",
+      "customCommandTemplate": "指令模板",
       "rawCommand": "原始命令",
       "waitMs": "等待时间 (ms)"
     },
     "hints": {
+      "basicInfo": "这些字段决定保存设备的身份、连接类别、速度单位和速度范围，普通设置页会按这些信息使用设备。",
+      "deviceFunctions": "只开启该设备和协议已经验证过的功能。设置页显示和后端调用都会受这些白名单约束。",
+      "wifiConnection": "在这里保存设备 IP 与 HTTP 接口。普通设置页手动添加或后续搜索设备时，只会更新 IP 这个连接属性。",
+      "bleConnection": "扫描/探测可辅助填写地址和 UUID，但最终协议字段仍保留给 DIY 主控手动编辑。",
+      "serialConnection": "端口、波特率、分隔符和串口帧格式都保存在这里；设置页只负责选择已保存设备。",
+      "protocol": "定义 FanControl 如何向该设备发送速度命令，以及如何解析状态响应。",
       "tickScale": "填 10 表示学习精度为 0.1%。",
       "serialPorts": "可以选择检测到的 COM 端口；如果主控使用虚拟端口，也可以手动填写。",
       "bleScan": "扫描需要手动触发，并且有时间上限。FanControl 会优先使用广播名称和服务 UUID；写入/通知特征仍可手动填写。",
-      "bleAddress": "可选。扫描结果可自动填入，用于直接 BLE 连接或 GATT 探测。"
+      "bleAddress": "可选。扫描结果可自动填入，用于直接 BLE 连接或 GATT 探测。",
+      "featureCommand": "开启该功能后，可填写对应指令模板；变量语法与发包模板一致。",
+      "customCommands": "添加经验证的高级控制指令。指令类型会自动形成设备功能白名单；当前先开放通电自启和智能启停。",
+      "customCommandTemplate": "变量语法与上方发包模板一致；留空的指令不会保存。"
     },
     "placeholders": {
       "name": "我的散热器",
       "serialPortSelect": "选择检测到的端口",
       "serialPortManual": "手动端口，例如 COM3",
-      "serialPortCustom": "{{port}}（手动）"
+      "serialPortCustom": "{{port}}（手动）",
+      "featureCommand": "例如 5A A5 ... 或 JSON 模板",
+      "customCommandTemplate": "例如 5A A5 ... 或 JSON 模板"
+    },
+    "customCommands": {
+      "empty": "暂未添加高级控制指令。添加指令后，对应功能会进入设备白名单。",
+      "itemTitle": "控制指令 {{index}}"
+    },
+    "customCommandTypes": {
+      "powerOnStartOn": "通电自启：开启",
+      "powerOnStartOff": "通电自启：关闭",
+      "smartStartStopImmediate": "智能启停：即时",
+      "smartStartStopDelayed": "智能启停：延时",
+      "smartStartStopOff": "智能启停：关闭",
+      "reserved": "保留类型：{{type}}"
     },
     "dialog": {
       "addTitle": "新增设备",
@@ -683,8 +726,8 @@
       "cpuGpuTemperature": "CPU {{cpu}}°C · GPU {{gpu}}°C",
       "gearValue": "挡位 {{gear}}",
       "workModes": {
-        "manual": "挡位工作模式",
-        "auto": "自动模式(实时速度)"
+        "manual": "手动模式",
+        "auto": "自动模式"
       }
     },
     "light": {
@@ -754,10 +797,20 @@
     },
     "device": {
       "sectionTitle": "设备设置",
+      "groups": {
+        "basic": "基础功能",
+        "basicDescription": "根据当前设备功能白名单显示的运行开关。",
+        "smartStartStop": "启停策略",
+        "smartStartStopDescription": "按当前设备能力显示原生启停或 WiFi Beta 待机策略。",
+        "lighting": "灯光控制",
+        "lightingDescription": "只有当前设备明确支持灯光时才会显示。"
+      },
       "gearLightTitle": "挡位灯",
       "gearLightDescription": "控制设备上的挡位指示灯",
       "powerOnStartTitle": "通电自启动",
       "powerOnStartDescription": "设备通电后自动运行",
+      "screenTitle": "屏幕",
+      "screenDescription": "该设备标记了屏幕能力，运行时屏幕控制会在白名单验证后开放。",
       "smartStartStopTitle": "智能启停",
       "smartStartStopDescription": "系统关闭后何时停止散热",
       "wifiSmartStartStopTitle": "智能启停",
@@ -765,7 +818,8 @@
       "wifiSmartStartStopTip": "Beta 功能，依赖系统关机前网络仍可用；固件心跳兜底后会更稳定。",
       "wifiSmartStartStopStandbySpeed": "待机时转速",
       "wifiSmartStartStopStandbySpeedDescription": "退出、睡眠或休眠前发送该速度，建议保持 1%。",
-      "betaBadge": "Beta"
+      "betaBadge": "Beta",
+      "contextRefreshing": "正在匹配 {{device}} 的设备设置..."
     },
     "legionFnQ": {
       "sectionTitle": "拯救者 Fn+Q 联动",
@@ -1007,7 +1061,9 @@
     },
     "alerts": {
       "autoStartFailed": "设置自启动失败: {{error}}",
-      "lightStripFailed": "设置灯带失败: {{error}}"
+      "lightStripFailed": "设置灯带失败: {{error}}",
+      "deviceCommandFailed": "设备指令发送失败，请查看日志或导出诊断信息",
+      "deviceCommandFailedWithError": "设备指令发送失败: {{error}}"
     },
     "options": {
       "smartStartStop": {

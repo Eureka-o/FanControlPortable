@@ -64,6 +64,21 @@ func TestFlyDigiHIDProductIDsPreferSpecificProfile(t *testing.T) {
 	}
 }
 
+func TestActiveProfileUsesConnectedFlyDigiProductID(t *testing.T) {
+	m := NewManager(nil)
+	m.ConfigureProfile(types.LegacyRPMProfile(), "")
+	m.deviceType = types.DeviceTransportHID
+	m.productID = types.FlyDigiBS3PROProductID
+
+	profile := m.ActiveProfile()
+	if profile.ID != types.FlyDigiBS3PROProfileID {
+		t.Fatalf("runtime profile = %q, want %q", profile.ID, types.FlyDigiBS3PROProfileID)
+	}
+	if !profile.Capabilities.SupportsSmartStartStop || !profile.Capabilities.SupportsLighting {
+		t.Fatalf("runtime FlyDigi capabilities did not use whitelist: %#v", profile.Capabilities)
+	}
+}
+
 func TestFlyDigiHIDPathMatchesBluetoothLEVIDPID(t *testing.T) {
 	path := `\\?\hid#{00001812-0000-1000-8000-00805f9b34fb}_dev_vid&0137d7_pid&1004_rev&0110_dc7f643a1704#9&b6797ea&0&0000`
 	productID, ok := flyDigiHIDProductIDFromPath(path, flyDigiHIDProductIDsForProfile(types.LegacyRPMProfileID))
@@ -72,5 +87,23 @@ func TestFlyDigiHIDPathMatchesBluetoothLEVIDPID(t *testing.T) {
 	}
 	if productID != types.FlyDigiBS3PROProductID {
 		t.Fatalf("matched product id = 0x%04X, want 0x%04X", productID, types.FlyDigiBS3PROProductID)
+	}
+}
+
+func TestPadFlyDigiHIDReportUsesOutputReportLength(t *testing.T) {
+	shortReport := []byte{0x02, 0x5A, 0xA5, 0x23}
+	padded := padFlyDigiHIDReport(shortReport, hidLightReportLen)
+	if len(padded) != hidLightReportLen {
+		t.Fatalf("padded report length = %d, want %d", len(padded), hidLightReportLen)
+	}
+	for i, value := range shortReport {
+		if padded[i] != value {
+			t.Fatalf("padded report byte %d = 0x%02X, want 0x%02X", i, padded[i], value)
+		}
+	}
+
+	fullReport := make([]byte, hidLightReportLen)
+	if got := padFlyDigiHIDReport(fullReport, hidLightReportLen); &got[0] != &fullReport[0] {
+		t.Fatal("full-length HID reports should be reused without another allocation")
 	}
 }

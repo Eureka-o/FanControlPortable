@@ -262,4 +262,6 @@ export interface DeviceInfo {
   serial: string;
   model?: string;
   productId?: string;
+  deviceProfile?: import('../../../wailsjs/go/models').types.DeviceProfile | null;
+  deviceCapabilities?: import('../../../wailsjs/go/models').types.DeviceCapabilities | null;
 }

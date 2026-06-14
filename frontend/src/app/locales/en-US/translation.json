@@ -59,6 +59,12 @@
     },
     "bridgeWarning": {
       "closeAria": "Close warning"
+    },
+    "diagnostics": {
+      "export": "Export diagnostics",
+      "exporting": "Exporting...",
+      "exportSuccess": "Diagnostics exported",
+      "exportFailed": "Failed to export diagnostics: {{error}}"
     }
   },
   "advancedDevices": {
@@ -87,7 +93,8 @@
       "refreshPorts": "Refresh ports",
       "scanBle": "Scan BLE",
       "probeGatt": "Probe GATT",
-      "applyGatt": "Apply GATT"
+      "applyGatt": "Apply GATT",
+      "addCustomCommand": "Add command"
     },
     "sections": {
       "supported": "Device template library",
@@ -113,7 +120,8 @@
       "builtin": "Built-in device",
       "template": "Template",
       "user": "User",
-      "working": "Applying device changes..."
+      "working": "Applying device changes...",
+      "unnamedDevice": "Unnamed device"
     },
     "capabilities": {
       "read": "Read state",
@@ -127,6 +135,15 @@
       "smartStartStop": "Smart start/stop",
       "screen": "Screen",
       "none": "No capability flags"
+    },
+    "groups": {
+      "basicInfo": "Basic device information",
+      "deviceFunctions": "Device function whitelist",
+      "wifiConnection": "WiFi connection configuration",
+      "bleConnection": "BLE scan and GATT configuration",
+      "serialConnection": "Virtual COM configuration",
+      "protocol": "Protocol and packet template",
+      "customCommands": "Custom control commands"
     },
     "transport": {
       "wifi": "WiFi",
@@ -176,20 +193,46 @@
       "parserType": "Parser type",
       "parserExpression": "Parser expression",
       "deviceFunctions": "Device function whitelist",
+      "featureCommand": "Function command template",
+      "customCommandType": "Command type",
+      "customCommandTemplate": "Command template",
       "rawCommand": "Raw command",
       "waitMs": "Wait time (ms)"
     },
     "hints": {
+      "basicInfo": "These fields define the saved device identity, connection type, speed unit, and speed range used by normal Settings.",
+      "deviceFunctions": "Only enable functions that this exact device and protocol have verified. Settings and backend calls are both gated by these flags.",
+      "wifiConnection": "Save the device IP and HTTP endpoints here. Normal Settings may update only the IP property during manual entry or future discovery.",
+      "bleConnection": "Use scan/probe to fill addresses and UUIDs, but keep final protocol fields editable for DIY controllers.",
+      "serialConnection": "Port, baud rate, delimiter, and serial framing live here; Settings only chooses the saved device.",
+      "protocol": "Defines how FanControl sends speed commands and parses state responses for this device.",
       "tickScale": "Use 10 for 0.1% learning precision.",
       "serialPorts": "Pick a detected COM port or type one manually if your controller uses a virtual port.",
       "bleScan": "Scan is manual and time-bounded. FanControl uses advertised name and service UUIDs when available; write/notify characteristics can still be entered manually.",
-      "bleAddress": "Optional. Filled from scan results when available, and used for direct BLE connection or GATT probing."
+      "bleAddress": "Optional. Filled from scan results when available, and used for direct BLE connection or GATT probing.",
+      "featureCommand": "When this function is enabled, fill the matching command template. Variable syntax follows the packet template.",
+      "customCommands": "Add verified advanced control commands. Command type automatically forms the device function whitelist; this version only exposes power-on start and smart start/stop.",
+      "customCommandTemplate": "Variable syntax follows the packet template above. Empty commands are not saved."
     },
     "placeholders": {
       "name": "My cooler",
       "serialPortSelect": "Select detected port",
       "serialPortManual": "Manual port, for example COM3",
-      "serialPortCustom": "{{port}} (manual)"
+      "serialPortCustom": "{{port}} (manual)",
+      "featureCommand": "For example 5A A5 ... or a JSON template",
+      "customCommandTemplate": "For example 5A A5 ... or a JSON template"
+    },
+    "customCommands": {
+      "empty": "No advanced control commands yet. Add a command to place the matching function in the device whitelist.",
+      "itemTitle": "Control command {{index}}"
+    },
+    "customCommandTypes": {
+      "powerOnStartOn": "Power-on start: on",
+      "powerOnStartOff": "Power-on start: off",
+      "smartStartStopImmediate": "Smart start/stop: immediate",
+      "smartStartStopDelayed": "Smart start/stop: delayed",
+      "smartStartStopOff": "Smart start/stop: off",
+      "reserved": "Reserved type: {{type}}"
     },
     "dialog": {
       "addTitle": "Add device",
@@ -683,8 +726,8 @@
       "cpuGpuTemperature": "CPU {{cpu}}°C · GPU {{gpu}}°C",
       "gearValue": "Gear {{gear}}",
       "workModes": {
-        "manual": "Manual gear mode",
-        "auto": "Auto mode (live speed)"
+        "manual": "Manual mode",
+        "auto": "Auto mode"
       }
     },
     "light": {
@@ -754,10 +797,20 @@
     },
     "device": {
       "sectionTitle": "Device settings",
+      "groups": {
+        "basic": "Basic functions",
+        "basicDescription": "Runtime toggles exposed by the current device capability whitelist.",
+        "smartStartStop": "Start/stop policy",
+        "smartStartStopDescription": "Shows native start/stop or WiFi Beta standby behavior according to the current device capabilities.",
+        "lighting": "Lighting controls",
+        "lightingDescription": "Shown only when the active device explicitly supports lighting."
+      },
       "gearLightTitle": "Gear light",
       "gearLightDescription": "Control the gear indicator light on the device",
       "powerOnStartTitle": "Start on power",
       "powerOnStartDescription": "Automatically run when the device receives power",
+      "screenTitle": "Screen",
+      "screenDescription": "This device marks screen capability. Runtime screen controls will be opened after a verified whitelist is available.",
       "smartStartStopTitle": "Smart start/stop",
       "smartStartStopDescription": "Choose when cooling stops after the system shuts down",
       "wifiSmartStartStopTitle": "Smart start/stop",
@@ -765,7 +818,8 @@
       "wifiSmartStartStopTip": "Beta feature. It depends on the network still being available during shutdown; firmware heartbeat support will make it more reliable.",
       "wifiSmartStartStopStandbySpeed": "Standby speed",
       "wifiSmartStartStopStandbySpeedDescription": "FanControl sends this speed before exit, sleep, or hibernate. 1% is recommended.",
-      "betaBadge": "Beta"
+      "betaBadge": "Beta",
+      "contextRefreshing": "Matching device settings for {{device}}..."
     },
     "legionFnQ": {
       "sectionTitle": "Legion Fn+Q integration",
@@ -1007,7 +1061,9 @@
     },
     "alerts": {
       "autoStartFailed": "Failed to configure auto start: {{error}}",
-      "lightStripFailed": "Failed to apply light strip settings: {{error}}"
+      "lightStripFailed": "Failed to apply light strip settings: {{error}}",
+      "deviceCommandFailed": "Failed to send the device command. Check logs or export diagnostics.",
+      "deviceCommandFailedWithError": "Failed to send the device command: {{error}}"
     },
     "options": {
       "smartStartStop": {

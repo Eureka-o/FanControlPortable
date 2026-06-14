@@ -412,7 +412,7 @@ jobs:
 
           "compare_summary=$compareSummary" >> $env:GITHUB_OUTPUT
 
-      - name: Generate AI release notes
+      - name: Prepare release notes
         if: needs.prepare-release.outputs.should_publish_release == 'true'
         id: ai_release_notes
         shell: pwsh
@@ -430,9 +430,51 @@ jobs:
           GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
           $ErrorActionPreference = 'Stop'
+          $notesRelativePath = 'build/release-context/release-notes.md'
+          $notesFullPath = Join-Path $PWD $notesRelativePath
+          $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+
+          function Write-FallbackReleaseNotes {
+            param(
+              [Parameter(Mandatory = $true)]
+              [string]$Reason
+            )
+
+            $normalizedVersion = $env:RELEASE_TAG -replace '^[vV]', ''
+            $curatedNotesPath = "docs/release-notes/fancontrol-$normalizedVersion.md"
+            if (-not [string]::IsNullOrWhiteSpace($normalizedVersion) -and (Test-Path $curatedNotesPath)) {
+              Copy-Item $curatedNotesPath $notesFullPath -Force
+              Write-Warning "$Reason Using curated release notes: $curatedNotesPath"
+              "notes_path=$notesRelativePath" >> $env:GITHUB_OUTPUT
+              return
+            }
+
+            $commitSummary = ''
+            if (Test-Path 'build/release-context/user-visible-commits.txt') {
+              $commitSummary = (Get-Content 'build/release-context/user-visible-commits.txt' -Raw).Trim()
+            }
+            if ([string]::IsNullOrWhiteSpace($commitSummary)) {
+              $commitSummary = '- 本次构建未提取到明确的用户可见提交，请以 README 和软件内版本说明为准。'
+            }
+
+            $fallback = @"
+          # $($env:RELEASE_NAME)
+
+          本版本已完成构建。自动生成发布说明不可用，以下为可见改动摘要：
+
+          $commitSummary
+
+          升级前请先退出正在运行的 FanControl。安装版和便携版会继续尽量保留已有配置。
+          "@
+
+            [System.IO.File]::WriteAllText($notesFullPath, $fallback.Trim() + [Environment]::NewLine, $utf8NoBom)
+            Write-Warning "$Reason Generated conservative fallback release notes."
+            "notes_path=$notesRelativePath" >> $env:GITHUB_OUTPUT
+          }
 
           if ([string]::IsNullOrWhiteSpace($env:DEEPSEEK_API_KEY)) {
-            throw 'Missing GitHub secret DEEPSEEK_API_KEY for release note generation.'
+            Write-FallbackReleaseNotes -Reason 'DEEPSEEK_API_KEY is not configured.'
+            return
           }
 
           $templateRaw = Get-Content '.github/prompts/release-notes.prompt.yml' -Raw
@@ -488,16 +530,19 @@ jobs:
             Accept = 'application/json'
           }
 
-          $response = Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -ContentType 'application/json' -Body $payload
-          $notes = $response.choices[0].message.content
-
-          if ([string]::IsNullOrWhiteSpace($notes)) {
-            throw 'DeepSeek API returned empty release notes.'
+          try {
+            $response = Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -ContentType 'application/json' -Body $payload
+            $notes = $response.choices[0].message.content
+          } catch {
+            Write-FallbackReleaseNotes -Reason "Release note API request failed: $($_.Exception.Message)"
+            return
           }
 
-          $notesRelativePath = 'build/release-context/release-notes.md'
-          $notesFullPath = Join-Path $PWD $notesRelativePath
-          $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+          if ([string]::IsNullOrWhiteSpace($notes)) {
+            Write-FallbackReleaseNotes -Reason 'Release note API returned empty content.'
+            return
+          }
+
           [System.IO.File]::WriteAllText($notesFullPath, $notes.Trim() + [Environment]::NewLine, $utf8NoBom)
 
           "notes_path=$notesRelativePath" >> $env:GITHUB_OUTPUT

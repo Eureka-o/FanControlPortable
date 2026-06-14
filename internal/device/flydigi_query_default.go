@@ -61,11 +61,9 @@ func (m *Manager) queryFlyDigiHIDCommand(cmd byte) ([]types.DeviceDebugFrame, er
 		m.mutex.Unlock()
 		return nil, err
 	}
-	dev := m.flyDigiHID
 	m.mutex.Unlock()
 
 	time.Sleep(flyDigiDeviceQueryWait)
-	m.readFlyDigiHIDFrames(dev, 2, 120*time.Millisecond)
 	return m.debugFramesAfter(startSeq), nil
 }
 
@@ -87,9 +85,8 @@ func (m *Manager) sendFlyDigiHIDDebugCommand(input string, waitMs int) (types.De
 		m.mutex.Unlock()
 		return types.DeviceDebugCommandResult{}, fmt.Errorf("device is not connected")
 	}
-	dev := m.flyDigiHID
 	m.recordDebugFrame("tx", types.DeviceTransportHID, report)
-	err = dev.WriteReport(report, 800*time.Millisecond)
+	err = m.flyDigiHID.WriteReport(report, 800*time.Millisecond)
 	m.mutex.Unlock()
 	if err != nil {
 		return types.DeviceDebugCommandResult{}, err
@@ -98,7 +95,6 @@ func (m *Manager) sendFlyDigiHIDDebugCommand(input string, waitMs int) (types.De
 	if waitMs > 0 {
 		time.Sleep(time.Duration(waitMs) * time.Millisecond)
 	}
-	m.readFlyDigiHIDFrames(dev, 4, 80*time.Millisecond)
 
 	return types.DeviceDebugCommandResult{
 		Transport: types.DeviceTransportHID,
@@ -108,28 +104,6 @@ func (m *Manager) sendFlyDigiHIDDebugCommand(input string, waitMs int) (types.De
 		WaitMs:    waitMs,
 		Frames:    m.debugFramesAfter(startSeq),
 	}, nil
-}
-
-func (m *Manager) readFlyDigiHIDFrames(dev *flyDigiHIDDevice, maxFrames int, timeout time.Duration) {
-	if dev == nil || maxFrames <= 0 {
-		return
-	}
-	for range maxFrames {
-		raw, err := dev.ReadReport(timeout)
-		if err != nil {
-			return
-		}
-		if len(raw) == 0 {
-			return
-		}
-		m.recordDebugFrame("rx", types.DeviceTransportHID, raw)
-		if fanData := parseFlyDigiFanData(raw); fanData != nil {
-			m.currentFanData.Store(fanData)
-			if m.onFanDataUpdate != nil {
-				go m.onFanDataUpdate(fanData)
-			}
-		}
-	}
 }
 
 func parseFlyDigiFanData(data []byte) *types.FanData {

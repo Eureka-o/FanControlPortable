@@ -5,6 +5,13 @@ import { types } from '../../../../wailsjs/go/models';
 export type DeviceTransport = 'wifi' | 'ble' | 'serial' | 'hid';
 export type DeviceSpeedUnit = 'percent' | 'rpm';
 
+export interface DeviceCustomCommandDraft {
+  id: string;
+  type: string;
+  command: string;
+  description?: string;
+}
+
 export interface DeviceProfileDraft {
   id?: string;
   displayName: string;
@@ -40,6 +47,7 @@ export interface DeviceProfileDraft {
   checksum: string;
   setSpeedCommand: string;
   readStateCommand: string;
+  customCommands: DeviceCustomCommandDraft[];
   parserType: string;
   parserExpression: string;
   supportsGearLight: boolean;
@@ -65,6 +73,46 @@ export function normalizeTransport(value?: string): DeviceTransport {
 
 export function normalizeSpeedUnit(value?: string): DeviceSpeedUnit {
   return value === 'rpm' ? 'rpm' : 'percent';
+}
+
+const BASIC_COMMAND_NAMES = new Set(['setSpeed', 'readState']);
+
+function normalizeCustomCommandType(name: string) {
+  switch ((name || '').trim()) {
+    case 'powerOnStart':
+      return 'powerOnStartOn';
+    case 'smartStartStop':
+      return 'smartStartStopImmediate';
+    default:
+      return (name || '').trim();
+  }
+}
+
+function isPowerOnStartCommand(type: string) {
+  return normalizeCustomCommandType(type).startsWith('powerOnStart');
+}
+
+function isSmartStartStopCommand(type: string) {
+  return normalizeCustomCommandType(type).startsWith('smartStartStop');
+}
+
+function customCommandDescription(commandType: string, fallback?: string) {
+  const description = (fallback || '').trim();
+  if (description) return description;
+  switch (commandType) {
+    case 'powerOnStartOn':
+      return 'Power-on start on';
+    case 'powerOnStartOff':
+      return 'Power-on start off';
+    case 'smartStartStopImmediate':
+      return 'Smart start/stop immediate';
+    case 'smartStartStopDelayed':
+      return 'Smart start/stop delayed';
+    case 'smartStartStopOff':
+      return 'Smart start/stop off';
+    default:
+      return commandType;
+  }
 }
 
 export function createEmptyProfileDraft(): DeviceProfileDraft {
@@ -102,6 +150,7 @@ export function createEmptyProfileDraft(): DeviceProfileDraft {
     checksum: 'none',
     setSpeedCommand: '',
     readStateCommand: '',
+    customCommands: [],
     parserType: 'jsonpath',
     parserExpression: '',
     supportsGearLight: false,
@@ -123,13 +172,28 @@ export function createDraftFromProfile(profile?: types.DeviceProfile | null): De
   const speedUnit = normalizeSpeedUnit(profile.speedUnit);
   const speedRange = profile.speedRange || base;
   const connection = profile.connection || {};
-  const setSpeed = (profile.commands || []).find((command) => command.name === 'setSpeed') || profile.commands?.[0];
-  const readState = (profile.commands || []).find((command) => command.name === 'readState');
+  const commands = profile.commands || [];
+  const commandByName = (name: string) => commands.find((command) => command.name === name);
+  const customCommands = commands
+    .filter((command) => !BASIC_COMMAND_NAMES.has(command.name))
+    .map((command, index) => {
+      const type = normalizeCustomCommandType(command.name);
+      return {
+        id: `custom-command-${index}-${type || 'unknown'}`,
+        type,
+        command: command.command || '',
+        description: command.description || '',
+      };
+  });
+  const setSpeed = commandByName('setSpeed');
+  const readState = commandByName('readState');
   const parser = (profile.responseParsers || [])[0];
-  const commandEncoding = setSpeed?.encoding || base.commandEncoding;
-  const checksum = commandEncoding === 'json' ? 'none' : setSpeed?.checksum || base.checksum;
+  const commandForFormat = setSpeed || readState || commands[0];
+  const commandEncoding = commandForFormat?.encoding || base.commandEncoding;
+  const checksum = commandEncoding === 'json' ? 'none' : commandForFormat?.checksum || base.checksum;
   const capabilities = profile.capabilities || {};
-  const legacyLighting = Boolean(capabilities.supportsLighting);
+  const supportsPowerOnStart = customCommands.some((command) => isPowerOnStartCommand(command.type)) || Boolean(capabilities.supportsPowerOnStart);
+  const supportsSmartStartStop = customCommands.some((command) => isSmartStartStopCommand(command.type)) || Boolean(capabilities.supportsSmartStartStop);
 
   return {
     ...base,
@@ -167,14 +231,15 @@ export function createDraftFromProfile(profile?: types.DeviceProfile | null): De
     checksum,
     setSpeedCommand: setSpeed?.command || '',
     readStateCommand: readState?.command || '',
+    customCommands,
     parserType: parser?.type || base.parserType,
     parserExpression: parser?.expression || '',
-    supportsGearLight: Boolean((capabilities as any).supportsGearLight ?? legacyLighting),
-    supportsLighting: legacyLighting,
-    supportsBrightness: Boolean((capabilities as any).supportsBrightness ?? legacyLighting),
-    supportsPowerOnStart: Boolean(capabilities.supportsPowerOnStart),
-    supportsSmartStartStop: Boolean(capabilities.supportsSmartStartStop),
-    supportsScreen: Boolean((capabilities as any).supportsScreen),
+    supportsGearLight: false,
+    supportsLighting: false,
+    supportsBrightness: false,
+    supportsPowerOnStart,
+    supportsSmartStartStop,
+    supportsScreen: false,
   };
 }
 
@@ -216,6 +281,18 @@ export function buildProfileFromDraft(draft: DeviceProfileDraft): types.DevicePr
       description: 'Read device state',
     }));
   }
+  for (const customCommand of draft.customCommands) {
+    const name = normalizeCustomCommandType(customCommand.type);
+    const command = customCommand.command.trim();
+    if (!name || !command || BASIC_COMMAND_NAMES.has(name)) continue;
+    commands.push(types.DeviceCommandTemplate.createFrom({
+      name,
+      command,
+      encoding: draft.commandEncoding,
+      checksum,
+      description: customCommandDescription(name, customCommand.description),
+    }));
+  }
 
   const parserExpression = draft.parserExpression.trim();
   const responseParsers = parserExpression || draft.parserType === 'plain'
@@ -238,6 +315,8 @@ export function buildProfileFromDraft(draft: DeviceProfileDraft): types.DevicePr
       : transport === 'ble'
         ? Boolean(draft.bleWriteCharacteristic.trim())
         : transport === 'hid' || Boolean(draft.serialPort.trim()) || Boolean(draft.setSpeedCommand.trim());
+  const supportsPowerOnStart = draft.customCommands.some((command) => command.command.trim() && isPowerOnStartCommand(command.type));
+  const supportsSmartStartStop = draft.customCommands.some((command) => command.command.trim() && isSmartStartStopCommand(command.type));
 
   return types.DeviceProfile.createFrom({
     id: trimOptional(draft.id || ''),
@@ -293,12 +372,12 @@ export function buildProfileFromDraft(draft: DeviceProfileDraft): types.DevicePr
       supportsCustomSpeed: supportsSetSpeed,
       supportsDebugFrames: false,
       supportsRawCommands: commands.length > 0,
-      supportsGearLight: draft.supportsGearLight,
-      supportsLighting: draft.supportsLighting,
-      supportsBrightness: draft.supportsBrightness,
-      supportsPowerOnStart: draft.supportsPowerOnStart,
-      supportsSmartStartStop: draft.supportsSmartStartStop,
-      supportsScreen: draft.supportsScreen,
+      supportsGearLight: false,
+      supportsLighting: false,
+      supportsBrightness: false,
+      supportsPowerOnStart,
+      supportsSmartStartStop,
+      supportsScreen: false,
     },
   });
 }
@@ -329,4 +408,15 @@ export function summarizeConnection(profile: types.DeviceProfile) {
 
 export function getProfileIdentity(profile: types.DeviceProfile) {
   return [profile.vendor, profile.model].filter(Boolean).join(' / ') || profile.id || '';
+}
+
+export function getProfileDisplayName(profile?: types.DeviceProfile | null, fallback = 'Device profile') {
+  if (!profile) return fallback;
+  const candidates = [
+    profile.displayName,
+    profile.capabilities?.displayName,
+    profile.model,
+    profile.id,
+  ];
+  return candidates.map((value) => (value || '').trim()).find(Boolean) || fallback;
 }

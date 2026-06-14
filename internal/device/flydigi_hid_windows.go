@@ -31,6 +31,7 @@ var (
 	setupapiDLL                  = windows.NewLazySystemDLL("setupapi.dll")
 	procHidDGetHidGuid           = hidDLL.NewProc("HidD_GetHidGuid")
 	procHidDGetAttributes        = hidDLL.NewProc("HidD_GetAttributes")
+	procHidDSetOutputReport      = hidDLL.NewProc("HidD_SetOutputReport")
 	procSetupDiGetClassDevsW     = setupapiDLL.NewProc("SetupDiGetClassDevsW")
 	procSetupDiEnumDeviceIfaces  = setupapiDLL.NewProc("SetupDiEnumDeviceInterfaces")
 	procSetupDiGetDeviceIfaceDet = setupapiDLL.NewProc("SetupDiGetDeviceInterfaceDetailW")
@@ -71,6 +72,14 @@ func (m *Manager) shouldUseLegacyHIDLocked() bool {
 	return m.deviceTransport == types.DeviceTransportHID
 }
 
+func initFlyDigiHIDAPI() error {
+	return nil
+}
+
+func exitFlyDigiHIDAPI() error {
+	return nil
+}
+
 func (m *Manager) connectLegacyHIDLocked() (bool, map[string]string) {
 	return m.connectFlyDigiHIDLocked()
 }
@@ -96,6 +105,9 @@ func (m *Manager) connectFlyDigiHIDLocked() (bool, map[string]string) {
 	m.isConnected = true
 	m.deviceType = types.DeviceTransportHID
 	m.productID = dev.productID
+	if profile, ok := types.FlyDigiProfileForHIDProductID(dev.productID); ok {
+		m.activeProfile = profile
+	}
 	m.currentFanData.Store(&types.FanData{
 		ReportID:  deviceproto.ReportID,
 		MagicSync: 0x5AA5,
@@ -103,6 +115,8 @@ func (m *Manager) connectFlyDigiHIDLocked() (bool, map[string]string) {
 		SpeedUnit: types.FanSpeedUnitRPM,
 		WorkMode:  "HID 已连接",
 	})
+
+	m.startFlyDigiHIDReaderLocked(dev)
 
 	info := m.flyDigiHIDInfoLocked(dev.productID, dev.path)
 	m.logInfo("飞智 HID 设备连接成功: %s", info["product"])
@@ -125,10 +139,81 @@ func (m *Manager) closeFlyDigiHIDLocked() {
 	if m.flyDigiHID == nil {
 		return
 	}
+	m.stopFlyDigiHIDReaderLocked()
 	if err := m.flyDigiHID.Close(); err != nil {
 		m.logWarn("飞智 HID 设备关闭失败: %v", err)
 	}
 	m.flyDigiHID = nil
+}
+
+func (m *Manager) startFlyDigiHIDReaderLocked(dev *flyDigiHIDDevice) {
+	m.stopFlyDigiHIDReaderLocked()
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	m.flyDigiHIDStop = stop
+	m.flyDigiHIDDone = done
+	go m.readFlyDigiHIDLoop(dev, stop, done)
+}
+
+func (m *Manager) stopFlyDigiHIDReaderLocked() {
+	stop := m.flyDigiHIDStop
+	done := m.flyDigiHIDDone
+	m.flyDigiHIDStop = nil
+	m.flyDigiHIDDone = nil
+	if stop == nil {
+		return
+	}
+	close(stop)
+	if done == nil {
+		return
+	}
+	select {
+	case <-done:
+	case <-time.After(800 * time.Millisecond):
+		m.logWarn("FlyDigi HID reader stop timed out")
+	}
+}
+
+func (m *Manager) readFlyDigiHIDLoop(dev *flyDigiHIDDevice, stop <-chan struct{}, done chan<- struct{}) {
+	defer close(done)
+	if dev == nil {
+		return
+	}
+	for {
+		select {
+		case <-stop:
+			return
+		default:
+		}
+
+		raw, err := dev.ReadReport(500 * time.Millisecond)
+		if err != nil {
+			if errors.Is(err, errFlyDigiHIDTimeout) {
+				continue
+			}
+			select {
+			case <-stop:
+				return
+			default:
+				m.logWarn("FlyDigi HID read failed: %v", err)
+				return
+			}
+		}
+		if len(raw) == 0 {
+			continue
+		}
+		m.handleFlyDigiHIDRX(raw)
+	}
+}
+
+func (m *Manager) handleFlyDigiHIDRX(raw []byte) {
+	m.recordDebugFrame("rx", types.DeviceTransportHID, raw)
+	if fanData := parseFlyDigiFanData(raw); fanData != nil {
+		m.currentFanData.Store(fanData)
+		if m.onFanDataUpdate != nil {
+			go m.onFanDataUpdate(fanData)
+		}
+	}
 }
 
 func (m *Manager) flyDigiHIDInfoLocked(productID uint16, path string) map[string]string {
@@ -195,9 +280,11 @@ func openFlyDigiHIDDevice(productIDs []uint16) (*flyDigiHIDDevice, error) {
 	for _, id := range productIDs {
 		wanted[id] = true
 	}
+	var lastErr error
 	for _, candidate := range scanFlyDigiHIDDevices(productIDs) {
 		dev, err := openHIDPath(candidate.path)
 		if err != nil {
+			lastErr = err
 			continue
 		}
 		attrs, err := dev.Attributes()
@@ -209,7 +296,13 @@ func openFlyDigiHIDDevice(productIDs []uint16) (*flyDigiHIDDevice, error) {
 			dev.productID = candidate.productID
 			return dev, nil
 		}
+		if err != nil {
+			lastErr = err
+		}
 		_ = dev.Close()
+	}
+	if lastErr != nil {
+		return nil, lastErr
 	}
 	return nil, fmt.Errorf("未找到匹配的飞智 HID 设备")
 }
@@ -335,7 +428,7 @@ func openHIDPath(path string) (*flyDigiHIDDevice, error) {
 		return nil, err
 	}
 	var lastErr error
-	for _, access := range []uint32{windows.GENERIC_READ | windows.GENERIC_WRITE, windows.GENERIC_WRITE} {
+	for _, access := range []uint32{windows.GENERIC_READ | windows.GENERIC_WRITE} {
 		handle, err := windows.CreateFile(
 			ptr,
 			access,
@@ -363,7 +456,10 @@ func (d *flyDigiHIDDevice) Attributes() (hidAttributes, error) {
 }
 
 func (d *flyDigiHIDDevice) Close() error {
-	if d == nil || d.handle == 0 || d.handle == windows.InvalidHandle {
+	if d == nil {
+		return nil
+	}
+	if d.handle == 0 || d.handle == windows.InvalidHandle {
 		return nil
 	}
 	err := windows.CloseHandle(d.handle)
@@ -378,6 +474,31 @@ func (d *flyDigiHIDDevice) WriteReport(report []byte, timeout time.Duration) err
 	if len(report) == 0 {
 		return fmt.Errorf("hid report is empty")
 	}
+	writeReport := padFlyDigiHIDReport(report, hidLightReportLen)
+	var failures []string
+	if err := d.writeFileReport(writeReport, timeout); err == nil {
+		return nil
+	} else {
+		failures = append(failures, fmt.Sprintf("WriteFile: %v", err))
+	}
+	if err := d.SetOutputReport(writeReport); err == nil {
+		return nil
+	} else {
+		failures = append(failures, fmt.Sprintf("HidD_SetOutputReport: %v", err))
+	}
+	return fmt.Errorf("flydigi hid write failed (%s)", strings.Join(failures, "; "))
+}
+
+func padFlyDigiHIDReport(report []byte, size int) []byte {
+	if len(report) >= size {
+		return report
+	}
+	padded := make([]byte, size)
+	copy(padded, report)
+	return padded
+}
+
+func (d *flyDigiHIDDevice) writeFileReport(report []byte, timeout time.Duration) error {
 	event, err := windows.CreateEvent(nil, 1, 0, nil)
 	if err != nil {
 		return err
@@ -394,6 +515,21 @@ func (d *flyDigiHIDDevice) WriteReport(report []byte, timeout time.Duration) err
 		return nil
 	}
 	return waitOverlapped(d.handle, &ov, &done, timeout, false)
+}
+
+func (d *flyDigiHIDDevice) SetOutputReport(report []byte) error {
+	if len(report) == 0 {
+		return fmt.Errorf("hid report is empty")
+	}
+	r1, _, err := procHidDSetOutputReport.Call(
+		uintptr(d.handle),
+		uintptr(unsafe.Pointer(&report[0])),
+		uintptr(len(report)),
+	)
+	if r1 == 0 {
+		return err
+	}
+	return nil
 }
 
 func (d *flyDigiHIDDevice) ReadReport(timeout time.Duration) ([]byte, error) {

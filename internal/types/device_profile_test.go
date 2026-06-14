@@ -30,6 +30,9 @@ func TestDefaultWiFiPercentProfileNormalizesCapabilities(t *testing.T) {
 	if !profile.Capabilities.SupportsSetSpeed || !profile.Capabilities.SupportsReadState {
 		t.Fatalf("default WiFi profile should support read state and set speed: %#v", profile.Capabilities)
 	}
+	if !profile.Capabilities.SupportsSoftwareSmartStartStop {
+		t.Fatalf("default WiFi profile should whitelist software smart start/stop: %#v", profile.Capabilities)
+	}
 }
 
 func TestDefaultWiFiPercentTemplateProfileUsesTemplateName(t *testing.T) {
@@ -73,7 +76,8 @@ func TestLegacyRPMProfileUsesRPMAndHID(t *testing.T) {
 	if profile.Capabilities.SupportsDebugFrames || profile.Capabilities.SupportsRawCommands ||
 		profile.Capabilities.SupportsGearLight || profile.Capabilities.SupportsLighting ||
 		profile.Capabilities.SupportsBrightness || profile.Capabilities.SupportsScreen ||
-		profile.Capabilities.SupportsPowerOnStart || profile.Capabilities.SupportsSmartStartStop {
+		profile.Capabilities.SupportsPowerOnStart || profile.Capabilities.SupportsSmartStartStop ||
+		profile.Capabilities.SupportsSoftwareSmartStartStop {
 		t.Fatalf("legacy RPM profile should not expose non-speed capabilities until whitelisted: %#v", profile.Capabilities)
 	}
 }
@@ -90,7 +94,8 @@ func TestLegacyBLEProfileDoesNotInheritNonSpeedCapabilities(t *testing.T) {
 	if profile.Capabilities.SupportsDebugFrames || profile.Capabilities.SupportsRawCommands ||
 		profile.Capabilities.SupportsGearLight || profile.Capabilities.SupportsLighting ||
 		profile.Capabilities.SupportsBrightness || profile.Capabilities.SupportsScreen ||
-		profile.Capabilities.SupportsPowerOnStart || profile.Capabilities.SupportsSmartStartStop {
+		profile.Capabilities.SupportsPowerOnStart || profile.Capabilities.SupportsSmartStartStop ||
+		profile.Capabilities.SupportsSoftwareSmartStartStop {
 		t.Fatalf("legacy BLE profile should not expose non-speed capabilities until whitelisted: %#v", profile.Capabilities)
 	}
 }
@@ -114,7 +119,7 @@ func TestFlyDigiBuiltInProfilesDeclareExpectedCapabilities(t *testing.T) {
 	}
 	if bs1.Capabilities.SupportsGearLight || bs1.Capabilities.SupportsLighting ||
 		bs1.Capabilities.SupportsBrightness || bs1.Capabilities.SupportsScreen ||
-		bs1.Capabilities.SupportsSmartStartStop {
+		bs1.Capabilities.SupportsSmartStartStop || bs1.Capabilities.SupportsSoftwareSmartStartStop {
 		t.Fatalf("BS1 should not expose lighting, screen, or smart start/stop: %#v", bs1.Capabilities)
 	}
 
@@ -140,6 +145,9 @@ func TestFlyDigiBuiltInProfilesDeclareExpectedCapabilities(t *testing.T) {
 		}
 		if profile.Capabilities.SupportsScreen {
 			t.Fatalf("%s should not expose screen support without a verified whitelist: %#v", profile.ID, profile.Capabilities)
+		}
+		if profile.Capabilities.SupportsSoftwareSmartStartStop {
+			t.Fatalf("%s should not use WiFi software smart start/stop whitelist: %#v", profile.ID, profile.Capabilities)
 		}
 	}
 }

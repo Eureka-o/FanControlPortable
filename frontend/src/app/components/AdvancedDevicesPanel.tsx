@@ -41,6 +41,7 @@ import DeviceProfileEditorDialog from './devices/DeviceProfileEditorDialog';
 import {
   createDraftFromProfile,
   formatSpeedRange,
+  getProfileDisplayName,
   getProfileIdentity,
   normalizeSpeedUnit,
   normalizeTransport,
@@ -228,6 +229,7 @@ function ProfileRow({
   const { t } = useTranslation();
   const Icon = transportIcon(profile.transport);
   const identity = getProfileIdentity(profile);
+  const displayName = getProfileDisplayName(profile, t('advancedDevices.status.unnamedDevice'));
   const builtInLabel = context === 'template'
     ? t('advancedDevices.status.template')
     : t('advancedDevices.status.builtin');
@@ -240,7 +242,7 @@ function ProfileRow({
         </div>
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="truncate text-sm font-semibold text-foreground">{profile.displayName || profile.id}</div>
+            <div className="truncate text-sm font-semibold text-foreground">{displayName}</div>
             {active && <Badge variant="success">{t('advancedDevices.status.active')}</Badge>}
             {profile.builtIn ? <Badge variant="info">{builtInLabel}</Badge> : <Badge>{t('advancedDevices.status.user')}</Badge>}
           </div>
@@ -317,6 +319,7 @@ function ConnectionCategoryBanner({
           const profile = activeProfileForTransport(profiles, activeIdsByTransport, transport);
           const Icon = transportIcon(transport);
           const active = Boolean(profile?.id && profile.id === activeId);
+          const displayName = profile ? getProfileDisplayName(profile, t('advancedDevices.status.unnamedDevice')) : '';
 
           return (
             <button
@@ -340,7 +343,7 @@ function ConnectionCategoryBanner({
                 {active && <Badge variant="success">{t('advancedDevices.status.active')}</Badge>}
               </div>
               <div className="mt-2 truncate text-sm text-foreground">
-                {profile ? profile.displayName || profile.id : t('advancedDevices.connectionBanner.noDevice')}
+                {profile ? displayName : t('advancedDevices.connectionBanner.noDevice')}
               </div>
               <div className="mt-1 truncate text-xs text-muted-foreground">
                 {profile ? summarizeConnection(profile) : t('advancedDevices.connectionBanner.addHint')}
@@ -592,7 +595,9 @@ function DebugProfilePanel({
             icon={<Save className="h-3.5 w-3.5" />}
             onClick={() => {
               toast.dismiss();
-              const baseName = activeProfile?.displayName || t(`advancedDevices.transport.${normalizeTransport(result.transport)}`);
+              const baseName = activeProfile
+                ? getProfileDisplayName(activeProfile, t(`advancedDevices.transport.${normalizeTransport(result.transport)}`))
+                : t(`advancedDevices.transport.${normalizeTransport(result.transport)}`);
               onSaveDraft(profileDraftFromDebugResult({
                 activeProfile,
                 config,
@@ -671,6 +676,7 @@ function DeleteDeviceDialog({
 }) {
   const { t } = useTranslation();
   const Icon = transportIcon(profile?.transport);
+  const displayName = profile ? getProfileDisplayName(profile, t('advancedDevices.status.unnamedDevice')) : '';
 
   return (
     <Dialog open={Boolean(profile)} onOpenChange={onOpenChange}>
@@ -690,7 +696,7 @@ function DeleteDeviceDialog({
                 <Icon className="h-4.5 w-4.5" />
               </div>
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-foreground">{profile.displayName || profile.id}</div>
+                <div className="truncate text-sm font-semibold text-foreground">{displayName}</div>
                 <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   <span>{t(`advancedDevices.transport.${normalizeTransport(profile.transport)}`)}</span>
                   <span>{formatSpeedRange(profile)}</span>
@@ -949,7 +955,7 @@ export default function AdvancedDevicesPanel({ config, isConnected, onConfigChan
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-semibold tracking-normal text-foreground">{t('advancedDevices.title')}</h1>
-            {activeProfile && <Badge variant="info">{activeProfile.displayName}</Badge>}
+            {activeProfile && <Badge variant="info">{getProfileDisplayName(activeProfile, t('advancedDevices.status.unnamedDevice'))}</Badge>}
           </div>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">{t('advancedDevices.subtitle')}</p>
         </div>

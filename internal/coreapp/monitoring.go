@@ -326,10 +326,12 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				if len(risePredictionSamples) > 12 {
 					risePredictionSamples = risePredictionSamples[len(risePredictionSamples)-12:]
 				}
+				risePredictionBoosted := false
 				if targetRPM > 0 && !spikeSuppressed {
 					predictedTarget, boost := smartcontrol.ApplyTemperatureRisePrediction(targetRPM, risePredictionSamples, smartCfg, speedUnit)
 					if boost > 0 {
 						targetRPM = min(max(predictedTarget, curveMinRPM), curveMaxRPM)
+						risePredictionBoosted = true
 					}
 				}
 
@@ -357,10 +359,11 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					}
 				}
 
-				if smartCfg.Learning && !spikeSuppressed {
-					steady := steadyObserver.Observe(controlTemp, observedRPM, controlCurve, smartCfg)
+				if smartCfg.Learning && !spikeSuppressed && !risePredictionBoosted {
+					powerWatts, havePower := totalTemperaturePowerWatts(temp)
+					steady := steadyObserver.ObserveWithPower(controlTemp, observedRPM, powerWatts, havePower, controlCurve, smartCfg)
 					if steady.Ready && steady.BucketIdx >= 0 {
-						newOffsets, changed := learnSteadyOffsetForActiveUnit(steady.BucketIdx, steady.MeanTemp, steady.LocalEff, steady.HaveEff, cfg.FanCurve, smartCfg.LearnedOffsets, smartCfg, speedUnit)
+						newOffsets, changed := learnSteadyOffsetForActiveUnit(steady.BucketIdx, steady.MeanTemp, steady.MeanPower, steady.HavePower, steady.LocalEff, steady.HaveEff, cfg.FanCurve, smartCfg.LearnedOffsets, smartCfg, speedUnit)
 						if changed {
 							smartCfg.LearnedOffsets = newOffsets
 							cfg.SmartControl = smartCfg
@@ -381,7 +384,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 							}
 						}
 					}
-				} else if !smartCfg.Learning {
+				} else if !smartCfg.Learning || risePredictionBoosted {
 					steadyObserver.Reset()
 				}
 
@@ -446,6 +449,17 @@ func displaySpeedForLog(speed int, unit string) int {
 	return speed
 }
 
+func totalTemperaturePowerWatts(temp types.TemperatureData) (float64, bool) {
+	total := 0.0
+	if temp.CPUPowerWatts > 0 {
+		total += temp.CPUPowerWatts
+	}
+	if temp.GPUPowerWatts > 0 {
+		total += temp.GPUPowerWatts
+	}
+	return total, total > 0
+}
+
 func newStableObserverForActiveUnit(curveLen int, unit string) *smartcontrol.StableObserver {
 	if types.IsPercentSpeedUnit(unit) {
 		return smartcontrol.NewPercentStableObserver(curveLen)
@@ -453,11 +467,11 @@ func newStableObserverForActiveUnit(curveLen int, unit string) *smartcontrol.Sta
 	return smartcontrol.NewLegacyRPMStableObserver(curveLen)
 }
 
-func learnSteadyOffsetForActiveUnit(bucketIdx int, meanTemp int, localEff float64, haveEff bool, curve []types.FanCurvePoint, prevOffsets []int, cfg types.SmartControlConfig, unit string) ([]int, bool) {
+func learnSteadyOffsetForActiveUnit(bucketIdx int, meanTemp int, meanPower float64, havePower bool, localEff float64, haveEff bool, curve []types.FanCurvePoint, prevOffsets []int, cfg types.SmartControlConfig, unit string) ([]int, bool) {
 	if types.IsPercentSpeedUnit(unit) {
-		return smartcontrol.LearnPercentSteadyOffsetTicks(bucketIdx, meanTemp, localEff, haveEff, curve, prevOffsets, cfg)
+		return smartcontrol.LearnPercentSteadyOffsetTicksWithPower(bucketIdx, meanTemp, meanPower, havePower, localEff, haveEff, curve, prevOffsets, cfg)
 	}
-	return smartcontrol.LearnLegacyRPMSteadyOffset(bucketIdx, meanTemp, localEff, haveEff, curve, prevOffsets, cfg)
+	return smartcontrol.LearnLegacyRPMSteadyOffsetWithPower(bucketIdx, meanTemp, meanPower, havePower, localEff, haveEff, curve, prevOffsets, cfg)
 }
 
 func shouldSendTargetSpeed(targetRPM, prevTargetRPM, minRPMChange int, fanData *types.FanData, unit string) bool {

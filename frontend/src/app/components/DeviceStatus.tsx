@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   ArrowUpRight,
   Cpu,
+  Download,
   Zap,
   RotateCw,
   Fan,
@@ -30,6 +31,7 @@ import {
   readCurrentFanSpeed,
   readTargetFanSpeed,
 } from '../lib/fan-speed';
+import { translateWorkModeLabel } from '../lib/work-mode';
 import type { DeviceSettings } from '../types/app';
 import { useTranslation } from 'react-i18next';
 import { ToggleSwitch, Button } from './ui/index';
@@ -50,6 +52,8 @@ interface DeviceStatusProps {
   onConfigChange: (config: types.AppConfig) => void;
   onOpenCurveEditor: () => void;
   onOpenHistoryDetails: () => void;
+  onExportDiagnostics?: () => void;
+  diagnosticsExporting?: boolean;
 }
 
 interface BridgeRuntimeStatus {
@@ -84,36 +88,9 @@ const formatPowerWatts = (watts?: number | null) => {
   return `${Math.round(value)} W`;
 };
 
-const CPU_POWER_STROKE = 'color-mix(in srgb, #0891b2 88%, var(--foreground) 12%)';
-const GPU_POWER_STROKE = 'color-mix(in srgb, #a855f7 84%, var(--foreground) 16%)';
+const CPU_POWER_STROKE = 'var(--chart-cpu-power)';
+const GPU_POWER_STROKE = 'var(--chart-gpu-power)';
 const FAN_TREND_STROKE = 'color-mix(in srgb, var(--chart-3) 70%, var(--foreground) 30%)';
-
-const getTranslatedWorkMode = (
-  workMode: string | null | undefined,
-  t: (key: string) => string,
-) => {
-  const normalizedMode = (workMode || '').trim().toLowerCase();
-  switch (normalizedMode) {
-    case 'wifi':
-      return 'WIFI';
-    case 'ble':
-      return 'BLE';
-    case 'serial':
-      return 'COM';
-    case 'hid':
-      return 'HID';
-    default:
-      break;
-  }
-  switch (workMode) {
-    case '挡位工作模式':
-      return t('controlPanel.overview.workModes.manual');
-    case '自动模式(实时转速)':
-      return t('controlPanel.overview.workModes.auto');
-    default:
-      return workMode || '--';
-  }
-};
 
 const AnimatedTemperatureValue = memo(function AnimatedTemperatureValue({ temp, colorClass }: { temp: number | undefined; colorClass: string }) {
   return <span className={clsx('text-[28px] font-bold leading-none tabular-nums tracking-tight', colorClass)}>{temp ?? '--'}</span>;
@@ -254,8 +231,8 @@ function activeDeviceProfileFromConfig(config: types.AppConfig): types.DevicePro
 }
 
 const getTempArcColor = (temp: number) => {
-  if (temp > 85) return '#ef4444';
-  if (temp > 75) return '#f97316';
+  if (temp > 85) return 'var(--status-temperature-hot)';
+  if (temp > 75) return 'var(--status-temperature-warm)';
   return 'var(--primary)';
 };
 
@@ -613,8 +590,10 @@ export default function DeviceStatus({
   onConnect,
   onDisconnect,
   onConfigChange,
-      onOpenCurveEditor,
-      onOpenHistoryDetails,
+  onOpenCurveEditor,
+  onOpenHistoryDetails,
+  onExportDiagnostics,
+  diagnosticsExporting = false,
 }: DeviceStatusProps) {
   const { t } = useTranslation();
   const [bridgeWarningReady, setBridgeWarningReady] = useState(false);
@@ -914,17 +893,30 @@ export default function DeviceStatus({
                     {bridgeStatus.lastError && bridgeStatus.lastError !== temperature?.bridgeMessage && <p>{t('deviceStatus.bridgeWarning.diagnosticsLine', { message: bridgeStatus.lastError })}</p>}
                   </div>
                 )}
-                <button
-                  onClick={async () => {
-                    try {
-                      await apiService.restartPawnIO();
-                    } catch { /* ignore */ }
-                  }}
-                  className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-200 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200 dark:hover:bg-amber-800/60"
-                >
-                  <RotateCw className="h-3 w-3" />
-                  {t('deviceStatus.bridgeWarning.reinitialize')}
-                </button>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      try {
+                        await apiService.restartPawnIO();
+                      } catch { /* ignore */ }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-200 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200 dark:hover:bg-amber-800/60"
+                  >
+                    <RotateCw className="h-3 w-3" />
+                    {t('deviceStatus.bridgeWarning.reinitialize')}
+                  </button>
+                  {onExportDiagnostics && (
+                    <button
+                      type="button"
+                      disabled={diagnosticsExporting}
+                      onClick={onExportDiagnostics}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-background/60 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-700 dark:bg-background/25 dark:text-amber-100 dark:hover:bg-amber-900/40"
+                    >
+                      <Download className="h-3 w-3" />
+                      {diagnosticsExporting ? t('appShell.diagnostics.exporting') : t('appShell.diagnostics.export')}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -975,7 +967,7 @@ export default function DeviceStatus({
                 <Fan className="h-3.5 w-3.5" />
                 {t('deviceStatus.stats.workMode')}
               </div>
-              <div className="text-sm font-semibold">{getTranslatedWorkMode(fanData?.workMode, t)}</div>
+              <div className="text-sm font-semibold">{translateWorkModeLabel(fanData?.workMode, t)}</div>
             </div>
 
             <div className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3">

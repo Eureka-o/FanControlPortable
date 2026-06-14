@@ -10,6 +10,8 @@ export function CheckWindowsAutoStart():Promise<boolean>;
 
 export function ConnectDevice():Promise<boolean>;
 
+export function ConnectNativeDevice(arg1:string):Promise<boolean>;
+
 export function ControlWiFiScan(arg1:string):Promise<boolean>;
 
 export function DeleteDeviceProfile(arg1:string):Promise<void>;
@@ -21,6 +23,8 @@ export function DisconnectDevice():Promise<void>;
 export function ExportDeviceProfiles():Promise<string>;
 
 export function ExportDeviceProfilesToFile():Promise<string>;
+
+export function ExportDiagnosticsToFile():Promise<string>;
 
 export function ExportFanCurveProfiles():Promise<string>;
 

@@ -221,3 +221,83 @@ func TestLearnSteadyOffsetEfficiencyScalesReduction(t *testing.T) {
 		t.Fatalf("lower cooling efficiency should reduce RPM more aggressively: low=%d high=%d", effLow[1], effHigh[1])
 	}
 }
+
+func TestStableObserverSkipsLearningWhenPowerIsUnstable(t *testing.T) {
+	curve := []types.FanCurvePoint{{Temperature: 60, RPM: 45}}
+	observer := NewStableObserver(len(curve))
+	cfg := types.SmartControlConfig{
+		LearnWindow:  3,
+		LearnDelay:   0,
+		MinRPMChange: 2,
+	}
+
+	observer.ObserveWithPower(60, 45, 35, true, curve, cfg)
+	observer.ObserveWithPower(60, 45, 80, true, curve, cfg)
+	if steady := observer.ObserveWithPower(60, 45, 120, true, curve, cfg); steady.Ready {
+		t.Fatalf("unstable power window should not be learned: %#v", steady)
+	}
+
+	observer.ObserveWithPower(60, 45, 100, true, curve, cfg)
+	observer.ObserveWithPower(60, 45, 104, true, curve, cfg)
+	steady := observer.ObserveWithPower(60, 45, 106, true, curve, cfg)
+	if !steady.Ready || !steady.HavePower {
+		t.Fatalf("stable power window should be learned with power, got %#v", steady)
+	}
+}
+
+func TestStableObserverUsesComparablePowerForEfficiency(t *testing.T) {
+	curve := []types.FanCurvePoint{{Temperature: 60, RPM: 2000}}
+	observer := NewLegacyRPMStableObserver(len(curve))
+	cfg := types.SmartControlConfig{
+		LearnWindow:  3,
+		LearnDelay:   0,
+		MinRPMChange: 50,
+	}
+
+	for range 3 {
+		observer.ObserveWithPower(70, 1800, 50, true, curve, cfg)
+	}
+	for range 3 {
+		observer.ObserveWithPower(58, 2400, 52, true, curve, cfg)
+	}
+	steady := SteadyResult{}
+	for range 3 {
+		steady = observer.ObserveWithPower(57, 2500, 54, true, curve, cfg)
+	}
+	if !steady.Ready || !steady.HaveEff {
+		t.Fatalf("expected comparable-power RPM samples to estimate efficiency, got %#v", steady)
+	}
+	if steady.LocalEff < 0.015 || steady.LocalEff > 0.025 {
+		t.Fatalf("local efficiency = %.4f, want around 0.02 C/RPM", steady.LocalEff)
+	}
+
+	for range 3 {
+		observer.ObserveWithPower(90, 2000, 150, true, curve, cfg)
+	}
+	steady = SteadyResult{}
+	for range 3 {
+		steady = observer.ObserveWithPower(89, 2040, 152, true, curve, cfg)
+	}
+	if steady.Ready && steady.HaveEff {
+		t.Fatalf("distant power samples should not reuse low-power efficiency, got %#v", steady)
+	}
+}
+
+func TestLearnSteadyOffsetPowerGainDampensHighPowerQuietLearning(t *testing.T) {
+	curve := []types.FanCurvePoint{
+		{Temperature: 50, RPM: 25},
+		{Temperature: 70, RPM: 75},
+	}
+	cfg := types.SmartControlConfig{
+		TargetTemp:     70,
+		Hysteresis:     2,
+		LearnRate:      6,
+		MaxLearnOffset: 30,
+	}
+
+	lowPower, _ := LearnSteadyOffsetForUnitWithPower(1, 55, 30, true, 0.2, true, curve, []int{0, 0}, cfg, rawPercentUnit)
+	highPower, _ := LearnSteadyOffsetForUnitWithPower(1, 55, 140, true, 0.2, true, curve, []int{0, 0}, cfg, rawPercentUnit)
+	if !(lowPower[1] < highPower[1]) {
+		t.Fatalf("high power should dampen quiet down-learning: low=%v high=%v", lowPower, highPower)
+	}
+}

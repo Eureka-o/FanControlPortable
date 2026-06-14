@@ -32,6 +32,7 @@ const (
 	// 设备相关
 	ReqConnect               RequestType = "Connect"
 	ReqAutoScanDevices       RequestType = "AutoScanDevices"
+	ReqConnectNativeDevice   RequestType = "ConnectNativeDevice"
 	ReqScanWiFiDevices       RequestType = "ScanWiFiDevices"
 	ReqControlWiFiScan       RequestType = "ControlWiFiScan"
 	ReqDisconnect            RequestType = "Disconnect"
@@ -96,6 +97,7 @@ const (
 
 	// 调试相关
 	ReqGetDebugInfo           RequestType = "GetDebugInfo"
+	ReqExportDiagnostics      RequestType = "ExportDiagnostics"
 	ReqSetDebugMode           RequestType = "SetDebugMode"
 	ReqSendDeviceDebugCommand RequestType = "SendDeviceDebugCommand"
 	ReqGetDeviceDebugFrames   RequestType = "GetDeviceDebugFrames"
@@ -760,6 +762,10 @@ type TestDeviceProfileParams struct {
 	Action     string              `json:"action"`
 	SpeedValue float64             `json:"speedValue,omitempty"`
 	TimeoutMs  int                 `json:"timeoutMs,omitempty"`
+}
+
+type ConnectNativeDeviceParams struct {
+	ProfileID string `json:"profileId,omitempty"`
 }
 
 type ScanWiFiDevicesParams struct {

@@ -863,6 +863,62 @@ This checklist records the planned direction for turning FanControl into an exte
 - [x] Chinese and Japanese scan strings were repaired where prior draft text had been written as question marks.
 - [x] README and 2.1.4 release notes describe the WiFi scan display fixes and staged deep-scan behavior without SHA256 hashes.
 
+### 2026-06-13 FanControl 2.2.0 Device Feature And Settings Cleanup
+
+- [x] Normal Settings keeps device-specific runtime functions grouped in one `Device settings` area instead of scattering them across unrelated sections.
+- [x] Device functions render from the active profile capability whitelist: basic functions, smart start/stop, and lighting are separate small subsections.
+- [x] Unsupported non-speed functions remain hidden in the frontend and continue to be rejected by backend capability checks.
+- [x] Advanced Device Configuration separates device identity, WiFi/BLE/serial connection data, protocol templates, and custom control commands with clearer headings and hints.
+- [x] Curve-page `temperature rise prediction` and `learning` rows no longer show a separate paused badge when the toggle is off; the switch state is the source of truth.
+- [x] Advanced Devices uses a shared display-name fallback so imported profiles with missing names show model, profile ID, or `Unnamed device` instead of a blank title.
+- [x] Advanced Device no longer exposes a separate device-feature whitelist switch area; adding a custom control command declares the matching capability whitelist automatically.
+- [x] Custom control commands use `add command -> choose type -> fill command template`, and this pass only exposes power-on-start and smart start/stop command types.
+- [x] Lighting, brightness, screen, and gear-light command types are intentionally not exposed yet because their control surfaces are more complex and need a later dedicated whitelist design.
+- [ ] Future runtime execution should bind the saved custom control command templates to backend feature calls after real-device protocol validation.
+- [x] WiFi discovery state and actions are extracted into a dedicated frontend hook while preserving normal scan, deep scan, pause, cancel, elapsed-time display, and result behavior.
+- [ ] Future dynamic IP search and disconnect recovery should build on the WiFi discovery hook instead of adding more scan state to `ControlPanel.tsx`.
+
+### 2026-06-14 FanControl 2.2.0 Runtime Capability Whitelist And Hidden FlyDigi Path
+
+- [x] Rechecked the local reference checkout before comparing behavior; `THRM-reference-git` is `v3.2.1` / `nightly-20260611` at `aad919f`.
+- [x] Device functions now use capability whitelists as the source of truth instead of transport/model assumptions.
+- [x] Added a separate `supportsSoftwareSmartStartStop` capability so WiFi software smart start/stop is opt-in and does not get mixed with native FlyDigi smart start/stop.
+- [x] Hidden FlyDigi profiles remain out of normal user device profiles, Advanced Devices, and saved profile imports/exports.
+- [x] Hidden FlyDigi scan results can still connect through a runtime native-device path; the concrete FlyDigi runtime profile/capabilities are reported after connection.
+- [x] The persisted config uses the generic legacy RPM profile for hidden FlyDigi HID/BLE control, preserving the RPM speed unit without saving concrete FlyDigi profiles.
+- [x] Frontend auto-scan connection detects hidden FlyDigi profile IDs and calls the runtime native connection API instead of trying to activate a hidden saved profile.
+- [x] Device status and connected events now carry runtime `deviceProfile`, `deviceCapabilities`, and `currentData` so the UI can render/control the connected device accurately.
+- [x] The likely FlyDigi control failure was identified as a profile-routing bug: the UI could stay on WiFi/percent configuration while the connected hardware expected HID/RPM packets.
+- [x] Default chart/status color literals were moved into shared CSS variables where touched, reducing theme-breaking hardcoding in the main charts/status components.
+- [x] Wails generated model trailing whitespace was cleaned so repository diff checks stay usable.
+- [x] Verified with `go test ./...`, `npx tsc --noEmit`, `npm run build`, and `git diff --check`.
+- [ ] Real FlyDigi hardware verification is still required; software-side routing now follows the RPM/HID control path.
+
+## 2026-06-14 2.2.0 Display Context Cleanup
+
+- [x] Homepage work mode display is normalized through a shared frontend helper; protocol strings such as `auto/realtime RPM mode` and transport-only values such as `wifi`/`hid` are not shown as user-facing work modes.
+- [x] Work mode labels are simplified to `自动模式` / `手动模式` in zh-CN, with matching concise English and Japanese labels.
+- [x] Tray hover tooltip and right-click menu now receive the active speed unit and use one shared formatter, so RPM devices show `RPM` and percent devices show `%`.
+- [x] Backend manual-mode detection recognizes both legacy Chinese labels and protocol labels such as `manual/fixed gear mode`.
+- [x] Release-note and README draft text call out device-context display fixes and warn users not to run two control apps against the same device at the same time.
+- [x] FlyDigi HID writes now try Windows HID output reports before falling back to overlapped `WriteFile`, matching HID control-report behavior more closely.
+- [x] Custom-speed application no longer silently swallows device-send failures; the frontend shows the returned error.
+- [x] Smart start/stop settings are shown as single setting rows instead of a separate empty group header plus a nested row.
+- [ ] Future device-specific setting pages should continue using runtime profile/capability/speed-unit variables instead of component-level hardcoded transport or unit assumptions.
+
+## 2026-06-14 2.2.0 Device-Specific Curve Profiles
+
+- [x] Curve profile state is now scoped by active device identity instead of being only global.
+- [x] The legacy global `fanCurve`, `fanCurveProfiles`, and `activeFanCurveProfileId` fields remain as the current-device view, so existing frontend APIs, tray actions, imports, and old configs continue to work.
+- [x] Switching devices stores the previous device's active curve/profile list before loading the new device's curve state.
+- [x] New devices without saved curve state start from the correct speed-unit defaults: percent devices use the percent curve, RPM devices use the RPM curve.
+- [x] Learning offsets are keyed by device scope plus curve profile ID, so same-named profiles such as `default` do not share learned offsets across WiFi/RPM/HID devices.
+- [x] Legacy `learnedOffsetsByProfile` data migrates into the current active device scope instead of being discarded.
+- [x] `SetFanCurve`, curve-profile save/switch/import, app startup normalization, and config updates all persist the current device's scoped curve state.
+- [x] Frontend curve selectors reload when the active device profile or transport changes, so the UI no longer shows the previous device's curve list after switching.
+- [x] About/README now surface the QQ feedback group `928338191` for device adaptation and user feedback.
+- [x] Regression tests cover device curve restore and device-scoped learning restore.
+
 ## Definition Of Done
 
 - [x] Adding a new simple WiFi percent device does not require editing smart-control internals.

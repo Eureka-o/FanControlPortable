@@ -1,4 +1,4 @@
-﻿export namespace theme {
+export namespace theme {
 
 	export class Meta {
 	    id: string;
@@ -143,6 +143,40 @@ export namespace types {
 	        this.temperatureRisePredictionMaxBoost = source["temperatureRisePredictionMaxBoost"];
 	    }
 	}
+	export class DeviceFanCurveProfilesState {
+	    profiles: FanCurveProfile[];
+	    activeId: string;
+	    fanCurve?: FanCurvePoint[];
+
+	    static createFrom(source: any = {}) {
+	        return new DeviceFanCurveProfilesState(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.profiles = this.convertValues(source["profiles"], FanCurveProfile);
+	        this.activeId = source["activeId"];
+	        this.fanCurve = this.convertValues(source["fanCurve"], FanCurvePoint);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class FanCurveProfile {
 	    id: string;
 	    name: string;
@@ -209,6 +243,7 @@ export namespace types {
 	    supportsScreen: boolean;
 	    supportsPowerOnStart: boolean;
 	    supportsSmartStartStop: boolean;
+	    supportsSoftwareSmartStartStop: boolean;
 
 	    static createFrom(source: any = {}) {
 	        return new DeviceCapabilities(source);
@@ -233,6 +268,7 @@ export namespace types {
 	        this.supportsScreen = source["supportsScreen"];
 	        this.supportsPowerOnStart = source["supportsPowerOnStart"];
 	        this.supportsSmartStartStop = source["supportsSmartStartStop"];
+	        this.supportsSoftwareSmartStartStop = source["supportsSoftwareSmartStartStop"];
 	    }
 
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -508,6 +544,7 @@ export namespace types {
 	    manualGearRpm: Record<string, any>;
 	    fanCurve: FanCurvePoint[];
 	    fanCurveProfiles: FanCurveProfile[];
+	    fanCurveProfilesByDevice?: Record<string, DeviceFanCurveProfilesState>;
 	    activeFanCurveProfileId: string;
 	    gearLight: boolean;
 	    powerOnStart: boolean;
@@ -558,6 +595,7 @@ export namespace types {
 	        this.manualGearRpm = source["manualGearRpm"];
 	        this.fanCurve = this.convertValues(source["fanCurve"], FanCurvePoint);
 	        this.fanCurveProfiles = this.convertValues(source["fanCurveProfiles"], FanCurveProfile);
+	        this.fanCurveProfilesByDevice = this.convertValues(source["fanCurveProfilesByDevice"], DeviceFanCurveProfilesState, true);
 	        this.activeFanCurveProfileId = source["activeFanCurveProfileId"];
 	        this.gearLight = source["gearLight"];
 	        this.powerOnStart = source["powerOnStart"];
@@ -1046,6 +1084,7 @@ export namespace types {
 		    return a;
 		}
 	}
+
 
 	export class DeviceGearRPM {
 	    gear: number;

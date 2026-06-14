@@ -6,6 +6,8 @@ export interface DeviceStatusPayload {
   connected?: boolean;
   currentData?: types.FanData | null;
   deviceSettings?: DeviceSettings | null;
+  deviceProfile?: types.DeviceProfile | null;
+  deviceCapabilities?: types.DeviceCapabilities | null;
   temperature?: types.TemperatureData | null;
   productId?: string;
   model?: string;

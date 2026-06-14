@@ -25,3 +25,18 @@ func LearnPercentSteadyOffsetTicks(
 	tickCurve := CurveForUnit(curve, types.FanSpeedUnitPercent)
 	return LearnSteadyOffsetForUnit(bucketIdx, steadyMeanTemp, localEff, haveEff, tickCurve, prevOffsets, cfg, types.FanSpeedUnitPercent)
 }
+
+func LearnPercentSteadyOffsetTicksWithPower(
+	bucketIdx int,
+	steadyMeanTemp int,
+	steadyMeanPower float64,
+	havePower bool,
+	localEff float64,
+	haveEff bool,
+	curve []types.FanCurvePoint,
+	prevOffsets []int,
+	cfg types.SmartControlConfig,
+) ([]int, bool) {
+	tickCurve := CurveForUnit(curve, types.FanSpeedUnitPercent)
+	return LearnSteadyOffsetForUnitWithPower(bucketIdx, steadyMeanTemp, steadyMeanPower, havePower, localEff, haveEff, tickCurve, prevOffsets, cfg, types.FanSpeedUnitPercent)
+}

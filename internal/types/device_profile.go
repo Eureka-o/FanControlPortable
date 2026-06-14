@@ -20,23 +20,24 @@ type DeviceSpeedRange struct {
 }
 
 type DeviceCapabilities struct {
-	ProfileID              string           `json:"profileId,omitempty"`
-	DisplayName            string           `json:"displayName,omitempty"`
-	Transport              string           `json:"transport"`
-	SpeedUnit              string           `json:"speedUnit"`
-	SpeedRange             DeviceSpeedRange `json:"speedRange"`
-	SupportsReadState      bool             `json:"supportsReadState"`
-	SupportsSetSpeed       bool             `json:"supportsSetSpeed"`
-	SupportsManualGears    bool             `json:"supportsManualGears"`
-	SupportsCustomSpeed    bool             `json:"supportsCustomSpeed"`
-	SupportsDebugFrames    bool             `json:"supportsDebugFrames"`
-	SupportsRawCommands    bool             `json:"supportsRawCommands"`
-	SupportsGearLight      bool             `json:"supportsGearLight"`
-	SupportsLighting       bool             `json:"supportsLighting"`
-	SupportsBrightness     bool             `json:"supportsBrightness"`
-	SupportsScreen         bool             `json:"supportsScreen"`
-	SupportsPowerOnStart   bool             `json:"supportsPowerOnStart"`
-	SupportsSmartStartStop bool             `json:"supportsSmartStartStop"`
+	ProfileID                      string           `json:"profileId,omitempty"`
+	DisplayName                    string           `json:"displayName,omitempty"`
+	Transport                      string           `json:"transport"`
+	SpeedUnit                      string           `json:"speedUnit"`
+	SpeedRange                     DeviceSpeedRange `json:"speedRange"`
+	SupportsReadState              bool             `json:"supportsReadState"`
+	SupportsSetSpeed               bool             `json:"supportsSetSpeed"`
+	SupportsManualGears            bool             `json:"supportsManualGears"`
+	SupportsCustomSpeed            bool             `json:"supportsCustomSpeed"`
+	SupportsDebugFrames            bool             `json:"supportsDebugFrames"`
+	SupportsRawCommands            bool             `json:"supportsRawCommands"`
+	SupportsGearLight              bool             `json:"supportsGearLight"`
+	SupportsLighting               bool             `json:"supportsLighting"`
+	SupportsBrightness             bool             `json:"supportsBrightness"`
+	SupportsScreen                 bool             `json:"supportsScreen"`
+	SupportsPowerOnStart           bool             `json:"supportsPowerOnStart"`
+	SupportsSmartStartStop         bool             `json:"supportsSmartStartStop"`
+	SupportsSoftwareSmartStartStop bool             `json:"supportsSoftwareSmartStartStop"`
 }
 
 type DeviceProfilesPayload struct {
@@ -216,45 +217,47 @@ func DefaultRPMSpeedRange() DeviceSpeedRange {
 
 func DefaultWiFiPercentCapabilities() DeviceCapabilities {
 	return DeviceCapabilities{
-		ProfileID:              DefaultWiFiPercentProfileID,
-		DisplayName:            appmeta.DeviceTemplateName,
-		Transport:              DeviceTransportWiFi,
-		SpeedUnit:              FanSpeedUnitPercent,
-		SpeedRange:             DefaultPercentSpeedRange(),
-		SupportsReadState:      true,
-		SupportsSetSpeed:       true,
-		SupportsManualGears:    true,
-		SupportsCustomSpeed:    true,
-		SupportsDebugFrames:    false,
-		SupportsRawCommands:    false,
-		SupportsGearLight:      false,
-		SupportsLighting:       false,
-		SupportsBrightness:     false,
-		SupportsScreen:         false,
-		SupportsPowerOnStart:   false,
-		SupportsSmartStartStop: false,
+		ProfileID:                      DefaultWiFiPercentProfileID,
+		DisplayName:                    appmeta.DeviceTemplateName,
+		Transport:                      DeviceTransportWiFi,
+		SpeedUnit:                      FanSpeedUnitPercent,
+		SpeedRange:                     DefaultPercentSpeedRange(),
+		SupportsReadState:              true,
+		SupportsSetSpeed:               true,
+		SupportsManualGears:            true,
+		SupportsCustomSpeed:            true,
+		SupportsDebugFrames:            false,
+		SupportsRawCommands:            false,
+		SupportsGearLight:              false,
+		SupportsLighting:               false,
+		SupportsBrightness:             false,
+		SupportsScreen:                 false,
+		SupportsPowerOnStart:           false,
+		SupportsSmartStartStop:         false,
+		SupportsSoftwareSmartStartStop: true,
 	}
 }
 
 func LegacyRPMCapabilities() DeviceCapabilities {
 	return DeviceCapabilities{
-		ProfileID:              LegacyRPMProfileID,
-		DisplayName:            "Legacy RPM controller",
-		Transport:              DeviceTransportHID,
-		SpeedUnit:              FanSpeedUnitRPM,
-		SpeedRange:             DefaultRPMSpeedRange(),
-		SupportsReadState:      true,
-		SupportsSetSpeed:       true,
-		SupportsManualGears:    true,
-		SupportsCustomSpeed:    true,
-		SupportsDebugFrames:    false,
-		SupportsRawCommands:    false,
-		SupportsGearLight:      false,
-		SupportsLighting:       false,
-		SupportsBrightness:     false,
-		SupportsScreen:         false,
-		SupportsPowerOnStart:   false,
-		SupportsSmartStartStop: false,
+		ProfileID:                      LegacyRPMProfileID,
+		DisplayName:                    "Legacy RPM controller",
+		Transport:                      DeviceTransportHID,
+		SpeedUnit:                      FanSpeedUnitRPM,
+		SpeedRange:                     DefaultRPMSpeedRange(),
+		SupportsReadState:              true,
+		SupportsSetSpeed:               true,
+		SupportsManualGears:            true,
+		SupportsCustomSpeed:            true,
+		SupportsDebugFrames:            false,
+		SupportsRawCommands:            false,
+		SupportsGearLight:              false,
+		SupportsLighting:               false,
+		SupportsBrightness:             false,
+		SupportsScreen:                 false,
+		SupportsPowerOnStart:           false,
+		SupportsSmartStartStop:         false,
+		SupportsSoftwareSmartStartStop: false,
 	}
 }
 
