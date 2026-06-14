@@ -24,6 +24,7 @@ import {
   GetCurrentFanData,
   TestTemperatureReading,
   GetDebugInfo,
+  ExportDiagnosticsToFile,
   SetDebugMode,
   UpdateGuiResponseTime,
   SetCustomSpeed
@@ -109,6 +110,10 @@ class ApiService {
   async autoScanDevices(): Promise<AutoScanDevicesResult> {
     const result = await (window as any).go?.main?.App?.AutoScanDevices?.();
     return result && typeof result === 'object' ? result as AutoScanDevicesResult : { connected: false };
+  }
+
+  async connectNativeDevice(profileID = ''): Promise<boolean> {
+    return !!(await (window as any).go?.main?.App?.ConnectNativeDevice?.(profileID));
   }
 
   async scanWiFiDevices(mode: 'normal' | 'deep' = 'normal'): Promise<WiFiDiscoveryResult> {
@@ -392,6 +397,10 @@ class ApiService {
 
   async getDebugInfo(): Promise<DebugInfo> {
     return await GetDebugInfo() as DebugInfo;
+  }
+
+  async exportDiagnosticsToFile(): Promise<string> {
+    return await ExportDiagnosticsToFile();
   }
 
   async setDebugMode(enabled: boolean): Promise<void> {

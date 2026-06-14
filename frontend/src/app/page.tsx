@@ -1,6 +1,8 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import { types } from '../../wailsjs/go/models';
 import { useShallow } from 'zustand/react/shallow';
 import AppFatalError from './components/AppFatalError';
@@ -12,10 +14,19 @@ import ControlPanel from './components/ControlPanel';
 import DeviceStatus from './components/DeviceStatus';
 import FanCurve from './components/FanCurve';
 import { useAppBootstrap } from './hooks/useAppBootstrap';
+import { apiService } from './services/api';
 import { useAppStore } from './store/app-store';
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return String(error ?? 'Unknown error');
+}
 
 export default function Home() {
   useAppBootstrap();
+  const { t } = useTranslation();
+  const [diagnosticsExporting, setDiagnosticsExporting] = useState(false);
 
   const view = useAppStore(
     useShallow((state) => ({
@@ -23,6 +34,8 @@ export default function Home() {
       deviceProductId: state.deviceProductId,
       deviceModel: state.deviceModel,
       deviceSettings: state.deviceSettings,
+      runtimeDeviceProfile: state.runtimeDeviceProfile,
+      runtimeDeviceCapabilities: state.runtimeDeviceCapabilities,
       config: state.config,
       fanData: state.fanData,
       temperature: state.temperature,
@@ -40,6 +53,7 @@ export default function Home() {
   const connectDevice = useAppStore((state) => state.connectDevice);
   const disconnectDevice = useAppStore((state) => state.disconnectDevice);
   const updateConfig = useAppStore((state) => state.updateConfig);
+  const refreshDeviceContext = useAppStore((state) => state.refreshDeviceContext);
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const openCurveTab = useAppStore((state) => state.openCurveTab);
   const clearCurveFocusTarget = useAppStore((state) => state.clearCurveFocusTarget);
@@ -49,6 +63,21 @@ export default function Home() {
     () => view.config || new types.AppConfig(),
     [view.config],
   );
+
+  const exportDiagnostics = useCallback(async () => {
+    if (diagnosticsExporting) return;
+    setDiagnosticsExporting(true);
+    try {
+      const path = await apiService.exportDiagnosticsToFile();
+      if (path) {
+        toast.success(t('appShell.diagnostics.exportSuccess'), { description: path });
+      }
+    } catch (error) {
+      toast.error(t('appShell.diagnostics.exportFailed', { error: getErrorMessage(error) }));
+    } finally {
+      setDiagnosticsExporting(false);
+    }
+  }, [diagnosticsExporting, t]);
 
   if (view.isLoading) {
     return <AppLoadingSkeleton />;
@@ -65,10 +94,13 @@ export default function Home() {
       isConnected={view.isConnected}
       fanData={view.fanData}
       temperature={view.temperature}
+      runtimeDeviceProfile={view.runtimeDeviceProfile}
       config={safeConfig}
       autoControl={safeConfig.autoControl}
       error={view.error}
       bridgeWarning={view.bridgeWarning}
+      diagnosticsExporting={diagnosticsExporting}
+      onExportDiagnostics={exportDiagnostics}
       onDismissBridgeWarning={clearBridgeWarning}
       statusContent={
         <DeviceStatus
@@ -85,6 +117,8 @@ export default function Home() {
           onConfigChange={updateConfig}
           onOpenCurveEditor={() => openCurveTab('curve-editor')}
           onOpenHistoryDetails={() => openCurveTab('history-details')}
+          diagnosticsExporting={diagnosticsExporting}
+          onExportDiagnostics={exportDiagnostics}
         />
       }
       curveContent={
@@ -107,6 +141,9 @@ export default function Home() {
           fanData={view.fanData}
           temperature={view.temperature}
           legionFnQSupported={view.legionFnQSupported}
+          runtimeDeviceProfile={view.runtimeDeviceProfile}
+          runtimeDeviceCapabilities={view.runtimeDeviceCapabilities}
+          onDeviceContextRefresh={refreshDeviceContext}
         />
       }
       devicesContent={

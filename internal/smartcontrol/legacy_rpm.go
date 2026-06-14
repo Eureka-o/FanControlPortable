@@ -23,3 +23,17 @@ func LearnLegacyRPMSteadyOffset(
 ) ([]int, bool) {
 	return LearnSteadyOffsetForUnit(bucketIdx, steadyMeanTemp, localEff, haveEff, curve, prevOffsets, cfg, types.FanSpeedUnitRPM)
 }
+
+func LearnLegacyRPMSteadyOffsetWithPower(
+	bucketIdx int,
+	steadyMeanTemp int,
+	steadyMeanPower float64,
+	havePower bool,
+	localEff float64,
+	haveEff bool,
+	curve []types.FanCurvePoint,
+	prevOffsets []int,
+	cfg types.SmartControlConfig,
+) ([]int, bool) {
+	return LearnSteadyOffsetForUnitWithPower(bucketIdx, steadyMeanTemp, steadyMeanPower, havePower, localEff, haveEff, curve, prevOffsets, cfg, types.FanSpeedUnitRPM)
+}

@@ -37,6 +37,8 @@ type Manager struct {
 	serialDialer    deviceprofileexec.SerialDialer
 	serialExecutor  *deviceprofileexec.SerialExecutor
 	flyDigiHID      *flyDigiHIDDevice
+	flyDigiHIDStop  chan struct{}
+	flyDigiHIDDone  chan struct{}
 	mutex           sync.RWMutex
 	logger          types.Logger
 	currentFanData  atomic.Pointer[types.FanData]
@@ -69,11 +71,11 @@ func (m *Manager) SetCallbacks(onFanDataUpdate func(data *types.FanData), onDisc
 }
 
 func (m *Manager) Init() error {
-	return nil
+	return initFlyDigiHIDAPI()
 }
 
 func (m *Manager) Exit() error {
-	return nil
+	return exitFlyDigiHIDAPI()
 }
 
 func (m *Manager) Connect() (bool, map[string]string) {

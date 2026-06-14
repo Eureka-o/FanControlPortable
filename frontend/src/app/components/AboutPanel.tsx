@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BrowserOpenURL } from '../../../wailsjs/runtime/runtime';
-import { Heart, Mail, RefreshCw, Rocket, Sparkles } from 'lucide-react';
+import { Heart, Mail, MessageCircle, RefreshCw, Rocket, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { BRAND } from '../lib/brand';
 import { ALIPAY_QR_DATA_URL, WECHAT_PAY_QR_DATA_URL } from '../lib/support-assets';
@@ -311,6 +311,14 @@ export default function AboutPanel() {
                   {t('aboutPanel.contact.email')}
                 </span>
                 <span className="truncate text-xs text-muted-foreground">1989005183@qq.com</span>
+              </div>
+
+              <div className="flex min-h-12 items-center justify-between gap-3 rounded-2xl border border-border/70 bg-background/70 px-3 py-2.5">
+                <span className="flex min-w-0 items-center gap-2 text-sm text-foreground">
+                  <MessageCircle className="h-4 w-4 text-muted-foreground" />
+                  {t('aboutPanel.contact.feedbackGroup')}
+                </span>
+                <span className="truncate text-xs text-muted-foreground">QQ 928338191</span>
               </div>
             </div>
           </div>

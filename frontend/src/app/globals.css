@@ -29,6 +29,13 @@
   --chart-primary-active: #1f57da;
   --chart-primary-glow: rgba(47, 109, 246, 0.36);
   --chart-point-shadow: rgba(0, 0, 0, 0.1);
+  --chart-cpu-temperature: #2f6df6;
+  --chart-gpu-temperature: #f97316;
+  --chart-fan-speed: #10b981;
+  --chart-cpu-power: color-mix(in srgb, #0891b2 88%, var(--foreground) 12%);
+  --chart-gpu-power: color-mix(in srgb, #a855f7 84%, var(--foreground) 16%);
+  --status-temperature-hot: #ef4444;
+  --status-temperature-warm: #f97316;
   --chart-temperature-indicator: #ef4444;
   --chart-tooltip-bg: rgba(255, 255, 255, 0.95);
   --chart-tooltip-border: transparent;
@@ -54,6 +61,8 @@
   --sidebar-accent-foreground: #111827;
   --sidebar-border: #e5ebf4;
   --sidebar-ring: #2f6df6;
+  --mica-content-surface: color-mix(in srgb, var(--background) 75%, transparent);
+  --mica-content-border: color-mix(in srgb, var(--border) 90%, transparent);
 }
 
 @theme inline {
@@ -124,6 +133,13 @@
   --chart-primary-active: #ff7048;
   --chart-primary-glow: rgba(255, 75, 38, 0.42);
   --chart-point-shadow: rgba(0, 0, 0, 0.45);
+  --chart-cpu-temperature: #6aa6ff;
+  --chart-gpu-temperature: #ff9a62;
+  --chart-fan-speed: #34d399;
+  --chart-cpu-power: color-mix(in srgb, #22d3ee 78%, var(--foreground) 22%);
+  --chart-gpu-power: color-mix(in srgb, #c084fc 78%, var(--foreground) 22%);
+  --status-temperature-hot: #ef4444;
+  --status-temperature-warm: #fb923c;
   --chart-temperature-indicator: #ff7048;
   --chart-tooltip-bg: rgba(17, 22, 29, 0.96);
   --chart-tooltip-border: #303845;
@@ -148,10 +164,47 @@
   --sidebar-accent-foreground: #e5e7eb;
   --sidebar-border: #202631;
   --sidebar-ring: #ff4b26;
+  --mica-content-surface: color-mix(in srgb, var(--background) 75%, transparent);
+  --mica-content-border: color-mix(in srgb, var(--border) 90%, transparent);
 }
 
 .theme-thrm-only {
   display: none !important;
+}
+
+body:has(.glacier-native-backdrop) {
+  background: transparent;
+}
+
+.glacier-native-backdrop {
+  background: transparent !important;
+}
+
+.glacier-native-backdrop .glacier-sidebar {
+  background: transparent;
+  border-right-color: transparent;
+  box-shadow: none;
+}
+
+.glacier-native-backdrop .glacier-titlebar {
+  background: transparent;
+}
+
+.glacier-native-backdrop .glacier-content {
+  background: transparent;
+}
+
+.glacier-native-backdrop .glacier-content-panel {
+  margin-top: 2.5rem;
+  background: var(--mica-content-surface);
+  border-top: 1px solid var(--mica-content-border);
+  border-left: 1px solid var(--mica-content-border);
+  border-top-left-radius: 1rem;
+  box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.04) inset;
+}
+
+.dark .glacier-native-backdrop .glacier-content-panel {
+  box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.06) inset;
 }
 
 html,

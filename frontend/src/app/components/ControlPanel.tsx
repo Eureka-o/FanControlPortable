@@ -7,8 +7,6 @@ import {
   Pause,
   Settings,
   Languages,
-  Lightbulb,
-  Power,
   Zap,
   Monitor,
   Wifi,
@@ -31,7 +29,7 @@ import {
   X,
   RotateCw,
 } from 'lucide-react';
-import { apiService, type AutoScanDeviceInfo, type AutoScanDevicesResult, type WiFiDiscoveredDevice, type WiFiDiscoveryResult } from '../services/api';
+import { apiService, type AutoScanDeviceInfo, type AutoScanDevicesResult } from '../services/api';
 import { types } from '../../../wailsjs/go/models';
 import { toast } from 'sonner';
 import { DebugInfo, type DeviceDebugCommandResult, type ThemeMeta } from '../types/app';
@@ -52,8 +50,40 @@ import {
   formatSpeedRange,
   normalizeTransport,
   summarizeConnection,
-  type DeviceTransport,
 } from './devices/profile-utils';
+import {
+  CompatibilitySubmenu,
+  CompatibilitySubmenuRow,
+  ConnectionPanel,
+  DeviceProfileInline,
+  DeviceProfileSummary,
+  EmptyConnectionState,
+  HotkeyField,
+  InlineHint,
+  Section,
+  SelectionField,
+  SettingRow,
+} from './settings/SettingLayout';
+import {
+  EMPTY_PROFILE_SELECT_VALUE,
+  activeProfileForTransport,
+  activeProfileIdsByTransportFromConfig,
+  configuredDeviceProfiles,
+  isEmptyProfileSelectValue,
+  isSerialCompatibilityEnabled,
+  isUserVisibleNativeProfile,
+  isWiFiCompatibilityEnabled,
+  isWiFiDynamicIPCompatibilityEnabled,
+  normalizeWiFiSmartStartStopStandbySpeed,
+  profileConnection,
+  profileLabel,
+  profileSelectOptions,
+  profilesForTransport,
+  wifiDiscoveryElapsedLabel,
+  wifiDiscoverySourceKey,
+} from './settings/device-connection-utils';
+import DeviceFeaturePanel from './settings/DeviceFeaturePanel';
+import { useWiFiDiscovery } from './settings/useWiFiDiscovery';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -65,6 +95,9 @@ interface ControlPanelProps {
   fanData: types.FanData | null;
   temperature: types.TemperatureData | null;
   legionFnQSupported: boolean;
+  runtimeDeviceProfile?: types.DeviceProfile | null;
+  runtimeDeviceCapabilities?: types.DeviceCapabilities | null;
+  onDeviceContextRefresh?: () => Promise<unknown>;
 }
 
 type CurveProfile = { id: string; name: string; curve: types.FanCurvePoint[] };
@@ -120,6 +153,10 @@ function rgbToHex(color: types.RGBColor): string {
   return `#${h(color.r || 0)}${h(color.g || 0)}${h(color.b || 0)}`;
 }
 
+function isHiddenNativeProfileID(profileID: string) {
+  return profileID.trim().startsWith('builtin.flydigi.');
+}
+
 function hexToRgb(hex: string): types.RGBColor {
   const n = Number.parseInt(hex.replace('#', ''), 16);
   return types.RGBColor.createFrom({ r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 });
@@ -137,11 +174,6 @@ function getRequiredColorCount(mode: string): number {
 const LEGION_POWER_MODE_VALUES = ['Quiet', 'Balance', 'Performance', 'Extreme', 'GodMode'] as const;
 const FAN_GEAR_VALUES = ['静音', '标准', '强劲', '超频'] as const;
 const FAN_LEVEL_VALUES = ['低', '中', '高'] as const;
-const EMPTY_PROFILE_SELECT_VALUE = '__fancontrol_no_profile__';
-// FlyDigi BLE/HID currently connects but cannot reliably read real RPM yet.
-// Keep the backend beta path available, but hide the normal-user entry.
-const NATIVE_DEVICE_BETA_VISIBLE = false;
-
 // 高危调试命令：直接读写固件底层/调试寄存器，误用可能导致设备异常甚至变砖，需在发送前红色提醒。
 const DANGEROUS_DEBUG_COMMANDS = new Set<number>([0xed, 0xee, 0xf0, 0xf1, 0xf2]);
 
@@ -214,33 +246,6 @@ const LIGHT_COLOR_PRESETS = [
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
-}
-
-function translateWorkMode(
-  workMode: string | null | undefined,
-  t: (key: string, options?: Record<string, unknown>) => string,
-) {
-  const normalizedMode = (workMode || '').trim().toLowerCase();
-  switch (normalizedMode) {
-    case 'wifi':
-      return 'WIFI';
-    case 'ble':
-      return 'BLE';
-    case 'serial':
-      return 'COM';
-    case 'hid':
-      return 'HID';
-    default:
-      break;
-  }
-  switch (workMode) {
-    case '挡位工作模式':
-      return t('controlPanel.overview.workModes.manual');
-    case '自动模式(实时转速)':
-      return t('controlPanel.overview.workModes.auto');
-    default:
-      return workMode || '--';
-  }
 }
 
 function translateControlSource(
@@ -323,376 +328,17 @@ function buildShortcutFromKeyboardEvent(e: {
   return [...parts, mainKey].join('+');
 }
 
-/* ── Section wrapper ── */
-
-function Section({
-  title,
-  icon: Icon,
-  children,
-  className,
-}: {
-  title: string;
-  icon: React.ComponentType<{ className?: string }>;
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <section className={clsx('rounded-2xl border border-border bg-card shadow-sm', className)}>
-      <div className="flex items-center gap-2.5 border-b border-border/60 px-5 py-4">
-        <Icon className="h-4.5 w-4.5 text-muted-foreground" />
-        <h3 className="text-base font-semibold text-foreground">{title}</h3>
-      </div>
-      <div className="divide-y divide-border/60">{children}</div>
-    </section>
-  );
-}
-
-/* ── Setting row ── */
-
-function SettingRow({
-  icon,
-  title,
-  description,
-  tip,
-  children,
-  disabled,
-}: {
-  icon?: React.ReactNode;
-  title: string;
-  description?: string;
-  tip?: string;
-  children?: React.ReactNode;
-  disabled?: boolean;
-}) {
-  return (
-    <div className={clsx('flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between', disabled && 'opacity-50')}>
-      <div className="flex items-center gap-3 min-w-0">
-        {icon && (
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            {icon}
-          </div>
-        )}
-        <div className="min-w-0">
-          <div className="text-base font-medium text-foreground">{title}</div>
-          {description && <div className="text-sm text-muted-foreground line-clamp-2">{description}</div>}
-          {tip && <div className="mt-0.5 text-xs text-primary/80">{tip}</div>}
-        </div>
-      </div>
-      {children && <div className="w-full sm:w-auto sm:shrink-0">{children}</div>}
-    </div>
-  );
-}
-
-function HotkeyField({
-  title,
-  description,
-  value,
-  placeholder,
-  clearAriaLabel,
-  recording,
-  onFocus,
-  onBlur,
-  onKeyDown,
-  onClear,
-}: {
-  title: string;
-  description: string;
-  value: string;
-  placeholder: string;
-  clearAriaLabel: string;
-  recording: boolean;
-  onFocus: () => void;
-  onBlur: () => void;
-  onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
-  onClear: () => void;
-}) {
-  return (
-    <div className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 md:flex-row md:items-center md:gap-4">
-      <div className="min-w-0 flex-1 pr-2">
-        <div className="text-sm text-foreground">{title}</div>
-        <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</div>
-      </div>
-
-      <div className="w-full md:ml-auto md:w-[240px] md:flex-none">
-        <div className="relative">
-          <input
-            value={value}
-            onFocus={onFocus}
-            onBlur={onBlur}
-            onKeyDown={onKeyDown}
-            readOnly
-            placeholder={placeholder}
-            className={clsx(
-              'w-full rounded-lg border bg-background px-3 py-2.5 pr-9 text-center font-mono text-sm text-foreground outline-none transition',
-              recording
-                ? 'border-primary shadow-[0_0_0_1px_var(--color-primary)] ring-2 ring-primary/20'
-                : 'border-border/70 hover:border-border',
-            )}
-          />
-          {value && (
-            <button
-              type="button"
-              aria-label={clearAriaLabel}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={onClear}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SelectionField({
-  label,
-  children,
-  hint,
-}: {
-  label: string;
-  children: React.ReactNode;
-  hint?: string;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</div>
-      {children}
-      {hint && <div className="text-[11px] leading-relaxed text-muted-foreground">{hint}</div>}
-    </div>
-  );
-}
-
-function ConnectionPanel({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="min-w-0 rounded-lg border border-border/70 bg-background/45 p-3">
-      <div className="mb-2 min-w-0 text-sm font-medium text-foreground">{title}</div>
-      {description && <p className="mb-3 text-xs leading-relaxed text-muted-foreground">{description}</p>}
-      {children}
-    </div>
-  );
-}
-
-function CompatibilitySubmenu({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="border-t border-border/60 bg-muted/10 px-5 py-3">
-      <div className="sm:pl-12">
-        <div className="overflow-hidden rounded-xl border border-border/70 bg-card">
-          <div className="divide-y divide-border/60">{children}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CompatibilitySubmenuRow({
-  icon,
-  title,
-  description,
-  tip,
-  children,
-  below,
-}: {
-  icon?: React.ReactNode;
-  title: string;
-  description?: string;
-  tip?: string;
-  children?: React.ReactNode;
-  below?: React.ReactNode;
-}) {
-  return (
-    <div className="px-5 py-4">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          {icon && (
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-              {icon}
-            </div>
-          )}
-          <div className="min-w-0">
-            <div className="text-base font-medium text-foreground">{title}</div>
-            {description && <div className="text-sm leading-relaxed text-muted-foreground">{description}</div>}
-            {tip && <div className="mt-0.5 text-xs leading-relaxed text-primary/80">{tip}</div>}
-          </div>
-        </div>
-        {children && <div className="w-full md:w-auto md:shrink-0">{children}</div>}
-      </div>
-      {below && <div className={clsx('mt-3', icon && 'md:pl-12')}>{below}</div>}
-    </div>
-  );
-}
-
-function EmptyConnectionState({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
-  return (
-    <div
-      className={clsx(
-        'rounded-md border border-dashed border-border/80 bg-muted/20 px-3 py-2 text-xs leading-relaxed text-muted-foreground',
-        action && 'flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'
-      )}
-    >
-      <div className="min-w-0">{children}</div>
-      {action && <div className="shrink-0">{action}</div>}
-    </div>
-  );
-}
-
-function DeviceProfileSummary({ profile }: { profile: types.DeviceProfile }) {
-  return (
-    <div className="rounded-md border border-border bg-card/70 px-3 py-2">
-      <div className="truncate text-sm font-medium text-foreground">{profileLabel(profile)}</div>
-      <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-        {`${summarizeConnection(profile)} · ${formatSpeedRange(profile)}`}
-      </div>
-    </div>
-  );
-}
-
-/* ── Main ControlPanel ── */
-
-function DeviceProfileInline({
-  profile,
-  empty,
-}: {
-  profile?: types.DeviceProfile | null;
-  empty: string;
-}) {
-  if (!profile) {
-    return <InlineHint>{empty}</InlineHint>;
-  }
-
-  return (
-    <div className="min-w-0 text-left md:max-w-[520px] md:text-right">
-      <div className="truncate text-sm font-medium text-foreground">{profileLabel(profile)}</div>
-      <div className="mt-0.5 truncate text-xs text-muted-foreground">
-        {`${summarizeConnection(profile)} · ${formatSpeedRange(profile)}`}
-      </div>
-    </div>
-  );
-}
-
-function InlineHint({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="max-w-[420px] text-sm leading-relaxed text-muted-foreground">
-      {children}
-    </div>
-  );
-}
-
-function configuredDeviceProfiles(config: types.AppConfig): types.DeviceProfile[] {
-  return Array.isArray((config as any).deviceProfiles) ? ((config as any).deviceProfiles as types.DeviceProfile[]) : [];
-}
-
-function activeProfileIdsByTransportFromConfig(config: types.AppConfig): Record<string, string> {
-  const raw = (config as any).activeDeviceProfileIdsByTransport;
-  return raw && typeof raw === 'object' ? raw as Record<string, string> : {};
-}
-
-function profileLabel(profile: types.DeviceProfile) {
-  return profile.displayName || profile.id || 'Device profile';
-}
-
-function profileConnection(profile?: types.DeviceProfile | null): types.DeviceConnectionSettings {
-  return (profile?.connection || {}) as types.DeviceConnectionSettings;
-}
-
-function profileForTransport(profiles: types.DeviceProfile[], transport: DeviceTransport) {
-  return profiles.find((profile) => normalizeTransport(profile.transport) === transport) || null;
-}
-
-function activeProfileForTransport(
-  profiles: types.DeviceProfile[],
-  activeIdsByTransport: Record<string, string>,
-  transport: DeviceTransport,
-) {
-  const activeId = activeIdsByTransport[transport] || '';
-  return profiles.find((profile) => profile.id === activeId && normalizeTransport(profile.transport) === transport)
-    || profileForTransport(profiles, transport);
-}
-
-function profilesForTransport(profiles: types.DeviceProfile[], transport: DeviceTransport) {
-  return profiles.filter((profile) => normalizeTransport(profile.transport) === transport);
-}
-
-function profileSelectOptions(
-  profiles: types.DeviceProfile[],
-  emptyLabel: string,
-) {
-  if (profiles.length === 0) {
-    return [{ value: EMPTY_PROFILE_SELECT_VALUE, label: emptyLabel, disabled: true }];
-  }
-  return profiles.map((profile) => ({ value: profile.id, label: profileLabel(profile) }));
-}
-
-function isEmptyProfileSelectValue(value: string | number) {
-  return String(value || '').trim() === EMPTY_PROFILE_SELECT_VALUE;
-}
-
-function isUserVisibleNativeProfile(profile: types.DeviceProfile) {
-  const transport = normalizeTransport(profile.transport);
-  return (transport === 'ble' || transport === 'hid') && !profile.builtIn;
-}
-
-function isWiFiCompatibilityEnabled(config: types.AppConfig) {
-  const explicit = (config as any).wifiCompatibilityEnabled;
-  if (typeof explicit === 'boolean') {
-    return explicit;
-  }
-  return normalizeTransport((config as any).deviceTransport) === 'wifi' || Boolean(((config as any).fanControlDeviceIp || '').trim());
-}
-
-function isSerialCompatibilityEnabled(config: types.AppConfig) {
-  const explicit = (config as any).serialCompatibilityEnabled;
-  if (typeof explicit === 'boolean') {
-    return explicit;
-  }
-  return normalizeTransport((config as any).deviceTransport) === 'serial';
-}
-
-function isWiFiDynamicIPCompatibilityEnabled(config: types.AppConfig) {
-  return Boolean((config as any).wifiDynamicIpCompatibilityEnabled);
-}
-
-function normalizeWiFiSmartStartStopStandbySpeed(value: unknown) {
-  const numeric = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(numeric)) return 1;
-  return Math.min(100, Math.max(1, Math.round(numeric)));
-}
-
-function wifiDiscoveryDevices(result: WiFiDiscoveryResult | null) {
-  return Array.isArray(result?.devices) ? result.devices.filter((device) => !!device.endpoint) : [];
-}
-
-function wifiDiscoveryElapsedLabel(elapsedMs?: number) {
-  if (typeof elapsedMs !== 'number' || Number.isNaN(elapsedMs) || elapsedMs < 0) return '';
-  if (elapsedMs < 1000) return `${Math.round(elapsedMs)}ms`;
-  return `${(elapsedMs / 1000).toFixed(1)}s`;
-}
-
-function wifiDiscoverySourceKey(source?: string) {
-  switch (source) {
-    case 'exact':
-    case 'savedSubnet':
-    case 'adapterSubnet':
-    case 'windowsHotspot':
-    case 'deviceAP':
-    case 'commonSubnet':
-    case 'expandedSubnet':
-      return `controlPanel.system.deviceConnection.wifiScanSources.${source}`;
-    default:
-      return 'controlPanel.system.deviceConnection.wifiScanSources.unknown';
-  }
-}
-
-export default function ControlPanel({ config, onConfigChange, isConnected, fanData, temperature, legionFnQSupported }: ControlPanelProps) {
+export default function ControlPanel({
+  config,
+  onConfigChange,
+  isConnected,
+  fanData,
+  temperature,
+  legionFnQSupported,
+  runtimeDeviceProfile,
+  runtimeDeviceCapabilities,
+  onDeviceContextRefresh,
+}: ControlPanelProps) {
   const { t } = useTranslation();
   const { locale, setLocale } = useLocale();
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
@@ -739,16 +385,6 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const [autoScanResult, setAutoScanResult] = useState<AutoScanDevicesResult | null>(null);
   const [bleSettingsScanError, setBLESettingsScanError] = useState('');
   const [bleSettingsScanCompleted, setBLESettingsScanCompleted] = useState(false);
-  const [wifiScanResult, setWiFiScanResult] = useState<WiFiDiscoveryResult | null>(null);
-  const [wifiScanError, setWiFiScanError] = useState('');
-  const [wifiScanMode, setWiFiScanMode] = useState<'normal' | 'deep' | null>(null);
-  const [wifiScanStartedAt, setWiFiScanStartedAt] = useState<number | null>(null);
-  const [wifiScanNow, setWiFiScanNow] = useState<number>(() => Date.now());
-  const [wifiScanPaused, setWiFiScanPaused] = useState(false);
-  const [wifiScanPausedAt, setWiFiScanPausedAt] = useState<number | null>(null);
-  const [wifiScanPausedTotalMs, setWiFiScanPausedTotalMs] = useState(0);
-  const [wifiScanCanceling, setWiFiScanCanceling] = useState(false);
-  const [wifiNormalScanAttempted, setWiFiNormalScanAttempted] = useState(false);
   const [lightStripConfig, setLightStripConfig] = useState<types.LightStripConfig>(() => normalizeLightStripConfig(config));
   const [manualHotkeyInput, setManualHotkeyInput] = useState(
     normalizeHotkeyForDisplay((config as any).manualGearToggleHotkey)
@@ -763,6 +399,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const [curveProfiles, setCurveProfiles] = useState<CurveProfile[]>([]);
   const [curveProfileLoading, setCurveProfileLoading] = useState(false);
   const [temperatureHistoryEnabled, setTemperatureHistoryEnabled] = useState(false);
+  const [deviceContextRefreshing, setDeviceContextRefreshing] = useState(false);
 
   const configDeviceProfiles = useMemo(() => configuredDeviceProfiles(config), [config]);
   const availableDeviceProfiles = useMemo(
@@ -797,35 +434,21 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     if (devices.length > 0) return devices;
     return autoScanResult?.deviceInfo ? [autoScanResult.deviceInfo] : [];
   }, [autoScanResult]);
-  const wifiScannedDevices = useMemo(() => wifiDiscoveryDevices(wifiScanResult), [wifiScanResult]);
-  const showWiFiDeepScanAction = wifiNormalScanAttempted
-    && wifiScannedDevices.length === 0
-    && (!loadingStates.wifiScan || wifiScanMode === 'deep');
-  const wifiScanLiveElapsedMs = loadingStates.wifiScan && wifiScanStartedAt !== null
-    ? Math.max(0, wifiScanNow - wifiScanStartedAt)
-    : undefined;
-  const wifiScanCurrentPausedMs = loadingStates.wifiScan && wifiScanPaused && wifiScanPausedAt !== null
-    ? Math.max(0, wifiScanNow - wifiScanPausedAt)
-    : 0;
-  const wifiScanActiveElapsedMs = typeof wifiScanLiveElapsedMs === 'number'
-    ? Math.max(0, wifiScanLiveElapsedMs - wifiScanPausedTotalMs - wifiScanCurrentPausedMs)
-    : undefined;
-  const wifiScanElapsedText = loadingStates.wifiScan
-    ? wifiDiscoveryElapsedLabel(wifiScanActiveElapsedMs) || '0ms'
-    : wifiDiscoveryElapsedLabel(wifiScanResult?.elapsedMs);
-  const wifiScanProgressLimitMs = wifiScanMode === 'deep' ? 75000 : 8000;
-  const wifiScanProgressPercent = loadingStates.wifiScan
-    ? Math.min(96, Math.max(4, Math.round(((wifiScanActiveElapsedMs || 0) / wifiScanProgressLimitMs) * 100)))
-    : 100;
-  const wifiScanRunningKey = wifiScanCanceling
-    ? 'controlPanel.system.deviceConnection.wifiScanCanceling'
-    : wifiScanPaused
-    ? 'controlPanel.system.deviceConnection.wifiScanPaused'
-    : wifiScanMode === 'deep'
-    ? (wifiScanActiveElapsedMs || 0) >= 12000
-      ? 'controlPanel.system.deviceConnection.wifiScanRunningExpanded'
-      : 'controlPanel.system.deviceConnection.wifiScanRunningDeep'
-    : 'controlPanel.system.deviceConnection.wifiScanRunningNormal';
+  const wifiDiscovery = useWiFiDiscovery({
+    profileAvailable: !!wifiProfile,
+    resetKey: activeDeviceProfileId,
+  });
+  const wifiScannedDevices = wifiDiscovery.devices;
+  const wifiScanResult = wifiDiscovery.result;
+  const wifiScanError = wifiDiscovery.error;
+  const wifiScanMode = wifiDiscovery.mode;
+  const wifiScanPaused = wifiDiscovery.paused;
+  const wifiScanCanceling = wifiDiscovery.canceling;
+  const wifiNormalScanAttempted = wifiDiscovery.normalScanAttempted;
+  const showWiFiDeepScanAction = wifiDiscovery.showDeepScanAction;
+  const wifiScanElapsedText = wifiDiscovery.elapsedText;
+  const wifiScanProgressPercent = wifiDiscovery.progressPercent;
+  const wifiScanRunningKey = wifiDiscovery.runningKey;
   const showDiscoveredDevicesPanel = bleSettingsScanCompleted || !!bleSettingsScanError || autoScannedDevices.length > 0;
   const nativePairedProfiles = useMemo(
     () => availableDeviceProfiles.filter(isUserVisibleNativeProfile),
@@ -844,10 +467,11 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     () => getActiveDeviceProfile(config as any) as types.DeviceProfile | undefined,
     [config],
   );
+  const effectiveDeviceProfile = isConnected && runtimeDeviceProfile ? runtimeDeviceProfile : currentDeviceProfile;
   const connectedDeviceProfile = useMemo(() => {
     if (!isConnected) return null;
-    return currentDeviceProfile || activeDeviceProfile || null;
-  }, [activeDeviceProfile, currentDeviceProfile, isConnected]);
+    return effectiveDeviceProfile || activeDeviceProfile || null;
+  }, [activeDeviceProfile, effectiveDeviceProfile, isConnected]);
   const connectedDeviceTransport = normalizeTransport(
     connectedDeviceProfile?.transport
       || ((fanData as any)?.transport as string)
@@ -856,7 +480,9 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   );
   const wifiConnectedProfile = connectedDeviceTransport === 'wifi' ? connectedDeviceProfile : null;
   const serialConnectedProfile = connectedDeviceTransport === 'serial' ? connectedDeviceProfile : null;
-  const currentDeviceCapabilities = currentDeviceProfile?.capabilities;
+  const currentDeviceCapabilities = (isConnected && runtimeDeviceCapabilities)
+    ? runtimeDeviceCapabilities
+    : effectiveDeviceProfile?.capabilities;
   const currentDeviceSupportsCustomSpeed = currentDeviceCapabilities
     ? currentDeviceCapabilities.supportsCustomSpeed || currentDeviceCapabilities.supportsSetSpeed
     : true;
@@ -865,13 +491,24 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const currentDeviceSupportsBrightness = !!((currentDeviceCapabilities as any)?.supportsBrightness || currentDeviceSupportsLighting);
   const currentDeviceSupportsPowerOnStart = !!currentDeviceCapabilities?.supportsPowerOnStart;
   const currentDeviceSupportsSmartStartStop = !!currentDeviceCapabilities?.supportsSmartStartStop;
-  const currentDeviceSpeedUnit = ((currentDeviceProfile as any)?.speedUnit || (currentDeviceCapabilities as any)?.speedUnit || overviewSpeedUnit || 'percent') as string;
-  const currentDeviceSupportsWiFiSmartStartStopBeta = connectedDeviceTransport === 'wifi' && currentDeviceSpeedUnit !== 'rpm';
-  const currentDeviceHasDeviceSettings = currentDeviceSupportsGearLight
-    || currentDeviceSupportsLighting
-    || currentDeviceSupportsPowerOnStart
-    || currentDeviceSupportsSmartStartStop
-    || currentDeviceSupportsWiFiSmartStartStopBeta;
+  const currentDeviceSupportsScreen = !!(currentDeviceCapabilities as any)?.supportsScreen;
+  const currentDeviceSupportsWiFiSmartStartStopBeta = !!(currentDeviceCapabilities as any)?.supportsSoftwareSmartStartStop;
+  const overviewConnectionName = isConnected
+    ? (connectedDeviceProfile ? profileLabel(connectedDeviceProfile) : connectedDeviceTransport.toUpperCase() || '--')
+    : (wifiProfile ? profileLabel(wifiProfile) : '--');
+  const overviewConnectionDetail = isConnected
+    ? [
+      connectedDeviceTransport.toUpperCase(),
+      connectedDeviceTransport === 'wifi' ? (wifiConnection.endpoint || deviceIpInput) : '',
+    ].filter(Boolean).join(' · ') || t('appShell.status.connected')
+    : t('appShell.status.offline');
+  const runtimeDeviceContextKey = [
+    isConnected ? 'connected' : 'offline',
+    runtimeDeviceProfile?.id || '',
+    runtimeDeviceProfile?.transport || '',
+    (fanData as any)?.transport || '',
+  ].join(':');
+  const configuredDeviceCurveKey = `${((config as any).deviceTransport || '') as string}:${((config as any).activeDeviceProfileId || '') as string}`;
 
   const activeCurveProfileId = ((config as any).activeFanCurveProfileId || '') as string;
   const currentTempSource = (((config as any).tempSource as string) || 'max') as 'max' | 'cpu' | 'gpu';
@@ -998,6 +635,20 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     }
   }, [t]);
 
+  const refreshConnectedDeviceContext = useCallback(async () => {
+    setDeviceContextRefreshing(true);
+    try {
+      if (onDeviceContextRefresh) {
+        await onDeviceContextRefresh();
+      } else {
+        await refreshDeviceConfig();
+      }
+      await loadDeviceProfiles();
+    } finally {
+      window.setTimeout(() => setDeviceContextRefreshing(false), 450);
+    }
+  }, [loadDeviceProfiles, onDeviceContextRefresh, refreshDeviceConfig]);
+
   const handleCompatibilityModeChange = useCallback(async (transport: 'wifi' | 'serial', enabled: boolean) => {
     if (transport === 'wifi') {
       setWiFiCompatibilityEnabled(enabled);
@@ -1100,7 +751,9 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
         customSpeedRPM: safeSpeed,
         autoControl: enabled ? false : config.autoControl,
       }));
-    } catch { /* noop */ } finally { setLoading('customSpeed', false); }
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally { setLoading('customSpeed', false); }
   }, [config, defaultCustomSpeed, onConfigChange, overviewSpeedRange]);
 
   const handleCustomSpeedToggle = useCallback((enabled: boolean) => {
@@ -1113,18 +766,30 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     setLoading('gearLight', true);
     try {
       const ok = await apiService.setGearLight(enabled);
-      if (ok) onConfigChange(types.AppConfig.createFrom({ ...config, gearLight: enabled }));
-    } catch { /* noop */ } finally { setLoading('gearLight', false); }
-  }, [config, onConfigChange, isConnected]);
+      if (ok) {
+        onConfigChange(types.AppConfig.createFrom({ ...config, gearLight: enabled }));
+      } else {
+        toast.error(t('controlPanel.alerts.deviceCommandFailed'));
+      }
+    } catch (error) {
+      toast.error(t('controlPanel.alerts.deviceCommandFailedWithError', { error: getErrorMessage(error) }));
+    } finally { setLoading('gearLight', false); }
+  }, [config, onConfigChange, isConnected, t]);
 
   const handlePowerOnStartChange = useCallback(async (enabled: boolean) => {
     if (!isConnected) return;
     setLoading('powerOnStart', true);
     try {
       const ok = await apiService.setPowerOnStart(enabled);
-      if (ok) onConfigChange(types.AppConfig.createFrom({ ...config, powerOnStart: enabled }));
-    } catch { /* noop */ } finally { setLoading('powerOnStart', false); }
-  }, [config, onConfigChange, isConnected]);
+      if (ok) {
+        onConfigChange(types.AppConfig.createFrom({ ...config, powerOnStart: enabled }));
+      } else {
+        toast.error(t('controlPanel.alerts.deviceCommandFailed'));
+      }
+    } catch (error) {
+      toast.error(t('controlPanel.alerts.deviceCommandFailedWithError', { error: getErrorMessage(error) }));
+    } finally { setLoading('powerOnStart', false); }
+  }, [config, onConfigChange, isConnected, t]);
 
   const handleWindowsAutoStartChange = useCallback(async (enabled: boolean) => {
     setLoading('windowsAutoStart', true);
@@ -1148,9 +813,15 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     if (!isConnected) return;
     try {
       const ok = await apiService.setSmartStartStop(mode);
-      if (ok) onConfigChange(types.AppConfig.createFrom({ ...config, smartStartStop: mode }));
-    } catch { /* noop */ }
-  }, [config, onConfigChange, isConnected]);
+      if (ok) {
+        onConfigChange(types.AppConfig.createFrom({ ...config, smartStartStop: mode }));
+      } else {
+        toast.error(t('controlPanel.alerts.deviceCommandFailed'));
+      }
+    } catch (error) {
+      toast.error(t('controlPanel.alerts.deviceCommandFailedWithError', { error: getErrorMessage(error) }));
+    }
+  }, [config, onConfigChange, isConnected, t]);
 
   const handleWiFiSmartStartStopEnabledChange = useCallback(async (enabled: boolean) => {
     setLoading('wifiSmartStartStop', true);
@@ -1386,98 +1057,6 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     wifiProfile,
   ]);
 
-  const handleWiFiScan = useCallback(async (mode: 'normal' | 'deep') => {
-    if (!wifiProfile) {
-      toast.info(t('controlPanel.system.deviceConnection.toasts.profileRequired'));
-      return;
-    }
-    setLoading('wifiScan', true);
-    setWiFiScanMode(mode);
-    const startedAt = Date.now();
-    setWiFiScanStartedAt(startedAt);
-    setWiFiScanNow(startedAt);
-    setWiFiScanPaused(false);
-    setWiFiScanPausedAt(null);
-    setWiFiScanPausedTotalMs(0);
-    setWiFiScanCanceling(false);
-    setWiFiScanError('');
-    if (mode === 'normal') {
-      setWiFiScanResult(null);
-      setWiFiNormalScanAttempted(true);
-    }
-    try {
-      const result = await apiService.scanWiFiDevices(mode);
-      const elapsedMs = typeof result.elapsedMs === 'number' && result.elapsedMs > 0
-        ? result.elapsedMs
-        : Date.now() - startedAt;
-      const normalizedResult = { ...result, elapsedMs };
-      setWiFiScanResult(normalizedResult);
-      if (normalizedResult.canceled) {
-        toast.info(t('controlPanel.system.deviceConnection.toasts.wifiScanCanceled'));
-        return;
-      }
-      if (normalizedResult.error) {
-        setWiFiScanError(normalizedResult.error);
-        toast.error(t('controlPanel.system.deviceConnection.toasts.wifiScanFailed', { error: normalizedResult.error }));
-        return;
-      }
-      const count = normalizedResult.devices?.length || 0;
-      toast.info(count > 0
-        ? t('controlPanel.system.deviceConnection.toasts.wifiScanFound', { count })
-        : t('controlPanel.system.deviceConnection.toasts.wifiScanEmpty'));
-    } catch (error) {
-      const message = getErrorMessage(error);
-      setWiFiScanError(message);
-      toast.error(t('controlPanel.system.deviceConnection.toasts.wifiScanFailed', { error: message }));
-    } finally {
-      setLoading('wifiScan', false);
-      setWiFiScanMode(null);
-      setWiFiScanStartedAt(null);
-      setWiFiScanPaused(false);
-      setWiFiScanPausedAt(null);
-      setWiFiScanPausedTotalMs(0);
-      setWiFiScanCanceling(false);
-    }
-  }, [t, wifiProfile]);
-
-  const handleWiFiScanPauseToggle = useCallback(async () => {
-    if (!loadingStates.wifiScan || wifiScanMode !== 'deep' || wifiScanCanceling) return;
-    if (wifiScanPaused) {
-      const ok = await apiService.controlWiFiScan('resume');
-      if (!ok) return;
-      const now = Date.now();
-      if (wifiScanPausedAt !== null) {
-        setWiFiScanPausedTotalMs((value) => value + Math.max(0, now - wifiScanPausedAt));
-      }
-      setWiFiScanNow(now);
-      setWiFiScanPaused(false);
-      setWiFiScanPausedAt(null);
-      return;
-    }
-    const ok = await apiService.controlWiFiScan('pause');
-    if (!ok) return;
-    const now = Date.now();
-    setWiFiScanNow(now);
-    setWiFiScanPaused(true);
-    setWiFiScanPausedAt(now);
-  }, [loadingStates.wifiScan, wifiScanCanceling, wifiScanMode, wifiScanPaused, wifiScanPausedAt]);
-
-  const handleWiFiScanCancel = useCallback(async () => {
-    if (!loadingStates.wifiScan || wifiScanMode !== 'deep' || wifiScanCanceling) return;
-    const now = Date.now();
-    setWiFiScanCanceling(true);
-    if (wifiScanPausedAt !== null) {
-      setWiFiScanPausedTotalMs((value) => value + Math.max(0, now - wifiScanPausedAt));
-    }
-    setWiFiScanNow(now);
-    setWiFiScanPaused(false);
-    setWiFiScanPausedAt(null);
-    const ok = await apiService.controlWiFiScan('cancel');
-    if (!ok) {
-      setWiFiScanCanceling(false);
-    }
-  }, [loadingStates.wifiScan, wifiScanCanceling, wifiScanMode, wifiScanPausedAt]);
-
   const handleWiFiDynamicIPCompatibilityChange = useCallback(async (enabled: boolean) => {
     setWiFiDynamicIPCompatibilityEnabled(enabled);
     setLoading('wifiDynamicIPCompatibility', true);
@@ -1530,11 +1109,20 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     }
     setLoading('autoScanConnect', true);
     try {
+      if (isHiddenNativeProfileID(profileID)) {
+        const connected = await apiService.connectNativeDevice(profileID);
+        await refreshConnectedDeviceContext();
+        if (connected) {
+          toast.success(t('controlPanel.system.deviceConnection.toasts.autoScanConnectedDevice', { device: device.model || device.product || profileID }));
+        } else {
+          toast.error(t('controlPanel.system.deviceConnection.toasts.autoScanConnectFailed', { error: t('controlPanel.system.deviceConnection.toasts.autoScanEmpty') }));
+        }
+        return;
+      }
       const profile = await apiService.setActiveDeviceProfile(profileID);
       setActiveDeviceProfileId(profile.id);
       const connected = await apiService.connectDevice();
-      await refreshDeviceConfig();
-      await loadDeviceProfiles();
+      await refreshConnectedDeviceContext();
       if (connected) {
         toast.success(t('controlPanel.system.deviceConnection.toasts.autoScanConnectedDevice', { device: device.model || device.product || profile.displayName || profileID }));
       } else {
@@ -1545,7 +1133,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     } finally {
       setLoading('autoScanConnect', false);
     }
-  }, [loadDeviceProfiles, refreshDeviceConfig, t]);
+  }, [refreshConnectedDeviceContext, t]);
 
   const updateLegionFnQConfig = useCallback(async (patch: any) => {
     if (!legionFnQSupported) return;
@@ -1639,6 +1227,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     return () => window.clearInterval(i);
   }, []);
   useEffect(() => { loadCurveProfiles(); }, [loadCurveProfiles]);
+  useEffect(() => { loadCurveProfiles(); }, [configuredDeviceCurveKey, loadCurveProfiles]);
   useEffect(() => { void loadDeviceProfiles(); }, [loadDeviceProfiles]);
   useEffect(() => { setLightStripConfig(normalizeLightStripConfig(config)); }, [config]);
   useEffect(() => {
@@ -1668,34 +1257,16 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     setAutoScanResult(null);
     setBLESettingsScanError('');
     setBLESettingsScanCompleted(false);
-    setWiFiScanResult(null);
-    setWiFiScanError('');
-    setWiFiScanMode(null);
-    setWiFiScanStartedAt(null);
-    setWiFiScanPaused(false);
-    setWiFiScanPausedAt(null);
-    setWiFiScanPausedTotalMs(0);
-    setWiFiScanCanceling(false);
-    setWiFiNormalScanAttempted(false);
   }, [activeDeviceProfileId]);
   useEffect(() => {
-    if (!loadingStates.wifiScan || wifiScanStartedAt === null) return undefined;
-    if (wifiScanPaused && !wifiScanCanceling) {
-      if (wifiScanPausedAt !== null) {
-        setWiFiScanNow(wifiScanPausedAt);
-      }
-      return undefined;
+    if (!isConnected) {
+      setDeviceContextRefreshing(false);
+      return;
     }
-
-    setWiFiScanNow(Date.now());
-    const timer = window.setInterval(() => {
-      setWiFiScanNow(Date.now());
-    }, 250);
-
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [loadingStates.wifiScan, wifiScanCanceling, wifiScanPaused, wifiScanPausedAt, wifiScanStartedAt]);
+    setDeviceContextRefreshing(true);
+    const timer = window.setTimeout(() => setDeviceContextRefreshing(false), 700);
+    return () => window.clearTimeout(timer);
+  }, [isConnected, runtimeDeviceContextKey]);
   useEffect(() => {
     setManualHotkeyInput(normalizeHotkeyForDisplay((config as any).manualGearToggleHotkey));
     setAutoHotkeyInput(normalizeHotkeyForDisplay((config as any).autoControlToggleHotkey));
@@ -1884,17 +1455,34 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
             </div>
             <div className="rounded-xl border border-border/70 bg-muted/30 p-4 text-center">
               <div className="text-sm text-muted-foreground">{t('controlPanel.system.deviceConnection.overviewLabel')}</div>
-              <div className="mt-1 text-2xl font-semibold tabular-nums text-primary">{deviceIpInput || '--'}</div>
-              <div className="mt-1 text-xs text-muted-foreground">{isConnected ? t('appShell.status.connected') : t('appShell.status.offline')}</div>
+              <div className="mx-auto mt-1 max-w-full truncate text-2xl font-semibold text-primary">{overviewConnectionName}</div>
+              <div className="mx-auto mt-1 max-w-full truncate text-xs text-muted-foreground">{overviewConnectionDetail}</div>
             </div>
           </div>
         </section>
 
         {/* ═══════════ 1. 灯光效果 ═══════════ */}
-        {currentDeviceSupportsLighting && (
-        <Section title={t('controlPanel.light.sectionTitle')} icon={Sparkles}>
-          <div className="space-y-4 p-5">
-            <div className="grid grid-cols-2 gap-3">
+        <DeviceFeaturePanel
+          config={config}
+          isConnected={isConnected}
+          refreshing={deviceContextRefreshing}
+          deviceProfile={effectiveDeviceProfile || null}
+          loadingStates={loadingStates}
+          supportsGearLight={currentDeviceSupportsGearLight}
+          supportsPowerOnStart={currentDeviceSupportsPowerOnStart}
+          supportsSmartStartStop={currentDeviceSupportsSmartStartStop}
+          supportsWiFiSmartStartStopBeta={currentDeviceSupportsWiFiSmartStartStopBeta}
+          supportsScreen={currentDeviceSupportsScreen}
+          smartStartStopOptions={smartStartStopOptions}
+          wifiSmartStartStopStandbySpeedOptions={wifiSmartStartStopStandbySpeedOptions}
+          onGearLightChange={handleGearLightChange}
+          onPowerOnStartChange={handlePowerOnStartChange}
+          onSmartStartStopChange={handleSmartStartStopChange}
+          onWiFiSmartStartStopEnabledChange={handleWiFiSmartStartStopEnabledChange}
+          onWiFiSmartStartStopStandbySpeedChange={handleWiFiSmartStartStopStandbySpeedChange}
+          lightingControls={currentDeviceSupportsLighting ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <Select
                 value={lightStripConfig.mode}
                 onChange={(v: string | number) => setLightStripConfig(types.LightStripConfig.createFrom({ ...lightStripConfig, mode: v as string }))}
@@ -1976,8 +1564,8 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
               </Button>
             </div>
           </div>
-        </Section>
-        )}
+          ) : undefined}
+        />
 
         {/* ═══════════ 2. 风扇控制 ═══════════ */}
         <Section title={t('controlPanel.fan.sectionTitle')} icon={Settings}>
@@ -2278,114 +1866,6 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
         </Section>
 
         {/* ═══════════ 3. 设备设置 ═══════════ */}
-        {currentDeviceHasDeviceSettings && <Section title={t('controlPanel.device.sectionTitle')} icon={Zap}>
-          {currentDeviceSupportsGearLight && (
-          <SettingRow
-            icon={<Lightbulb className={clsx('h-4 w-4', config.gearLight ? 'text-yellow-500' : '')} />}
-            title={t('controlPanel.device.gearLightTitle')}
-            description={t('controlPanel.device.gearLightDescription')}
-            disabled={!isConnected}
-          >
-            <ToggleSwitch
-              enabled={config.gearLight}
-              onChange={handleGearLightChange}
-              disabled={!isConnected}
-              loading={loadingStates.gearLight}
-              size="sm"
-            />
-          </SettingRow>
-          )}
-
-          {currentDeviceSupportsPowerOnStart && (
-          <SettingRow
-            icon={<Power className={clsx('h-4 w-4', config.powerOnStart ? 'text-primary' : '')} />}
-            title={t('controlPanel.device.powerOnStartTitle')}
-            description={t('controlPanel.device.powerOnStartDescription')}
-            disabled={!isConnected}
-          >
-            <ToggleSwitch
-              enabled={config.powerOnStart}
-              onChange={handlePowerOnStartChange}
-              disabled={!isConnected}
-              loading={loadingStates.powerOnStart}
-              size="sm"
-            />
-          </SettingRow>
-          )}
-
-          {currentDeviceSupportsWiFiSmartStartStopBeta && (
-          <>
-            <SettingRow
-              icon={<Power className={clsx('h-4 w-4', (config as any).wifiSmartStartStopEnabled ? 'text-primary' : '')} />}
-              title={t('controlPanel.device.wifiSmartStartStopTitle')}
-              description={t('controlPanel.device.wifiSmartStartStopDescription')}
-              tip={t('controlPanel.device.wifiSmartStartStopTip')}
-            >
-              <div className="flex items-center justify-end gap-2">
-                <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
-                  {t('controlPanel.device.betaBadge')}
-                </span>
-                <ToggleSwitch
-                  enabled={!!(config as any).wifiSmartStartStopEnabled}
-                  onChange={handleWiFiSmartStartStopEnabledChange}
-                  loading={loadingStates.wifiSmartStartStop}
-                  size="sm"
-                />
-              </div>
-            </SettingRow>
-
-            <AnimatePresence>
-              {!!(config as any).wifiSmartStartStopEnabled && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="overflow-hidden"
-                >
-                  <CompatibilitySubmenu>
-                    <CompatibilitySubmenuRow
-                      icon={<Clock3 className="h-4 w-4 text-primary" />}
-                      title={t('controlPanel.device.wifiSmartStartStopStandbySpeed')}
-                      description={t('controlPanel.device.wifiSmartStartStopStandbySpeedDescription')}
-                    >
-                      <div className="w-full md:w-32">
-                        <Select
-                          value={normalizeWiFiSmartStartStopStandbySpeed((config as any).wifiSmartStartStopStandbySpeed)}
-                          onChange={handleWiFiSmartStartStopStandbySpeedChange}
-                          options={wifiSmartStartStopStandbySpeedOptions}
-                          disabled={loadingStates.wifiSmartStartStopStandbySpeed}
-                          size="sm"
-                          className="w-full"
-                        />
-                      </div>
-                    </CompatibilitySubmenuRow>
-                  </CompatibilitySubmenu>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </>
-          )}
-
-          {currentDeviceSupportsSmartStartStop && (
-          <SettingRow
-            icon={<Zap className="h-4 w-4" />}
-            title={t('controlPanel.device.smartStartStopTitle')}
-            description={t('controlPanel.device.smartStartStopDescription')}
-            disabled={!isConnected}
-          >
-            <div className="w-40">
-              <Select
-                value={config.smartStartStop || 'off'}
-                onChange={(v: string | number) => handleSmartStartStopChange(v as string)}
-                options={smartStartStopOptions}
-                disabled={!isConnected}
-                size="sm"
-              />
-            </div>
-          </SettingRow>
-          )}
-        </Section>}
-
         {false && legionFnQSupported && <Section title={t('controlPanel.legionFnQ.sectionTitle')} icon={Zap}>
           <SettingRow
             icon={<Zap className={clsx('h-4 w-4', legionFnQConfig.enabled ? 'text-primary' : '')} />}
@@ -2624,7 +2104,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                     icon={<Search className="h-4 w-4 text-primary" />}
                     title={t('controlPanel.system.deviceConnection.wifiScanTitle')}
                     description={t('controlPanel.system.deviceConnection.wifiScanDescription')}
-                    tip={loadingStates.wifiScan
+                    tip={wifiDiscovery.isScanning
                       ? t('controlPanel.system.deviceConnection.wifiScanElapsed', { elapsed: wifiScanElapsedText })
                       : wifiScanResult
                       ? t('controlPanel.system.deviceConnection.wifiScanSummary', {
@@ -2635,7 +2115,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                       : undefined}
                     below={
                       <div className="space-y-2">
-                        {loadingStates.wifiScan && (
+                        {wifiDiscovery.isScanning && (
                           <div className="overflow-hidden rounded-md border border-primary/25 bg-primary/5 px-3 py-2">
                             <div className="flex min-w-0 items-center justify-between gap-3 text-xs text-primary">
                               <span className="flex min-w-0 items-center gap-2">
@@ -2665,7 +2145,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                                   variant="secondary"
                                   size="sm"
                                   icon={wifiScanPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
-                                  onClick={() => void handleWiFiScanPauseToggle()}
+                                  onClick={() => void wifiDiscovery.pauseToggle()}
                                   disabled={wifiScanCanceling}
                                 >
                                   {t(wifiScanPaused
@@ -2676,7 +2156,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                                   variant="danger"
                                   size="sm"
                                   icon={<X className="h-3.5 w-3.5" />}
-                                  onClick={() => void handleWiFiScanCancel()}
+                                  onClick={() => void wifiDiscovery.cancel()}
                                   loading={wifiScanCanceling}
                                 >
                                   {t('controlPanel.system.deviceConnection.wifiScanCancelAction')}
@@ -2736,14 +2216,14 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                             ))}
                           </div>
                         )}
-                        {!loadingStates.wifiScan && !wifiScanError && wifiNormalScanAttempted && wifiScannedDevices.length === 0 && (
+                        {!wifiDiscovery.isScanning && !wifiScanError && wifiNormalScanAttempted && wifiScannedDevices.length === 0 && (
                           <EmptyConnectionState
                             action={showWiFiDeepScanAction ? (
                               <Button
                                 variant="secondary"
                                 size="sm"
                                 icon={<RotateCw className="h-4 w-4" />}
-                                onClick={() => void handleWiFiScan('deep')}
+                                onClick={() => void wifiDiscovery.scan('deep')}
                                 disabled={!wifiProfile}
                               >
                                 {t('controlPanel.system.deviceConnection.wifiDeepScanAction')}
@@ -2761,9 +2241,9 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                           variant="secondary"
                           size="sm"
                           icon={<Search className="h-4 w-4" />}
-                          onClick={() => void handleWiFiScan('normal')}
-                          loading={loadingStates.wifiScan && wifiScanMode === 'normal'}
-                          disabled={!wifiProfile || loadingStates.wifiScan}
+                          onClick={() => void wifiDiscovery.scan('normal')}
+                          loading={wifiDiscovery.isScanning && wifiScanMode === 'normal'}
+                          disabled={!wifiProfile || wifiDiscovery.isScanning}
                         >
                           {t('controlPanel.system.deviceConnection.wifiScanAction')}
                         </Button>

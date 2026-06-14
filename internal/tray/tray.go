@@ -74,6 +74,7 @@ type Status struct {
 	CPUPowerWatts        float64
 	GPUPowerWatts        float64
 	CurrentRPM           uint16
+	SpeedUnit            string
 	AutoControlState     bool
 	ActiveCurveProfileID string
 	CurveProfiles        []CurveOption
@@ -326,7 +327,7 @@ func (m *Manager) createMenu() (items *MenuItems, err error) {
 	items.GPUPower = systray.AddMenuItem("GPU 功耗：-- W", "显示当前 GPU 功耗")
 	items.GPUPower.Disable()
 
-	items.FanSpeed = systray.AddMenuItem("风扇速度：无数据", "显示当前风扇速度百分比")
+	items.FanSpeed = systray.AddMenuItem("风扇速度：无数据", "显示当前风扇速度")
 	items.FanSpeed.Disable()
 	items.CurveSelect = systray.AddMenuItem("温控曲线", "切换温控曲线")
 
@@ -443,6 +444,17 @@ func formatPowerWatts(watts float64) string {
 	return fmt.Sprintf("%.0f W", math.Round(watts))
 }
 
+func formatFanSpeedForTray(speed uint16, unit string) string {
+	if speed == 0 {
+		return ""
+	}
+	unit = types.NormalizeFanSpeedUnit(unit)
+	if types.IsRPMSpeedUnit(unit) {
+		return fmt.Sprintf("%d %s", speed, types.FanSpeedDisplaySuffix(unit))
+	}
+	return fmt.Sprintf("%d%s", speed, types.FanSpeedDisplaySuffix(unit))
+}
+
 func formatTemperatureAndPower(label string, temp int, watts float64) string {
 	tempText := "--°C"
 	if temp > 0 {
@@ -506,8 +518,9 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 					m.menuItems.GPUPower.SetTitle(fmt.Sprintf("GPU 功耗：%s", formatPowerWatts(status.GPUPowerWatts)))
 				}
 
-				if status.CurrentRPM > 0 {
-					m.menuItems.FanSpeed.SetTitle(fmt.Sprintf("风扇速度：%d%%", status.CurrentRPM))
+				fanSpeedText := formatFanSpeedForTray(status.CurrentRPM, status.SpeedUnit)
+				if fanSpeedText != "" {
+					m.menuItems.FanSpeed.SetTitle(fmt.Sprintf("风扇速度：%s", fanSpeedText))
 				} else {
 					m.menuItems.FanSpeed.SetTitle("风扇速度：无数据")
 				}
@@ -528,14 +541,14 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 					gpuLine := formatTemperatureAndPower("GPU", status.GPUTemp, status.GPUPowerWatts)
 					if status.AutoControlState {
 						tooltipText := fmt.Sprintf("%s - 智能温控\n%s\n%s", appmeta.AppName, cpuLine, gpuLine)
-						if status.CurrentRPM > 0 {
-							tooltipText += fmt.Sprintf("\n风扇速度: %d%%", status.CurrentRPM)
+						if fanSpeedText != "" {
+							tooltipText += fmt.Sprintf("\n风扇速度: %s", fanSpeedText)
 						}
 						systray.SetTooltip(tooltipText)
 					} else {
 						tooltipText := fmt.Sprintf("%s - 手动模式\n%s\n%s", appmeta.AppName, cpuLine, gpuLine)
-						if status.CurrentRPM > 0 {
-							tooltipText += fmt.Sprintf("\n风扇速度: %d%%", status.CurrentRPM)
+						if fanSpeedText != "" {
+							tooltipText += fmt.Sprintf("\n风扇速度: %s", fanSpeedText)
 						}
 						systray.SetTooltip(tooltipText)
 					}

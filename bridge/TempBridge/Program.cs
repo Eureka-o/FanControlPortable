@@ -162,15 +162,20 @@ namespace FanControl.TempBridge
 
         static void Main(string[] args)
         {
+            bool diagnosticMode = ShouldRunDiagnosticMode(args);
+            bool pipeMode = ShouldRunPipeMode(args);
             try
             {
-                if (ShouldRunDiagnosticMode(args))
+                if (diagnosticMode)
                 {
                     RunConsoleDiagnostics();
                     return;
                 }
-
-                // 初始化硬件监控
+                if (!pipeMode)
+                {
+                    RunStdioMode();
+                    return;
+                }
                 using (var instanceHandle = AcquirePipeInstance())
                 {
                     if (instanceHandle == null)
@@ -179,23 +184,18 @@ namespace FanControl.TempBridge
                         Console.Out.Flush();
                         return;
                     }
-
                     InitializeHardwareMonitor();
-
-                    // 输出管道名称，让主程序知道如何连接
                     Console.WriteLine($"PIPE:{PipeName}|OWNER");
                     Console.Out.Flush();
-
-                    // 启动管道服务器
                     StartPipeServer();
                 }
             }
             catch (Exception ex)
             {
-                if (ShouldRunDiagnosticMode(args))
+                if (diagnosticMode)
                 {
-                    Console.Error.WriteLine("FanControl TempBridge 启动失败");
-                    Console.Error.WriteLine($"错误: {ex.Message}");
+                    Console.Error.WriteLine("FanControl TempBridge startup failed");
+                    Console.Error.WriteLine($"Error: {ex.Message}");
                 }
                 else
                 {
@@ -213,7 +213,35 @@ namespace FanControl.TempBridge
                 }
             }
         }
-
+        static void RunStdioMode()
+        {
+            var initStopwatch = Stopwatch.StartNew();
+            LogInitProgress("stdio mode starting; initializing hardware monitor");
+            InitializeHardwareMonitor();
+            LogInitProgress(string.Format("hardware monitor initialized in {0} ms", initStopwatch.ElapsedMilliseconds));
+            using (var stdin = Console.OpenStandardInput())
+            using (var stdout = Console.OpenStandardOutput())
+            using (var reader = new StreamReader(stdin))
+            using (var writer = new StreamWriter(stdout) { AutoFlush = true })
+            {
+                writer.WriteLine("READY:STDIO");
+                ServeCommandLoop(reader, writer);
+            }
+        }
+        /// <summary>
+        /// Writes initialization progress to stderr with an "[init]" prefix for backend diagnostics.
+        /// </summary>
+        static void LogInitProgress(string message)
+        {
+            try
+            {
+                Console.Error.WriteLine("[init] " + message);
+                Console.Error.Flush();
+            }
+            catch
+            {
+            }
+        }
         static IDisposable AcquirePipeInstance()
         {
             bool createdNew;
@@ -239,19 +267,20 @@ namespace FanControl.TempBridge
 
         static bool ShouldRunDiagnosticMode(string[] args)
         {
-            if (HasArg(args, "--pipe"))
+            if (ShouldRunPipeMode(args))
             {
                 return false;
             }
-
             if (HasArg(args, "--diag") || HasArg(args, "--diagnose"))
             {
                 return true;
             }
-
             return Environment.UserInteractive && !Console.IsOutputRedirected;
         }
-
+        static bool ShouldRunPipeMode(string[] args)
+        {
+            return HasArg(args, "--pipe");
+        }
         static bool HasArg(string[] args, string expected)
         {
             if (args == null || args.Length == 0)
@@ -367,11 +396,15 @@ namespace FanControl.TempBridge
 
         static void InitializeHardwareMonitor()
         {
+            var pawnIoStopwatch = Stopwatch.StartNew();
             string pawnIoMessage = EnsurePawnIoReady();
+            LogInitProgress(string.Format("PawnIO check completed in {0} ms{1}", pawnIoStopwatch.ElapsedMilliseconds,
+                string.IsNullOrWhiteSpace(pawnIoMessage) ? string.Empty : ": " + pawnIoMessage));
 
             Exception lastException = null;
             for (int attempt = 1; attempt <= MaxInitRetries; attempt++)
             {
+                var attemptStopwatch = Stopwatch.StartNew();
                 try
                 {
                     if (computer != null)
@@ -379,6 +412,8 @@ namespace FanControl.TempBridge
                         try { computer.Close(); } catch { }
                         computer = null;
                     }
+
+                    LogInitProgress(string.Format("LibreHardwareMonitor init attempt {0}/{1}", attempt, MaxInitRetries));
 
                     computer = new Computer
                     {
@@ -399,11 +434,16 @@ namespace FanControl.TempBridge
                     {
                         consecutiveFailures = 0;
                         lastHardwareMonitorError = string.Empty;
+                        LogInitProgress(string.Format("temperature sensors found on attempt {0} in {1} ms",
+                            attempt, attemptStopwatch.ElapsedMilliseconds));
                         TrimWorkingSetIfIdle(true);
                         return;
                     }
 
                     lastException = new InvalidOperationException("LibreHardwareMonitor 未发现有效温度传感器");
+
+                    LogInitProgress(string.Format("attempt {0} found no valid temperature sensors in {1} ms",
+                        attempt, attemptStopwatch.ElapsedMilliseconds));
 
                     // No sensors found - PawnIO may not be fully ready
                     if (attempt < MaxInitRetries)
@@ -416,6 +456,8 @@ namespace FanControl.TempBridge
                 catch (Exception ex)
                 {
                     lastException = ex;
+                    LogInitProgress(string.Format("attempt {0} failed in {1} ms: {2}",
+                        attempt, attemptStopwatch.ElapsedMilliseconds, ex.Message));
                     if (attempt < MaxInitRetries)
                     {
                         try { computer?.Close(); } catch { }
@@ -428,6 +470,7 @@ namespace FanControl.TempBridge
             // If we get here, all retries exhausted but computer may still be open
             // (just without working sensors). Keep it - it might recover on next update.
             lastHardwareMonitorError = BuildHardwareMonitorError(lastException, pawnIoMessage);
+            LogInitProgress("hardware monitor initialized without valid sensors; fallback will be used: " + lastHardwareMonitorError);
             TrimWorkingSetIfIdle(true);
         }
 
@@ -568,47 +611,11 @@ namespace FanControl.TempBridge
                 {
                     using (var pipeServer = new NamedPipeServerStream(PipeName, PipeDirection.InOut))
                     {
-                        // 等待客户端连接
                         pipeServer.WaitForConnection();
-
                         using (var reader = new StreamReader(pipeServer))
-                        using (var writer = new StreamWriter(pipeServer))
+                        using (var writer = new StreamWriter(pipeServer) { AutoFlush = true })
                         {
-                            while (pipeServer.IsConnected && running)
-                            {
-                                try
-                                {
-                                    string commandJson = reader.ReadLine();
-                                    if (string.IsNullOrEmpty(commandJson))
-                                        break;
-
-                                    var command = JsonConvert.DeserializeObject<Command>(commandJson);
-                                    var response = ProcessCommand(command);
-
-                                    string responseJson = JsonConvert.SerializeObject(response);
-                                    writer.WriteLine(responseJson);
-                                    writer.Flush();
-                                    TrimWorkingSetIfIdle();
-
-                                    if (command.Type == "Exit")
-                                    {
-                                        running = false;
-                                        break;
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    var errorResponse = new Response
-                                    {
-                                        Success = false,
-                                        Error = ex.Message
-                                    };
-                                    string errorJson = JsonConvert.SerializeObject(errorResponse);
-                                    writer.WriteLine(errorJson);
-                                    writer.Flush();
-                                    break;
-                                }
-                            }
+                            ServeCommandLoop(reader, writer);
                         }
                     }
                 }
@@ -616,13 +623,53 @@ namespace FanControl.TempBridge
                 {
                     if (running)
                     {
-                        Console.WriteLine($"管道错误: {ex.Message}");
-                        Thread.Sleep(1000); // 等待一秒后重试
+                        Console.WriteLine($"Pipe error: {ex.Message}");
+                        Thread.Sleep(1000);
                     }
                 }
             }
         }
-
+        static void ServeCommandLoop(TextReader reader, TextWriter writer)
+        {
+            while (running)
+            {
+                try
+                {
+                    string commandJson = reader.ReadLine();
+                    if (commandJson == null)
+                    {
+                        break;
+                    }
+                    if (string.IsNullOrWhiteSpace(commandJson))
+                    {
+                        continue;
+                    }
+                    var command = JsonConvert.DeserializeObject<Command>(commandJson) ?? new Command();
+                    var response = ProcessCommand(command);
+                    string responseJson = JsonConvert.SerializeObject(response);
+                    writer.WriteLine(responseJson);
+                    writer.Flush();
+                    TrimWorkingSetIfIdle();
+                    if (string.Equals(command.Type, "Exit", StringComparison.Ordinal))
+                    {
+                        running = false;
+                        break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    var errorResponse = new Response
+                    {
+                        Success = false,
+                        Error = ex.Message
+                    };
+                    string errorJson = JsonConvert.SerializeObject(errorResponse);
+                    writer.WriteLine(errorJson);
+                    writer.Flush();
+                    break;
+                }
+            }
+        }
         static Response ProcessCommand(Command command)
         {
             try

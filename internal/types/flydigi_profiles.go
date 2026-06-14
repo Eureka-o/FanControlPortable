@@ -89,6 +89,23 @@ func FlyDigiBuiltInProfiles() []DeviceProfile {
 	}
 }
 
+func FlyDigiProfileByID(profileID string) (DeviceProfile, bool) {
+	switch strings.TrimSpace(profileID) {
+	case FlyDigiBS1ProfileID:
+		return FlyDigiBS1Profile(), true
+	case FlyDigiBS2ProfileID:
+		return FlyDigiBS2Profile(), true
+	case FlyDigiBS2PROProfileID:
+		return FlyDigiBS2PROProfile(), true
+	case FlyDigiBS3ProfileID:
+		return FlyDigiBS3Profile(), true
+	case FlyDigiBS3PROProfileID:
+		return FlyDigiBS3PROProfile(), true
+	default:
+		return DeviceProfile{}, false
+	}
+}
+
 func BuiltInDeviceProfiles(endpoint string) []DeviceProfile {
 	return []DeviceProfile{DefaultWiFiPercentProfile(endpoint)}
 }
@@ -147,6 +164,10 @@ func FlyDigiProfileIDForHIDProductID(productID uint16) string {
 	default:
 		return ""
 	}
+}
+
+func FlyDigiProfileForHIDProductID(productID uint16) (DeviceProfile, bool) {
+	return FlyDigiProfileByID(FlyDigiProfileIDForHIDProductID(productID))
 }
 
 func flyDigiHIDProfile(id, model string, productID uint16, referenceCompatible bool) DeviceProfile {

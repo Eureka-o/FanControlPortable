@@ -14,6 +14,10 @@ export function ConnectDevice() {
   return window['go']['main']['App']['ConnectDevice']();
 }
 
+export function ConnectNativeDevice(arg1) {
+  return window['go']['main']['App']['ConnectNativeDevice'](arg1);
+}
+
 export function ControlWiFiScan(arg1) {
   return window['go']['main']['App']['ControlWiFiScan'](arg1);
 }
@@ -36,6 +40,10 @@ export function ExportDeviceProfiles() {
 
 export function ExportDeviceProfilesToFile() {
   return window['go']['main']['App']['ExportDeviceProfilesToFile']();
+}
+
+export function ExportDiagnosticsToFile() {
+  return window['go']['main']['App']['ExportDiagnosticsToFile']();
 }
 
 export function ExportFanCurveProfiles() {

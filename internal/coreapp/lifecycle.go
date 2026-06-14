@@ -45,7 +45,14 @@ func (a *CoreApp) Start() error {
 		}
 	}
 	unit := types.DeviceProfileSpeedUnit(&cfg)
+	changedCurveState := syncDeviceFanCurveStateForStartup(&cfg)
 	if curveprofiles.NormalizeConfigForUnit(&cfg, unit) {
+		changedCurveState = true
+	}
+	if storeActiveDeviceFanCurveState(&cfg) {
+		changedCurveState = true
+	}
+	if changedCurveState {
 		a.configManager.Set(cfg)
 		if err := a.configManager.Save(); err != nil {
 			a.logError("保存温控曲线方案默认配置失败: %v", err)
@@ -251,9 +258,14 @@ func (a *CoreApp) initSystemTray() {
 			cfg := a.configManager.Get()
 			fanData := a.deviceManager.GetCurrentFanData()
 			var currentRPM uint16
+			speedUnit := types.DeviceProfileSpeedUnit(&cfg)
 			if fanData != nil {
 				currentRPM = fanData.CurrentRPM
+				if strings.TrimSpace(fanData.SpeedUnit) != "" {
+					speedUnit = fanData.SpeedUnit
+				}
 			}
+			speedUnit = types.NormalizeFanSpeedUnit(speedUnit)
 			curveOptions := make([]tray.CurveOption, 0, len(cfg.FanCurveProfiles))
 			for _, p := range cfg.FanCurveProfiles {
 				if p.ID == "" {
@@ -273,6 +285,7 @@ func (a *CoreApp) initSystemTray() {
 				CPUPowerWatts:        a.currentTemp.CPUPowerWatts,
 				GPUPowerWatts:        a.currentTemp.GPUPowerWatts,
 				CurrentRPM:           currentRPM,
+				SpeedUnit:            speedUnit,
 				AutoControlState:     cfg.AutoControl,
 				ActiveCurveProfileID: cfg.ActiveFanCurveProfileID,
 				CurveProfiles:        curveOptions,

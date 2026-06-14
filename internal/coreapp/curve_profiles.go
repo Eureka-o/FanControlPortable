@@ -22,6 +22,7 @@ func (a *CoreApp) applyCurveProfilesConfig(cfg types.AppConfig) error {
 	unit := types.DeviceProfileSpeedUnit(&cfg)
 	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, unit)
 	syncSmartControlOffsetsForActiveProfile(&cfg)
+	storeActiveDeviceFanCurveState(&cfg)
 	if err := a.configManager.Update(cfg); err != nil {
 		return err
 	}
@@ -36,7 +37,14 @@ func (a *CoreApp) GetFanCurveProfiles() types.FanCurveProfilesPayload {
 	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
+	changed := loadActiveDeviceFanCurveState(&cfg, true)
 	if curveprofiles.NormalizeConfigForUnit(&cfg, types.DeviceProfileSpeedUnit(&cfg)) {
+		changed = true
+	}
+	if storeActiveDeviceFanCurveState(&cfg) {
+		changed = true
+	}
+	if changed {
 		a.configManager.Set(cfg)
 		if err := a.configManager.Save(); err != nil {
 			a.logError("保存温控曲线方案默认配置失败: %v", err)

@@ -59,6 +59,12 @@
     },
     "bridgeWarning": {
       "closeAria": "警告を閉じる"
+    },
+    "diagnostics": {
+      "export": "診断ログを出力",
+      "exporting": "出力中...",
+      "exportSuccess": "診断ログを出力しました",
+      "exportFailed": "診断ログの出力に失敗しました: {{error}}"
     }
   },
   "advancedDevices": {
@@ -87,7 +93,8 @@
       "refreshPorts": "ポート再取得",
       "scanBle": "BLE スキャン",
       "probeGatt": "GATT 探索",
-      "applyGatt": "GATT 候補を適用"
+      "applyGatt": "GATT 候補を適用",
+      "addCustomCommand": "コマンド追加"
     },
     "sections": {
       "supported": "デバイステンプレート",
@@ -113,7 +120,8 @@
       "builtin": "内蔵デバイス",
       "template": "テンプレート",
       "user": "ユーザー",
-      "working": "デバイス変更を適用中..."
+      "working": "デバイス変更を適用中...",
+      "unnamedDevice": "未命名デバイス"
     },
     "capabilities": {
       "read": "状態取得",
@@ -127,6 +135,15 @@
       "smartStartStop": "スマート起停",
       "screen": "画面",
       "none": "機能フラグなし"
+    },
+    "groups": {
+      "basicInfo": "基本デバイス情報",
+      "deviceFunctions": "デバイス機能ホワイトリスト",
+      "wifiConnection": "WiFi 接続設定",
+      "bleConnection": "BLE スキャンと GATT 設定",
+      "serialConnection": "仮想 COM 設定",
+      "protocol": "プロトコルと送信テンプレート",
+      "customCommands": "カスタム制御コマンド"
     },
     "transport": {
       "wifi": "WiFi",
@@ -176,20 +193,46 @@
       "parserType": "解析タイプ",
       "parserExpression": "解析式",
       "deviceFunctions": "デバイス機能ホワイトリスト",
+      "featureCommand": "機能コマンドテンプレート",
+      "customCommandType": "コマンドタイプ",
+      "customCommandTemplate": "コマンドテンプレート",
       "rawCommand": "Raw コマンド",
       "waitMs": "待機時間 (ms)"
     },
     "hints": {
+      "basicInfo": "保存するデバイスの識別情報、接続種別、速度単位、速度範囲を定義します。通常の設定画面はこの情報に従ってデバイスを使います。",
+      "deviceFunctions": "このデバイスとプロトコルで検証済みの機能だけを有効にしてください。設定画面の表示とバックエンド呼び出しはこのフラグで制限されます。",
+      "wifiConnection": "デバイス IP と HTTP エンドポイントをここに保存します。通常の設定画面や今後の検索機能は IP 接続属性だけを更新します。",
+      "bleConnection": "スキャン/探索でアドレスや UUID を補助入力できますが、DIY 主控向けに最終プロトコル項目は手動編集できます。",
+      "serialConnection": "ポート、ボーレート、区切り文字、シリアルフレーム形式はここに保存します。設定画面は保存済みデバイスを選ぶだけです。",
+      "protocol": "FanControl がこのデバイスへ速度命令を送る方法と、状態応答を解析する方法を定義します。",
       "tickScale": "10 にすると 0.1% の学習精度になります。",
       "serialPorts": "検出された COM ポートを選ぶか、仮想ポート名を手動で入力します。",
       "bleScan": "スキャンは手動実行で、時間制限があります。FanControl は広告名とサービス UUID を優先して使います。書き込み/通知特性は手動入力できます。",
-      "bleAddress": "任意です。スキャン結果から入力され、直接接続や GATT 探索に使います。"
+      "bleAddress": "任意です。スキャン結果から入力され、直接接続や GATT 探索に使います。",
+      "featureCommand": "この機能を有効にした場合、対応するコマンドテンプレートを入力できます。変数構文は送信テンプレートと同じです。",
+      "customCommands": "検証済みの高度な制御コマンドを追加します。コマンドタイプからデバイス機能ホワイトリストを自動生成します。今回は通電時起動とスマート起停のみを表示します。",
+      "customCommandTemplate": "変数構文は上の送信テンプレートと同じです。空のコマンドは保存されません。"
     },
     "placeholders": {
       "name": "自作クーラー",
       "serialPortSelect": "検出ポートを選択",
       "serialPortManual": "手動入力例: COM3",
-      "serialPortCustom": "{{port}}（手動）"
+      "serialPortCustom": "{{port}}（手動）",
+      "featureCommand": "例: 5A A5 ... または JSON テンプレート",
+      "customCommandTemplate": "例: 5A A5 ... または JSON テンプレート"
+    },
+    "customCommands": {
+      "empty": "高度な制御コマンドはまだありません。追加すると対応する機能がデバイスホワイトリストに入ります。",
+      "itemTitle": "制御コマンド {{index}}"
+    },
+    "customCommandTypes": {
+      "powerOnStartOn": "通電時起動: オン",
+      "powerOnStartOff": "通電時起動: オフ",
+      "smartStartStopImmediate": "スマート起停: 即時",
+      "smartStartStopDelayed": "スマート起停: 遅延",
+      "smartStartStopOff": "スマート起停: オフ",
+      "reserved": "保持タイプ: {{type}}"
     },
     "dialog": {
       "addTitle": "デバイス追加",
@@ -683,8 +726,8 @@
       "cpuGpuTemperature": "CPU {{cpu}}°C · GPU {{gpu}}°C",
       "gearValue": "ギア {{gear}}",
       "workModes": {
-        "manual": "ギア動作モード",
-        "auto": "自動モード(リアルタイム速度)"
+        "manual": "手動モード",
+        "auto": "自動モード"
       }
     },
     "light": {
@@ -754,18 +797,29 @@
     },
     "device": {
       "sectionTitle": "デバイス設定",
+      "groups": {
+        "basic": "基本機能",
+        "basicDescription": "現在のデバイス機能ホワイトリストに基づいて表示される実行時スイッチです。",
+        "smartStartStop": "起停ポリシー",
+        "smartStartStopDescription": "現在のデバイス機能に応じて、本体の起停または WiFi Beta の待機動作を表示します。",
+        "lighting": "ライト制御",
+        "lightingDescription": "現在のデバイスがライト機能を明示的にサポートする場合のみ表示します。"
+      },
       "gearLightTitle": "ギアランプ",
       "gearLightDescription": "デバイス上のギアインジケーターライトを制御します",
       "powerOnStartTitle": "スタートアップ",
       "powerOnStartDescription": "デバイスに電源を入れると自動的に動作します",
-      "smartStartStopTitle": "スマート起動/停止",
+      "screenTitle": "スクリーン",
+      "screenDescription": "このデバイスはスクリーン機能を持つ設定です。実行時のスクリーン制御は検証済みホワイトリスト後に開放します。",
+      "smartStartStopTitle": "スマート起停",
       "smartStartStopDescription": "システム終了後にクーラーを停止するタイミングを選べます",
-      "wifiSmartStartStopTitle": "スマート起動/停止",
+      "wifiSmartStartStopTitle": "スマート起停",
       "wifiSmartStartStopDescription": "終了、スリープ、休止状態の前に WiFi デバイスを待機速度へ切り替えます",
       "wifiSmartStartStopTip": "Beta 機能です。シャットダウン時にネットワークが利用可能な場合のみ動作し、将来のファームウェア側ハートビートでより安定します。",
       "wifiSmartStartStopStandbySpeed": "待機時の速度",
       "wifiSmartStartStopStandbySpeedDescription": "終了、スリープ、休止状態の前にこの速度を送信します。1% を推奨します。",
-      "betaBadge": "Beta"
+      "betaBadge": "Beta",
+      "contextRefreshing": "{{device}} のデバイス設定を照合しています..."
     },
     "legionFnQ": {
       "sectionTitle": "Legion Fn+Q 連携",
@@ -1007,7 +1061,9 @@
     },
     "alerts": {
       "autoStartFailed": "スタートアップの設定に失敗しました: {{error}}",
-      "lightStripFailed": "ライティングの設定に失敗しました: {{error}}"
+      "lightStripFailed": "ライティングの設定に失敗しました: {{error}}",
+      "deviceCommandFailed": "デバイス指令の送信に失敗しました。ログを確認するか診断情報をエクスポートしてください。",
+      "deviceCommandFailedWithError": "デバイス指令の送信に失敗しました: {{error}}"
     },
     "options": {
       "smartStartStop": {

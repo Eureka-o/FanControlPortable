@@ -43,6 +43,21 @@ func (a *App) AutoScanDevices() map[string]any {
 }
 
 // DisconnectDevice 断开设备连接
+func (a *App) ConnectNativeDevice(profileID string) bool {
+	resp, err := a.sendRequest(ipc.ReqConnectNativeDevice, ipc.ConnectNativeDeviceParams{ProfileID: profileID})
+	if err != nil {
+		guiLogger.Errorf("原生设备连接请求失败: %v", err)
+		return false
+	}
+	if !resp.Success {
+		guiLogger.Errorf("原生设备连接失败: %s", resp.Error)
+		return false
+	}
+	var success bool
+	json.Unmarshal(resp.Data, &success)
+	return success
+}
+
 func (a *App) ScanWiFiDevices(mode string) types.WiFiDiscoveryResult {
 	timeout := 12 * time.Second
 	if mode == types.WiFiDiscoveryModeDeep {

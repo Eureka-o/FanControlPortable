@@ -23,6 +23,16 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 	case ipc.ReqAutoScanDevices:
 		return a.dataResponse(a.AutoScanDevices())
 
+	case ipc.ReqConnectNativeDevice:
+		var params ipc.ConnectNativeDeviceParams
+		if len(req.Data) > 0 {
+			if err := json.Unmarshal(req.Data, &params); err != nil {
+				return a.errorResponse("解析原生设备连接参数失败: " + err.Error())
+			}
+		}
+		success := a.ConnectNativeDevice(params.ProfileID)
+		return a.successResponse(success)
+
 	case ipc.ReqScanWiFiDevices:
 		var params ipc.ScanWiFiDevicesParams
 		if err := json.Unmarshal(req.Data, &params); err != nil {
@@ -400,6 +410,13 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 	case ipc.ReqGetDebugInfo:
 		info := a.GetDebugInfo()
 		return a.dataResponse(info)
+
+	case ipc.ReqExportDiagnostics:
+		bundle, err := a.ExportDiagnostics()
+		if err != nil {
+			return a.errorResponse(err.Error())
+		}
+		return a.dataResponse(bundle)
 
 	case ipc.ReqSetDebugMode:
 		var params ipc.SetBoolParams

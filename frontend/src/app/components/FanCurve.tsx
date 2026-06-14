@@ -133,8 +133,11 @@ function formatPowerValue(value: number) {
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
-const CPU_POWER_STROKE = 'color-mix(in srgb, #0891b2 88%, var(--foreground) 12%)';
-const GPU_POWER_STROKE = 'color-mix(in srgb, #a855f7 84%, var(--foreground) 16%)';
+const CPU_TEMP_STROKE = 'var(--chart-cpu-temperature)';
+const GPU_TEMP_STROKE = 'var(--chart-gpu-temperature)';
+const FAN_SPEED_STROKE = 'var(--chart-fan-speed)';
+const CPU_POWER_STROKE = 'var(--chart-cpu-power)';
+const GPU_POWER_STROKE = 'var(--chart-gpu-power)';
 
 function normalizeCurvePoint(point: types.FanCurvePoint, minSpeed: number, maxSpeed: number): types.FanCurvePoint {
   return { temperature: Math.round(point.temperature), rpm: normalizeSpeedValue(point.rpm, minSpeed, maxSpeed) };
@@ -438,6 +441,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
 
   const activeProfile = useMemo(() => curveProfiles.find((p) => p.id === activeProfileId) ?? null, [curveProfiles, activeProfileId]);
   const externalActiveProfileId = ((config as any).activeFanCurveProfileId || '') as string;
+  const externalDeviceCurveKey = `${((config as any).deviceTransport || '') as string}:${((config as any).activeDeviceProfileId || '') as string}`;
 
   const temperatureRange = useMemo(() => ({
     min: FAN_CURVE_MIN_TEMP,
@@ -700,9 +704,9 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
   const historyHasPower = historyChartStats.hasPower;
 
   const historySeriesMeta = useMemo(() => ([
-    { key: 'cpu' as const, label: t('fanCurve.history.series.cpu'), color: '#2f6df6' },
-    { key: 'gpu' as const, label: t('fanCurve.history.series.gpu'), color: '#f97316' },
-    { key: 'fan' as const, label: t('fanCurve.history.series.fan'), color: '#10b981' },
+    { key: 'cpu' as const, label: t('fanCurve.history.series.cpu'), color: CPU_TEMP_STROKE },
+    { key: 'gpu' as const, label: t('fanCurve.history.series.gpu'), color: GPU_TEMP_STROKE },
+    { key: 'fan' as const, label: t('fanCurve.history.series.fan'), color: FAN_SPEED_STROKE },
     { key: 'cpuPower' as const, label: t('fanCurve.history.series.cpuPower'), color: CPU_POWER_STROKE },
     { key: 'gpuPower' as const, label: t('fanCurve.history.series.gpuPower'), color: GPU_POWER_STROKE },
   ]), [t, locale]);
@@ -732,6 +736,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
       loadCurveProfiles().catch(() => {});
     }
   }, [activeProfileId, externalActiveProfileId, loadCurveProfiles]);
+
+  useEffect(() => {
+    loadCurveProfiles().catch(() => {});
+  }, [externalDeviceCurveKey, loadCurveProfiles]);
 
   /* ── Chart data ── */
 
@@ -1418,7 +1426,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="text-sm font-medium text-foreground">{t('fanCurve.prediction.title')}</div>
-                  {!smartControl.temperatureRisePrediction && <Badge variant="info">{t('fanCurve.learning.paused')}</Badge>}
                 </div>
                 <div className="text-xs leading-relaxed text-muted-foreground">{t('fanCurve.prediction.description')}</div>
               </div>
@@ -1448,7 +1455,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="text-sm font-medium text-foreground">{t('fanCurve.learning.title')}</div>
-                  {!smartControl.learning && <Badge variant="info">{t('fanCurve.learning.paused')}</Badge>}
                 </div>
                 <div className="text-xs leading-relaxed text-muted-foreground">根据温度变化微调当前设备速度曲线。</div>
               </div>
@@ -1671,9 +1677,9 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                           labelStyle={{ color: 'var(--chart-tooltip-text)', fontWeight: 600 }}
                           itemStyle={{ color: 'var(--chart-tooltip-text)' }}
                         />
-                        {historySeriesVisibility.cpu && <Line yAxisId="temp" type="monotone" dataKey="cpuTemp" stroke="#2f6df6" strokeWidth={2.3} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
-                        {historySeriesVisibility.gpu && <Line yAxisId="temp" type="monotone" dataKey="gpuTemp" stroke="#f97316" strokeWidth={2.3} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
-                        {historySeriesVisibility.fan && <Line yAxisId="fan" type="monotone" dataKey="fanRpm" stroke="#10b981" strokeWidth={2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
+                        {historySeriesVisibility.cpu && <Line yAxisId="temp" type="monotone" dataKey="cpuTemp" stroke={CPU_TEMP_STROKE} strokeWidth={2.3} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
+                        {historySeriesVisibility.gpu && <Line yAxisId="temp" type="monotone" dataKey="gpuTemp" stroke={GPU_TEMP_STROKE} strokeWidth={2.3} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
+                        {historySeriesVisibility.fan && <Line yAxisId="fan" type="monotone" dataKey="fanRpm" stroke={FAN_SPEED_STROKE} strokeWidth={2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
                         {historyHasPower && historySeriesVisibility.cpuPower && <Line yAxisId="power" type="monotone" dataKey="cpuPowerWatts" stroke={CPU_POWER_STROKE} strokeWidth={2.2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
                         {historyHasPower && historySeriesVisibility.gpuPower && <Line yAxisId="power" type="monotone" dataKey="gpuPowerWatts" stroke={GPU_POWER_STROKE} strokeWidth={2.2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
                       </LineChart>

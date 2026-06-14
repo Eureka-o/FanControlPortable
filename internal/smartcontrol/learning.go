@@ -27,6 +27,13 @@ const (
 	offsetSmoothPullLimit      = 3
 	offsetSmoothSelfWeight     = 0.7
 	offsetSmoothNeighborWeight = 0.15
+	offsetSmoothRadius         = 2
+	eqConsistencyBand          = 3
+
+	stablePowerAbsBandWatts  = 15.0
+	stablePowerRelBand       = 0.15
+	powerHistoryAbsBandWatts = 25.0
+	powerHistoryRelBand      = 0.25
 
 	rawPercentUnit = "percent-raw"
 )
@@ -96,8 +103,10 @@ func normalizeLearningUnit(unit string) string {
 
 // eqPoint 记录一次稳态 (转速, 温度) 平衡点。
 type eqPoint struct {
-	rpm  int
-	temp int
+	rpm       int
+	temp      int
+	power     float64
+	havePower bool
 }
 
 // SteadyResult 是一次稳态观测的结果。
@@ -105,6 +114,8 @@ type SteadyResult struct {
 	BucketIdx int     // 命中的曲线点索引；-1 表示无效
 	MeanTemp  int     // 稳态平均温度 (°C)
 	MeanRPM   int     // 稳态期间的平均下发转速 (RPM)
+	MeanPower float64 // 稳态期间的平均 CPU+GPU 功耗 (W)
+	HavePower bool    // 稳态样本是否具备可用功耗
 	LocalEff  float64 // 局部冷却效率 (°C/RPM)，正值
 	HaveEff   bool    // 是否成功估计出冷却效率
 	Ready     bool    // 是否达到稳态、可触发一次学习
@@ -112,15 +123,18 @@ type SteadyResult struct {
 
 // StableObserver 为每个曲线点累积稳态采样，并维护 (转速,温度) 平衡点历史。
 type StableObserver struct {
-	curveLen   int
-	unit       string
-	samples    [][]int     // 每个温度桶的温度采样
-	rpmSamples [][]int     // 与 samples 平行的转速采样
-	history    [][]eqPoint // 每个温度桶最近的稳态平衡点
-	settle     []int       // 每个温度桶进入稳定采样前的延迟计数
-	lastTemps  []int       // 最近一次观测温度
-	lastRPMs   []int       // 最近一次观测到的实际转速
-	seen       []bool      // 最近观测是否有效
+	curveLen     int
+	unit         string
+	samples      [][]int // 每个温度桶的温度采样
+	rpmSamples   [][]int // 与 samples 平行的转速采样
+	powerSamples [][]float64
+	history      [][]eqPoint // 每个温度桶最近的稳态平衡点
+	settle       []int       // 每个温度桶进入稳定采样前的延迟计数
+	lastTemps    []int       // 最近一次观测温度
+	lastRPMs     []int       // 最近一次观测到的实际转速
+	lastPowers   []float64
+	seen         []bool // 最近观测是否有效
+	powerSeen    []bool
 }
 
 // NewStableObserver 创建针对当前曲线长度的观察者。
@@ -153,14 +167,18 @@ func (o *StableObserver) SetUnit(unit string) bool {
 func (o *StableObserver) allocBuffers(curveLen int) {
 	o.samples = make([][]int, curveLen)
 	o.rpmSamples = make([][]int, curveLen)
+	o.powerSamples = make([][]float64, curveLen)
 	o.history = make([][]eqPoint, curveLen)
 	o.settle = make([]int, curveLen)
 	o.lastTemps = make([]int, curveLen)
 	o.lastRPMs = make([]int, curveLen)
+	o.lastPowers = make([]float64, curveLen)
 	o.seen = make([]bool, curveLen)
+	o.powerSeen = make([]bool, curveLen)
 	for i := range o.samples {
 		o.samples[i] = make([]int, 0, 24)
 		o.rpmSamples[i] = make([]int, 0, 24)
+		o.powerSamples[i] = make([]float64, 0, 24)
 		o.history[i] = make([]eqPoint, 0, effHistoryLen)
 	}
 }
@@ -183,10 +201,13 @@ func (o *StableObserver) Reset() {
 	for i := range o.samples {
 		o.samples[i] = o.samples[i][:0]
 		o.rpmSamples[i] = o.rpmSamples[i][:0]
+		o.powerSamples[i] = o.powerSamples[i][:0]
 		o.settle[i] = 0
 		o.lastTemps[i] = 0
 		o.lastRPMs[i] = 0
+		o.lastPowers[i] = 0
 		o.seen[i] = false
+		o.powerSeen[i] = false
 	}
 }
 
@@ -238,6 +259,11 @@ func pickBucketIndex(temp int, curve []types.FanCurvePoint) int {
 // Observe 把一次 (温度, 实际转速) 采样放入对应温度桶。
 // 达到稳态时返回平均温度、平均转速及局部冷却效率估计。
 func (o *StableObserver) Observe(temp, effectiveRPM int, curve []types.FanCurvePoint, cfg types.SmartControlConfig) SteadyResult {
+	return o.ObserveWithPower(temp, effectiveRPM, 0, false, curve, cfg)
+}
+
+// ObserveWithPower 把功耗作为稳态判定条件；无功耗时自动退回温度/转速学习。
+func (o *StableObserver) ObserveWithPower(temp, effectiveRPM int, totalPowerWatts float64, havePower bool, curve []types.FanCurvePoint, cfg types.SmartControlConfig) SteadyResult {
 	idx := pickBucketIndex(temp, curve)
 	if idx < 0 || idx >= len(o.samples) {
 		return SteadyResult{BucketIdx: -1}
@@ -245,13 +271,19 @@ func (o *StableObserver) Observe(temp, effectiveRPM int, curve []types.FanCurveP
 	window := stableSampleWindow(cfg)
 	delay := stableSampleDelay(cfg)
 	rpmBand := stableRPMRangeForUnit(cfg, o.unit)
+	if totalPowerWatts <= 0 {
+		totalPowerWatts = 0
+		havePower = false
+	}
 
 	if o.seen[idx] {
 		tempJump := absInt(temp-o.lastTemps[idx]) > stableTempBand+1
 		rpmJump := effectiveRPM > 0 && o.lastRPMs[idx] > 0 && absInt(effectiveRPM-o.lastRPMs[idx]) > rpmBand
-		if tempJump || rpmJump {
+		powerJump := havePower && o.powerSeen[idx] && !powerClose(totalPowerWatts, o.lastPowers[idx], stablePowerAbsBandWatts, stablePowerRelBand)
+		if tempJump || rpmJump || powerJump {
 			o.samples[idx] = o.samples[idx][:0]
 			o.rpmSamples[idx] = o.rpmSamples[idx][:0]
+			o.powerSamples[idx] = o.powerSamples[idx][:0]
 			o.settle[idx] = 0
 		}
 	} else {
@@ -260,6 +292,10 @@ func (o *StableObserver) Observe(temp, effectiveRPM int, curve []types.FanCurveP
 	}
 	o.lastTemps[idx] = temp
 	o.lastRPMs[idx] = effectiveRPM
+	if havePower {
+		o.lastPowers[idx] = totalPowerWatts
+		o.powerSeen[idx] = true
+	}
 
 	if o.settle[idx] < delay {
 		o.settle[idx]++
@@ -268,9 +304,11 @@ func (o *StableObserver) Observe(temp, effectiveRPM int, curve []types.FanCurveP
 
 	o.samples[idx] = append(o.samples[idx], temp)
 	o.rpmSamples[idx] = append(o.rpmSamples[idx], effectiveRPM)
+	o.powerSamples[idx] = append(o.powerSamples[idx], totalPowerWatts)
 	if len(o.samples[idx]) > window {
 		o.samples[idx] = o.samples[idx][len(o.samples[idx])-window:]
 		o.rpmSamples[idx] = o.rpmSamples[idx][len(o.rpmSamples[idx])-window:]
+		o.powerSamples[idx] = o.powerSamples[idx][len(o.powerSamples[idx])-window:]
 	}
 
 	if len(o.samples[idx]) < window {
@@ -278,6 +316,7 @@ func (o *StableObserver) Observe(temp, effectiveRPM int, curve []types.FanCurveP
 	}
 	minT, maxT, sumT, sumR := o.samples[idx][0], o.samples[idx][0], 0, 0
 	minR, maxR := o.rpmSamples[idx][0], o.rpmSamples[idx][0]
+	minP, maxP, sumP, powerCount := 0.0, 0.0, 0.0, 0
 	for i, t := range o.samples[idx] {
 		if t < minT {
 			minT = t
@@ -294,24 +333,46 @@ func (o *StableObserver) Observe(temp, effectiveRPM int, curve []types.FanCurveP
 		}
 		sumT += t
 		sumR += rpm
+		if i < len(o.powerSamples[idx]) && o.powerSamples[idx][i] > 0 {
+			power := o.powerSamples[idx][i]
+			if powerCount == 0 || power < minP {
+				minP = power
+			}
+			if powerCount == 0 || power > maxP {
+				maxP = power
+			}
+			sumP += power
+			powerCount++
+		}
 	}
 	if maxT-minT > stableTempBand || maxR-minR > rpmBand {
 		return SteadyResult{BucketIdx: idx}
+	}
+	meanP := 0.0
+	steadyHavePower := powerCount == len(o.samples[idx])
+	if steadyHavePower {
+		meanP = sumP / float64(powerCount)
+		if maxP-minP > powerBandForMean(meanP, stablePowerAbsBandWatts, stablePowerRelBand) {
+			return SteadyResult{BucketIdx: idx}
+		}
 	}
 
 	meanT := sumT / len(o.samples[idx])
 	meanR := sumR / len(o.rpmSamples[idx])
 	o.samples[idx] = o.samples[idx][:0]
 	o.rpmSamples[idx] = o.rpmSamples[idx][:0]
+	o.powerSamples[idx] = o.powerSamples[idx][:0]
 	o.settle[idx] = 0
 
-	o.recordEquilibrium(idx, meanR, meanT)
-	eff, haveEff := o.localEfficiency(idx)
+	o.recordEquilibrium(idx, meanR, meanT, meanP, steadyHavePower)
+	eff, haveEff := o.localEfficiencyForPower(idx, meanP, steadyHavePower)
 
 	return SteadyResult{
 		BucketIdx: idx,
 		MeanTemp:  meanT,
 		MeanRPM:   meanR,
+		MeanPower: meanP,
+		HavePower: steadyHavePower,
 		LocalEff:  eff,
 		HaveEff:   haveEff,
 		Ready:     true,
@@ -320,28 +381,62 @@ func (o *StableObserver) Observe(temp, effectiveRPM int, curve []types.FanCurveP
 
 // recordEquilibrium 把一次稳态平衡点写入桶历史（环形保留最近 effHistoryLen 条）。
 // 同一转速附近的旧样本会被新样本覆盖，使历史反映最新的热行为。
-func (o *StableObserver) recordEquilibrium(idx, rpm, temp int) {
+func (o *StableObserver) recordEquilibrium(idx, rpm, temp int, power float64, havePower bool) {
 	if idx < 0 || idx >= len(o.history) {
 		return
 	}
 	hist := o.history[idx]
-	for i := range hist {
-		if absInt(hist[i].rpm-rpm) < learningTuningForUnit(o.unit).minRPMSpanForEff {
-			hist[i] = eqPoint{rpm: rpm, temp: temp}
-			o.history[idx] = hist
-			return
+	replaced := false
+	kept := hist[:0]
+	for _, p := range hist {
+		sameSpeed := absInt(p.rpm-rpm) < learningTuningForUnit(o.unit).minRPMSpanForEff
+		samePower := !havePower || !p.havePower || powerClose(power, p.power, powerHistoryAbsBandWatts, powerHistoryRelBand)
+		if !replaced && sameSpeed && samePower {
+			kept = append(kept, eqPoint{rpm: rpm, temp: temp, power: power, havePower: havePower})
+			replaced = true
+			continue
+		}
+		if !staleEquilibriumForUnit(p, rpm, temp, power, havePower, o.unit) {
+			kept = append(kept, p)
 		}
 	}
-	hist = append(hist, eqPoint{rpm: rpm, temp: temp})
-	if len(hist) > effHistoryLen {
-		hist = hist[len(hist)-effHistoryLen:]
+	if !replaced {
+		kept = append(kept, eqPoint{rpm: rpm, temp: temp, power: power, havePower: havePower})
 	}
-	o.history[idx] = hist
+	if len(kept) > effHistoryLen {
+		kept = kept[len(kept)-effHistoryLen:]
+	}
+	o.history[idx] = kept
 }
 
-// localEfficiency 用历史中转速跨度最大的两点估计局部冷却效率 (°C/RPM, 正值)。
-// 更高转速对应更低温度时效率为正；若数据不足或冷却无效则保守处理。
+func staleEquilibriumForUnit(p eqPoint, rpm, temp int, power float64, havePower bool, unit string) bool {
+	if havePower && p.havePower && !powerClose(power, p.power, powerHistoryAbsBandWatts, powerHistoryRelBand) {
+		return false
+	}
+	tuning := learningTuningForUnit(unit)
+	if p.rpm < rpm {
+		if p.temp+eqConsistencyBand < temp {
+			return true
+		}
+		maxDrop := tuning.effCeilPerRPM*float64(rpm-p.rpm) + eqConsistencyBand
+		return float64(p.temp-temp) > maxDrop
+	}
+	if p.rpm > rpm {
+		if p.temp > temp+eqConsistencyBand {
+			return true
+		}
+		maxDrop := tuning.effCeilPerRPM*float64(p.rpm-rpm) + eqConsistencyBand
+		return float64(temp-p.temp) > maxDrop
+	}
+	return false
+}
+
+// localEfficiency 用历史平衡点回归估计局部冷却效率；无功耗时使用全部历史。
 func (o *StableObserver) localEfficiency(idx int) (float64, bool) {
+	return o.localEfficiencyForPower(idx, 0, false)
+}
+
+func (o *StableObserver) localEfficiencyForPower(idx int, referencePower float64, havePower bool) (float64, bool) {
 	if idx < 0 || idx >= len(o.history) {
 		return 0, false
 	}
@@ -350,21 +445,42 @@ func (o *StableObserver) localEfficiency(idx int) (float64, bool) {
 		return 0, false
 	}
 	tuning := learningTuningForUnit(o.unit)
-	lo, hi := hist[0], hist[0]
-	for _, p := range hist[1:] {
-		if p.rpm < lo.rpm {
-			lo = p
-		}
-		if p.rpm > hi.rpm {
-			hi = p
+	selected := make([]eqPoint, 0, len(hist))
+	for _, p := range hist {
+		if !havePower || !p.havePower || powerClose(referencePower, p.power, powerHistoryAbsBandWatts, powerHistoryRelBand) {
+			selected = append(selected, p)
 		}
 	}
-	span := hi.rpm - lo.rpm
-	if span < tuning.minRPMSpanForEff {
+	if len(selected) < 2 {
 		return 0, false
 	}
-	// 低转速点温度应更高；冷却有效时 (lo.temp - hi.temp) > 0。
-	eff := float64(lo.temp-hi.temp) / float64(span)
+	minRPM, maxRPM := selected[0].rpm, selected[0].rpm
+	sumR, sumT := 0, 0
+	for _, p := range selected {
+		if p.rpm < minRPM {
+			minRPM = p.rpm
+		}
+		if p.rpm > maxRPM {
+			maxRPM = p.rpm
+		}
+		sumR += p.rpm
+		sumT += p.temp
+	}
+	if maxRPM-minRPM < tuning.minRPMSpanForEff {
+		return 0, false
+	}
+	meanR := float64(sumR) / float64(len(selected))
+	meanT := float64(sumT) / float64(len(selected))
+	var cov, varR float64
+	for _, p := range selected {
+		dr := float64(p.rpm) - meanR
+		cov += dr * (float64(p.temp) - meanT)
+		varR += dr * dr
+	}
+	if varR <= 0 {
+		return 0, false
+	}
+	eff := -cov / varR
 	if eff < tuning.effFloorPerRPM {
 		// 冷却几乎无效（甚至负相关）：视为最低效率，让寻优倾向于降转速省噪音。
 		eff = tuning.effFloorPerRPM
@@ -373,6 +489,32 @@ func (o *StableObserver) localEfficiency(idx int) (float64, bool) {
 		eff = tuning.effCeilPerRPM
 	}
 	return eff, true
+}
+
+func powerBandForMean(meanPower, absBand, relBand float64) float64 {
+	if meanPower <= 0 {
+		return absBand
+	}
+	relative := meanPower * relBand
+	if relative > absBand {
+		return relative
+	}
+	return absBand
+}
+
+func powerClose(a, b, absBand, relBand float64) bool {
+	if a <= 0 || b <= 0 {
+		return false
+	}
+	mean := (a + b) / 2
+	return absFloat(a-b) <= powerBandForMean(mean, absBand, relBand)
+}
+
+func absFloat(value float64) float64 {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 // alphaFromLearnRate 把 1..10 的 LearnRate 映射成反馈系数。
@@ -429,6 +571,10 @@ func solveLearnStep(steadyTemp int, eff float64, haveEff bool, cfg types.SmartCo
 }
 
 func solveLearnStepForUnit(steadyTemp int, eff float64, haveEff bool, cfg types.SmartControlConfig, unit string) int {
+	return solveLearnStepForUnitWithPower(steadyTemp, eff, haveEff, cfg, unit, 0, false)
+}
+
+func solveLearnStepForUnitWithPower(steadyTemp int, eff float64, haveEff bool, cfg types.SmartControlConfig, unit string, meanPower float64, havePower bool) int {
 	tuning := learningTuningForUnit(unit)
 	ceiling := targetTempCeiling(cfg)
 	lowTarget := ceiling - comfortBandWidth(cfg)
@@ -453,6 +599,9 @@ func solveLearnStepForUnit(steadyTemp int, eff float64, haveEff bool, cfg types.
 	default:
 		return 0
 	}
+	if havePower {
+		step *= learningPowerGain(step, meanPower)
+	}
 
 	if step > float64(tuning.maxLearnStep) {
 		step = float64(tuning.maxLearnStep)
@@ -466,6 +615,33 @@ func solveLearnStepForUnit(steadyTemp int, eff float64, haveEff bool, cfg types.
 		return 0
 	}
 	return delta
+}
+
+func learningPowerGain(step, meanPower float64) float64 {
+	if meanPower <= 0 {
+		return 1
+	}
+	if step > 0 {
+		switch {
+		case meanPower >= 120:
+			return 1.10
+		case meanPower <= 35:
+			return 0.85
+		default:
+			return 1
+		}
+	}
+	if step < 0 {
+		switch {
+		case meanPower >= 120:
+			return 0.75
+		case meanPower <= 35:
+			return 1.15
+		default:
+			return 1
+		}
+	}
+	return 1
 }
 
 // LearnSteadyOffset 根据一次稳态观测（温度 + 冷却效率）更新学习偏移。
@@ -491,6 +667,21 @@ func LearnSteadyOffsetForUnit(
 	cfg types.SmartControlConfig,
 	unit string,
 ) ([]int, bool) {
+	return LearnSteadyOffsetForUnitWithPower(bucketIdx, steadyMeanTemp, 0, false, localEff, haveEff, curve, prevOffsets, cfg, unit)
+}
+
+func LearnSteadyOffsetForUnitWithPower(
+	bucketIdx int,
+	steadyMeanTemp int,
+	steadyMeanPower float64,
+	havePower bool,
+	localEff float64,
+	haveEff bool,
+	curve []types.FanCurvePoint,
+	prevOffsets []int,
+	cfg types.SmartControlConfig,
+	unit string,
+) ([]int, bool) {
 	if bucketIdx < 0 || bucketIdx >= len(curve) {
 		return prevOffsets, false
 	}
@@ -503,7 +694,7 @@ func LearnSteadyOffsetForUnit(
 		}
 	}
 
-	mainDelta := solveLearnStepForUnit(steadyMeanTemp, localEff, haveEff, cfg, unit)
+	mainDelta := solveLearnStepForUnitWithPower(steadyMeanTemp, localEff, haveEff, cfg, unit, steadyMeanPower, havePower)
 	if mainDelta == 0 {
 		return offsets, false
 	}
@@ -529,15 +720,7 @@ func LearnSteadyOffsetForUnit(
 		offsets = biased
 	}
 
-	smoothOffsetsWithPullLimit(curve, offsets, cap, leftMin, rightMax, tuning.offsetSmoothPullMax)
-	if biased, updated := constrainOffsetsToLearningBias(offsets, cfg.LearningBias); updated {
-		offsets = biased
-	}
-	enforceMonotonicWithOffsets(curve, offsets, cap, leftMin, rightMax)
-	if biased, updated := constrainOffsetsToLearningBias(offsets, cfg.LearningBias); updated {
-		offsets = biased
-	}
-	smoothOffsetsWithPullLimit(curve, offsets, cap, leftMin, rightMax, tuning.offsetSmoothPullMax)
+	smoothOffsetsAroundWithPullLimit(curve, offsets, bucketIdx, cap, leftMin, rightMax, tuning.offsetSmoothPullMax)
 	if biased, updated := constrainOffsetsToLearningBias(offsets, cfg.LearningBias); updated {
 		offsets = biased
 	}
@@ -575,6 +758,38 @@ func smoothOffsetsWithPullLimit(curve []types.FanCurvePoint, offsets []int, cap,
 	for range offsetSmoothPasses {
 		copy(work, offsets)
 		for i := 1; i < limit-1; i++ {
+			target := roundFloat(
+				offsetSmoothSelfWeight*float64(offsets[i]) +
+					offsetSmoothNeighborWeight*float64(offsets[i-1]) +
+					offsetSmoothNeighborWeight*float64(offsets[i+1]),
+			)
+			pull := target - offsets[i]
+			if pull > pullLimit {
+				target = offsets[i] + pullLimit
+			} else if pull < -pullLimit {
+				target = offsets[i] - pullLimit
+			}
+			work[i] = clampOffsetForPoint(target, curve[i].RPM, leftMin, rightMax, cap)
+		}
+		copy(offsets, work)
+	}
+}
+
+func smoothOffsetsAroundWithPullLimit(curve []types.FanCurvePoint, offsets []int, center, cap, leftMin, rightMax, pullLimit int) {
+	limit := min(len(offsets), len(curve))
+	if limit < 3 {
+		return
+	}
+	lo := max(center-offsetSmoothRadius, 1)
+	hi := min(center+offsetSmoothRadius, limit-2)
+	if lo > hi {
+		return
+	}
+	work := make([]int, len(offsets))
+	copy(work, offsets)
+	for range offsetSmoothPasses {
+		copy(work, offsets)
+		for i := lo; i <= hi; i++ {
 			target := roundFloat(
 				offsetSmoothSelfWeight*float64(offsets[i]) +
 					offsetSmoothNeighborWeight*float64(offsets[i-1]) +

@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Activity, Bluetooth, CheckCircle2, Gauge, Library, Power, RefreshCw, Save, Signal } from 'lucide-react';
+import { Activity, Bluetooth, CheckCircle2, Gauge, Library, Plus, Power, RefreshCw, Save, Signal, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Input } from '@/components/ui/input';
 import { apiService } from '../../services/api';
@@ -23,13 +23,22 @@ import {
   buildProfileFromDraft,
   createDraftFromProfile,
   createEmptyProfileDraft,
+  getProfileDisplayName,
   normalizeSpeedUnit,
+  type DeviceCustomCommandDraft,
   type DeviceProfileDraft,
   type DeviceSpeedUnit,
   type DeviceTransport,
 } from './profile-utils';
 
 const SERIAL_PORT_NONE_VALUE = '__serial_port_none__';
+const CUSTOM_COMMAND_TYPES = [
+  'powerOnStartOn',
+  'powerOnStartOff',
+  'smartStartStopImmediate',
+  'smartStartStopDelayed',
+  'smartStartStopOff',
+] as const;
 type ProfileTestAction = 'connect' | 'readState' | 'setSpeed';
 
 interface DeviceProfileEditorDialogProps {
@@ -58,9 +67,28 @@ function Field({
   );
 }
 
-function FieldGroup({ children }: { children: ReactNode }) {
+function FieldGroup({
+  icon,
+  title,
+  description,
+  children,
+}: {
+  icon?: ReactNode;
+  title?: string;
+  description?: string;
+  children: ReactNode;
+}) {
   return (
     <div className="rounded-xl border border-border/70 bg-muted/25 p-3">
+      {title && (
+        <div className="mb-3 flex min-w-0 items-start gap-2">
+          {icon && <div className="mt-0.5 shrink-0 text-muted-foreground">{icon}</div>}
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-foreground">{title}</div>
+            {description && <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{description}</div>}
+          </div>
+        </div>
+      )}
       {children}
     </div>
   );
@@ -176,7 +204,7 @@ export default function DeviceProfileEditorDialog({
     { value: 'blank', label: t('advancedDevices.dialog.blankProfile') },
     ...supportedProfiles.map((profile) => ({
       value: profile.id,
-      label: profile.displayName || profile.id,
+      label: getProfileDisplayName(profile, t('advancedDevices.status.unnamedDevice')),
     })),
   ], [supportedProfiles, t]);
 
@@ -208,6 +236,19 @@ export default function DeviceProfileEditorDialog({
       : ['none', 'sum8', 'xor8', 'crc16'];
     return values.map((value) => ({ value, label: value }));
   }, [draft.commandEncoding]);
+
+  const customCommandOptions = useMemo(() => {
+    const configuredTypes = draft.customCommands
+      .map((command) => command.type)
+      .filter((type) => type && !CUSTOM_COMMAND_TYPES.includes(type as typeof CUSTOM_COMMAND_TYPES[number]));
+    const values = [...CUSTOM_COMMAND_TYPES, ...Array.from(new Set(configuredTypes))];
+    return values.map((value) => ({
+      value,
+      label: CUSTOM_COMMAND_TYPES.includes(value as typeof CUSTOM_COMMAND_TYPES[number])
+        ? t(`advancedDevices.customCommandTypes.${value}`)
+        : t('advancedDevices.customCommandTypes.reserved', { type: value }),
+    }));
+  }, [draft.customCommands, t]);
 
   const loadSerialPorts = useCallback(async () => {
     setSerialPortsLoading(true);
@@ -313,6 +354,33 @@ export default function DeviceProfileEditorDialog({
 
   const updateDraft = <K extends keyof DeviceProfileDraft>(key: K, value: DeviceProfileDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const addCustomCommand = () => {
+    const id = `custom-command-${Date.now()}-${draft.customCommands.length}`;
+    setDraft((current) => ({
+      ...current,
+      customCommands: [
+        ...current.customCommands,
+        { id, type: 'powerOnStartOn', command: '' },
+      ],
+    }));
+  };
+
+  const updateCustomCommand = (id: string, patch: Partial<DeviceCustomCommandDraft>) => {
+    setDraft((current) => ({
+      ...current,
+      customCommands: current.customCommands.map((command) => (
+        command.id === id ? { ...command, ...patch } : command
+      )),
+    }));
+  };
+
+  const removeCustomCommand = (id: string) => {
+    setDraft((current) => ({
+      ...current,
+      customCommands: current.customCommands.filter((command) => command.id !== id),
+    }));
   };
 
   const handleTransportChange = (transport: DeviceTransport) => {
@@ -428,11 +496,10 @@ export default function DeviceProfileEditorDialog({
 
         <div className="space-y-4">
           {!isEditing && (
-            <FieldGroup>
-              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
-                <Library className="h-4 w-4 text-muted-foreground" />
-                {t('advancedDevices.dialog.libraryProfile')}
-              </div>
+            <FieldGroup
+              icon={<Library className="h-4 w-4" />}
+              title={t('advancedDevices.dialog.libraryProfile')}
+            >
               <Select
                 value={libraryProfileId}
                 onChange={(value) => handleLibraryChange(String(value))}
@@ -442,6 +509,11 @@ export default function DeviceProfileEditorDialog({
             </FieldGroup>
           )}
 
+            <FieldGroup
+              icon={<Gauge className="h-4 w-4" />}
+              title={t('advancedDevices.groups.basicInfo')}
+              description={t('advancedDevices.hints.basicInfo')}
+            >
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <Field label={t('advancedDevices.fields.name')}>
                 <Input
@@ -497,62 +569,24 @@ export default function DeviceProfileEditorDialog({
               )}
             </div>
 
-            <Field label={t('advancedDevices.fields.notes')}>
-              <textarea
-                value={draft.notes}
-                onChange={(event) => updateDraft('notes', event.target.value)}
-                rows={2}
-                className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm outline-none ring-offset-background transition-colors focus-visible:ring-2 focus-visible:ring-ring"
-              />
-            </Field>
-
-            <FieldGroup>
-              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
-                <Activity className="h-4 w-4 text-muted-foreground" />
-                {t('advancedDevices.fields.deviceFunctions')}
-              </div>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <ToggleSwitch
-                  enabled={draft.supportsPowerOnStart}
-                  onChange={(enabled) => updateDraft('supportsPowerOnStart', enabled)}
-                  label={t('advancedDevices.capabilities.powerOnStart')}
-                  size="sm"
+            <div className="mt-3">
+              <Field label={t('advancedDevices.fields.notes')}>
+                <textarea
+                  value={draft.notes}
+                  onChange={(event) => updateDraft('notes', event.target.value)}
+                  rows={2}
+                  className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm outline-none ring-offset-background transition-colors focus-visible:ring-2 focus-visible:ring-ring"
                 />
-                <ToggleSwitch
-                  enabled={draft.supportsSmartStartStop}
-                  onChange={(enabled) => updateDraft('supportsSmartStartStop', enabled)}
-                  label={t('advancedDevices.capabilities.smartStartStop')}
-                  size="sm"
-                />
-                <ToggleSwitch
-                  enabled={draft.supportsGearLight}
-                  onChange={(enabled) => updateDraft('supportsGearLight', enabled)}
-                  label={t('advancedDevices.capabilities.gearLight')}
-                  size="sm"
-                />
-                <ToggleSwitch
-                  enabled={draft.supportsLighting}
-                  onChange={(enabled) => updateDraft('supportsLighting', enabled)}
-                  label={t('advancedDevices.capabilities.lighting')}
-                  size="sm"
-                />
-                <ToggleSwitch
-                  enabled={draft.supportsBrightness}
-                  onChange={(enabled) => updateDraft('supportsBrightness', enabled)}
-                  label={t('advancedDevices.capabilities.brightness')}
-                  size="sm"
-                />
-                <ToggleSwitch
-                  enabled={draft.supportsScreen}
-                  onChange={(enabled) => updateDraft('supportsScreen', enabled)}
-                  label={t('advancedDevices.capabilities.screen')}
-                  size="sm"
-                />
-              </div>
+              </Field>
+            </div>
             </FieldGroup>
 
             {draft.transport === 'wifi' && (
-              <FieldGroup>
+              <FieldGroup
+                icon={<Signal className="h-4 w-4" />}
+                title={t('advancedDevices.groups.wifiConnection')}
+                description={t('advancedDevices.hints.wifiConnection')}
+              >
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <Field label={t('advancedDevices.fields.endpoint')}>
                     <Input value={draft.endpoint} onChange={(event) => updateDraft('endpoint', event.target.value)} placeholder="192.168.137.2" />
@@ -588,7 +622,11 @@ export default function DeviceProfileEditorDialog({
             )}
 
             {draft.transport === 'ble' && (
-              <FieldGroup>
+              <FieldGroup
+                icon={<Bluetooth className="h-4 w-4" />}
+                title={t('advancedDevices.groups.bleConnection')}
+                description={t('advancedDevices.hints.bleConnection')}
+              >
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                     <Bluetooth className="h-4 w-4 text-muted-foreground" />
@@ -769,7 +807,11 @@ export default function DeviceProfileEditorDialog({
             )}
 
             {draft.transport === 'serial' && (
-              <FieldGroup>
+              <FieldGroup
+                icon={<RefreshCw className="h-4 w-4" />}
+                title={t('advancedDevices.groups.serialConnection')}
+                description={t('advancedDevices.hints.serialConnection')}
+              >
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                   <div className="md:col-span-3">
                     <Field label={t('advancedDevices.fields.serialPort')} hint={t('advancedDevices.hints.serialPorts')}>
@@ -837,7 +879,11 @@ export default function DeviceProfileEditorDialog({
               </FieldGroup>
             )}
 
-            <FieldGroup>
+            <FieldGroup
+              icon={<Activity className="h-4 w-4" />}
+              title={t('advancedDevices.groups.protocol')}
+              description={t('advancedDevices.hints.protocol')}
+            >
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <Field label={t('advancedDevices.fields.commandEncoding')}>
                   <Select
@@ -880,6 +926,67 @@ export default function DeviceProfileEditorDialog({
                 <Field label={t('advancedDevices.fields.parserExpression')}>
                   <Input value={draft.parserExpression} onChange={(event) => updateDraft('parserExpression', event.target.value)} />
                 </Field>
+              </div>
+            </FieldGroup>
+
+            <FieldGroup
+              icon={<Activity className="h-4 w-4" />}
+              title={t('advancedDevices.groups.customCommands')}
+              description={t('advancedDevices.hints.customCommands')}
+            >
+              <div className="space-y-3">
+                {draft.customCommands.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border/70 bg-background/45 px-3 py-4 text-sm text-muted-foreground">
+                    {t('advancedDevices.customCommands.empty')}
+                  </div>
+                ) : (
+                  draft.customCommands.map((command, index) => (
+                    <div key={command.id} className="rounded-lg border border-border/70 bg-background/70 p-3">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <div className="text-xs font-medium text-muted-foreground">
+                          {t('advancedDevices.customCommands.itemTitle', { index: index + 1 })}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeCustomCommand(command.id)}
+                          icon={<Trash2 className="h-3.5 w-3.5" />}
+                        >
+                          {t('common.actions.delete')}
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(180px,240px)_1fr]">
+                        <Field label={t('advancedDevices.fields.customCommandType')}>
+                          <Select
+                            value={command.type}
+                            onChange={(value) => updateCustomCommand(command.id, { type: String(value) })}
+                            options={customCommandOptions}
+                            size="sm"
+                            className="w-full min-w-0"
+                          />
+                        </Field>
+                        <Field label={t('advancedDevices.fields.customCommandTemplate')} hint={t('advancedDevices.hints.customCommandTemplate')}>
+                          <Input
+                            value={command.command}
+                            onChange={(event) => updateCustomCommand(command.id, { command: event.target.value })}
+                            placeholder={t('advancedDevices.placeholders.customCommandTemplate')}
+                          />
+                        </Field>
+                      </div>
+                    </div>
+                  ))
+                )}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addCustomCommand}
+                  icon={<Plus className="h-3.5 w-3.5" />}
+                >
+                  {t('advancedDevices.actions.addCustomCommand')}
+                </Button>
               </div>
             </FieldGroup>
 

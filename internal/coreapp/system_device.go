@@ -2,6 +2,7 @@ package coreapp
 
 import (
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -52,6 +53,9 @@ func (a *CoreApp) applyWiFiSmartStartStopStandbySpeed(reason string) bool {
 	if profile.Transport != types.DeviceTransportWiFi || !types.IsPercentSpeedUnit(profile.SpeedUnit) {
 		return false
 	}
+	if !profile.Capabilities.SupportsSoftwareSmartStartStop {
+		return false
+	}
 	if !a.wifiStandbyApplied.CompareAndSwap(false, true) {
 		return false
 	}
@@ -67,13 +71,23 @@ func (a *CoreApp) applyWiFiSmartStartStopStandbySpeed(reason string) bool {
 }
 
 func didDeviceSwitchToManualMode(previousMode, currentMode string) bool {
-	if currentMode != "挡位工作模式" {
+	if !isManualDeviceWorkMode(currentMode) {
 		return false
 	}
 	if previousMode == "" {
 		return false
 	}
-	return previousMode != currentMode
+	return !isManualDeviceWorkMode(previousMode)
+}
+
+func isManualDeviceWorkMode(mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "manual", "manual mode", "manual/fixed gear mode", "fixed gear mode", "fixed", "gear mode",
+		"手动", "手动模式", "挡位工作模式":
+		return true
+	default:
+		return false
+	}
 }
 
 // onFanDataUpdate 风扇数据更新回调
@@ -413,6 +427,64 @@ func (a *CoreApp) AutoScanDevices() map[string]any {
 	return result
 }
 
+func (a *CoreApp) ConnectNativeDevice(profileID string) bool {
+	a.autoReconnectSuppressed.Store(false)
+	cfg := a.configManager.Get()
+
+	if a.deviceManager.IsConnected() {
+		a.deviceManager.DisconnectSilently()
+		a.mutex.Lock()
+		a.isConnected = false
+		a.deviceSettings = nil
+		a.mutex.Unlock()
+		if a.ipcServer != nil {
+			a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
+		}
+	}
+
+	profile, ok := types.FlyDigiProfileByID(profileID)
+	if !ok {
+		a.configureDeviceManager(cfg)
+		success, deviceInfo := a.deviceManager.AutoConnectNative()
+		if success {
+			a.finishSuccessfulDeviceConnection(deviceInfo, "ConnectNativeDevice")
+			return true
+		}
+		if a.ipcServer != nil {
+			a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "未发现可自动识别的原生设备")
+		}
+		return false
+	}
+
+	nativeCfg := cfg
+	nativeCfg.DeviceTransport = profile.Transport
+	nativeCfg.ActiveDeviceProfileID = types.LegacyRPMProfileID
+	if nativeCfg.ActiveDeviceProfileIDsByTransport == nil {
+		nativeCfg.ActiveDeviceProfileIDsByTransport = map[string]string{}
+	}
+	nativeCfg.ActiveDeviceProfileIDsByTransport[profile.Transport] = types.LegacyRPMProfileID
+	if err := a.UpdateConfig(nativeCfg); err != nil {
+		a.logError("切换原生设备通用 RPM 档案失败: %v", err)
+	}
+
+	a.deviceManager.ConfigureProfile(profile, cfg.FanControlDeviceIp)
+	success, deviceInfo := a.deviceManager.Connect()
+	if success {
+		a.finishSuccessfulDeviceConnection(deviceInfo, "ConnectNativeDevice")
+		return true
+	}
+
+	if err := a.UpdateConfig(cfg); err != nil {
+		a.logError("恢复原设备配置失败: %v", err)
+	} else {
+		a.configureDeviceManager(cfg)
+	}
+	if a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "连接扫描设备失败")
+	}
+	return false
+}
+
 func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string, caller string) *types.DeviceSettings {
 	a.syncConnectedBuiltInDeviceProfile(deviceInfo)
 
@@ -429,6 +501,10 @@ func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string,
 		for key, value := range deviceInfo {
 			eventPayload[key] = value
 		}
+		runtimeProfile := a.deviceManager.ActiveProfile()
+		eventPayload["deviceProfile"] = runtimeProfile
+		eventPayload["deviceCapabilities"] = runtimeProfile.Capabilities
+		eventPayload["currentData"] = a.deviceManager.GetCurrentFanData()
 		if settings != nil {
 			eventPayload["deviceSettings"] = settings
 		}
@@ -521,13 +597,15 @@ func (a *CoreApp) GetDeviceStatus() map[string]any {
 	model := a.deviceManager.GetModelName()
 
 	return map[string]any{
-		"connected":      a.isConnected,
-		"monitoring":     a.monitoringTemp.Load(),
-		"currentData":    a.deviceManager.GetCurrentFanData(),
-		"temperature":    a.currentTemp,
-		"productId":      productIDHex,
-		"model":          model,
-		"deviceSettings": settings,
+		"connected":          a.isConnected,
+		"monitoring":         a.monitoringTemp.Load(),
+		"currentData":        a.deviceManager.GetCurrentFanData(),
+		"temperature":        a.currentTemp,
+		"productId":          productIDHex,
+		"model":              model,
+		"deviceProfile":      a.deviceManager.ActiveProfile(),
+		"deviceCapabilities": a.deviceManager.ActiveCapabilities(),
+		"deviceSettings":     settings,
 	}
 }
 

@@ -35,6 +35,18 @@ function writeThemeBootstrapSnapshot(snapshot: ThemeBootstrapSnapshot) {
   }
 }
 
+function syncWindowsDarkMode(isDark: boolean) {
+  void import('../../../wailsjs/runtime/runtime')
+    .then(({ WindowSetDarkTheme, WindowSetLightTheme }) => {
+      if (isDark) {
+        WindowSetDarkTheme();
+      } else {
+        WindowSetLightTheme();
+      }
+    })
+    .catch(() => {});
+}
+
 function ensureCustomThemeStyle(css: string) {
   let styleEl = document.getElementById(CUSTOM_STYLE_ID) as HTMLStyleElement | null;
   if (!styleEl) {
@@ -57,6 +69,7 @@ function applyBuiltinMode(mode: string, prefersDark: boolean) {
   clearCustomTheme();
   const isDark = mode === 'dark' || (mode === 'system' && prefersDark);
   document.documentElement.classList.toggle('dark', isDark);
+  syncWindowsDarkMode(isDark);
   if (isBuiltinMode(mode)) {
     writeThemeBootstrapSnapshot(createBuiltinThemeSnapshot(mode));
   }
@@ -71,11 +84,13 @@ function applyCachedCustomTheme(snapshot: ThemeBootstrapSnapshot) {
   if (!snapshot.css) {
     clearCustomTheme();
     document.documentElement.classList.toggle('dark', base === 'dark');
+    syncWindowsDarkMode(base === 'dark');
     return;
   }
 
   ensureCustomThemeStyle(snapshot.css);
   document.documentElement.classList.toggle('dark', base === 'dark');
+  syncWindowsDarkMode(base === 'dark');
   document.documentElement.dataset.theme = snapshot.mode;
 }
 
