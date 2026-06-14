@@ -266,6 +266,18 @@ func (a *CoreApp) initSystemTray() {
 				}
 			}
 			speedUnit = types.NormalizeFanSpeedUnit(speedUnit)
+			activeProfile := a.deviceManager.ActiveProfile()
+			deviceName := strings.TrimSpace(activeProfile.DisplayName)
+			if deviceName == "" {
+				deviceName = strings.TrimSpace(activeProfile.Model)
+			}
+			if deviceName == "" {
+				configProfile := types.ActiveDeviceProfile(&cfg)
+				deviceName = strings.TrimSpace(configProfile.DisplayName)
+				if deviceName == "" {
+					deviceName = strings.TrimSpace(configProfile.Model)
+				}
+			}
 			curveOptions := make([]tray.CurveOption, 0, len(cfg.FanCurveProfiles))
 			for _, p := range cfg.FanCurveProfiles {
 				if p.ID == "" {
@@ -280,6 +292,7 @@ func (a *CoreApp) initSystemTray() {
 
 			return tray.Status{
 				Connected:            a.isConnected,
+				DeviceName:           deviceName,
 				CPUTemp:              a.currentTemp.CPUTemp,
 				GPUTemp:              a.currentTemp.GPUTemp,
 				CPUPowerWatts:        a.currentTemp.CPUPowerWatts,

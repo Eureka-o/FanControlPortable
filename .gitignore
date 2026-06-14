@@ -1,6 +1,7 @@
 # Build output
 build/bin/
 build/portable/
+build/output/
 build/*.log
 frontend/dist/
 frontend/.next/

@@ -931,3 +931,12 @@ This checklist records the planned direction for turning FanControl into an exte
 - [ ] Debug traffic cannot accidentally flood a device without user action.
 - [ ] Old configs and release behavior remain compatible.
 - [x] Upgrade regression tests prove old install config keeps WiFi IP and fan curve profiles after normalization.
+
+## 2026-06-14 2.2.1 Visual And Last-Device Fixes
+
+- [x] Sponsor QR codes now use a reference-style anchored popover near the sponsor button, with hover preview, click-to-pin, viewport clamping, and no inline layout push.
+- [x] About-page right-side links should use one compact menu-like list that inherits the existing card, border, and hover styles.
+- [x] Startup and disconnected homepage device display should reuse the shared active-device helper, respecting `deviceTransport` and `activeDeviceProfileIdsByTransport`.
+- [x] Tray device status should use the current runtime/config device name instead of hardcoding the default Slim device.
+- [x] Tray tooltip should keep fan speed early and compact to reduce Windows tooltip truncation that can display `RPM` as only `R`.
+- [x] 2.2.1 user-facing notes should focus on visual polish and connection/device-display logic; sponsor UI changes are intentionally not listed in release notes.

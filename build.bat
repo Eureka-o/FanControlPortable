@@ -62,6 +62,10 @@ echo Building main application...
 wails build -nsis -ldflags "!LDFLAGS!"
 if errorlevel 1 exit /b 1
 
+REM Wails may regenerate models.ts with tab-only blank lines; normalize it to avoid noisy git diffs.
+powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\normalize_generated_bindings.ps1"
+if errorlevel 1 exit /b 1
+
 REM Ensure core service is in the bin directory for installer
 if exist "build\bin\FanControl Core.exe" (
     echo Core service built successfully
@@ -102,6 +106,10 @@ if exist "!BUILD_BIN!\FanControl-amd64-installer.exe" (
     echo ERROR: Installer was not created. Check that NSIS makensis.exe is installed and available.
     exit /b 1
 )
+
+echo Creating portable package...
+powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\package_portable.ps1" -Version "!VERSION!"
+if errorlevel 1 exit /b 1
 
 echo Build completed successfully with version !VERSION!
 endlocal
