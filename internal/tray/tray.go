@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -69,6 +70,7 @@ type CurveOption struct {
 // Status 状态信息
 type Status struct {
 	Connected            bool
+	DeviceName           string
 	CPUTemp              int
 	GPUTemp              int
 	CPUPowerWatts        float64
@@ -312,7 +314,7 @@ func (m *Manager) createMenu() (items *MenuItems, err error) {
 	items.Show = systray.AddMenuItem("打开 FanControl", "显示 FanControl 主窗口")
 	systray.AddSeparator()
 
-	items.DeviceStatus = systray.AddMenuItem("Slim压风散热器Pro：未连接", "查看散热器连接状态")
+	items.DeviceStatus = systray.AddMenuItem(deviceStatusTitle("", false), "查看散热器连接状态")
 	items.DeviceStatus.Disable()
 
 	items.CPUTemperature = systray.AddMenuItem("CPU 温度：无数据", "显示当前 CPU 温度")
@@ -455,12 +457,49 @@ func formatFanSpeedForTray(speed uint16, unit string) string {
 	return fmt.Sprintf("%d%s", speed, types.FanSpeedDisplaySuffix(unit))
 }
 
-func formatTemperatureAndPower(label string, temp int, watts float64) string {
+func formatTrayDeviceName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "设备"
+	}
+	const maxRunes = 18
+	runes := []rune(name)
+	if len(runes) <= maxRunes {
+		return name
+	}
+	return string(runes[:maxRunes]) + "…"
+}
+
+func deviceStatusTitle(deviceName string, connected bool) string {
+	statusText := "未连接"
+	if connected {
+		statusText = "已连接"
+	}
+	return fmt.Sprintf("%s：%s", formatTrayDeviceName(deviceName), statusText)
+}
+
+func formatTrayTemperaturePowerLine(label string, temp int, watts float64) string {
 	tempText := "--°C"
 	if temp > 0 {
 		tempText = fmt.Sprintf("%d°C", temp)
 	}
-	return fmt.Sprintf("%s: %s / %s", label, tempText, formatPowerWatts(watts))
+	return fmt.Sprintf("%s %s %s", label, tempText, formatPowerWatts(watts))
+}
+
+func formatTrayTooltip(status Status, fanSpeedText string) string {
+	modeText := "手动"
+	if status.AutoControlState {
+		modeText = "智能"
+	}
+	lines := []string{fmt.Sprintf("%s %s", appmeta.AppName, modeText)}
+	if fanSpeedText != "" {
+		lines = append(lines, fmt.Sprintf("风扇 %s", fanSpeedText))
+	}
+	lines = append(lines,
+		formatTrayTemperaturePowerLine("CPU", status.CPUTemp, status.CPUPowerWatts),
+		formatTrayTemperaturePowerLine("GPU", status.GPUTemp, status.GPUPowerWatts),
+	)
+	return strings.Join(lines, "\n")
 }
 
 // updateMenuStatus 定期更新托盘菜单状态
@@ -492,11 +531,7 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 					return
 				}
 
-				if status.Connected {
-					m.menuItems.DeviceStatus.SetTitle("Slim压风散热器Pro：已连接")
-				} else {
-					m.menuItems.DeviceStatus.SetTitle("Slim压风散热器Pro：未连接")
-				}
+				m.menuItems.DeviceStatus.SetTitle(deviceStatusTitle(status.DeviceName, status.Connected))
 
 				if status.CPUTemp > 0 {
 					m.menuItems.CPUTemperature.SetTitle(fmt.Sprintf("CPU 温度：%d°C", status.CPUTemp))
@@ -537,21 +572,7 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 				}
 
 				if status.Connected {
-					cpuLine := formatTemperatureAndPower("CPU", status.CPUTemp, status.CPUPowerWatts)
-					gpuLine := formatTemperatureAndPower("GPU", status.GPUTemp, status.GPUPowerWatts)
-					if status.AutoControlState {
-						tooltipText := fmt.Sprintf("%s - 智能温控\n%s\n%s", appmeta.AppName, cpuLine, gpuLine)
-						if fanSpeedText != "" {
-							tooltipText += fmt.Sprintf("\n风扇速度: %s", fanSpeedText)
-						}
-						systray.SetTooltip(tooltipText)
-					} else {
-						tooltipText := fmt.Sprintf("%s - 手动模式\n%s\n%s", appmeta.AppName, cpuLine, gpuLine)
-						if fanSpeedText != "" {
-							tooltipText += fmt.Sprintf("\n风扇速度: %s", fanSpeedText)
-						}
-						systray.SetTooltip(tooltipText)
-					}
+					systray.SetTooltip(formatTrayTooltip(status, fanSpeedText))
 				} else {
 					systray.SetTooltip(appmeta.AppName + " - 设备未连接")
 				}

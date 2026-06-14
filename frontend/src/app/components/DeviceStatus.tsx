@@ -25,6 +25,7 @@ import {
   clampFanSpeedToRange,
   fanSpeedUnitLabel,
   formatFanSpeedValue,
+  getActiveDeviceProfile,
   getFanSpeedRange,
   getFanSpeedTicks,
   getFanSpeedUnit,
@@ -217,19 +218,6 @@ const HardwareIdentitySummary = memo(function HardwareIdentitySummary({
 /* ── Memo sub-components to avoid parent re-renders ── */
 
 // 温度状态 → 仪表盘弧色（CSS 变量 / 字面色值，避免依赖 Tailwind class）
-function configuredDeviceProfiles(config: types.AppConfig): types.DeviceProfile[] {
-  return Array.isArray((config as any).deviceProfiles) ? ((config as any).deviceProfiles as types.DeviceProfile[]) : [];
-}
-
-function activeDeviceProfileFromConfig(config: types.AppConfig): types.DeviceProfile | null {
-  const profiles = configuredDeviceProfiles(config);
-  if (profiles.length === 0) {
-    return null;
-  }
-  const activeId = (((config as any).activeDeviceProfileId || '') as string).trim();
-  return profiles.find((profile) => profile.id === activeId) || profiles[0] || null;
-}
-
 const getTempArcColor = (temp: number) => {
   if (temp > 85) return 'var(--status-temperature-hot)';
   if (temp > 75) return 'var(--status-temperature-warm)';
@@ -605,7 +593,7 @@ export default function DeviceStatus({
     source: temperatureHistorySource,
   } = useTemperatureHistory();
   const hasBridgeWarning = isConnected && temperature?.bridgeOk === false;
-  const activeDeviceProfile = useMemo(() => activeDeviceProfileFromConfig(config), [config]);
+  const activeDeviceProfile = useMemo(() => (getActiveDeviceProfile(config as any) as types.DeviceProfile | undefined) || null, [config]);
 
   useEffect(() => {
     if (!hasBridgeWarning) {

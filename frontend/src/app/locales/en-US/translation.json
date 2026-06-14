@@ -529,7 +529,9 @@
       "feedbackGroup": "Feedback group",
       "feedbackGroupEntry": "QQ group link",
       "repository": "Open-source repository",
-      "repositoryPlatform": "GitHub"
+      "repositoryPlatform": "GitHub",
+      "copySuccess": "Copied",
+      "copyFailed": "Copy failed"
     },
     "faq": {
       "title": "Frequently asked questions",

@@ -529,7 +529,9 @@
       "feedbackGroup": "フィードバック",
       "feedbackGroupEntry": "QQ グループ",
       "repository": "Open Source リポジトリ",
-      "repositoryPlatform": "GitHub"
+      "repositoryPlatform": "GitHub",
+      "copySuccess": "コピーしました",
+      "copyFailed": "コピーに失敗しました"
     },
     "faq": {
       "title": "よくある質問",

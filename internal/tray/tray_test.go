@@ -1,6 +1,7 @@
 package tray
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/TIANLI0/THRM/internal/types"
@@ -25,5 +26,36 @@ func TestFormatFanSpeedForTrayUsesSpeedUnit(t *testing.T) {
 				t.Fatalf("formatFanSpeedForTray() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFormatTrayTooltipKeepsFanSpeedEarlyAndShort(t *testing.T) {
+	status := Status{
+		Connected:        true,
+		CPUTemp:          62,
+		GPUTemp:          55,
+		CPUPowerWatts:    18,
+		GPUPowerWatts:    42,
+		AutoControlState: true,
+	}
+
+	got := formatTrayTooltip(status, "1300 RPM")
+	if !strings.Contains(got, "风扇 1300 RPM") {
+		t.Fatalf("tooltip = %q, want fan speed with full RPM unit", got)
+	}
+	if strings.Index(got, "风扇") > strings.Index(got, "CPU") {
+		t.Fatalf("tooltip = %q, want fan speed before CPU/GPU lines", got)
+	}
+	if runeCount := len([]rune(got)); runeCount > 64 {
+		t.Fatalf("tooltip rune count = %d, want <= 64; tooltip = %q", runeCount, got)
+	}
+}
+
+func TestDeviceStatusTitleUsesRuntimeDeviceName(t *testing.T) {
+	if got := deviceStatusTitle("FlyDigi BS3 Pro", true); got != "FlyDigi BS3 Pro：已连接" {
+		t.Fatalf("deviceStatusTitle() = %q", got)
+	}
+	if got := deviceStatusTitle("", false); got != "设备：未连接" {
+		t.Fatalf("deviceStatusTitle(empty) = %q", got)
 	}
 }

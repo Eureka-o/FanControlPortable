@@ -529,7 +529,9 @@
       "feedbackGroup": "反馈群",
       "feedbackGroupEntry": "QQ 群入口",
       "repository": "开源仓库",
-      "repositoryPlatform": "GitHub"
+      "repositoryPlatform": "GitHub",
+      "copySuccess": "已复制",
+      "copyFailed": "复制失败"
     },
     "faq": {
       "title": "常见问题解答",
