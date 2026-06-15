@@ -119,9 +119,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const point = createLiveHistoryPoint({
       updateTime: data.updateTime,
       cpuTemp: data.cpuTemp,
-      gpuTemp: data.gpuTemp,
+      gpuTemp: data.gpuReadState === 'notPolled' ? 0 : data.gpuTemp,
       cpuPowerWatts: data.cpuPowerWatts,
-      gpuPowerWatts: data.gpuPowerWatts,
+      gpuPowerWatts: data.gpuReadState === 'notPolled' ? 0 : data.gpuPowerWatts,
     }, Number(get().fanData?.currentRpm || 0));
 
     if (!point) return;
@@ -234,9 +234,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   startEventListeners: () => {
     const unsubscribers: Array<() => void> = [];
+    let pendingDisconnectTimer: number | null = null;
+    const clearPendingDisconnect = () => {
+      if (pendingDisconnectTimer !== null) {
+        window.clearTimeout(pendingDisconnectTimer);
+        pendingDisconnectTimer = null;
+      }
+    };
 
     unsubscribers.push(
       apiService.onCoreServiceError((message) => {
+        clearPendingDisconnect();
         const coreServiceError = getCoreServiceErrorMessage(message);
         set({
           coreServiceError,
@@ -264,6 +272,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     unsubscribers.push(
       deviceService.onDeviceConnected((deviceInfo) => {
         console.log('设备已连接:', deviceInfo);
+        clearPendingDisconnect();
         const info = deviceInfo as {
           productId?: string;
           model?: string;
@@ -290,7 +299,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
     unsubscribers.push(
       deviceService.onDeviceDisconnected(() => {
         console.log('设备已断开');
-        set({ isConnected: false, deviceProductId: null, deviceModel: null, deviceSettings: null, runtimeDeviceProfile: null, runtimeDeviceCapabilities: null, fanData: null });
+        clearPendingDisconnect();
+        if (!get().isConnected) {
+          set({ isConnected: false, deviceProductId: null, deviceModel: null, deviceSettings: null, runtimeDeviceProfile: null, runtimeDeviceCapabilities: null, fanData: null });
+          return;
+        }
+        pendingDisconnectTimer = window.setTimeout(() => {
+          pendingDisconnectTimer = null;
+          set({ isConnected: false, deviceProductId: null, deviceModel: null, deviceSettings: null, runtimeDeviceProfile: null, runtimeDeviceCapabilities: null, fanData: null });
+        }, 2200);
       })
     );
 
@@ -364,6 +381,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     );
 
     return () => {
+      clearPendingDisconnect();
       unsubscribers.forEach((unsubscribe) => unsubscribe());
     };
   },

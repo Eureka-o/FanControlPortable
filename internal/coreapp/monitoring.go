@@ -130,10 +130,12 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	recentControlTemps := make([]int, 0, 24)
 	risePredictionSamples := make([]smartcontrol.RisePredictionSample, 0, 12)
 	initialSelection := types.TemperatureSelection{
-		TempSource: cfg.TempSource,
-		GpuDevice:  cfg.GpuDevice,
-		CpuSensor:  cfg.CpuSensor,
-		GpuSensor:  cfg.GpuSensor,
+		TempSource:            cfg.TempSource,
+		GpuDevice:             cfg.GpuDevice,
+		CpuSensor:             cfg.CpuSensor,
+		GpuSensor:             cfg.GpuSensor,
+		GpuReadMode:           cfg.GpuReadMode,
+		GpuLowPowerProtection: cfg.GpuLowPowerProtection,
 	}
 	initialTemp := a.tempReader.Read(initialSelection)
 	if initialTemp.ControlTemp > 0 {
@@ -184,10 +186,12 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			cfg, cfgRevision = a.configManager.GetWithRevision()
 			updateInterval = temperatureMonitorInterval(cfg.TempUpdateRate)
 			selection := types.TemperatureSelection{
-				TempSource: cfg.TempSource,
-				GpuDevice:  cfg.GpuDevice,
-				CpuSensor:  cfg.CpuSensor,
-				GpuSensor:  cfg.GpuSensor,
+				TempSource:            cfg.TempSource,
+				GpuDevice:             cfg.GpuDevice,
+				CpuSensor:             cfg.CpuSensor,
+				GpuSensor:             cfg.GpuSensor,
+				GpuReadMode:           cfg.GpuReadMode,
+				GpuLowPowerProtection: cfg.GpuLowPowerProtection,
 			}
 			temp := a.tempReader.Read(selection)
 			if temp.BridgeOk {
@@ -318,10 +322,14 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					targetRPM = min(max(targetRPM, curveMinRPM), curveMaxRPM)
 				}
 
+				gpuPowerForPrediction := temp.GPUPowerWatts
+				if temp.GPUReadState == types.GPUReadStateNotPolled {
+					gpuPowerForPrediction = 0
+				}
 				risePredictionSamples = append(risePredictionSamples, smartcontrol.RisePredictionSample{
 					ControlTemp:   controlTemp,
 					CPUPowerWatts: temp.CPUPowerWatts,
-					GPUPowerWatts: temp.GPUPowerWatts,
+					GPUPowerWatts: gpuPowerForPrediction,
 				})
 				if len(risePredictionSamples) > 12 {
 					risePredictionSamples = risePredictionSamples[len(risePredictionSamples)-12:]
@@ -454,7 +462,7 @@ func totalTemperaturePowerWatts(temp types.TemperatureData) (float64, bool) {
 	if temp.CPUPowerWatts > 0 {
 		total += temp.CPUPowerWatts
 	}
-	if temp.GPUPowerWatts > 0 {
+	if temp.GPUReadState != types.GPUReadStateNotPolled && temp.GPUPowerWatts > 0 {
 		total += temp.GPUPowerWatts
 	}
 	return total, total > 0

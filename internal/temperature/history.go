@@ -117,13 +117,20 @@ func (r *HistoryRecorder) Add(temp types.TemperatureData, fanData *types.FanData
 		fanRPM = int(fanData.CurrentRPM)
 	}
 
+	gpuTemp := temp.GPUTemp
+	gpuPowerWatts := temp.GPUPowerWatts
+	if temp.GPUReadState == types.GPUReadStateNotPolled {
+		gpuTemp = 0
+		gpuPowerWatts = 0
+	}
+
 	point := types.TemperatureHistoryPoint{
 		Timestamp:     timestamp,
 		CPUTemp:       temp.CPUTemp,
-		GPUTemp:       temp.GPUTemp,
+		GPUTemp:       gpuTemp,
 		FanRPM:        fanRPM,
 		CPUPowerWatts: normalizePowerWatts(temp.CPUPowerWatts),
-		GPUPowerWatts: normalizePowerWatts(temp.GPUPowerWatts),
+		GPUPowerWatts: normalizePowerWatts(gpuPowerWatts),
 	}
 
 	var flushPayload []byte

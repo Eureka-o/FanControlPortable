@@ -415,10 +415,22 @@ func applyMissingTemperatureDefaults(cfg *types.AppConfig, rawConfig map[string]
 	if _, ok := rawConfig["gpuSensor"]; !ok {
 		cfg.GpuSensor = defaults.GpuSensor
 	}
+	if _, ok := rawConfig["gpuLowPowerProtection"]; !ok {
+		cfg.GpuLowPowerProtection = defaults.GpuLowPowerProtection
+	}
+	if _, ok := rawConfig["gpuReadMode"]; !ok {
+		if _, hasLegacy := rawConfig["gpuLowPowerProtection"]; hasLegacy && !cfg.GpuLowPowerProtection {
+			cfg.GpuReadMode = types.GPUReadModeAlways
+		} else {
+			cfg.GpuReadMode = defaults.GpuReadMode
+		}
+	}
 	cfg.TempSource = types.NormalizeTempSource(cfg.TempSource)
 	cfg.GpuDevice = types.NormalizeDeviceSelection(cfg.GpuDevice)
 	cfg.CpuSensor = types.NormalizeSensorSelection(cfg.CpuSensor)
 	cfg.GpuSensor = types.NormalizeSensorSelection(cfg.GpuSensor)
+	cfg.GpuReadMode = types.NormalizeGPUReadMode(cfg.GpuReadMode)
+	cfg.GpuLowPowerProtection = cfg.GpuReadMode != types.GPUReadModeAlways
 }
 
 func applyMissingDeviceDefaults(cfg *types.AppConfig, rawConfig map[string]json.RawMessage) {

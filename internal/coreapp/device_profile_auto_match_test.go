@@ -27,7 +27,7 @@ func TestConnectedFlyDigiProfileIDMatchesBS1BLEModel(t *testing.T) {
 	}
 }
 
-func TestSyncConnectedBuiltInDeviceProfileDoesNotPersistFlyDigiBeta(t *testing.T) {
+func TestSyncConnectedBuiltInDeviceProfilePersistsFlyDigiProfile(t *testing.T) {
 	cfg := types.GetDefaultConfig(false)
 	cfg.DeviceTransport = types.DeviceTransportHID
 	cfg.ActiveDeviceProfileID = types.LegacyRPMProfileID
@@ -38,23 +38,23 @@ func TestSyncConnectedBuiltInDeviceProfileDoesNotPersistFlyDigiBeta(t *testing.T
 	types.NormalizeDeviceProfileConfig(&cfg)
 	app := newDeviceProfileTestApp(t, cfg)
 
-	if app.syncConnectedBuiltInDeviceProfile(map[string]string{
+	if !app.syncConnectedBuiltInDeviceProfile(map[string]string{
 		"transport": "hid",
 		"model":     "BS2PRO",
 		"productId": "0x1002",
 	}) {
-		t.Fatal("hidden FlyDigi beta device should not update the active profile")
+		t.Fatal("FlyDigi profile should update the active profile")
 	}
 
 	got := app.configManager.Get()
-	if got.ActiveDeviceProfileID != types.LegacyRPMProfileID {
-		t.Fatalf("active profile = %q, want %q", got.ActiveDeviceProfileID, types.LegacyRPMProfileID)
+	if got.ActiveDeviceProfileID != types.FlyDigiBS2PROProfileID {
+		t.Fatalf("active profile = %q, want %q", got.ActiveDeviceProfileID, types.FlyDigiBS2PROProfileID)
 	}
 	if got.DeviceTransport != types.DeviceTransportHID {
 		t.Fatalf("device transport = %q, want hid", got.DeviceTransport)
 	}
-	if got.ActiveDeviceProfileIDsByTransport[types.DeviceTransportHID] != types.LegacyRPMProfileID {
-		t.Fatalf("remembered HID profile = %q, want %q", got.ActiveDeviceProfileIDsByTransport[types.DeviceTransportHID], types.LegacyRPMProfileID)
+	if got.ActiveDeviceProfileIDsByTransport[types.DeviceTransportHID] != types.FlyDigiBS2PROProfileID {
+		t.Fatalf("remembered HID profile = %q, want %q", got.ActiveDeviceProfileIDsByTransport[types.DeviceTransportHID], types.FlyDigiBS2PROProfileID)
 	}
 }
 

@@ -380,7 +380,8 @@
       "good": "良好"
     },
     "tempGauge": {
-      "loading": "読み込み中…"
+      "loading": "読み込み中…",
+      "notRead": "未読み取り"
     },
     "fan": {
       "targetSummary": "目標 {{target}}{{unit}}"
@@ -725,6 +726,7 @@
       "currentRpm": "現在の速度",
       "currentGear": "現在ギア",
       "targetRpm": "目標速度",
+      "cpuGpuTemperatureFormatted": "CPU {{cpu}} · GPU {{gpu}}",
       "cpuGpuTemperature": "CPU {{cpu}}°C · GPU {{gpu}}°C",
       "gearValue": "ギア {{gear}}",
       "workModes": {
@@ -750,6 +752,9 @@
       "sampleSmoothingDescription": "EMA 指数加重: 値が大きいほど滑らか、値が小さいほどリニアに動作します。迷ったらデフォルトのままにしてください。",
       "temperatureBaselineTitle": "温度基準",
       "temperatureBaselineDescription": "制御に使う温度ソース、GPU デバイス、センサーを選択します。複数 GPU 搭載のノート PC はここで dGPU に固定できます。",
+      "gpuLowPowerProtectionTitle": "dGPU 読み取りモード",
+      "gpuLowPowerProtectionDescription": "自動モードでは dGPU が動作中かを確認してから GPU 温度と電力を読み取ります。強制的に読み取る場合は「常に読み取る」に切り替えてください。",
+      "gpuLowPowerProtectionAria": "dGPU 低電力保護を切り替える",
       "cpuBaseline": "CPU 基準",
       "processorDevice": "CPU デバイス",
       "processorDeviceHintDetected": "認識された CPU は TempBridge の検出結果に応じて自動更新されます。",
@@ -762,7 +767,10 @@
       "gpuDevice": "GPU デバイス",
       "gpuDeviceHintDetected": "自動選択されたデバイス: {{model}}",
       "gpuDeviceHintAuto": "自動選択では可能な限り dGPU を優先します。",
+      "gpuDeviceHintNotPolled": "dGPU は動作していないため読み取りをスキップしました。強制的に読むには低電力保護をオフにしてください。",
       "gpuDeviceHintLocked": "選択した GPU デバイスに固定されています。",
+      "gpuTemperatureNotPolled": "dGPU は動作していないため、GPU 温度を読み取っていません",
+      "gpuNotReadShort": "未読み取り",
       "noGpuTemperatureData": "現在利用可能な GPU 温度データはありません",
       "currentControlSource": "現在のファン制御は {{source}} 基準を使用し、制御温度は {{temperature}}°C です。",
       "noControlTemperature": "有効な制御基準温度はまだ取得されていません。",
@@ -1093,6 +1101,10 @@
         "max": "最高温度",
         "cpu": "CPU のみ",
         "gpu": "GPU のみ"
+      },
+      "gpuReadMode": {
+        "auto": "自動（推奨）",
+        "always": "常に読み取る"
       },
       "themeMode": {
         "light": "ライト",

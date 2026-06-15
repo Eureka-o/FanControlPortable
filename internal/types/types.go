@@ -24,6 +24,13 @@ const (
 	TempSourceGPU                       = "gpu"
 	TempDeviceAuto                      = "auto"
 	TempSensorAuto                      = "auto"
+	GPUReadStateActive                  = "active"
+	GPUReadStateNotPolled               = "notPolled"
+	GPUReadStateUnavailable             = "unavailable"
+	GPUReadStateError                   = "error"
+	GPUReadStateUnknown                 = "unknown"
+	GPUReadModeAuto                     = "auto"
+	GPUReadModeAlways                   = "always"
 	LearningBiasBalanced                = "balanced"
 	LearningBiasCooling                 = "cooling"
 	LearningBiasQuiet                   = "quiet"
@@ -119,6 +126,15 @@ func NormalizeTempSource(source string) string {
 	}
 }
 
+func NormalizeGPUReadMode(mode string) string {
+	switch mode {
+	case GPUReadModeAlways:
+		return GPUReadModeAlways
+	default:
+		return GPUReadModeAuto
+	}
+}
+
 // NormalizeSensorSelection 归一化传感器选择，空值回退为 auto。
 func NormalizeSensorSelection(selection string) string {
 	if selection == "" {
@@ -149,10 +165,12 @@ func NormalizeLearningBias(bias string) string {
 
 // TemperatureSelection 温度读取选择配置。
 type TemperatureSelection struct {
-	TempSource string `json:"tempSource"`
-	GpuDevice  string `json:"gpuDevice"`
-	CpuSensor  string `json:"cpuSensor"`
-	GpuSensor  string `json:"gpuSensor"`
+	TempSource            string `json:"tempSource"`
+	GpuDevice             string `json:"gpuDevice"`
+	CpuSensor             string `json:"cpuSensor"`
+	GpuSensor             string `json:"gpuSensor"`
+	GpuReadMode           string `json:"gpuReadMode"`
+	GpuLowPowerProtection bool   `json:"gpuLowPowerProtection"`
 }
 
 // NormalizeTemperatureSelection 归一化温度选择配置。
@@ -161,16 +179,27 @@ func NormalizeTemperatureSelection(selection TemperatureSelection) TemperatureSe
 	selection.GpuDevice = NormalizeDeviceSelection(selection.GpuDevice)
 	selection.CpuSensor = NormalizeSensorSelection(selection.CpuSensor)
 	selection.GpuSensor = NormalizeSensorSelection(selection.GpuSensor)
+	if selection.GpuReadMode == "" {
+		if selection.GpuLowPowerProtection {
+			selection.GpuReadMode = GPUReadModeAuto
+		} else {
+			selection.GpuReadMode = GPUReadModeAlways
+		}
+	}
+	selection.GpuReadMode = NormalizeGPUReadMode(selection.GpuReadMode)
+	selection.GpuLowPowerProtection = selection.GpuReadMode != GPUReadModeAlways
 	return selection
 }
 
 // GetDefaultTemperatureSelection 获取默认温度选择配置。
 func GetDefaultTemperatureSelection() TemperatureSelection {
 	return TemperatureSelection{
-		TempSource: TempSourceMax,
-		GpuDevice:  TempDeviceAuto,
-		CpuSensor:  TempSensorAuto,
-		GpuSensor:  TempSensorAuto,
+		TempSource:            TempSourceMax,
+		GpuDevice:             TempDeviceAuto,
+		CpuSensor:             TempSensorAuto,
+		GpuSensor:             TempSensorAuto,
+		GpuReadMode:           GPUReadModeAuto,
+		GpuLowPowerProtection: true,
 	}
 }
 
@@ -307,6 +336,7 @@ type TemperatureData struct {
 	GPUTemp           int                    `json:"gpuTemp"` // GPU温度
 	CPUPowerWatts     float64                `json:"cpuPowerWatts,omitempty"`
 	GPUPowerWatts     float64                `json:"gpuPowerWatts,omitempty"`
+	GPUReadState      string                 `json:"gpuReadState,omitempty"`
 	MaxTemp           int                    `json:"maxTemp"`           // 最高温度
 	ControlTemp       int                    `json:"controlTemp"`       // 当前控温基准温度
 	ControlSource     string                 `json:"controlSource"`     // 当前控温基准来源
@@ -344,6 +374,7 @@ type BridgeTemperatureData struct {
 	GpuTemp           int                    `json:"gpuTemp"`
 	CpuPowerWatts     float64                `json:"cpuPowerWatts,omitempty"`
 	GpuPowerWatts     float64                `json:"gpuPowerWatts,omitempty"`
+	GPUReadState      string                 `json:"gpuReadState,omitempty"`
 	MaxTemp           int                    `json:"maxTemp"`
 	ControlTemp       int                    `json:"controlTemp"`
 	ControlSource     string                 `json:"controlSource"`
@@ -468,6 +499,8 @@ type AppConfig struct {
 	GpuDevice                         string                                 `json:"gpuDevice"`               // GPU 设备选择: auto 或设备 key
 	CpuSensor                         string                                 `json:"cpuSensor"`               // CPU 传感器选择: auto 或传感器 key
 	GpuSensor                         string                                 `json:"gpuSensor"`               // GPU 传感器选择: auto 或传感器 key
+	GpuReadMode                       string                                 `json:"gpuReadMode"`
+	GpuLowPowerProtection             bool                                   `json:"gpuLowPowerProtection"`
 	ConfigPath                        string                                 `json:"configPath"`              // 配置文件路径
 	ManualGear                        string                                 `json:"manualGear"`              // 手动挡位设置
 	ManualLevel                       string                                 `json:"manualLevel"`             // 手动挡位级别(低中高)
@@ -912,6 +945,7 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 	defaultCurve := GetDefaultFanCurve()
 	defaultTempSelection := GetDefaultTemperatureSelection()
 	defaultDeviceProfile := DefaultWiFiPercentProfile(DefaultFanDeviceIP)
+	defaultDeviceProfiles := BuiltInDeviceProfiles(DefaultFanDeviceIP)
 
 	return AppConfig{
 		DeviceTransport:                   DeviceTransportWiFi,
@@ -925,7 +959,7 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		ActiveDeviceProfileIDsByTransport: map[string]string{
 			DeviceTransportWiFi: defaultDeviceProfile.ID,
 		},
-		DeviceProfiles:           []DeviceProfile{defaultDeviceProfile},
+		DeviceProfiles:           defaultDeviceProfiles,
 		AutoControl:              false,
 		ManualGearToggleHotkey:   "Ctrl+Alt+Shift+M",
 		AutoControlToggleHotkey:  "Ctrl+Alt+Shift+A",
@@ -954,6 +988,8 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		GpuDevice:               defaultTempSelection.GpuDevice,
 		CpuSensor:               defaultTempSelection.CpuSensor,
 		GpuSensor:               defaultTempSelection.GpuSensor,
+		GpuReadMode:             defaultTempSelection.GpuReadMode,
+		GpuLowPowerProtection:   defaultTempSelection.GpuLowPowerProtection,
 		ConfigPath:              "",
 		ManualGear:              "标准",
 		ManualLevel:             "中",

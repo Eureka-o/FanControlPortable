@@ -9,7 +9,7 @@ import (
 )
 
 func testRPMDeviceProfile() types.DeviceProfile {
-	return types.LegacyRPMProfileForTransport(types.DeviceTransportHID)
+	return types.FlyDigiBS2Profile()
 }
 
 func offsetCurveSpeeds(curve []types.FanCurvePoint, delta int) []types.FanCurvePoint {

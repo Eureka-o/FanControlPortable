@@ -558,6 +558,8 @@ export namespace types {
 	    gpuDevice: string;
 	    cpuSensor: string;
 	    gpuSensor: string;
+	    gpuReadMode: string;
+	    gpuLowPowerProtection: boolean;
 	    configPath: string;
 	    manualGear: string;
 	    manualLevel: string;
@@ -609,6 +611,8 @@ export namespace types {
 	        this.gpuDevice = source["gpuDevice"];
 	        this.cpuSensor = source["cpuSensor"];
 	        this.gpuSensor = source["gpuSensor"];
+	        this.gpuReadMode = source["gpuReadMode"];
+	        this.gpuLowPowerProtection = source["gpuLowPowerProtection"];
 	        this.configPath = source["configPath"];
 	        this.manualGear = source["manualGear"];
 	        this.manualLevel = source["manualLevel"];
@@ -950,6 +954,7 @@ export namespace types {
 	    gpuTemp: number;
 	    cpuPowerWatts?: number;
 	    gpuPowerWatts?: number;
+	    gpuReadState?: string;
 	    maxTemp: number;
 	    controlTemp: number;
 	    controlSource: string;
@@ -973,6 +978,7 @@ export namespace types {
 	        this.gpuTemp = source["gpuTemp"];
 	        this.cpuPowerWatts = source["cpuPowerWatts"];
 	        this.gpuPowerWatts = source["gpuPowerWatts"];
+	        this.gpuReadState = source["gpuReadState"];
 	        this.maxTemp = source["maxTemp"];
 	        this.controlTemp = source["controlTemp"];
 	        this.controlSource = source["controlSource"];
@@ -1405,6 +1411,7 @@ export namespace types {
 	    gpuTemp: number;
 	    cpuPowerWatts?: number;
 	    gpuPowerWatts?: number;
+	    gpuReadState?: string;
 	    maxTemp: number;
 	    controlTemp: number;
 	    controlSource: string;
@@ -1428,6 +1435,7 @@ export namespace types {
 	        this.gpuTemp = source["gpuTemp"];
 	        this.cpuPowerWatts = source["cpuPowerWatts"];
 	        this.gpuPowerWatts = source["gpuPowerWatts"];
+	        this.gpuReadState = source["gpuReadState"];
 	        this.maxTemp = source["maxTemp"];
 	        this.controlTemp = source["controlTemp"];
 	        this.controlSource = source["controlSource"];

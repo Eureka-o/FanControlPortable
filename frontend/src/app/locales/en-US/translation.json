@@ -380,7 +380,8 @@
       "good": "Good"
     },
     "tempGauge": {
-      "loading": "Reading..."
+      "loading": "Reading...",
+      "notRead": "Not read"
     },
     "fan": {
       "targetSummary": "Target {{target}}{{unit}}"
@@ -725,6 +726,7 @@
       "currentRpm": "Current speed",
       "currentGear": "Current gear",
       "targetRpm": "Target speed",
+      "cpuGpuTemperatureFormatted": "CPU {{cpu}} · GPU {{gpu}}",
       "cpuGpuTemperature": "CPU {{cpu}}°C · GPU {{gpu}}°C",
       "gearValue": "Gear {{gear}}",
       "workModes": {
@@ -750,6 +752,9 @@
       "sampleSmoothingDescription": "EMA weighting: larger values are smoother and steadier, smaller values respond faster. Keep the default if unsure.",
       "temperatureBaselineTitle": "Temperature baseline",
       "temperatureBaselineDescription": "Choose the thermal source, GPU device, and specific sensor used for fan control. On multi-GPU laptops you can lock the dGPU here.",
+      "gpuLowPowerProtectionTitle": "dGPU read mode",
+      "gpuLowPowerProtectionDescription": "Auto mode checks whether the dGPU is active before reading GPU temperature and power. Switch to Always read when forced GPU telemetry is needed.",
+      "gpuLowPowerProtectionAria": "Toggle dGPU low-power protection",
       "cpuBaseline": "CPU baseline",
       "processorDevice": "Processor device",
       "processorDeviceHintDetected": "The detected processor updates automatically with TempBridge.",
@@ -762,7 +767,10 @@
       "gpuDevice": "GPU device",
       "gpuDeviceHintDetected": "Auto mode currently matched: {{model}}",
       "gpuDeviceHintAuto": "Auto mode will prefer the discrete GPU when possible.",
+      "gpuDeviceHintNotPolled": "The dGPU is inactive and was skipped; turn off low-power protection to force reading.",
       "gpuDeviceHintLocked": "Locked to the GPU device you selected.",
+      "gpuTemperatureNotPolled": "The dGPU is inactive, so GPU temperature was not read",
+      "gpuNotReadShort": "Not read",
       "noGpuTemperatureData": "No GPU temperature data is currently available",
       "currentControlSource": "Fan control is currently using the {{source}} baseline at {{temperature}}°C.",
       "noControlTemperature": "No valid control baseline temperature is available yet.",
@@ -1093,6 +1101,10 @@
         "max": "Highest temperature",
         "cpu": "CPU only",
         "gpu": "GPU only"
+      },
+      "gpuReadMode": {
+        "auto": "Auto (recommended)",
+        "always": "Always read"
       },
       "themeMode": {
         "light": "Light",

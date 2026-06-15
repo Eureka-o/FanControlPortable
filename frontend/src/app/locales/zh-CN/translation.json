@@ -380,7 +380,8 @@
       "good": "良好"
     },
     "tempGauge": {
-      "loading": "读取中…"
+      "loading": "读取中…",
+      "notRead": "未读取"
     },
     "fan": {
       "targetSummary": "目标 {{target}}{{unit}}"
@@ -725,7 +726,8 @@
       "currentRpm": "实时速度",
       "currentGear": "当前挡位",
       "targetRpm": "目标速度",
-      "cpuGpuTemperature": "CPU {{cpu}}°C · GPU {{gpu}}°C",
+      "cpuGpuTemperature": "CPU {{cpu}} · GPU {{gpu}}",
+      "cpuGpuTemperatureFormatted": "CPU {{cpu}} · GPU {{gpu}}",
       "gearValue": "挡位 {{gear}}",
       "workModes": {
         "manual": "手动模式",
@@ -750,6 +752,9 @@
       "sampleSmoothingDescription": "EMA 指数加权：值越大越平滑（更稳）、越小响应越快（更跟手），不确定保持默认",
       "temperatureBaselineTitle": "温度基准",
       "temperatureBaselineDescription": "选择控温器件、显卡设备以及具体传感器。多显卡笔记本可在这里直接锁定独显。",
+      "gpuLowPowerProtectionTitle": "独显读取模式",
+      "gpuLowPowerProtectionDescription": "自动模式会先判断独显是否正在工作，再读取 GPU 温度和功耗；需要强制读取时可切换为始终读取。",
+      "gpuLowPowerProtectionAria": "切换独显低功耗保护",
       "cpuBaseline": "CPU 基准",
       "processorDevice": "处理器设备",
       "processorDeviceHintDetected": "当前已识别的处理器，会随 TempBridge 检测自动更新。",
@@ -762,7 +767,10 @@
       "gpuDevice": "显卡设备",
       "gpuDeviceHintDetected": "自动模式当前命中：{{model}}",
       "gpuDeviceHintAuto": "自动模式会优先尝试独显。",
+      "gpuDeviceHintNotPolled": "独显未工作，已跳过读取；关闭低功耗保护后可强制读取。",
       "gpuDeviceHintLocked": "已锁定为你选择的显卡设备。",
+      "gpuTemperatureNotPolled": "独显未工作，当前未读取 GPU 温度",
+      "gpuNotReadShort": "未读取",
       "noGpuTemperatureData": "当前无可用 GPU 温度数据",
       "currentControlSource": "当前控温正在使用 {{source}} 基准，控制温度 {{temperature}}°C。",
       "noControlTemperature": "当前尚未拿到有效的控温基准温度。",
@@ -1093,6 +1101,10 @@
         "max": "最高温度",
         "cpu": "仅 CPU",
         "gpu": "仅 GPU"
+      },
+      "gpuReadMode": {
+        "auto": "自动（推荐）",
+        "always": "始终读取"
       },
       "themeMode": {
         "light": "浅色",

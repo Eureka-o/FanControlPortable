@@ -310,11 +310,21 @@ html[data-theme="thrm"] .glacier-metric-card {
 }
 
 /* 指标卡内的环形进度图：底环更淡，进度环加蓝色光晕。 */
-html[data-theme="thrm"] .glacier-metric-card svg path:first-child {
+html[data-theme="thrm"] .glacier-metric-card .metric-header-icon {
+  color: color-mix(in srgb, var(--primary) 88%, var(--foreground) 12%);
+  filter: drop-shadow(0 0 5px rgba(47, 116, 255, 0.18));
+}
+
+html[data-theme="thrm"] .glacier-metric-card .metric-header-icon svg {
+  color: currentColor;
+  stroke: currentColor;
+}
+
+html[data-theme="thrm"] .glacier-metric-card .semi-gauge-svg path:first-child {
   stroke: rgba(47, 116, 255, 0.08);
 }
 
-html[data-theme="thrm"] .glacier-metric-card svg path:last-child {
+html[data-theme="thrm"] .glacier-metric-card .semi-gauge-svg path:last-child {
   filter: drop-shadow(0 0 8px rgba(47, 116, 255, 0.32));
 }
 

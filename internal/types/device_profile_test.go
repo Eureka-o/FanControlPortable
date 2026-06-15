@@ -100,6 +100,35 @@ func TestLegacyBLEProfileDoesNotInheritNonSpeedCapabilities(t *testing.T) {
 	}
 }
 
+func TestBuiltInDeviceProfilesIncludeFlyDigiProfiles(t *testing.T) {
+	profiles := BuiltInDeviceProfiles("10.0.0.25")
+	expectedIDs := []string{
+		DefaultWiFiPercentProfileID,
+		FlyDigiBS1ProfileID,
+		FlyDigiBS2ProfileID,
+		FlyDigiBS2PROProfileID,
+		FlyDigiBS3ProfileID,
+		FlyDigiBS3PROProfileID,
+	}
+	for _, id := range expectedIDs {
+		found := false
+		for _, profile := range profiles {
+			if profile.ID == id {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("built-in profiles should include %q: %#v", id, profiles)
+		}
+	}
+	for _, profile := range profiles {
+		if profile.ID == LegacyRPMProfileID {
+			t.Fatalf("legacy RPM profile should not be part of the visible built-in device library: %#v", profile)
+		}
+	}
+}
+
 func TestFlyDigiBuiltInProfilesDeclareExpectedCapabilities(t *testing.T) {
 	bs1 := NormalizeDeviceProfile(FlyDigiBS1Profile(), "")
 	if bs1.ID != FlyDigiBS1ProfileID {
@@ -176,11 +205,21 @@ func TestNormalizeDeviceProfileConfigDerivesFromOldFields(t *testing.T) {
 	if cfg.ActiveDeviceProfileID != DefaultWiFiPercentProfileID {
 		t.Fatalf("active profile = %q, want %q", cfg.ActiveDeviceProfileID, DefaultWiFiPercentProfileID)
 	}
-	for _, id := range []string{FlyDigiBS1ProfileID, FlyDigiBS2ProfileID, FlyDigiBS2PROProfileID, FlyDigiBS3ProfileID, FlyDigiBS3PROProfileID} {
+	for _, id := range []string{DefaultWiFiPercentProfileID, FlyDigiBS1ProfileID, FlyDigiBS2ProfileID, FlyDigiBS2PROProfileID, FlyDigiBS3ProfileID, FlyDigiBS3PROProfileID} {
+		found := false
 		for _, profile := range cfg.DeviceProfiles {
 			if profile.ID == id {
-				t.Fatalf("hidden FlyDigi backend profile %q should not be saved in normalized config", id)
+				found = true
+				break
 			}
+		}
+		if !found {
+			t.Fatalf("normalized config should contain built-in profile %q", id)
+		}
+	}
+	for _, profile := range cfg.DeviceProfiles {
+		if profile.ID == LegacyRPMProfileID {
+			t.Fatalf("legacy RPM profile should not remain in normalized device profiles: %#v", profile)
 		}
 	}
 	active := ActiveDeviceProfile(cfg)
@@ -218,8 +257,8 @@ func TestNormalizeDeviceProfileConfigSwitchesRequestedTransport(t *testing.T) {
 	if cfg.DeviceTransport != DeviceTransportBLE {
 		t.Fatalf("device transport = %q, want ble", cfg.DeviceTransport)
 	}
-	if cfg.ActiveDeviceProfileID != LegacyRPMProfileID {
-		t.Fatalf("active profile = %q, want %q", cfg.ActiveDeviceProfileID, LegacyRPMProfileID)
+	if cfg.ActiveDeviceProfileID != FlyDigiBS1ProfileID {
+		t.Fatalf("active profile = %q, want %q", cfg.ActiveDeviceProfileID, FlyDigiBS1ProfileID)
 	}
 	active := ActiveDeviceProfile(cfg)
 	if active.Transport != DeviceTransportBLE || active.SpeedUnit != FanSpeedUnitRPM {
@@ -304,9 +343,7 @@ func TestNormalizeDeviceProfileConfigPreservesActiveProfileWithinRequestedTransp
 		},
 	}
 
-	if NormalizeDeviceProfileConfig(cfg) {
-		t.Fatal("expected no hidden built-in profile injection")
-	}
+	NormalizeDeviceProfileConfig(cfg)
 	if cfg.ActiveDeviceProfileID != second.ID {
 		t.Fatalf("active profile = %q, want %q", cfg.ActiveDeviceProfileID, second.ID)
 	}
@@ -396,7 +433,7 @@ func TestActiveDeviceProfileUsesRequestedBuiltInRPMProfileWhenMissingFromConfig(
 	if active.Transport != DeviceTransportHID || active.SpeedUnit != FanSpeedUnitRPM {
 		t.Fatalf("active profile transport/unit = %q/%q, want hid/rpm", active.Transport, active.SpeedUnit)
 	}
-	if active.ID != LegacyRPMProfileID {
-		t.Fatalf("active HID profile = %q, want compatibility fallback %q before config normalization", active.ID, LegacyRPMProfileID)
+	if active.ID != FlyDigiBS2ProfileID {
+		t.Fatalf("active HID profile = %q, want built-in fallback %q before config normalization", active.ID, FlyDigiBS2ProfileID)
 	}
 }

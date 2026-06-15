@@ -56,6 +56,7 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 	// 优先使用桥接程序读取温度
 	bridgeTemp := r.bridgeManager.GetTemperature(selection)
 	copyBridgeTemperatureMetadata(&temp, bridgeTemp, selection)
+	gpuNotPolled := temp.GPUReadState == types.GPUReadStateNotPolled
 	if bridgeTemp.Success {
 		if bridgeTemp.CpuTemp == 0 && bridgeTemp.GpuTemp == 0 {
 			temp.BridgeOk = false
@@ -63,7 +64,12 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 			r.logger.Warn("桥接程序返回空温度数据，使用备用方法")
 
 			temp.CPUTemp = r.readCPUTemperature()
-			temp.GPUTemp = r.readGPUTemperature()
+			if !gpuNotPolled {
+				temp.GPUTemp = r.readGPUTemperature()
+				if temp.GPUTemp > 0 && temp.GPUReadState == "" {
+					temp.GPUReadState = types.GPUReadStateActive
+				}
+			}
 			temp.MaxTemp = max(temp.CPUTemp, temp.GPUTemp)
 			temp.ControlTemp = resolveControlTemp(temp.CPUTemp, temp.GPUTemp, selection.TempSource)
 			return temp
@@ -86,7 +92,13 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 	temp.CPUTemp = r.readCPUTemperature()
 
 	// 读取GPU温度
-	temp.GPUTemp = r.readGPUTemperature()
+	if !gpuNotPolled {
+		// GPU fallback may wake a sleeping discrete GPU; keep it behind the bridge state.
+		temp.GPUTemp = r.readGPUTemperature()
+		if temp.GPUTemp > 0 && temp.GPUReadState == "" {
+			temp.GPUReadState = types.GPUReadStateActive
+		}
+	}
 
 	// 计算最高温度
 	temp.MaxTemp = max(temp.CPUTemp, temp.GPUTemp)
@@ -104,6 +116,7 @@ func copyBridgeTemperatureMetadata(temp *types.TemperatureData, bridgeTemp types
 	temp.GPUTemp = bridgeTemp.GpuTemp
 	temp.CPUPowerWatts = bridgeTemp.CpuPowerWatts
 	temp.GPUPowerWatts = bridgeTemp.GpuPowerWatts
+	temp.GPUReadState = normalizeGPUReadState(bridgeTemp.GPUReadState, bridgeTemp.GpuTemp)
 	temp.MaxTemp = bridgeTemp.MaxTemp
 	temp.ControlTemp = bridgeTemp.ControlTemp
 	temp.ControlSource = bridgeTemp.ControlSource
@@ -125,6 +138,20 @@ func copyBridgeTemperatureMetadata(temp *types.TemperatureData, bridgeTemp types
 			temp.UpdateTime *= 1000
 		}
 	}
+}
+
+func normalizeGPUReadState(state string, gpuTemp int) string {
+	switch state {
+	case types.GPUReadStateActive,
+		types.GPUReadStateNotPolled,
+		types.GPUReadStateUnavailable,
+		types.GPUReadStateError:
+		return state
+	}
+	if gpuTemp > 0 {
+		return types.GPUReadStateActive
+	}
+	return types.GPUReadStateUnavailable
 }
 
 func resolveControlTemp(cpuTemp, gpuTemp int, source string) int {

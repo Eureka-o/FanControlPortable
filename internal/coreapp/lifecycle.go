@@ -297,6 +297,7 @@ func (a *CoreApp) initSystemTray() {
 				GPUTemp:              a.currentTemp.GPUTemp,
 				CPUPowerWatts:        a.currentTemp.CPUPowerWatts,
 				GPUPowerWatts:        a.currentTemp.GPUPowerWatts,
+				GPUReadState:         a.currentTemp.GPUReadState,
 				CurrentRPM:           currentRPM,
 				SpeedUnit:            speedUnit,
 				AutoControlState:     cfg.AutoControl,

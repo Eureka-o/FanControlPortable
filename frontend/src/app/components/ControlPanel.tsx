@@ -215,6 +215,11 @@ const TEMP_SOURCE_OPTIONS = [
   { value: 'gpu', labelKey: 'controlPanel.options.tempSource.gpu' },
 ];
 
+const GPU_READ_MODE_OPTIONS = [
+  { value: 'auto', labelKey: 'controlPanel.options.gpuReadMode.auto' },
+  { value: 'always', labelKey: 'controlPanel.options.gpuReadMode.always' },
+];
+
 // 内置基础主题选项。自定义主题改为运行时从安装目录动态发现并追加。
 const THEME_MODE_OPTIONS = [
   { value: 'light', labelKey: 'controlPanel.options.themeMode.light' },
@@ -512,6 +517,14 @@ export default function ControlPanel({
 
   const activeCurveProfileId = ((config as any).activeFanCurveProfileId || '') as string;
   const currentTempSource = (((config as any).tempSource as string) || 'max') as 'max' | 'cpu' | 'gpu';
+  const currentGpuReadMode = (((config as any).gpuReadMode as string) || (((config as any).gpuLowPowerProtection === false) ? 'always' : 'auto')) as 'auto' | 'always';
+  const gpuReadState = (((temperature as any)?.gpuReadState as string) || 'unknown');
+  const gpuNotPolled = gpuReadState === 'notPolled';
+  const gpuLowPowerProtectionEnabled = currentGpuReadMode !== 'always';
+  const cpuOverviewTemperature = temperature?.cpuTemp && temperature.cpuTemp > 0 ? `${temperature.cpuTemp}°C` : '--';
+  const gpuOverviewTemperature = gpuNotPolled
+    ? t('controlPanel.fan.gpuNotReadShort')
+    : (temperature?.gpuTemp && temperature.gpuTemp > 0 ? `${temperature.gpuTemp}°C` : '--');
   const cpuSensors = useMemo(() => (Array.isArray(temperature?.cpuSensors) ? temperature.cpuSensors : []), [temperature?.cpuSensors]);
   const gpuSensors = useMemo(() => (Array.isArray(temperature?.gpuSensors) ? temperature.gpuSensors : []), [temperature?.gpuSensors]);
   // 收窄依赖：旧实现依赖整个 temperature 对象，温度每秒推送都会重算并产生新数组引用，
@@ -577,6 +590,10 @@ export default function ControlPanel({
   );
   const tempSourceOptions = useMemo(
     () => TEMP_SOURCE_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey) })),
+    [locale, t],
+  );
+  const gpuReadModeOptions = useMemo(
+    () => GPU_READ_MODE_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey) })),
     [locale, t],
   );
   // 内置基础主题选项 + 运行时发现的自定义主题。
@@ -947,6 +964,22 @@ export default function ControlPanel({
       onConfigChange(newCfg);
     } catch { /* noop */ } finally {
       setLoading(loadingKey, false);
+    }
+  }, [config, onConfigChange]);
+
+  const handleGpuReadModeChange = useCallback(async (mode: string) => {
+    const normalizedMode = mode === 'always' ? 'always' : 'auto';
+    setLoading('gpuReadMode', true);
+    try {
+      const newCfg = types.AppConfig.createFrom({
+        ...config,
+        gpuReadMode: normalizedMode,
+        gpuLowPowerProtection: normalizedMode !== 'always',
+      });
+      await apiService.updateConfig(newCfg);
+      onConfigChange(newCfg);
+    } catch { /* noop */ } finally {
+      setLoading('gpuReadMode', false);
     }
   }, [config, onConfigChange]);
 
@@ -1446,7 +1479,7 @@ export default function ControlPanel({
               )}>
                 {temperature?.maxTemp ?? '--'}°C
               </div>
-              <div className="mt-1 text-xs text-muted-foreground">{t('controlPanel.overview.cpuGpuTemperature', { cpu: temperature?.cpuTemp ?? '--', gpu: temperature?.gpuTemp ?? '--' })}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{t('controlPanel.overview.cpuGpuTemperatureFormatted', { cpu: cpuOverviewTemperature, gpu: gpuOverviewTemperature })}</div>
             </div>
             <div className="rounded-xl border border-border/70 bg-muted/30 p-4 text-center">
               <div className="text-sm text-muted-foreground">{t('controlPanel.overview.currentRpm')}</div>
@@ -1672,6 +1705,28 @@ export default function ControlPanel({
               </div>
 
               <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <div className="rounded-xl border border-border/70 bg-background/55 px-4 py-3 md:col-span-2">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-2">
+                      <Gpu className={clsx('mt-0.5 h-4 w-4', gpuLowPowerProtectionEnabled ? 'text-primary' : 'text-muted-foreground')} />
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-foreground">{t('controlPanel.fan.gpuLowPowerProtectionTitle')}</div>
+                        <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{t('controlPanel.fan.gpuLowPowerProtectionDescription')}</div>
+                      </div>
+                    </div>
+                    <div className="w-full sm:w-40">
+                      <Select
+                        value={currentGpuReadMode}
+                        onChange={(value: string | number) => handleGpuReadModeChange(String(value))}
+                        options={gpuReadModeOptions}
+                        size="sm"
+                        className="w-full min-w-0"
+                        disabled={loadingStates.gpuReadMode}
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 <div className="rounded-xl border border-border/70 bg-card px-4 py-3">
                   <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                     <Cpu className="h-4 w-4 text-primary" />
@@ -1711,7 +1766,9 @@ export default function ControlPanel({
                   <div className="mt-3 space-y-3">
                     <SelectionField
                       label={t('controlPanel.fan.gpuDevice')}
-                      hint={selectedGpuDevice === 'auto'
+                      hint={gpuNotPolled
+                        ? t('controlPanel.fan.gpuDeviceHintNotPolled')
+                        : selectedGpuDevice === 'auto'
                         ? (temperature?.gpuModel?.trim() ? t('controlPanel.fan.gpuDeviceHintDetected', { model: temperature.gpuModel }) : t('controlPanel.fan.gpuDeviceHintAuto'))
                         : t('controlPanel.fan.gpuDeviceHintLocked')}
                     >
@@ -1721,7 +1778,7 @@ export default function ControlPanel({
                         options={gpuDeviceOptions}
                         size="sm"
                         className="w-full min-w-0"
-                        disabled={gpuDevices.length === 0}
+                        disabled={gpuNotPolled || gpuDevices.length === 0}
                       />
                     </SelectionField>
 
@@ -1732,12 +1789,14 @@ export default function ControlPanel({
                         options={gpuSensorOptions}
                         size="sm"
                         className="w-full min-w-0"
-                        disabled={!effectiveGpuSensors.length}
+                        disabled={gpuNotPolled || !effectiveGpuSensors.length}
                       />
                     </SelectionField>
                   </div>
                   <div className="mt-2 text-xs text-muted-foreground">
-                    {temperature?.gpuTemp && temperature.gpuTemp > 0 ? t('controlPanel.fan.currentBaselineTemperature', { temperature: temperature.gpuTemp }) : t('controlPanel.fan.noGpuTemperatureData')}
+                    {gpuNotPolled
+                      ? t('controlPanel.fan.gpuTemperatureNotPolled')
+                      : temperature?.gpuTemp && temperature.gpuTemp > 0 ? t('controlPanel.fan.currentBaselineTemperature', { temperature: temperature.gpuTemp }) : t('controlPanel.fan.noGpuTemperatureData')}
                   </div>
                 </div>
               </div>

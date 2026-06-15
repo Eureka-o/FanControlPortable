@@ -4,9 +4,11 @@ package ipc
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -326,7 +328,11 @@ func (s *Server) handleClient(conn net.Conn, state *clientState) {
 		}
 
 		if _, err := conn.Write(append(respBytes, '\n')); err != nil {
-			s.logError("发送响应失败: %v", err)
+			if isClosedConnectionError(err) {
+				s.logDebug("IPC 客户端已断开，响应已丢弃: %v", err)
+			} else {
+				s.logError("发送响应失败: %v", err)
+			}
 			return
 		}
 	}
@@ -444,6 +450,20 @@ func (s *Server) logDebug(format string, v ...any) {
 //
 // 响应路由：每条 SendRequest 注册一个 (requestID -> chan *Response)，readLoop 收到响应时
 // 按 requestID 派发到对应 channel。这样并发请求互不串扰，且超时未取消的旧响应被自动丢弃。
+func isClosedConnectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "closed") ||
+		strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "use of closed network connection")
+}
+
 type Client struct {
 	conn         net.Conn
 	mutex        sync.Mutex

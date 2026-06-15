@@ -458,11 +458,11 @@ func (a *CoreApp) ConnectNativeDevice(profileID string) bool {
 
 	nativeCfg := cfg
 	nativeCfg.DeviceTransport = profile.Transport
-	nativeCfg.ActiveDeviceProfileID = types.LegacyRPMProfileID
+	nativeCfg.ActiveDeviceProfileID = profile.ID
 	if nativeCfg.ActiveDeviceProfileIDsByTransport == nil {
 		nativeCfg.ActiveDeviceProfileIDsByTransport = map[string]string{}
 	}
-	nativeCfg.ActiveDeviceProfileIDsByTransport[profile.Transport] = types.LegacyRPMProfileID
+	nativeCfg.ActiveDeviceProfileIDsByTransport[profile.Transport] = profile.ID
 	if err := a.UpdateConfig(nativeCfg); err != nil {
 		a.logError("切换原生设备通用 RPM 档案失败: %v", err)
 	}

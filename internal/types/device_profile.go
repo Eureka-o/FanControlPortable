@@ -241,7 +241,7 @@ func DefaultWiFiPercentCapabilities() DeviceCapabilities {
 func LegacyRPMCapabilities() DeviceCapabilities {
 	return DeviceCapabilities{
 		ProfileID:                      LegacyRPMProfileID,
-		DisplayName:                    "Legacy RPM controller",
+		DisplayName:                    "RPM 兼容控制模板",
 		Transport:                      DeviceTransportHID,
 		SpeedUnit:                      FanSpeedUnitRPM,
 		SpeedRange:                     DefaultRPMSpeedRange(),
@@ -277,7 +277,7 @@ func LegacyRPMProfileForTransport(transport string) DeviceProfile {
 		DisplayName:  caps.DisplayName,
 		Vendor:       "THRM",
 		Model:        "HID/BLE RPM",
-		Notes:        "Reference-style RPM control path kept isolated from FanControl percent drivers.",
+		Notes:        "保留参考软件风格的 RPM 控制路径，作为旧配置和高级模板使用。",
 		BuiltIn:      true,
 		Transport:    transport,
 		SpeedUnit:    caps.SpeedUnit,
@@ -472,6 +472,9 @@ func ActiveDeviceProfile(cfg *AppConfig) DeviceProfile {
 		case DeviceTransportWiFi:
 			return DefaultWiFiPercentProfile(cfg.FanControlDeviceIp)
 		case DeviceTransportBLE, DeviceTransportHID:
+			if profile, ok := builtInDeviceProfileForTransport(cfg.FanControlDeviceIp, transport); ok {
+				return profile
+			}
 			return LegacyRPMProfileForTransport(transport)
 		}
 	}
@@ -574,14 +577,13 @@ func setActiveDeviceProfileIDForTransport(cfg *AppConfig, profile DeviceProfile)
 
 func upsertBuiltInProfileForTransport(cfg *AppConfig, transport string) (string, bool) {
 	transport = NormalizeDeviceTransport(transport)
-	var profile DeviceProfile
-	switch transport {
-	case DeviceTransportWiFi:
-		profile = DefaultWiFiPercentProfile(cfg.FanControlDeviceIp)
-	case DeviceTransportBLE, DeviceTransportHID:
-		profile = LegacyRPMProfileForTransport(transport)
-	default:
-		return "", false
+	profile, ok := builtInDeviceProfileForTransport(cfg.FanControlDeviceIp, transport)
+	if !ok {
+		if transport == DeviceTransportBLE || transport == DeviceTransportHID {
+			profile = LegacyRPMProfileForTransport(transport)
+		} else {
+			return "", false
+		}
 	}
 
 	for i := range cfg.DeviceProfiles {
@@ -608,13 +610,12 @@ func NormalizeDeviceProfileConfig(cfg *AppConfig) bool {
 	}
 
 	if len(cfg.DeviceProfiles) == 0 {
-		if cfg.DeviceTransport == DeviceTransportHID || cfg.DeviceTransport == DeviceTransportBLE {
-			cfg.DeviceProfiles = []DeviceProfile{LegacyRPMProfileForTransport(cfg.DeviceTransport)}
-			cfg.ActiveDeviceProfileID = LegacyRPMProfileID
-		} else {
-			cfg.DeviceProfiles = []DeviceProfile{DefaultWiFiPercentProfile(cfg.FanControlDeviceIp)}
-			cfg.ActiveDeviceProfileID = DefaultWiFiPercentProfileID
+		profile, ok := builtInDeviceProfileForTransport(cfg.FanControlDeviceIp, cfg.DeviceTransport)
+		if !ok {
+			profile = DefaultWiFiPercentProfile(cfg.FanControlDeviceIp)
 		}
+		cfg.DeviceProfiles = []DeviceProfile{profile}
+		cfg.ActiveDeviceProfileID = profile.ID
 		ensureBuiltInDeviceProfiles(cfg)
 		setActiveDeviceProfileIDForTransport(cfg, cfg.DeviceProfiles[0])
 		return true
@@ -625,7 +626,7 @@ func NormalizeDeviceProfileConfig(cfg *AppConfig) bool {
 	normalized := make([]DeviceProfile, 0, len(cfg.DeviceProfiles))
 	for _, profile := range cfg.DeviceProfiles {
 		profile = NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp)
-		if IsFlyDigiDeviceProfileID(profile.ID) {
+		if profile.ID == LegacyRPMProfileID {
 			changed = true
 			continue
 		}

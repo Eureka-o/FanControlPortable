@@ -98,6 +98,15 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	cfg.GpuDevice = types.NormalizeDeviceSelection(cfg.GpuDevice)
 	cfg.CpuSensor = types.NormalizeSensorSelection(cfg.CpuSensor)
 	cfg.GpuSensor = types.NormalizeSensorSelection(cfg.GpuSensor)
+	if cfg.GpuReadMode == "" {
+		if cfg.GpuLowPowerProtection {
+			cfg.GpuReadMode = types.GPUReadModeAuto
+		} else {
+			cfg.GpuReadMode = types.GPUReadModeAlways
+		}
+	}
+	cfg.GpuReadMode = types.NormalizeGPUReadMode(cfg.GpuReadMode)
+	cfg.GpuLowPowerProtection = cfg.GpuReadMode != types.GPUReadModeAlways
 	prepareDeviceFanCurveStateForUpdate(&cfg, oldCfg)
 	curveprofiles.NormalizeConfigForUnit(&cfg, unit)
 	if idx := curveprofiles.FindIndex(cfg.FanCurveProfiles, cfg.ActiveFanCurveProfileID); idx >= 0 {

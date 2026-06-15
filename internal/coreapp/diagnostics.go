@@ -252,10 +252,12 @@ func buildDiagnosticsConfigSummary(cfg types.AppConfig) diagnosticsConfigSummary
 		TempUpdateRate:                    cfg.TempUpdateRate,
 		TempSampleCount:                   cfg.TempSampleCount,
 		TemperatureSelection: types.TemperatureSelection{
-			TempSource: cfg.TempSource,
-			GpuDevice:  cfg.GpuDevice,
-			CpuSensor:  cfg.CpuSensor,
-			GpuSensor:  cfg.GpuSensor,
+			TempSource:            cfg.TempSource,
+			GpuDevice:             cfg.GpuDevice,
+			CpuSensor:             cfg.CpuSensor,
+			GpuSensor:             cfg.GpuSensor,
+			GpuReadMode:           cfg.GpuReadMode,
+			GpuLowPowerProtection: cfg.GpuLowPowerProtection,
 		},
 		SmartControl: diagnosticsSmartControlSummary{
 			Enabled:                           cfg.SmartControl.Enabled,

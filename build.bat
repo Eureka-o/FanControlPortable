@@ -41,6 +41,11 @@ if exist "core.exe" del /q "core.exe"
 echo Cleaning stale bridge output...
 if exist "!BUILD_BIN!\bridge" rmdir /s /q "!BUILD_BIN!\bridge"
 
+echo Cleaning machine-specific build config...
+if exist "!BUILD_BIN!\config\config.json" del /q "!BUILD_BIN!\config\config.json"
+if exist "!BUILD_BIN!\config\hardware-profile.json" del /q "!BUILD_BIN!\config\hardware-profile.json"
+if exist "!BUILD_BIN!\config" rmdir "!BUILD_BIN!\config" 2>nul
+
 echo Building temperature bridge...
 dotnet publish bridge\TempBridge\TempBridge.csproj -c Release --self-contained false -o build\bin\bridge /p:Platform=x64 /p:DebugType=none /p:DebugSymbols=false /p:UseLibreHardwareMonitorProjectReference=false
 if errorlevel 1 exit /b 1
