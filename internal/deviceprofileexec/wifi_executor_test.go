@@ -146,6 +146,37 @@ func TestWiFiExecutorRejectsFailureResponse(t *testing.T) {
 	}
 }
 
+func TestWiFiExecutorDefaultParserUsesFanSpeedAsCurrentWhenSpeedIsSetpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/state":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"speed":       80,
+				"fanSpeed":    35,
+				"controlMode": "manual",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	profile := types.DefaultWiFiPercentProfile(server.URL)
+	profile.Connection.StateEndpoint = "/state"
+	executor, err := NewWiFiExecutor(profile, "", nil)
+	if err != nil {
+		t.Fatalf("new executor: %v", err)
+	}
+
+	fanData, err := executor.ReadState(nil)
+	if err != nil {
+		t.Fatalf("read state: %v", err)
+	}
+	if fanData.CurrentRPM != 35 || fanData.TargetRPM != 80 {
+		t.Fatalf("fan data speed = current %d target %d, want 35/80", fanData.CurrentRPM, fanData.TargetRPM)
+	}
+}
+
 func TestWiFiExecutorRetriesRetryableHTTPStatus(t *testing.T) {
 	speedAttempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

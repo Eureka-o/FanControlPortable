@@ -234,7 +234,11 @@ func (e *BLEExecutor) setFlyDigiBS1Speed(ctx context.Context, speed types.FanSpe
 	if err := e.writeRawLocked(ctx, deviceproto.BuildFrame(deviceproto.CmdSetRealtimeRPM, payload...)); err != nil {
 		return nil, fmt.Errorf("set BS1 RPM: %w", err)
 	}
-	state := e.stateWithValues(rpm, rpm, "自动模式(实时转速)")
+	current := 0
+	if e.lastState != nil {
+		current = int(e.lastState.CurrentRPM)
+	}
+	state := e.stateWithValues(current, rpm, "自动模式(实时转速)")
 	e.lastState = cloneFanData(state)
 	return state, nil
 }
@@ -374,6 +378,13 @@ func parseFlyDigiBS1Notification(body []byte) (*types.FanData, bool) {
 
 func (e *BLEExecutor) syntheticStateLocked(speed types.FanSpeedValue) *types.FanData {
 	value := speedValueForProfileState(speed)
+	if strings.TrimSpace(speed.Unit) != "" {
+		current := 0
+		if e.lastState != nil {
+			current = int(e.lastState.CurrentRPM)
+		}
+		return e.stateWithValues(current, value, "ble")
+	}
 	return e.stateWithValues(value, value, "ble")
 }
 

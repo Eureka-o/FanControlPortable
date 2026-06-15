@@ -107,3 +107,33 @@ func TestPadFlyDigiHIDReportUsesOutputReportLength(t *testing.T) {
 		t.Fatal("full-length HID reports should be reused without another allocation")
 	}
 }
+
+func TestFlyDigiHIDTargetUpdateDoesNotFakeCurrentRPM(t *testing.T) {
+	m := NewManager(nil)
+
+	m.storeFlyDigiHIDFanDataLocked(2100, "自动模式(实时转速)")
+	got := m.GetCurrentFanData()
+	if got == nil {
+		t.Fatal("expected synthetic HID fan data")
+	}
+	if got.CurrentRPM != 0 || got.TargetRPM != 2100 {
+		t.Fatalf("initial synthetic HID speed = %d/%d, want 0/2100", got.CurrentRPM, got.TargetRPM)
+	}
+
+	m.currentFanData.Store(&types.FanData{
+		CurrentRPM: 1500,
+		TargetRPM:  1800,
+		WorkMode:   "自动模式(实时转速)",
+		Transport:  types.DeviceTransportHID,
+		SpeedUnit:  types.FanSpeedUnitRPM,
+	})
+	m.storeFlyDigiHIDFanDataLocked(2300, "挡位工作模式")
+
+	got = m.GetCurrentFanData()
+	if got.CurrentRPM != 1500 || got.TargetRPM != 2300 {
+		t.Fatalf("HID speed after target update = %d/%d, want 1500/2300", got.CurrentRPM, got.TargetRPM)
+	}
+	if got.WorkMode != "挡位工作模式" {
+		t.Fatalf("work mode = %q, want 挡位工作模式", got.WorkMode)
+	}
+}

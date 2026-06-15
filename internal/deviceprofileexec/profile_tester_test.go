@@ -126,8 +126,8 @@ func TestProfileTesterSetsBLEPercentUsingTenths(t *testing.T) {
 	if !client.closed {
 		t.Fatal("expected transient BLE test to close the client")
 	}
-	if result.FanData == nil || result.FanData.CurrentRPM != 56 || result.FanData.SpeedUnit != types.FanSpeedUnitPercent {
-		t.Fatalf("fan data = %#v, want synthetic 56 percent", result.FanData)
+	if result.FanData == nil || result.FanData.CurrentRPM != 0 || result.FanData.TargetRPM != 56 || result.FanData.SpeedUnit != types.FanSpeedUnitPercent {
+		t.Fatalf("fan data = %#v, want synthetic current 0 target 56 percent", result.FanData)
 	}
 }
 
@@ -167,7 +167,7 @@ func TestProfileTesterAppliesHexChecksumForSerialDraft(t *testing.T) {
 	if !port.closed {
 		t.Fatal("expected transient serial test to close the port")
 	}
-	if result.FanData == nil || result.FanData.CurrentRPM != 10 || result.FanData.SpeedUnit != types.FanSpeedUnitPercent {
-		t.Fatalf("fan data = %#v, want synthetic 10 percent", result.FanData)
+	if result.FanData == nil || result.FanData.CurrentRPM != 0 || result.FanData.TargetRPM != 10 || result.FanData.SpeedUnit != types.FanSpeedUnitPercent {
+		t.Fatalf("fan data = %#v, want synthetic current 0 target 10 percent", result.FanData)
 	}
 }

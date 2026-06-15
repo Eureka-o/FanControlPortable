@@ -716,16 +716,41 @@ func (m *Manager) setFlyDigiHIDBrightness(percentage int) bool {
 }
 
 func (m *Manager) storeFlyDigiHIDFanDataLocked(rpm int, workMode string) {
+	rpm = types.ClampRPM(rpm)
 	fanData := &types.FanData{
 		ReportID:    deviceproto.ReportID,
 		MagicSync:   0x5AA5,
 		Command:     deviceproto.CmdSetRealtimeRPM,
-		CurrentRPM:  uint16(rpm),
+		CurrentRPM:  0,
 		TargetRPM:   uint16(rpm),
 		Transport:   types.DeviceTransportHID,
 		SpeedUnit:   types.FanSpeedUnitRPM,
 		WorkMode:    workMode,
 		CurrentMode: 0x01,
+	}
+	if previous := m.currentFanData.Load(); previous != nil && previous.Transport == types.DeviceTransportHID {
+		fanData = &types.FanData{
+			ReportID:     previous.ReportID,
+			MagicSync:    previous.MagicSync,
+			Command:      deviceproto.CmdSetRealtimeRPM,
+			Status:       previous.Status,
+			GearSettings: previous.GearSettings,
+			CurrentMode:  previous.CurrentMode,
+			Reserved1:    previous.Reserved1,
+			CurrentRPM:   previous.CurrentRPM,
+			TargetRPM:    uint16(rpm),
+			MaxGear:      previous.MaxGear,
+			SetGear:      previous.SetGear,
+			WorkMode:     workMode,
+			Transport:    types.DeviceTransportHID,
+			SpeedUnit:    types.FanSpeedUnitRPM,
+		}
+		if fanData.ReportID == 0 {
+			fanData.ReportID = deviceproto.ReportID
+		}
+		if fanData.MagicSync == 0 {
+			fanData.MagicSync = 0x5AA5
+		}
 	}
 	m.currentFanData.Store(fanData)
 	if m.onFanDataUpdate != nil {

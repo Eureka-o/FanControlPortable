@@ -296,6 +296,13 @@ func (e *SerialExecutor) fanDataFromBody(body []byte, fallback types.FanSpeedVal
 
 func (e *SerialExecutor) syntheticStateLocked(speed types.FanSpeedValue) *types.FanData {
 	value := speedValueForProfileState(speed)
+	if strings.TrimSpace(speed.Unit) != "" {
+		current := 0
+		if e.lastState != nil {
+			current = int(e.lastState.CurrentRPM)
+		}
+		return e.stateWithValues(current, value, "serial")
+	}
 	return e.stateWithValues(value, value, "serial")
 }
 
