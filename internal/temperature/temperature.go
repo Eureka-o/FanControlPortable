@@ -11,14 +11,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/bridge"
 	"github.com/TIANLI0/THRM/internal/types"
 	"github.com/shirou/gopsutil/v4/sensors"
 )
 
 const (
-	helperCommandTimeout = 1200 * time.Millisecond
-	gpuVendorCacheTTL    = 30 * time.Second
+	helperCommandTimeout         = 1200 * time.Millisecond
+	gpuVendorCacheTTL            = 30 * time.Second
+	bridgeRecoveryTemperatureTTL = 20 * time.Second
 )
 
 var (
@@ -26,18 +26,26 @@ var (
 	readTimeNow       = time.Now
 )
 
+type bridgeTemperatureProvider interface {
+	GetTemperature(types.TemperatureSelection) types.BridgeTemperatureData
+}
+
 // Reader 温度读取器
 type Reader struct {
-	bridgeManager *bridge.Manager
+	bridgeManager bridgeTemperatureProvider
 	logger        types.Logger
 
 	cacheMutex      sync.RWMutex
 	cachedGPUVendor string
 	cachedVendorAt  time.Time
+
+	lastGoodBridgeTemp      types.TemperatureData
+	lastGoodBridgeSelection types.TemperatureSelection
+	lastGoodBridgeAt        time.Time
 }
 
 // NewReader 创建新的温度读取器
-func NewReader(bridgeManager *bridge.Manager, logger types.Logger) *Reader {
+func NewReader(bridgeManager bridgeTemperatureProvider, logger types.Logger) *Reader {
 	return &Reader{
 		bridgeManager: bridgeManager,
 		logger:        logger,
@@ -77,11 +85,20 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 
 		temp.BridgeOk = true
 		temp.BridgeMsg = ""
+		r.storeLastGoodBridgeTemperature(selection, temp)
 		return temp
 	}
 
 	// 如果桥接程序失败，使用备用方法
 	r.logger.Warn("桥接程序读取温度失败: %s, 使用备用方法", bridgeTemp.Error)
+	if cached, ok := r.lastGoodBridgeTemperature(selection); ok {
+		r.logger.Warn("TempBridge read failed, using last valid temperature: %s", bridgeTemp.Error)
+		cached.UpdateTime = time.Now().UnixMilli()
+		cached.BridgeOk = true
+		cached.BridgeMsg = ""
+		return cached
+	}
+
 	temp.BridgeOk = false
 	temp.BridgeMsg = bridgeTemp.Error
 	if strings.TrimSpace(temp.BridgeMsg) == "" {
@@ -105,6 +122,29 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 	temp.ControlTemp = resolveControlTemp(temp.CPUTemp, temp.GPUTemp, selection.TempSource)
 
 	return temp
+}
+
+func (r *Reader) storeLastGoodBridgeTemperature(selection types.TemperatureSelection, temp types.TemperatureData) {
+	if temp.CPUTemp <= 0 && temp.GPUTemp <= 0 && temp.ControlTemp <= 0 {
+		return
+	}
+	r.cacheMutex.Lock()
+	defer r.cacheMutex.Unlock()
+	r.lastGoodBridgeTemp = temp
+	r.lastGoodBridgeSelection = selection
+	r.lastGoodBridgeAt = readTimeNow()
+}
+
+func (r *Reader) lastGoodBridgeTemperature(selection types.TemperatureSelection) (types.TemperatureData, bool) {
+	r.cacheMutex.RLock()
+	defer r.cacheMutex.RUnlock()
+	if r.lastGoodBridgeAt.IsZero() || r.lastGoodBridgeSelection != selection {
+		return types.TemperatureData{}, false
+	}
+	if readTimeNow().Sub(r.lastGoodBridgeAt) > bridgeRecoveryTemperatureTTL {
+		return types.TemperatureData{}, false
+	}
+	return r.lastGoodBridgeTemp, true
 }
 
 func copyBridgeTemperatureMetadata(temp *types.TemperatureData, bridgeTemp types.BridgeTemperatureData, selection types.TemperatureSelection) {

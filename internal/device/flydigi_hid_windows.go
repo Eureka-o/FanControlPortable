@@ -474,17 +474,29 @@ func (d *flyDigiHIDDevice) WriteReport(report []byte, timeout time.Duration) err
 	if len(report) == 0 {
 		return fmt.Errorf("hid report is empty")
 	}
-	writeReport := padFlyDigiHIDReport(report, hidLightReportLen)
 	var failures []string
-	if err := d.writeFileReport(writeReport, timeout); err == nil {
+	if err := d.writeFileReport(report, timeout); err == nil {
 		return nil
 	} else {
 		failures = append(failures, fmt.Sprintf("WriteFile: %v", err))
 	}
-	if err := d.SetOutputReport(writeReport); err == nil {
+	if err := d.SetOutputReport(report); err == nil {
 		return nil
 	} else {
 		failures = append(failures, fmt.Sprintf("HidD_SetOutputReport: %v", err))
+	}
+	if len(report) < hidLightReportLen {
+		paddedReport := padFlyDigiHIDReport(report, hidLightReportLen)
+		if err := d.writeFileReport(paddedReport, timeout); err == nil {
+			return nil
+		} else {
+			failures = append(failures, fmt.Sprintf("WriteFile padded: %v", err))
+		}
+		if err := d.SetOutputReport(paddedReport); err == nil {
+			return nil
+		} else {
+			failures = append(failures, fmt.Sprintf("HidD_SetOutputReport padded: %v", err))
+		}
 	}
 	return fmt.Errorf("flydigi hid write failed (%s)", strings.Join(failures, "; "))
 }
@@ -586,8 +598,10 @@ func (m *Manager) writeFlyDigiHIDFrameLocked(cmd byte, payload []byte, reportLen
 	}
 	frame := deviceproto.BuildFrame(cmd, payload...)
 	report := deviceproto.BuildReport(frame, reportLen)
-	m.recordDebugFrame("tx", types.DeviceTransportHID, report)
-	return m.flyDigiHID.WriteReport(report, 800*time.Millisecond)
+	return retryDeviceSend(fmt.Sprintf("FlyDigi HID command 0x%02X", cmd), func() error {
+		m.recordDebugFrame("tx", types.DeviceTransportHID, report)
+		return m.flyDigiHID.WriteReport(report, 800*time.Millisecond)
+	})
 }
 
 func (m *Manager) setFlyDigiHIDTargetSpeedLocked(speed types.FanSpeedValue) bool {
@@ -633,8 +647,10 @@ func (m *Manager) setFlyDigiHIDManualGearRPM(gear, level string, rpm int) bool {
 	rpm = types.ClampRPM(rpm)
 	cmd := types.BuildGearRPMCommand(idx, rpm)
 	report := deviceproto.BuildReport(cmd, hidControlReportLen)
-	m.recordDebugFrame("tx", types.DeviceTransportHID, report)
-	if err := m.flyDigiHID.WriteReport(report, 800*time.Millisecond); err != nil {
+	if err := retryDeviceSend("FlyDigi HID manual gear", func() error {
+		m.recordDebugFrame("tx", types.DeviceTransportHID, report)
+		return m.flyDigiHID.WriteReport(report, 800*time.Millisecond)
+	}); err != nil {
 		m.logError("设置飞智 HID 挡位 %s %s (%d RPM) 失败: %v", gear, level, rpm, err)
 		return false
 	}

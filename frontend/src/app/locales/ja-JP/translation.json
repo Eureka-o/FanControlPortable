@@ -748,6 +748,7 @@
       "sectionTitle": "ファン制御",
       "autoControlTitle": "スマート温度制御",
       "autoControlDescription": "温度カーブに基づいて、ファン回転数を自動で調整します",
+      "autoControlApplyFailed": "スマート温度制御の切り替えに失敗しました: {{error}}",
       "sampleSmoothingTitle": "動作スムージング",
       "sampleSmoothingDescription": "EMA 指数加重: 値が大きいほど滑らか、値が小さいほどリニアに動作します。迷ったらデフォルトのままにしてください。",
       "temperatureBaselineTitle": "温度基準",

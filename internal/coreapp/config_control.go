@@ -3,6 +3,7 @@ package coreapp
 import (
 	"fmt"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -207,11 +208,11 @@ func (a *CoreApp) ResetLearnedOffsets() error {
 // SetAutoControl 设置智能变频
 func (a *CoreApp) SetAutoControl(enabled bool) error {
 	a.mutex.Lock()
-	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
 
 	if enabled && cfg.CustomSpeedEnabled {
+		a.mutex.Unlock()
 		return fmt.Errorf("自定义转速模式下无法开启智能变频")
 	}
 
@@ -224,36 +225,46 @@ func (a *CoreApp) SetAutoControl(enabled bool) error {
 
 	a.configManager.Set(cfg)
 	err := a.configManager.Save()
+	a.mutex.Unlock()
 
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 	}
 	if applyManualAfterDisable {
-		a.safeGo("applyCurrentGearSetting", func() {
-			a.applyCurrentGearSetting()
-		})
+		if applyErr := a.applyCurrentGearSetting(); applyErr != nil {
+			return applyErr
+		}
 	}
 
 	return err
 }
 
 // applyCurrentGearSetting 应用当前挡位设置
-func (a *CoreApp) applyCurrentGearSetting() {
+func (a *CoreApp) applyCurrentGearSetting() error {
 	fanData := a.deviceManager.GetCurrentFanData()
 	cfg := a.configManager.Get()
-	setGear := ""
-	if fanData != nil {
-		setGear = fanData.SetGear
+	setGear := strings.TrimSpace(cfg.ManualGear)
+	if _, ok := types.GearIndex(setGear); !ok {
+		setGear = ""
+		if fanData != nil {
+			setGear = strings.TrimSpace(fanData.SetGear)
+		}
 	}
-	if setGear == "" {
-		setGear = cfg.ManualGear
+	if _, ok := types.GearIndex(setGear); !ok {
+		return fmt.Errorf("当前设备未提供可用手动挡位")
 	}
 	level := a.getRememberedManualLevel(setGear, cfg.ManualLevel)
 	rpm := cfg.ResolveGearRPM(setGear, level)
 	unit := types.DeviceProfileSpeedUnit(&cfg)
+	if rpm <= 0 {
+		return fmt.Errorf("当前手动挡位没有可用速度")
+	}
 
 	a.logInfo("应用当前挡位设置: %s %s (%d%s)", setGear, level, rpm, types.FanSpeedDisplaySuffix(unit))
-	a.deviceManager.SetManualGearRPM(setGear, level, rpm)
+	if !a.deviceManager.SetManualGearRPM(setGear, level, rpm) {
+		return fmt.Errorf("手动挡位下发失败")
+	}
+	return nil
 }
 
 // SetManualGear 设置手动挡位
@@ -318,7 +329,9 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 	}
 	if applyManualAfterDisable {
 		a.safeGo("applyCurrentGearSettingAfterCustomSpeed", func() {
-			a.applyCurrentGearSetting()
+			if err := a.applyCurrentGearSetting(); err != nil {
+				a.logError("应用当前挡位设置失败: %v", err)
+			}
 		})
 	}
 

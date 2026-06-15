@@ -38,6 +38,7 @@ import { useTranslation } from 'react-i18next';
 import { ToggleSwitch, Button } from './ui/index';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import clsx from 'clsx';
+import { toast } from 'sonner';
 
 interface DeviceStatusProps {
   isConnected: boolean;
@@ -56,6 +57,10 @@ interface DeviceStatusProps {
   onOpenHistoryDetails: () => void;
   onExportDiagnostics?: () => void;
   diagnosticsExporting?: boolean;
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 interface BridgeRuntimeStatus {
@@ -669,9 +674,15 @@ export default function DeviceStatus({
   const handleAutoControlChange = async (enabled: boolean) => {
     try {
       await apiService.setAutoControl(enabled);
-      onConfigChange(types.AppConfig.createFrom({ ...config, autoControl: enabled }));
+      const latest = await apiService.getConfig();
+      onConfigChange(types.AppConfig.createFrom({ ...latest, autoControl: enabled }));
     } catch (err) {
-      console.error('设置智能变频失败:', err);
+      toast.error(t('controlPanel.fan.autoControlApplyFailed', { error: getErrorMessage(err) }));
+      try {
+        onConfigChange(types.AppConfig.createFrom(await apiService.getConfig()));
+      } catch {
+        // Keep the current view if the config refresh also fails.
+      }
     }
   };
 

@@ -555,7 +555,9 @@ func (a *CoreApp) reapplyConfigAfterReconnect() {
 			a.logError("重新应用自定义转速失败")
 		}
 	} else {
-		a.applyCurrentGearSetting()
+		if err := a.applyCurrentGearSetting(); err != nil {
+			a.logError("重新应用当前挡位设置失败: %v", err)
+		}
 	}
 
 	// 以下功能仅旧 HID 设备支持
