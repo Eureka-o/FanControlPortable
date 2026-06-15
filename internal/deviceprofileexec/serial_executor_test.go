@@ -187,6 +187,49 @@ func TestSerialExecutorRateLimitsSpeedSends(t *testing.T) {
 	}
 }
 
+func TestSerialExecutorSetSpeedWithoutReadbackDoesNotFakeCurrentSpeed(t *testing.T) {
+	port := &fakeSerialPort{}
+	executor, err := NewSerialExecutor(types.DeviceProfile{
+		ID:          "user.serial.target-only",
+		DisplayName: "Serial target only",
+		Transport:   types.DeviceTransportSerial,
+		SpeedUnit:   types.FanSpeedUnitPercent,
+		SpeedRange:  types.DefaultPercentSpeedRange(),
+		Connection: types.DeviceConnectionSettings{
+			SerialPort: "COM12",
+		},
+		Commands: []types.DeviceCommandTemplate{
+			{Name: "setSpeed", Command: "P{{percent}}", Encoding: "ascii"},
+		},
+		Capabilities: types.DeviceCapabilities{
+			Transport:        types.DeviceTransportSerial,
+			SpeedUnit:        types.FanSpeedUnitPercent,
+			SpeedRange:       types.DefaultPercentSpeedRange(),
+			SupportsSetSpeed: true,
+		},
+	}, fakeSerialDialer{port: port})
+	if err != nil {
+		t.Fatalf("NewSerialExecutor() error = %v", err)
+	}
+
+	state, err := executor.SetSpeed(nil, types.NewPercentTickSpeed(555))
+	if err != nil {
+		t.Fatalf("SetSpeed() error = %v", err)
+	}
+	if state.CurrentRPM != 0 || state.TargetRPM != 56 {
+		t.Fatalf("synthetic state = %d/%d, want 0/56", state.CurrentRPM, state.TargetRPM)
+	}
+
+	executor.lastState = &types.FanData{CurrentRPM: 44, TargetRPM: 56, Transport: types.DeviceTransportSerial, SpeedUnit: types.FanSpeedUnitPercent}
+	state, err = executor.SetSpeed(nil, types.NewPercentTickSpeed(655))
+	if err != nil {
+		t.Fatalf("second SetSpeed() error = %v", err)
+	}
+	if state.CurrentRPM != 44 || state.TargetRPM != 66 {
+		t.Fatalf("synthetic state after previous current = %d/%d, want 44/66", state.CurrentRPM, state.TargetRPM)
+	}
+}
+
 func TestDecodeSerialDelimiter(t *testing.T) {
 	tests := map[string]string{
 		`\n`:   "\n",

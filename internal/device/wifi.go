@@ -20,6 +20,8 @@ const wifiRequestTimeout = 2 * time.Second
 
 type wifiDataResponse struct {
 	Speed           any `json:"speed"`
+	CurrentSpeed    any `json:"currentSpeed"`
+	CurrentRPM      any `json:"currentRpm"`
 	Temperature     any `json:"temperature"`
 	Power           any `json:"power"`
 	WiFiControl     any `json:"wifiControl"`
@@ -27,6 +29,7 @@ type wifiDataResponse struct {
 	ControlMode     any `json:"controlMode"`
 	Mode            any `json:"mode"`
 	TargetSpeed     any `json:"targetSpeed"`
+	TargetRPM       any `json:"targetRpm"`
 	FanSpeed        any `json:"fanSpeed"`
 }
 
@@ -449,14 +452,8 @@ func validateWiFiSetSpeedResponse(body []byte) error {
 }
 
 func fanDataFromWiFiResponse(data wifiDataResponse) *types.FanData {
-	speed, ok := intFromAny(data.Speed)
-	if !ok {
-		speed, _ = intFromAny(data.FanSpeed)
-	}
-	target, ok := intFromAny(data.WiFiTargetSpeed)
-	if !ok {
-		target, ok = intFromAny(data.TargetSpeed)
-	}
+	speed, ok := firstIntFromAny(data.CurrentSpeed, data.CurrentRPM, data.FanSpeed, data.Speed)
+	target, ok := firstIntFromAny(data.WiFiTargetSpeed, data.TargetSpeed, data.TargetRPM, data.Speed)
 	if !ok {
 		target = speed
 	}
@@ -482,6 +479,15 @@ func fanDataFromWiFiResponse(data wifiDataResponse) *types.FanData {
 		Transport:  types.DeviceTransportWiFi,
 		SpeedUnit:  types.FanSpeedUnitPercent,
 	}
+}
+
+func firstIntFromAny(values ...any) (int, bool) {
+	for _, value := range values {
+		if parsed, ok := intFromAny(value); ok {
+			return parsed, true
+		}
+	}
+	return 0, false
 }
 
 func sanitizeWiFiPercent(value int) int {

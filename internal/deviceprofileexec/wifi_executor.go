@@ -434,6 +434,9 @@ func sleepContext(ctx context.Context, duration time.Duration) error {
 	if duration <= 0 {
 		return nil
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	timer := time.NewTimer(duration)
 	defer timer.Stop()
 	select {

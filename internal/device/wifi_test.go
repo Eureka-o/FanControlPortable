@@ -178,6 +178,40 @@ func TestRefreshWiFiStateReadsOnlyAndUpdatesFanData(t *testing.T) {
 	}
 }
 
+func TestWiFiStateUsesFanSpeedAsCurrentWhenSpeedIsSetpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/data":
+			if r.Method != http.MethodGet {
+				t.Fatalf("GET /api/data got method %s", r.Method)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"speed":       75,
+				"fanSpeed":    42,
+				"controlMode": "manual",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	m := NewManager(nil)
+	m.Configure(types.DeviceTransportWiFi, server.URL)
+	connected, _ := m.Connect()
+	if !connected {
+		t.Fatal("expected WiFi test device to connect")
+	}
+
+	fanData := m.GetCurrentFanData()
+	if fanData == nil {
+		t.Fatal("expected fan data")
+	}
+	if fanData.CurrentRPM != 42 || fanData.TargetRPM != 75 {
+		t.Fatalf("fan data speed = current %d target %d, want 42/75", fanData.CurrentRPM, fanData.TargetRPM)
+	}
+}
+
 func TestWiFiManagerRejectsNonSpeedFeatureCommandsByDefault(t *testing.T) {
 	m := NewManager(nil)
 	m.Configure(types.DeviceTransportWiFi, "192.168.1.50")

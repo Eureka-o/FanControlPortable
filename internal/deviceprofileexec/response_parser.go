@@ -132,17 +132,11 @@ func parseDefaultWiFiState(body []byte) (ParsedState, bool) {
 	}
 
 	state := ParsedState{}
-	if speed, ok := numberFromAny(raw["speed"]); ok {
-		state.CurrentSpeed = speed
-		state.HasCurrent = true
-	} else if speed, ok := numberFromAny(raw["fanSpeed"]); ok {
+	if speed, ok := numberFromKeys(raw, "currentSpeed", "currentRpm", "fanSpeed", "speed"); ok {
 		state.CurrentSpeed = speed
 		state.HasCurrent = true
 	}
-	if target, ok := numberFromAny(raw["wifiTargetSpeed"]); ok {
-		state.TargetSpeed = target
-		state.HasTarget = true
-	} else if target, ok := numberFromAny(raw["targetSpeed"]); ok {
+	if target, ok := numberFromKeys(raw, "wifiTargetSpeed", "targetSpeed", "targetRpm", "speed"); ok {
 		state.TargetSpeed = target
 		state.HasTarget = true
 	}
@@ -156,6 +150,15 @@ func parseDefaultWiFiState(body []byte) (ParsedState, bool) {
 		state.WorkMode = mode
 	}
 	return state, state.HasCurrent || state.HasTarget || state.WorkMode != ""
+}
+
+func numberFromKeys(raw map[string]any, keys ...string) (int, bool) {
+	for _, key := range keys {
+		if value, ok := numberFromAny(raw[key]); ok {
+			return value, true
+		}
+	}
+	return 0, false
 }
 
 func (p compiledResponseParser) parse(body []byte, rawJSON *any, jsonParsed *bool, jsonErr *error) (int, bool, error) {

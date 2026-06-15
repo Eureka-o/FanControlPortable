@@ -148,8 +148,37 @@ func TestBLEExecutorSetSpeedWithoutParserUsesSyntheticState(t *testing.T) {
 	if len(client.writes) != 1 || string(client.writes[0].payload) != "P56" || client.writes[0].withResponse {
 		t.Fatalf("writes = %#v, want P56 without response", client.writes)
 	}
-	if state.CurrentRPM != 56 || state.TargetRPM != 56 {
-		t.Fatalf("synthetic state = %d/%d, want 56/56", state.CurrentRPM, state.TargetRPM)
+	if state.CurrentRPM != 0 || state.TargetRPM != 56 {
+		t.Fatalf("synthetic state = %d/%d, want 0/56", state.CurrentRPM, state.TargetRPM)
+	}
+
+	executor.lastState = &types.FanData{CurrentRPM: 31, TargetRPM: 56, Transport: types.DeviceTransportBLE, SpeedUnit: types.FanSpeedUnitPercent}
+	state, err = executor.SetSpeed(nil, types.NewPercentTickSpeed(655))
+	if err != nil {
+		t.Fatalf("second SetSpeed() error = %v", err)
+	}
+	if state.CurrentRPM != 31 || state.TargetRPM != 66 {
+		t.Fatalf("synthetic state after previous current = %d/%d, want 31/66", state.CurrentRPM, state.TargetRPM)
+	}
+}
+
+func TestBLEExecutorFlyDigiBS1SetSpeedDoesNotFakeCurrentRPM(t *testing.T) {
+	client := &fakeBLEClient{}
+	executor, err := NewBLEExecutor(types.FlyDigiBS1Profile(), &fakeBLEConnector{client: client})
+	if err != nil {
+		t.Fatalf("NewBLEExecutor() error = %v", err)
+	}
+	executor.lastState = &types.FanData{CurrentRPM: 1234, TargetRPM: 1300, Transport: types.DeviceTransportBLE, SpeedUnit: types.FanSpeedUnitRPM}
+
+	state, err := executor.SetSpeed(nil, types.NewRPMSpeed(1800))
+	if err != nil {
+		t.Fatalf("SetSpeed() error = %v", err)
+	}
+	if len(client.writes) != 2 {
+		t.Fatalf("writes = %d, want enter dynamic + set rpm", len(client.writes))
+	}
+	if state.CurrentRPM != 1234 || state.TargetRPM != 1800 {
+		t.Fatalf("BS1 state = %d/%d, want 1234/1800", state.CurrentRPM, state.TargetRPM)
 	}
 }
 
