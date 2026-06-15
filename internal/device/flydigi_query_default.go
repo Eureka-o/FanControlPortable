@@ -109,7 +109,7 @@ func (m *Manager) sendFlyDigiHIDDebugCommand(input string, waitMs int) (types.De
 func parseFlyDigiFanData(data []byte) *types.FanData {
 	frame, ok := deviceproto.ParseFrame(data)
 	if !ok || frame.Command != deviceproto.CmdStatusNotify || len(frame.Payload) < 7 {
-		return nil
+		return parseFlyDigiFanDataFixedOffsets(data)
 	}
 	mode := frame.Payload[1]
 	currentRPM := binary.LittleEndian.Uint16(frame.Payload[3:5])
@@ -130,6 +130,44 @@ func parseFlyDigiFanData(data []byte) *types.FanData {
 		Transport:    types.DeviceTransportHID,
 		SpeedUnit:    types.FanSpeedUnitRPM,
 	}
+}
+
+func parseFlyDigiFanDataFixedOffsets(data []byte) *types.FanData {
+	offset := -1
+	reportID := byte(0)
+	switch {
+	case len(data) >= 2 && data[0] == deviceproto.Magic0 && data[1] == deviceproto.Magic1:
+		offset = 0
+	case len(data) >= 3 && data[1] == deviceproto.Magic0 && data[2] == deviceproto.Magic1:
+		offset = 1
+		reportID = data[0]
+	default:
+		return nil
+	}
+	if len(data) < offset+9 || data[offset+2] != deviceproto.CmdStatusNotify {
+		return nil
+	}
+
+	gear := data[offset+4]
+	mode := data[offset+5]
+	fanData := &types.FanData{
+		ReportID:     reportID,
+		MagicSync:    0x5AA5,
+		Command:      data[offset+2],
+		Status:       data[offset+3],
+		GearSettings: gear,
+		CurrentMode:  mode,
+		Reserved1:    data[offset+6],
+		CurrentRPM:   binary.LittleEndian.Uint16(data[offset+7 : offset+9]),
+		WorkMode:     deviceproto.ModeName(mode),
+		Transport:    types.DeviceTransportHID,
+		SpeedUnit:    types.FanSpeedUnitRPM,
+	}
+	if len(data) >= offset+11 {
+		fanData.TargetRPM = binary.LittleEndian.Uint16(data[offset+9 : offset+11])
+	}
+	fanData.MaxGear, fanData.SetGear = parseFlyDigiGearSettings(gear)
+	return fanData
 }
 
 func parseFlyDigiGearSettings(value byte) (maxGear, selected string) {

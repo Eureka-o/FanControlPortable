@@ -19,6 +19,23 @@ type ParsedState struct {
 	WorkMode     string
 }
 
+// completeStateTarget keeps current speed honest: fallback values may fill target speed, never current speed.
+func completeStateTarget(state *ParsedState, fallbackTarget int) bool {
+	if state == nil {
+		return false
+	}
+	if !state.HasTarget {
+		if fallbackTarget > 0 {
+			state.TargetSpeed = fallbackTarget
+			state.HasTarget = true
+		} else if state.HasCurrent {
+			state.TargetSpeed = state.CurrentSpeed
+			state.HasTarget = true
+		}
+	}
+	return state.HasCurrent || state.HasTarget
+}
+
 type CompiledResponseParsers struct {
 	parsers []compiledResponseParser
 }

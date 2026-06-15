@@ -26,6 +26,33 @@ for /f "delims=" %%G in ('go env GOPATH 2^>nul') do set "GOPATH_VALUE=%%G"
 if not "!GOPATH_VALUE!"=="" (
     set "PATH=!GOPATH_VALUE!\bin;!PATH!"
 )
+set "FANCONTROL_CGO_COMPILER_BIN="
+if not "%FANCONTROL_MINGW_BIN%"=="" (
+    if exist "%FANCONTROL_MINGW_BIN%\gcc.exe" set "FANCONTROL_CGO_COMPILER_BIN=%FANCONTROL_MINGW_BIN%"
+)
+if "!FANCONTROL_CGO_COMPILER_BIN!"=="" (
+    if exist "%~dp0tools\w64devkit\bin\gcc.exe" set "FANCONTROL_CGO_COMPILER_BIN=%~dp0tools\w64devkit\bin"
+)
+if "!FANCONTROL_CGO_COMPILER_BIN!"=="" (
+    if exist "%~dp0..\tools\w64devkit\bin\gcc.exe" set "FANCONTROL_CGO_COMPILER_BIN=%~dp0..\tools\w64devkit\bin"
+)
+if "!FANCONTROL_CGO_COMPILER_BIN!"=="" (
+    if exist "D:\FanControlTools\CodeBlocks\MinGW\bin\gcc.exe" set "FANCONTROL_CGO_COMPILER_BIN=D:\FanControlTools\CodeBlocks\MinGW\bin"
+)
+if "!FANCONTROL_CGO_COMPILER_BIN!"=="" (
+    if exist "C:\Program Files\CodeBlocks\MinGW\bin\gcc.exe" set "FANCONTROL_CGO_COMPILER_BIN=C:\Program Files\CodeBlocks\MinGW\bin"
+)
+if "!FANCONTROL_CGO_COMPILER_BIN!"=="" (
+    if exist "C:\Program Files (x86)\CodeBlocks\MinGW\bin\gcc.exe" set "FANCONTROL_CGO_COMPILER_BIN=C:\Program Files (x86)\CodeBlocks\MinGW\bin"
+)
+if not "!FANCONTROL_CGO_COMPILER_BIN!"=="" (
+    set "PATH=!FANCONTROL_CGO_COMPILER_BIN!;!PATH!"
+    set "CGO_ENABLED=1"
+    set "CC=gcc"
+    echo Using cgo compiler: !FANCONTROL_CGO_COMPILER_BIN!\gcc.exe
+) else (
+    echo WARNING: No MinGW gcc found; FlyDigi HIDAPI backend will not be compiled.
+)
 if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
     set "PATH=C:\Program Files (x86)\NSIS;!PATH!"
 ) else if exist "C:\Program Files\NSIS\makensis.exe" (
