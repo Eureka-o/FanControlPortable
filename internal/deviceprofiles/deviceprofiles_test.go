@@ -276,7 +276,7 @@ func TestSupportedProfilesHideFlyDigiBackendProfiles(t *testing.T) {
 	}
 }
 
-func TestFlyDigiProfileIDsAreBackendOnly(t *testing.T) {
+func TestFlyDigiProfileIDsAreVisibleBuiltIns(t *testing.T) {
 	for _, id := range []string{
 		types.FlyDigiBS1ProfileID,
 		types.FlyDigiBS2ProfileID,
@@ -287,8 +287,8 @@ func TestFlyDigiProfileIDsAreBackendOnly(t *testing.T) {
 		if !types.IsFlyDigiDeviceProfileID(id) {
 			t.Fatalf("%q should be recognized as a FlyDigi backend profile ID", id)
 		}
-		if IsBuiltInProfileID(id) {
-			t.Fatalf("%q should not be treated as a persisted built-in profile ID", id)
+		if !IsBuiltInProfileID(id) {
+			t.Fatalf("%q should be treated as a visible built-in profile ID", id)
 		}
 	}
 }

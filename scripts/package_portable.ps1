@@ -73,7 +73,7 @@ Copy-Item -LiteralPath (Join-Path $buildBin "FanControl Core.exe") -Destination 
 Copy-Item -LiteralPath (Join-Path $buildBin "PawnIO_setup.exe") -Destination (Join-Path $safeOutputDir "PawnIO_setup.exe")
 Copy-Item -LiteralPath (Join-Path $buildBin "bridge") -Destination (Join-Path $safeOutputDir "bridge") -Recurse
 
-foreach ($dirName in @("config", "themes")) {
+foreach ($dirName in @("themes")) {
     $sourceDir = Join-Path $buildBin $dirName
     if (Test-Path -LiteralPath $sourceDir -PathType Container) {
         Copy-Item -LiteralPath $sourceDir -Destination (Join-Path $safeOutputDir $dirName) -Recurse

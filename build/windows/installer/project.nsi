@@ -368,6 +368,11 @@ Function BackupUserData
         DetailPrint "$(THRM_STR_BACKUP_CONFIG_DONE)"
     ${EndIf}
 
+    ${If} ${FileExists} "$INSTDIR\config\hardware-profile.json"
+        CopyFiles "$INSTDIR\config\hardware-profile.json" "$TEMP\fancontrol_hardware_profile_backup.json"
+        DetailPrint "$(THRM_STR_BACKUP_CONFIG_DONE)"
+    ${EndIf}
+
     ${If} ${FileExists} "$INSTDIR\config.json"
         CopyFiles "$INSTDIR\config.json" "$TEMP\fancontrol_config_backup.json"
         DetailPrint "$(THRM_STR_BACKUP_CONFIG_DONE)"
@@ -391,6 +396,12 @@ Function RestoreUserData
         DetailPrint "$(THRM_STR_RESTORE_CONFIG_DONE)"
     ${EndIf}
 
+    ${If} ${FileExists} "$TEMP\fancontrol_hardware_profile_backup.json"
+        CreateDirectory "$INSTDIR\config"
+        CopyFiles "$TEMP\fancontrol_hardware_profile_backup.json" "$INSTDIR\config\hardware-profile.json"
+        DetailPrint "$(THRM_STR_RESTORE_CONFIG_DONE)"
+    ${EndIf}
+
     ${If} ${FileExists} "$TEMP\fancontrol_config_backup.json"
         CopyFiles "$TEMP\fancontrol_config_backup.json" "$INSTDIR\config.json"
         DetailPrint "$(THRM_STR_RESTORE_CONFIG_DONE)"
@@ -405,8 +416,6 @@ FunctionEnd
 
 Function CleanupLegacyShortcuts
     DetailPrint "$(THRM_STR_CLEAN_SHORTCUTS)"
-    Delete "$SMPROGRAMS\FanControl.lnk"
-    Delete "$DESKTOP\FanControl.lnk"
     Delete "$SMSTARTUP\FanControl.lnk"
     Delete "$SMPROGRAMS\${LEGACY_PRODUCTNAME}.lnk"
     Delete "$DESKTOP\${LEGACY_PRODUCTNAME}.lnk"
@@ -415,8 +424,6 @@ FunctionEnd
 
 Function un.CleanupLegacyShortcuts
     DetailPrint "$(THRM_STR_CLEAN_SHORTCUTS)"
-    Delete "$SMPROGRAMS\FanControl.lnk"
-    Delete "$DESKTOP\FanControl.lnk"
     Delete "$SMSTARTUP\FanControl.lnk"
     Delete "$SMPROGRAMS\${LEGACY_PRODUCTNAME}.lnk"
     Delete "$DESKTOP\${LEGACY_PRODUCTNAME}.lnk"
@@ -429,6 +436,7 @@ Section "$(THRM_STR_SECTION_MAIN)" SEC_MAIN
 
     Delete "$TEMP\fancontrol_config_dir_backup.json"
     Delete "$TEMP\fancontrol_config_backup.json"
+    Delete "$TEMP\fancontrol_hardware_profile_backup.json"
     Delete "$TEMP\fancontrol_settings_backup.ini"
 
     StrCpy $0 "0"
@@ -503,7 +511,9 @@ Section "$(THRM_STR_SECTION_MAIN)" SEC_MAIN
     # Create shortcuts
     DetailPrint "$(THRM_STR_CREATING_SHORTCUTS)"
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
+    SetShellVarContext current
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
+    !insertmacro wails.setShellContext
 
     !insertmacro wails.associateFiles
     !insertmacro wails.associateCustomProtocols
@@ -517,6 +527,8 @@ Section "$(THRM_STR_SECTION_MAIN)" SEC_MAIN
         DetailPrint "$(THRM_STR_UPGRADE_RENAME_DONE)"
     ${ElseIf} ${FileExists} "$TEMP\fancontrol_config_dir_backup.json"
         DetailPrint "$(THRM_STR_UPGRADE_SETTINGS_DONE)"
+    ${ElseIf} ${FileExists} "$TEMP\fancontrol_hardware_profile_backup.json"
+        DetailPrint "$(THRM_STR_UPGRADE_SETTINGS_DONE)"
     ${ElseIf} ${FileExists} "$TEMP\fancontrol_config_backup.json"
         DetailPrint "$(THRM_STR_UPGRADE_SETTINGS_DONE)"
     ${Else}
@@ -528,6 +540,9 @@ Section "$(THRM_STR_SECTION_MAIN)" SEC_MAIN
     ${EndIf}
     ${If} ${FileExists} "$TEMP\fancontrol_config_backup.json"
         Delete "$TEMP\fancontrol_config_backup.json"
+    ${EndIf}
+    ${If} ${FileExists} "$TEMP\fancontrol_hardware_profile_backup.json"
+        Delete "$TEMP\fancontrol_hardware_profile_backup.json"
     ${EndIf}
 SectionEnd
 

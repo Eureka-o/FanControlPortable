@@ -75,6 +75,7 @@ type Status struct {
 	GPUTemp              int
 	CPUPowerWatts        float64
 	GPUPowerWatts        float64
+	GPUReadState         string
 	CurrentRPM           uint16
 	SpeedUnit            string
 	AutoControlState     bool
@@ -486,6 +487,13 @@ func formatTrayTemperaturePowerLine(label string, temp int, watts float64) strin
 	return fmt.Sprintf("%s %s %s", label, tempText, formatPowerWatts(watts))
 }
 
+func formatTrayGPUTemperaturePowerLine(status Status) string {
+	if status.GPUReadState == types.GPUReadStateNotPolled {
+		return "GPU 未读取 0 W"
+	}
+	return formatTrayTemperaturePowerLine("GPU", status.GPUTemp, status.GPUPowerWatts)
+}
+
 func formatTrayTooltip(status Status, fanSpeedText string) string {
 	modeText := "手动"
 	if status.AutoControlState {
@@ -497,7 +505,7 @@ func formatTrayTooltip(status Status, fanSpeedText string) string {
 	}
 	lines = append(lines,
 		formatTrayTemperaturePowerLine("CPU", status.CPUTemp, status.CPUPowerWatts),
-		formatTrayTemperaturePowerLine("GPU", status.GPUTemp, status.GPUPowerWatts),
+		formatTrayGPUTemperaturePowerLine(status),
 	)
 	return strings.Join(lines, "\n")
 }
@@ -539,7 +547,9 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 					m.menuItems.CPUTemperature.SetTitle("CPU 温度：无数据")
 				}
 
-				if status.GPUTemp > 0 {
+				if status.GPUReadState == types.GPUReadStateNotPolled {
+					m.menuItems.GPUTemperature.SetTitle("GPU 温度：未读取")
+				} else if status.GPUTemp > 0 {
 					m.menuItems.GPUTemperature.SetTitle(fmt.Sprintf("GPU 温度：%d°C", status.GPUTemp))
 				} else {
 					m.menuItems.GPUTemperature.SetTitle("GPU 温度：无数据")
@@ -549,7 +559,9 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 					m.menuItems.CPUPower.SetTitle(fmt.Sprintf("CPU 功耗：%s", formatPowerWatts(status.CPUPowerWatts)))
 				}
 
-				if m.menuItems.GPUPower != nil {
+				if m.menuItems.GPUPower != nil && status.GPUReadState == types.GPUReadStateNotPolled {
+					m.menuItems.GPUPower.SetTitle("GPU 功耗：0 W")
+				} else if m.menuItems.GPUPower != nil {
 					m.menuItems.GPUPower.SetTitle(fmt.Sprintf("GPU 功耗：%s", formatPowerWatts(status.GPUPowerWatts)))
 				}
 

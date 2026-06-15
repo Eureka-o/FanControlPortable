@@ -110,6 +110,7 @@ export default function Home() {
           deviceSettings={view.deviceSettings}
           fanData={view.fanData}
           temperature={view.temperature}
+          runtimeDeviceProfile={view.runtimeDeviceProfile}
           config={safeConfig}
           coreServiceError={view.coreServiceError}
           onConnect={connectDevice}

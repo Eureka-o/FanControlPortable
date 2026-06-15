@@ -107,7 +107,9 @@ func FlyDigiProfileByID(profileID string) (DeviceProfile, bool) {
 }
 
 func BuiltInDeviceProfiles(endpoint string) []DeviceProfile {
-	return []DeviceProfile{DefaultWiFiPercentProfile(endpoint)}
+	profiles := []DeviceProfile{DefaultWiFiPercentProfile(endpoint)}
+	profiles = append(profiles, FlyDigiBuiltInProfiles()...)
+	return profiles
 }
 
 func IsFlyDigiDeviceProfileID(profileID string) bool {
@@ -124,6 +126,9 @@ func IsFlyDigiDeviceProfileID(profileID string) bool {
 }
 
 func IsBuiltInDeviceProfileID(profileID string) bool {
+	if IsFlyDigiDeviceProfileID(profileID) {
+		return true
+	}
 	switch strings.TrimSpace(profileID) {
 	case DefaultWiFiPercentProfileID,
 		DefaultWiFiPercentTemplateProfileID,
@@ -131,6 +136,19 @@ func IsBuiltInDeviceProfileID(profileID string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func builtInDeviceProfileForTransport(endpoint, transport string) (DeviceProfile, bool) {
+	switch NormalizeDeviceTransport(transport) {
+	case DeviceTransportWiFi:
+		return DefaultWiFiPercentProfile(endpoint), true
+	case DeviceTransportBLE:
+		return FlyDigiBS1Profile(), true
+	case DeviceTransportHID:
+		return FlyDigiBS2Profile(), true
+	default:
+		return DeviceProfile{}, false
 	}
 }
 

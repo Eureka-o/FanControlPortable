@@ -46,6 +46,7 @@ interface DeviceStatusProps {
   deviceSettings: DeviceSettings | null;
   fanData: types.FanData | null;
   temperature: types.TemperatureData | null;
+  runtimeDeviceProfile?: types.DeviceProfile | null;
   config: types.AppConfig;
   coreServiceError?: string | null;
   onConnect: () => void;
@@ -89,6 +90,11 @@ const formatPowerWatts = (watts?: number | null) => {
   return `${Math.round(value)} W`;
 };
 
+const formatGpuPowerWatts = (watts: number | undefined | null, readState?: string) => {
+  if (readState === 'notPolled') return '0 W';
+  return formatPowerWatts(watts);
+};
+
 const CPU_POWER_STROKE = 'var(--chart-cpu-power)';
 const GPU_POWER_STROKE = 'var(--chart-gpu-power)';
 const FAN_TREND_STROKE = 'color-mix(in srgb, var(--chart-3) 70%, var(--foreground) 30%)';
@@ -122,7 +128,7 @@ const SemiGauge = memo(function SemiGauge({ value, color, children }: SemiGaugeP
     <div className="relative w-full max-w-[15rem]">
       <svg
         viewBox="0 0 200 116"
-        className="block w-full"
+        className="semi-gauge-svg block w-full"
         preserveAspectRatio="xMidYMid meet"
         aria-hidden="true"
       >
@@ -172,7 +178,7 @@ const MetricHeader = memo(function MetricHeader({
   return (
     <div className="mb-2 flex items-center justify-center">
       <div className="flex min-w-0 max-w-full items-center justify-center gap-2 text-[13px] font-medium text-muted-foreground">
-        <span className="shrink-0">{icon}</span>
+        <span className="metric-header-icon shrink-0 text-primary [&_svg]:stroke-[2.4]">{icon}</span>
         <span className="shrink-0">{label}</span>
       </div>
     </div>
@@ -227,12 +233,15 @@ const getTempArcColor = (temp: number) => {
 const TempGaugeDisplay = memo(function TempGaugeDisplay({
   temp,
   ready,
+  idleLabel,
 }: {
   temp: number | undefined;
   /** 后端首次推送有效温度后置为 true；之前显示占位避免误读 0 °C */
   ready: boolean;
+  idleLabel?: string;
 }) {
   const { t } = useTranslation();
+  const placeholderLabel = idleLabel || t('deviceStatus.tempGauge.loading');
 
   // 未就绪 → 占位：灰色弧、"--"、"读取中…"，不进入正常状态色
   if (!ready) {
@@ -244,8 +253,8 @@ const TempGaugeDisplay = memo(function TempGaugeDisplay({
             <span className="text-xs font-medium text-muted-foreground/70">°C</span>
           </div>
           <span className="mt-1 inline-flex items-center gap-1 text-[11px] leading-none text-muted-foreground">
-            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/60" />
-            {t('deviceStatus.tempGauge.loading')}
+            {!idleLabel && <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/60" />}
+            {placeholderLabel}
           </span>
         </SemiGauge>
       </div>
@@ -290,11 +299,11 @@ const FanSpeedDisplay = memo(function FanSpeedDisplay({
   return (
     <div className="flex h-full w-full max-w-[20rem] flex-1 flex-col items-center justify-end">
       <SemiGauge value={ratio} color="var(--primary)">
-        <div className="flex min-w-[5.25rem] items-baseline justify-center gap-1">
+        <div className="flex min-w-[5.25rem] items-baseline justify-center gap-1 leading-none">
           <AnimatedSpeedValue speed={currentSpeed} />
-          <span className="text-xs font-semibold leading-none text-muted-foreground">{unitLabel}</span>
+          <span className="translate-y-[-0.05rem] text-xs font-semibold leading-none text-muted-foreground">{unitLabel}</span>
         </div>
-        <span className="mt-1 max-w-[11rem] truncate text-xs leading-none text-muted-foreground">
+        <span className="mt-2 max-w-[11rem] truncate text-[11px] leading-none text-muted-foreground">
           {subLabel}
         </span>
       </SemiGauge>
@@ -573,6 +582,7 @@ export default function DeviceStatus({
   deviceModel,
   fanData,
   temperature,
+  runtimeDeviceProfile,
   config,
   coreServiceError,
   onConnect,
@@ -593,7 +603,8 @@ export default function DeviceStatus({
     source: temperatureHistorySource,
   } = useTemperatureHistory();
   const hasBridgeWarning = isConnected && temperature?.bridgeOk === false;
-  const activeDeviceProfile = useMemo(() => (getActiveDeviceProfile(config as any) as types.DeviceProfile | undefined) || null, [config]);
+  const configuredDeviceProfile = useMemo(() => (getActiveDeviceProfile(config as any) as types.DeviceProfile | undefined) || null, [config]);
+  const activeDeviceProfile = runtimeDeviceProfile || configuredDeviceProfile;
 
   useEffect(() => {
     if (!hasBridgeWarning) {
@@ -683,13 +694,15 @@ export default function DeviceStatus({
   // 温度就绪判定：后端首次推送（updateTime > 0）且该路传感器读到非零值。
   // 单独按通路判 — 只有 GPU 没装独显时仍会保持 0，但 CPU 已就绪则只显示 GPU 占位。
   const tempPushed = (temperature?.updateTime ?? 0) > 0;
+  const gpuReadState = (((temperature as any)?.gpuReadState as string) || 'unknown');
+  const gpuNotPolled = gpuReadState === 'notPolled';
   const cpuReady = tempPushed && (temperature?.cpuTemp ?? 0) > 0;
-  const gpuReady = tempPushed && (temperature?.gpuTemp ?? 0) > 0;
+  const gpuReady = !gpuNotPolled && tempPushed && (temperature?.gpuTemp ?? 0) > 0;
   // 参考温度：跟随设置页“控温温度来源”(max/cpu/gpu)，无该路读数时回退到综合最高温。
   const referenceTemp = (() => {
     const source = (((config as any).tempSource as string) || 'max') as 'max' | 'cpu' | 'gpu';
     const cpu = temperature?.cpuTemp ?? 0;
-    const gpu = temperature?.gpuTemp ?? 0;
+    const gpu = gpuNotPolled ? 0 : (temperature?.gpuTemp ?? 0);
     const max = temperature?.maxTemp ?? 0;
     if (source === 'cpu') return cpu > 0 ? cpu : max;
     if (source === 'gpu') return gpu > 0 ? gpu : max;
@@ -805,7 +818,7 @@ export default function DeviceStatus({
           className="grid grid-cols-1 items-stretch gap-3 md:grid-cols-3"
         >
           {/* CPU */}
-          <div className="glacier-metric-card flex h-full min-h-[155px] flex-col items-center rounded-xl border border-border bg-card px-5 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[171px]">
+          <div className="glacier-metric-card flex h-full min-h-[148px] flex-col items-center rounded-xl border border-border bg-card px-4 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[158px]">
             <MetricHeader
               icon={<Cpu className="h-4 w-4" />}
               label={cpuMetricLabel}
@@ -814,16 +827,16 @@ export default function DeviceStatus({
           </div>
 
           {/* GPU */}
-          <div className="glacier-metric-card flex h-full min-h-[155px] flex-col items-center rounded-xl border border-border bg-card px-5 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[171px]">
+          <div className="glacier-metric-card flex h-full min-h-[148px] flex-col items-center rounded-xl border border-border bg-card px-4 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[158px]">
             <MetricHeader
               icon={<Gpu className="h-4 w-4" />}
               label={t('deviceStatus.metrics.gpuTemperature')}
             />
-            <TempGaugeDisplay temp={temperature?.gpuTemp} ready={gpuReady} />
+            <TempGaugeDisplay temp={temperature?.gpuTemp} ready={gpuReady} idleLabel={gpuNotPolled ? t('deviceStatus.tempGauge.notRead') : undefined} />
           </div>
 
           {/* Fan */}
-          <div className="glacier-metric-card flex h-full min-h-[155px] flex-col items-center rounded-xl border border-border bg-card px-5 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[171px]">
+          <div className="glacier-metric-card flex h-full min-h-[148px] flex-col items-center rounded-xl border border-border bg-card px-4 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[158px]">
             <MetricHeader
               icon={(
                 <SpinningFanIcon duration={fanSpinDuration} className="h-4 w-4" />
@@ -974,7 +987,7 @@ export default function DeviceStatus({
                 {t('deviceStatus.stats.gpuPower')}
               </div>
               <div className="text-sm font-semibold tabular-nums">
-                {formatPowerWatts(temperature?.gpuPowerWatts)}
+                {formatGpuPowerWatts(temperature?.gpuPowerWatts, gpuReadState)}
               </div>
             </div>
           </div>

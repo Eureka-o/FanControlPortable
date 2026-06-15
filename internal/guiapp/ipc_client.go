@@ -31,6 +31,9 @@ func mergeTemperatureMetadata(previous, incoming types.TemperatureData) types.Te
 	if merged.SelectedGpuDevice == "" {
 		merged.SelectedGpuDevice = previous.SelectedGpuDevice
 	}
+	if merged.GPUReadState == "" {
+		merged.GPUReadState = previous.GPUReadState
+	}
 	return merged
 }
 

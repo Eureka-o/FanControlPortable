@@ -323,20 +323,24 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 	case ipc.ReqTestTemperatureReading:
 		cfg := a.configManager.Get()
 		temp := a.tempReader.Read(types.TemperatureSelection{
-			TempSource: cfg.TempSource,
-			GpuDevice:  cfg.GpuDevice,
-			CpuSensor:  cfg.CpuSensor,
-			GpuSensor:  cfg.GpuSensor,
+			TempSource:            cfg.TempSource,
+			GpuDevice:             cfg.GpuDevice,
+			CpuSensor:             cfg.CpuSensor,
+			GpuSensor:             cfg.GpuSensor,
+			GpuReadMode:           cfg.GpuReadMode,
+			GpuLowPowerProtection: cfg.GpuLowPowerProtection,
 		})
 		return a.dataResponse(temp)
 
 	case ipc.ReqTestBridgeProgram:
 		cfg := a.configManager.Get()
 		data := a.bridgeManager.GetTemperature(types.TemperatureSelection{
-			TempSource: cfg.TempSource,
-			GpuDevice:  cfg.GpuDevice,
-			CpuSensor:  cfg.CpuSensor,
-			GpuSensor:  cfg.GpuSensor,
+			TempSource:            cfg.TempSource,
+			GpuDevice:             cfg.GpuDevice,
+			CpuSensor:             cfg.CpuSensor,
+			GpuSensor:             cfg.GpuSensor,
+			GpuReadMode:           cfg.GpuReadMode,
+			GpuLowPowerProtection: cfg.GpuLowPowerProtection,
 		})
 		return a.dataResponse(data)
 

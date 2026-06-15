@@ -19,6 +19,7 @@ namespace FanControl.TempBridge
         public int GpuTemp { get; set; }
         public double CpuPowerWatts { get; set; }
         public double GpuPowerWatts { get; set; }
+        public string GpuReadState { get; set; }
         public int MaxTemp { get; set; }
         public int ControlTemp { get; set; }
         public string ControlSource { get; set; }
@@ -36,6 +37,7 @@ namespace FanControl.TempBridge
         {
             ControlSource = "max";
             SelectedGpuDevice = "auto";
+            GpuReadState = "unknown";
             CpuModel = string.Empty;
             GpuModel = string.Empty;
             CpuSensors = Array.Empty<TemperatureSensor>();
@@ -80,6 +82,8 @@ namespace FanControl.TempBridge
         public string GpuDevice { get; set; }
         public string CpuSensor { get; set; }
         public string GpuSensor { get; set; }
+        public string GpuReadMode { get; set; }
+        public bool GpuLowPowerProtection { get; set; }
 
         public TemperatureSelection()
         {
@@ -87,6 +91,8 @@ namespace FanControl.TempBridge
             GpuDevice = "auto";
             CpuSensor = "auto";
             GpuSensor = "auto";
+            GpuReadMode = "auto";
+            GpuLowPowerProtection = true;
         }
     }
 
@@ -105,6 +111,41 @@ namespace FanControl.TempBridge
             Model = string.Empty;
             Vendor = string.Empty;
             Sensors = new System.Collections.Generic.List<TemperatureSensor>();
+        }
+    }
+
+    public class HardwareProfile
+    {
+        public int SchemaVersion { get; set; }
+        public string GeneratedAt { get; set; }
+        public string Signature { get; set; }
+        public string PreferredGpuProbe { get; set; }
+        public HardwareGpuDevice[] GpuDevices { get; set; }
+
+        public HardwareProfile()
+        {
+            SchemaVersion = 1;
+            GeneratedAt = string.Empty;
+            Signature = string.Empty;
+            PreferredGpuProbe = "windows";
+            GpuDevices = Array.Empty<HardwareGpuDevice>();
+        }
+    }
+
+    public class HardwareGpuDevice
+    {
+        public string Name { get; set; }
+        public string Vendor { get; set; }
+        public string PnpDeviceId { get; set; }
+        public string Luid { get; set; }
+        public bool Discrete { get; set; }
+
+        public HardwareGpuDevice()
+        {
+            Name = string.Empty;
+            Vendor = string.Empty;
+            PnpDeviceId = string.Empty;
+            Luid = string.Empty;
         }
     }
 
@@ -139,7 +180,7 @@ namespace FanControl.TempBridge
         public TemperatureData Data { get; set; }
     }
 
-    class Program
+    partial class Program
     {
         private const string PipeName = "FanControl2_TempBridge";
         private const string MutexName = @"Global\FanControl2_TempBridge_Singleton";
@@ -148,6 +189,10 @@ namespace FanControl.TempBridge
         private const int ConsecutiveFailuresBeforeReinit = 5;
         private const int MaxReasonableTemperature = 150;
         private const int MemoryTrimIntervalSeconds = 60;
+        private const string GpuReadStateActive = "active";
+        private const string GpuReadStateNotPolled = "notPolled";
+        private const string GpuReadStateUnavailable = "unavailable";
+        private const string GpuReadStateError = "error";
         private static Computer computer;
         private static bool running = true;
         private static readonly object lockObject = new object();
@@ -155,6 +200,11 @@ namespace FanControl.TempBridge
         private static int consecutiveFailures = 0;
         private static string lastHardwareMonitorError = string.Empty;
         private static DateTime lastMemoryTrimUtc = DateTime.MinValue;
+        private static bool currentGpuMonitoringEnabled = false;
+        private static readonly object hardwareProfileLock = new object();
+        private static HardwareProfile cachedHardwareProfile;
+        private static int hardwareProfileSensorReconcileAttempted = 0;
+        private static readonly GpuReadCoordinator gpuReadCoordinator = new GpuReadCoordinator();
         private static readonly IntPtr TrimWorkingSetSentinel = new IntPtr(-1);
 
         [DllImport("kernel32.dll")]
@@ -184,7 +234,7 @@ namespace FanControl.TempBridge
                         Console.Out.Flush();
                         return;
                     }
-                    InitializeHardwareMonitor();
+                    InitializeHardwareMonitor(currentGpuMonitoringEnabled);
                     Console.WriteLine($"PIPE:{PipeName}|OWNER");
                     Console.Out.Flush();
                     StartPipeServer();
@@ -315,6 +365,7 @@ namespace FanControl.TempBridge
             Console.WriteLine("温度结果");
             Console.WriteLine($"CPU: {FormatTemperature(data.CpuTemp)}");
             Console.WriteLine($"GPU: {FormatTemperature(data.GpuTemp)}");
+            Console.WriteLine($"GPU State: {data.GpuReadState}");
             Console.WriteLine($"MAX: {FormatTemperature(data.MaxTemp)}");
             Console.WriteLine($"Success: {data.Success}");
 
@@ -394,7 +445,7 @@ namespace FanControl.TempBridge
             return wroteLine;
         }
 
-        static void InitializeHardwareMonitor()
+        static void InitializeHardwareMonitor(bool includeGpu = false)
         {
             var pawnIoStopwatch = Stopwatch.StartNew();
             string pawnIoMessage = EnsurePawnIoReady();
@@ -413,18 +464,19 @@ namespace FanControl.TempBridge
                         computer = null;
                     }
 
-                    LogInitProgress(string.Format("LibreHardwareMonitor init attempt {0}/{1}", attempt, MaxInitRetries));
+                    LogInitProgress(string.Format("LibreHardwareMonitor init attempt {0}/{1} (gpu={2})", attempt, MaxInitRetries, includeGpu ? "on" : "off"));
 
                     computer = new Computer
                     {
                         IsCpuEnabled = true,
-                        IsGpuEnabled = true,
+                        IsGpuEnabled = includeGpu,
                         IsMemoryEnabled = false,
                         IsMotherboardEnabled = false,
                         IsControllerEnabled = false,
                         IsNetworkEnabled = false,
                         IsStorageEnabled = false
                     };
+                    currentGpuMonitoringEnabled = includeGpu;
 
                     computer.Open();
                     computer.Accept(new UpdateVisitor());
@@ -434,8 +486,8 @@ namespace FanControl.TempBridge
                     {
                         consecutiveFailures = 0;
                         lastHardwareMonitorError = string.Empty;
-                        LogInitProgress(string.Format("temperature sensors found on attempt {0} in {1} ms",
-                            attempt, attemptStopwatch.ElapsedMilliseconds));
+                        LogInitProgress(string.Format("temperature sensors found on attempt {0} in {1} ms (gpu={2})",
+                            attempt, attemptStopwatch.ElapsedMilliseconds, includeGpu ? "on" : "off"));
                         TrimWorkingSetIfIdle(true);
                         return;
                     }
@@ -470,7 +522,7 @@ namespace FanControl.TempBridge
             // If we get here, all retries exhausted but computer may still be open
             // (just without working sensors). Keep it - it might recover on next update.
             lastHardwareMonitorError = BuildHardwareMonitorError(lastException, pawnIoMessage);
-            LogInitProgress("hardware monitor initialized without valid sensors; fallback will be used: " + lastHardwareMonitorError);
+            LogInitProgress(string.Format("hardware monitor initialized without valid sensors (gpu={0}); fallback will be used: {1}", includeGpu ? "on" : "off", lastHardwareMonitorError));
             TrimWorkingSetIfIdle(true);
         }
 
@@ -567,7 +619,332 @@ namespace FanControl.TempBridge
                 // Wait briefly after releasing handles. Avoid stopping PawnIO because other tools may share it.
                 Thread.Sleep(250);
 
-                InitializeHardwareMonitor();
+                InitializeHardwareMonitor(currentGpuMonitoringEnabled);
+            }
+        }
+
+        static void EnsureHardwareMonitorGpuMode(bool includeGpu)
+        {
+            if (computer != null && currentGpuMonitoringEnabled == includeGpu)
+            {
+                return;
+            }
+
+            try
+            {
+                computer?.Close();
+            }
+            catch { }
+            computer = null;
+            Thread.Sleep(120);
+            InitializeHardwareMonitor(includeGpu);
+        }
+
+        static bool ShouldPollGpu(TemperatureSelection selection, out string gpuReadState)
+        {
+            gpuReadState = GpuReadStateActive;
+            if (selection == null)
+            {
+                return true;
+            }
+
+            if (string.Equals(selection.GpuReadMode, "always", StringComparison.OrdinalIgnoreCase) || !selection.GpuLowPowerProtection)
+            {
+                return true;
+            }
+
+            if (IsGpuReadExplicitlyRequested(selection))
+            {
+                return true;
+            }
+
+            var profile = GetHardwareProfile();
+            bool shouldPoll = gpuReadCoordinator.ShouldPollGpu(profile, LogInitProgress);
+            if (shouldPoll)
+            {
+                gpuReadState = GpuReadStateActive;
+                return true;
+            }
+
+            gpuReadState = GpuReadStateNotPolled;
+            return false;
+        }
+
+        static bool IsGpuReadExplicitlyRequested(TemperatureSelection selection)
+        {
+            if (selection == null)
+            {
+                return false;
+            }
+            if (string.Equals(selection.TempSource, "gpu", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+            return false;
+        }
+
+        static bool IsAutoSelection(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) || string.Equals(value, "auto", StringComparison.OrdinalIgnoreCase);
+        }
+
+        static HardwareProfile GetHardwareProfile()
+        {
+            lock (hardwareProfileLock)
+            {
+                if (cachedHardwareProfile != null)
+                {
+                    return cachedHardwareProfile;
+                }
+
+                cachedHardwareProfile = LoadOrRefreshHardwareProfile();
+                return cachedHardwareProfile;
+            }
+        }
+
+        static HardwareProfile LoadOrRefreshHardwareProfile()
+        {
+            string profilePath = GetHardwareProfilePath();
+            string currentSignature = BuildCurrentGpuSignature();
+            HardwareProfile profile = null;
+
+            try
+            {
+                if (File.Exists(profilePath))
+                {
+                    profile = JsonConvert.DeserializeObject<HardwareProfile>(File.ReadAllText(profilePath));
+                }
+            }
+            catch (Exception ex)
+            {
+                LogInitProgress("hardware profile load failed; refreshing: " + ex.Message);
+            }
+
+            if (profile == null ||
+                profile.SchemaVersion != 1 ||
+                string.IsNullOrWhiteSpace(profile.Signature) ||
+                !string.Equals(profile.Signature, currentSignature, StringComparison.Ordinal))
+            {
+                profile = BuildHardwareProfile(currentSignature);
+                SaveHardwareProfile(profilePath, profile);
+            }
+
+            return profile;
+        }
+
+        static string GetHardwareProfilePath()
+        {
+            string bridgeDir = AppDomain.CurrentDomain.BaseDirectory
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var bridgeInfo = new DirectoryInfo(bridgeDir);
+            string appDir = string.Equals(bridgeInfo.Name, "bridge", StringComparison.OrdinalIgnoreCase) && bridgeInfo.Parent != null
+                ? bridgeInfo.Parent.FullName
+                : bridgeInfo.FullName;
+            return Path.Combine(appDir, "config", "hardware-profile.json");
+        }
+
+        static void SaveHardwareProfile(string profilePath, HardwareProfile profile)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(profilePath));
+                File.WriteAllText(profilePath, JsonConvert.SerializeObject(profile, Formatting.Indented));
+                LogInitProgress("hardware profile saved: " + profilePath);
+            }
+            catch (Exception ex)
+            {
+                LogInitProgress("hardware profile save failed: " + ex.Message);
+            }
+        }
+
+        static HardwareProfile BuildHardwareProfile(string signature)
+        {
+            var devices = EnumerateHardwareGpuDevices().ToArray();
+            var profile = new HardwareProfile
+            {
+                GeneratedAt = DateTimeOffset.UtcNow.ToString("o"),
+                Signature = signature,
+                GpuDevices = devices,
+                PreferredGpuProbe = ResolvePreferredGpuProbe(devices)
+            };
+            return profile;
+        }
+
+        static string ResolvePreferredGpuProbe(HardwareGpuDevice[] devices)
+        {
+            if (devices.Any(device => device.Discrete && string.Equals(device.Vendor, "nvidia", StringComparison.OrdinalIgnoreCase)))
+            {
+                return "nvidia-compatible";
+            }
+            if (devices.Any(device => device.Discrete && string.Equals(device.Vendor, "amd", StringComparison.OrdinalIgnoreCase)))
+            {
+                return "amd-compatible";
+            }
+            if (devices.Any(device => string.Equals(device.Vendor, "intel", StringComparison.OrdinalIgnoreCase)))
+            {
+                return "intel-compatible";
+            }
+            return "windows";
+        }
+
+        static string BuildCurrentGpuSignature()
+        {
+            return BuildHardwareSignature(EnumerateHardwareGpuDevices());
+        }
+
+        static string BuildHardwareSignature(System.Collections.Generic.IEnumerable<HardwareGpuDevice> devices)
+        {
+            var parts = devices
+                .Select(device => string.Join("|", new[] { device.Vendor ?? string.Empty, device.Name ?? string.Empty, device.PnpDeviceId ?? string.Empty, device.Discrete ? "1" : "0" }))
+                .OrderBy(part => part, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            return string.Join(";", parts);
+        }
+
+        static System.Collections.Generic.IEnumerable<HardwareGpuDevice> EnumerateHardwareGpuDevices()
+        {
+            using (var searcher = new ManagementObjectSearcher("SELECT Name, AdapterRAM, PNPDeviceID FROM Win32_VideoController"))
+            using (var results = searcher.Get())
+            {
+                foreach (ManagementObject item in results)
+                {
+                    string name = Convert.ToString(item["Name"]) ?? string.Empty;
+                    string pnp = Convert.ToString(item["PNPDeviceID"]) ?? string.Empty;
+                    ulong adapterRam = ReadUInt64(item["AdapterRAM"]);
+                    if (IsVirtualVideoController(name, pnp))
+                    {
+                        continue;
+                    }
+
+                    string vendor = DetectGpuVendor(name, pnp);
+                    yield return new HardwareGpuDevice
+                    {
+                        Name = name,
+                        Vendor = vendor,
+                        PnpDeviceId = pnp,
+                        Discrete = IsDiscreteVideoController(name, pnp, adapterRam)
+                    };
+                }
+            }
+        }
+
+        static void ReconcileHardwareProfileWithSensors(System.Collections.Generic.IEnumerable<GpuCandidate> gpuCandidates)
+        {
+            if (gpuCandidates == null)
+            {
+                return;
+            }
+
+            var detectedDevices = gpuCandidates
+                .Select(candidate => new HardwareGpuDevice
+                {
+                    Name = candidate.Model ?? string.Empty,
+                    Vendor = candidate.Vendor ?? string.Empty,
+                    PnpDeviceId = candidate.Key ?? string.Empty,
+                    Discrete = IsDiscreteSensorVendor(candidate.Vendor)
+                })
+                .Where(device => !string.IsNullOrWhiteSpace(device.Name) || !string.IsNullOrWhiteSpace(device.PnpDeviceId))
+                .ToArray();
+
+            if (detectedDevices.Length == 0)
+            {
+                return;
+            }
+
+            string sensorSignature = BuildHardwareSignature(detectedDevices);
+            lock (hardwareProfileLock)
+            {
+                var profile = cachedHardwareProfile ?? LoadOrRefreshHardwareProfile();
+                if (string.Equals(profile.Signature, sensorSignature, StringComparison.Ordinal))
+                {
+                    cachedHardwareProfile = profile;
+                    return;
+                }
+
+                profile = BuildHardwareProfileFromSensorDevices(detectedDevices, sensorSignature);
+                cachedHardwareProfile = profile;
+                SaveHardwareProfile(GetHardwareProfilePath(), profile);
+            }
+        }
+
+        static HardwareProfile BuildHardwareProfileFromSensorDevices(HardwareGpuDevice[] devices, string signature)
+        {
+            var profile = new HardwareProfile
+            {
+                GeneratedAt = DateTimeOffset.UtcNow.ToString("o"),
+                Signature = signature,
+                GpuDevices = devices,
+                PreferredGpuProbe = ResolvePreferredGpuProbe(devices)
+            };
+            return profile;
+        }
+
+        static bool IsDiscreteVideoController(string name, string pnpDeviceId, ulong adapterRam)
+        {
+            string text = ((name ?? string.Empty) + " " + (pnpDeviceId ?? string.Empty)).ToLowerInvariant();
+            if (IsVirtualVideoController(name, pnpDeviceId))
+            {
+                return false;
+            }
+            if (text.Contains("nvidia") || text.Contains("ven_10de"))
+            {
+                return true;
+            }
+            if ((text.Contains("amd") || text.Contains("radeon") || text.Contains("ven_1002")) && !text.Contains("intel"))
+            {
+                return adapterRam >= 512UL * 1024UL * 1024UL;
+            }
+            return false;
+        }
+
+        static bool IsVirtualVideoController(string name, string pnpDeviceId)
+        {
+            string text = ((name ?? string.Empty) + " " + (pnpDeviceId ?? string.Empty)).ToLowerInvariant();
+            return text.Contains("virtual") ||
+                   text.Contains("microsoft basic") ||
+                   text.Contains("idd") ||
+                   text.Contains("indirect") ||
+                   text.Contains("remotefx") ||
+                   text.Contains("todesk");
+        }
+
+        static string DetectGpuVendor(string name, string pnpDeviceId)
+        {
+            string text = ((name ?? string.Empty) + " " + (pnpDeviceId ?? string.Empty)).ToLowerInvariant();
+            if (text.Contains("nvidia") || text.Contains("ven_10de"))
+            {
+                return "nvidia";
+            }
+            if (text.Contains("amd") || text.Contains("radeon") || text.Contains("ven_1002"))
+            {
+                return "amd";
+            }
+            if (text.Contains("intel") || text.Contains("ven_8086"))
+            {
+                return "intel";
+            }
+            return "unknown";
+        }
+
+        static bool IsDiscreteSensorVendor(string vendor)
+        {
+            return string.Equals(vendor, "nvidia", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(vendor, "amd", StringComparison.OrdinalIgnoreCase);
+        }
+
+        static ulong ReadUInt64(object value)
+        {
+            if (value == null)
+            {
+                return 0;
+            }
+            try
+            {
+                return Convert.ToUInt64(value);
+            }
+            catch
+            {
+                return 0;
             }
         }
 
@@ -801,6 +1178,12 @@ namespace FanControl.TempBridge
             selection.GpuDevice = NormalizeDeviceSelection(selection.GpuDevice);
             selection.CpuSensor = NormalizeSensorSelection(selection.CpuSensor);
             selection.GpuSensor = NormalizeSensorSelection(selection.GpuSensor);
+            if (string.IsNullOrWhiteSpace(selection.GpuReadMode))
+            {
+                selection.GpuReadMode = selection.GpuLowPowerProtection ? "auto" : "always";
+            }
+            selection.GpuReadMode = NormalizeGpuReadMode(selection.GpuReadMode);
+            selection.GpuLowPowerProtection = !string.Equals(selection.GpuReadMode, "always", StringComparison.OrdinalIgnoreCase);
             return selection;
         }
 
@@ -815,6 +1198,15 @@ namespace FanControl.TempBridge
                 return "gpu";
             }
             return "max";
+        }
+
+        static string NormalizeGpuReadMode(string mode)
+        {
+            if (string.Equals(mode, "always", StringComparison.OrdinalIgnoreCase))
+            {
+                return "always";
+            }
+            return "auto";
         }
 
         static string NormalizeDeviceSelection(string deviceKey)
@@ -840,12 +1232,16 @@ namespace FanControl.TempBridge
             string cpuModel = string.Empty;
             double cpuPowerWatts = 0;
             string gpuModel = string.Empty;
+            string gpuReadState = GpuReadStateUnavailable;
             var cpuSensors = new System.Collections.Generic.List<TemperatureSensor>();
             var gpuCandidates = new System.Collections.Generic.List<GpuCandidate>();
             int gpuIndex = 0;
+            bool shouldPollGpu = ShouldPollGpu(selection, out gpuReadState);
 
             try
             {
+                EnsureHardwareMonitorGpuMode(shouldPollGpu);
+
                 if (computer != null)
                 {
                     computer.Accept(new UpdateVisitor());
@@ -861,9 +1257,10 @@ namespace FanControl.TempBridge
                                 cpuPowerWatts = SelectPowerWatts(hardware, new[] { "Package", "CPU Package", "Total", "Core" });
                             }
                         }
-                        else if (hardware.HardwareType == HardwareType.GpuNvidia ||
+                        else if (shouldPollGpu &&
+                                 (hardware.HardwareType == HardwareType.GpuNvidia ||
                                  hardware.HardwareType == HardwareType.GpuAmd ||
-                                 hardware.HardwareType == HardwareType.GpuIntel)
+                                 hardware.HardwareType == HardwareType.GpuIntel))
                         {
                             var sensors = new System.Collections.Generic.List<TemperatureSensor>();
                             CollectTemperatureSensors(hardware, "gpu", hardware.Name ?? string.Empty, string.Empty, sensors);
@@ -905,9 +1302,14 @@ namespace FanControl.TempBridge
             }
 
             var selectedGpu = SelectGpuCandidate(gpuCandidates, selection.GpuDevice, selection.GpuSensor);
+            ReconcileHardwareProfileWithSensorsOnce(gpuCandidates);
             var gpuSensors = selectedGpu != null ? selectedGpu.Sensors : new System.Collections.Generic.List<TemperatureSensor>();
             gpuModel = selectedGpu != null ? selectedGpu.Model : string.Empty;
             double gpuPowerWatts = selectedGpu != null ? selectedGpu.PowerWatts : 0;
+            if (shouldPollGpu)
+            {
+                gpuReadState = selectedGpu != null ? GpuReadStateActive : GpuReadStateUnavailable;
+            }
 
             int cpuTemp = SelectTemperature(cpuSensors, selection.CpuSensor, new[] { "Average", "Package", "Tctl", "Tdie", "Core", "Windows" });
             int gpuTemp = SelectTemperature(gpuSensors, selection.GpuSensor, new[] { "Average", "GPU Core", "Core", "Edge", "Junction", "Hot Spot", "Temperature" });
@@ -916,6 +1318,7 @@ namespace FanControl.TempBridge
             result.GpuTemp = gpuTemp;
             result.CpuPowerWatts = cpuPowerWatts;
             result.GpuPowerWatts = gpuPowerWatts;
+            result.GpuReadState = gpuReadState;
             result.MaxTemp = Math.Max(cpuTemp, gpuTemp);
             result.ControlTemp = ResolveControlTemp(cpuTemp, gpuTemp, selection.TempSource);
             result.SelectedGpuDevice = selectedGpu != null ? selectedGpu.Key : selection.GpuDevice;
@@ -943,6 +1346,16 @@ namespace FanControl.TempBridge
             }
 
             return result;
+        }
+
+        static void ReconcileHardwareProfileWithSensorsOnce(System.Collections.Generic.IEnumerable<GpuCandidate> gpuCandidates)
+        {
+            if (Interlocked.Exchange(ref hardwareProfileSensorReconcileAttempted, 1) == 1)
+            {
+                return;
+            }
+
+            ReconcileHardwareProfileWithSensors(gpuCandidates);
         }
 
         static string BuildTemperatureReadError(string hardwareError)

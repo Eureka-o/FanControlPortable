@@ -30,12 +30,15 @@ export interface FanData {
   speedUnit?: string;
 }
 
+export type GPUReadState = 'active' | 'notPolled' | 'unavailable' | 'error' | 'unknown';
+
 // 温度数据
 export interface TemperatureData {
   cpuTemp: number;     // CPU温度
   gpuTemp: number;     // GPU温度
   cpuPowerWatts?: number;
   gpuPowerWatts?: number;
+  gpuReadState?: GPUReadState;
   maxTemp: number;     // 最高温度
   controlTemp?: number; // 当前控温基准温度
   controlSource?: 'max' | 'cpu' | 'gpu'; // 当前控温基准来源
@@ -79,6 +82,8 @@ export interface AppConfig {
   tempSource?: 'max' | 'cpu' | 'gpu';
   cpuSensor?: string;
   gpuSensor?: string;
+  gpuReadMode?: 'auto' | 'always';
+  gpuLowPowerProtection?: boolean;
   configPath: string;          // 配置文件路径
   manualGear: string;          // 手动挡位设置
   manualLevel: string;         // 手动挡位级别(低中高)

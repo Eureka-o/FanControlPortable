@@ -54,12 +54,6 @@ func (a *CoreApp) syncConnectedBuiltInDeviceProfile(deviceInfo map[string]string
 	if profileID == "" {
 		return false
 	}
-	// FlyDigi native protocols stay in the backend for beta probing, but 2.2.0
-	// must not persist or auto-select those hidden profiles in user config.
-	if types.IsFlyDigiDeviceProfileID(profileID) {
-		return false
-	}
-
 	cfg := a.configManager.Get()
 	types.NormalizeDeviceProfileConfig(&cfg)
 	idx := deviceprofiles.FindIndex(cfg.DeviceProfiles, profileID)
@@ -92,7 +86,6 @@ func (a *CoreApp) syncConnectedBuiltInDeviceProfile(deviceInfo map[string]string
 	if err := a.configManager.Save(); err != nil {
 		a.logError("failed to save auto-matched device profile %s: %v", profile.ID, err)
 	}
-	a.configureDeviceManager(cfg)
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 	}

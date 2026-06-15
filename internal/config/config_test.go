@@ -295,9 +295,12 @@ func TestLoadUpgradeConfigPreservesDeviceProfilesAndLearningState(t *testing.T) 
 		t.Fatalf("serial profile connection not preserved: %#v", loadedSerial.Connection)
 	}
 	for _, id := range []string{types.FlyDigiBS1ProfileID, types.FlyDigiBS2ProfileID, types.FlyDigiBS2PROProfileID, types.FlyDigiBS3ProfileID, types.FlyDigiBS3PROProfileID} {
-		if profile, ok := findDeviceProfileForTest(loaded.DeviceProfiles, id); ok {
-			t.Fatalf("hidden FlyDigi backend profile %q should not be appended during upgrade: %#v", id, profile)
+		if _, ok := findDeviceProfileForTest(loaded.DeviceProfiles, id); !ok {
+			t.Fatalf("FlyDigi built-in profile %q should be appended during upgrade: %#v", id, loaded.DeviceProfiles)
 		}
+	}
+	if profile, ok := findDeviceProfileForTest(loaded.DeviceProfiles, types.LegacyRPMProfileID); ok {
+		t.Fatalf("legacy RPM profile should not be exposed as a saved device after upgrade: %#v", profile)
 	}
 	if loaded.ActiveFanCurveProfileID != "gaming" || len(loaded.FanCurveProfiles) != 2 || loaded.FanCurveProfiles[1].Curve[2].RPM != 70 {
 		t.Fatalf("curve profile state not preserved: active=%q profiles=%#v", loaded.ActiveFanCurveProfileID, loaded.FanCurveProfiles)
