@@ -328,19 +328,7 @@ func (e *BLEExecutor) fanDataFromBody(body []byte, fallback types.FanSpeedValue)
 	if fallback.Unit != "" {
 		fallbackValue = speedValueForProfileState(fallback)
 	}
-	if !state.HasCurrent && fallbackValue > 0 {
-		state.CurrentSpeed = fallbackValue
-		state.HasCurrent = true
-	}
-	if !state.HasTarget {
-		if fallbackValue > 0 {
-			state.TargetSpeed = fallbackValue
-		} else {
-			state.TargetSpeed = state.CurrentSpeed
-		}
-		state.HasTarget = state.HasCurrent || fallbackValue > 0
-	}
-	if !state.HasCurrent && !state.HasTarget {
+	if !completeStateTarget(&state, fallbackValue) {
 		return nil, fmt.Errorf("ble profile response did not contain speed data")
 	}
 	current := clampForProfile(state.CurrentSpeed, e.profile.SpeedUnit)

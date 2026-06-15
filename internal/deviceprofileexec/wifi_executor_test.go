@@ -177,6 +177,132 @@ func TestWiFiExecutorDefaultParserUsesFanSpeedAsCurrentWhenSpeedIsSetpoint(t *te
 	}
 }
 
+func TestWiFiExecutorUsesDefaultProtocolForPlainPercentWiFiProfile(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"fanSpeed": 35, "speed": 80})
+	}))
+	defer server.Close()
+
+	executor, err := NewWiFiExecutor(types.DefaultWiFiPercentProfile(server.URL), "", nil)
+	if err != nil {
+		t.Fatalf("new executor: %v", err)
+	}
+	if _, ok := executor.protocol.(*defaultWiFiPercentProtocol); !ok {
+		t.Fatalf("protocol = %T, want *defaultWiFiPercentProtocol", executor.protocol)
+	}
+}
+
+func TestWiFiExecutorUsesProfileProtocolWhenCustomParsersExist(t *testing.T) {
+	profile := types.DefaultWiFiPercentProfile("192.168.1.50")
+	profile.ResponseParsers = []types.DeviceResponseParser{
+		{Name: "current speed", Type: "json_path", Expression: "$.fan.current"},
+	}
+
+	executor, err := NewWiFiExecutor(profile, "", nil)
+	if err != nil {
+		t.Fatalf("new executor: %v", err)
+	}
+	if _, ok := executor.protocol.(*profileWiFiProtocol); !ok {
+		t.Fatalf("protocol = %T, want *profileWiFiProtocol", executor.protocol)
+	}
+}
+
+func TestWiFiDefaultProtocolTargetOnlyStateDoesNotFakeCurrentSpeed(t *testing.T) {
+	setSeen := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/data":
+			target := 44
+			if setSeen {
+				target = 66
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"targetSpeed": target,
+				"controlMode": "wifi",
+			})
+		case "/api/speed":
+			setSeen = true
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	executor, err := NewWiFiExecutor(types.DefaultWiFiPercentProfile(server.URL), "", nil)
+	if err != nil {
+		t.Fatalf("new executor: %v", err)
+	}
+
+	initial, err := executor.ReadState(nil)
+	if err != nil {
+		t.Fatalf("read state: %v", err)
+	}
+	if initial.CurrentRPM != 0 || initial.TargetRPM != 44 {
+		t.Fatalf("initial fan data = %d/%d, want 0/44", initial.CurrentRPM, initial.TargetRPM)
+	}
+
+	next, err := executor.SetSpeed(nil, types.NewPercentSpeed(66))
+	if err != nil {
+		t.Fatalf("set speed: %v", err)
+	}
+	if next.CurrentRPM != 0 || next.TargetRPM != 66 {
+		t.Fatalf("next fan data = %d/%d, want 0/66", next.CurrentRPM, next.TargetRPM)
+	}
+}
+
+func TestWiFiExecutorTargetOnlyStateDoesNotFakeCurrentSpeed(t *testing.T) {
+	setSeen := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/state":
+			target := 44
+			if setSeen {
+				target = 66
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"fan": map[string]any{
+					"target": target,
+				},
+				"mode": "wifi",
+			})
+		case "/speed":
+			setSeen = true
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	profile := types.DefaultWiFiPercentProfile(server.URL)
+	profile.Connection.StateEndpoint = "/state"
+	profile.Connection.SpeedEndpoint = "/speed"
+	profile.ResponseParsers = []types.DeviceResponseParser{
+		{Name: "target speed", Type: "json_path", Expression: "$.fan.target"},
+	}
+	executor, err := NewWiFiExecutor(profile, "", nil)
+	if err != nil {
+		t.Fatalf("new executor: %v", err)
+	}
+
+	initial, err := executor.ReadState(nil)
+	if err != nil {
+		t.Fatalf("read state: %v", err)
+	}
+	if initial.CurrentRPM != 0 || initial.TargetRPM != 44 {
+		t.Fatalf("initial fan data = %d/%d, want 0/44", initial.CurrentRPM, initial.TargetRPM)
+	}
+
+	next, err := executor.SetSpeed(nil, types.NewPercentSpeed(66))
+	if err != nil {
+		t.Fatalf("set speed: %v", err)
+	}
+	if next.CurrentRPM != 0 || next.TargetRPM != 66 {
+		t.Fatalf("next fan data = %d/%d, want 0/66", next.CurrentRPM, next.TargetRPM)
+	}
+}
+
 func TestWiFiExecutorRetriesRetryableHTTPStatus(t *testing.T) {
 	speedAttempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

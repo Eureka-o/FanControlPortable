@@ -3,6 +3,8 @@
 package device
 
 import (
+	"encoding/binary"
+	"errors"
 	"testing"
 
 	"github.com/TIANLI0/THRM/internal/types"
@@ -135,5 +137,45 @@ func TestFlyDigiHIDTargetUpdateDoesNotFakeCurrentRPM(t *testing.T) {
 	}
 	if got.WorkMode != "挡位工作模式" {
 		t.Fatalf("work mode = %q, want 挡位工作模式", got.WorkMode)
+	}
+}
+
+func TestFlyDigiHIDReadErrorPolicyToleratesTransientFailures(t *testing.T) {
+	next, stop := flyDigiHIDReadErrorState(errFlyDigiHIDTimeout, 3)
+	if next != 0 || stop {
+		t.Fatalf("timeout state = (%d, %v), want reset and keep reading", next, stop)
+	}
+
+	transient := errors.New("temporary read failure")
+	for i := 0; i < flyDigiHIDMaxConsecutiveReadErrors-1; i++ {
+		next, stop = flyDigiHIDReadErrorState(transient, i)
+		if next != i+1 || stop {
+			t.Fatalf("transient state %d = (%d, %v), want (%d, false)", i, next, stop, i+1)
+		}
+	}
+
+	next, stop = flyDigiHIDReadErrorState(transient, flyDigiHIDMaxConsecutiveReadErrors-1)
+	if next != flyDigiHIDMaxConsecutiveReadErrors || !stop {
+		t.Fatalf("threshold state = (%d, %v), want (%d, true)", next, stop, flyDigiHIDMaxConsecutiveReadErrors)
+	}
+}
+
+func TestParseFlyDigiFanDataFallsBackToReferenceOffsets(t *testing.T) {
+	report := []byte{
+		0x02, 0x5A, 0xA5, 0xEF,
+		0x00, // deliberately invalid protocol length; reference-style offsets still carry status.
+		0x2A, 0x01, 0x00,
+		0x00, 0x00,
+		0x00, 0x00,
+	}
+	binary.LittleEndian.PutUint16(report[8:10], 1560)
+	binary.LittleEndian.PutUint16(report[10:12], 2200)
+
+	fanData := parseFlyDigiFanData(report)
+	if fanData == nil {
+		t.Fatal("expected reference-offset FlyDigi status frame to be parsed")
+	}
+	if fanData.CurrentRPM != 1560 || fanData.TargetRPM != 2200 {
+		t.Fatalf("rpm = %d/%d, want 1560/2200", fanData.CurrentRPM, fanData.TargetRPM)
 	}
 }
