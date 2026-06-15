@@ -98,6 +98,8 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	cfg.GpuDevice = types.NormalizeDeviceSelection(cfg.GpuDevice)
 	cfg.CpuSensor = types.NormalizeSensorSelection(cfg.CpuSensor)
 	cfg.GpuSensor = types.NormalizeSensorSelection(cfg.GpuSensor)
+	cfg.CpuPowerSensor = types.NormalizeSensorSelection(cfg.CpuPowerSensor)
+	cfg.GpuPowerSensor = types.NormalizeSensorSelection(cfg.GpuPowerSensor)
 	if cfg.GpuReadMode == "" {
 		if cfg.GpuLowPowerProtection {
 			cfg.GpuReadMode = types.GPUReadModeAuto

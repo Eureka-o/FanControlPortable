@@ -761,6 +761,7 @@
       "processorDeviceHintWaiting": "尚未识别到 CPU 型号，TempBridge 可用后会自动显示。",
       "waitingRecognition": "等待识别...",
       "temperatureSensor": "温度传感器",
+      "powerSensor": "功耗传感器",
       "currentBaselineTemperature": "当前基准温度 {{temperature}}°C",
       "noCpuTemperatureData": "当前无可用 CPU 温度数据",
       "gpuBaseline": "GPU 基准",

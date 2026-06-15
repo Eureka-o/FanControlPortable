@@ -131,6 +131,8 @@ func copyBridgeTemperatureMetadata(temp *types.TemperatureData, bridgeTemp types
 	temp.GpuModel = bridgeTemp.GpuModel
 	temp.CpuSensors = bridgeTemp.CpuSensors
 	temp.GpuSensors = bridgeTemp.GpuSensors
+	temp.CpuPowerSensors = bridgeTemp.CpuPowerSensors
+	temp.GpuPowerSensors = bridgeTemp.GpuPowerSensors
 	temp.GpuDevices = bridgeTemp.GpuDevices
 	if bridgeTemp.UpdateTime > 0 {
 		temp.UpdateTime = bridgeTemp.UpdateTime

@@ -327,6 +327,8 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 			GpuDevice:             cfg.GpuDevice,
 			CpuSensor:             cfg.CpuSensor,
 			GpuSensor:             cfg.GpuSensor,
+			CpuPowerSensor:        cfg.CpuPowerSensor,
+			GpuPowerSensor:        cfg.GpuPowerSensor,
 			GpuReadMode:           cfg.GpuReadMode,
 			GpuLowPowerProtection: cfg.GpuLowPowerProtection,
 		})
@@ -339,6 +341,8 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 			GpuDevice:             cfg.GpuDevice,
 			CpuSensor:             cfg.CpuSensor,
 			GpuSensor:             cfg.GpuSensor,
+			CpuPowerSensor:        cfg.CpuPowerSensor,
+			GpuPowerSensor:        cfg.GpuPowerSensor,
 			GpuReadMode:           cfg.GpuReadMode,
 			GpuLowPowerProtection: cfg.GpuLowPowerProtection,
 		})

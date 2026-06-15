@@ -761,6 +761,7 @@
       "processorDeviceHintWaiting": "CPU model not detected yet. It will appear automatically once TempBridge is available.",
       "waitingRecognition": "Waiting for detection...",
       "temperatureSensor": "Temperature sensor",
+      "powerSensor": "Power sensor",
       "currentBaselineTemperature": "Current baseline temperature {{temperature}}°C",
       "noCpuTemperatureData": "No CPU temperature data is currently available",
       "gpuBaseline": "GPU baseline",

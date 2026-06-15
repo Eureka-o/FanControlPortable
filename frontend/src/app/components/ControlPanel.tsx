@@ -198,6 +198,10 @@ const SMART_START_STOP_OPTIONS = [
 
 const WIFI_SMART_START_STOP_STANDBY_SPEED_OPTIONS = [1, 2, 5, 10, 15, 20];
 
+const formatPowerSensorValue = (value: number) => (
+  Number.isFinite(value) && value >= 0 ? `${value.toFixed(1)} W` : '-- W'
+);
+
 // 温度平滑度（EMA 系数）选项。
 // 数字越大平滑越强、对突发温度反应越慢；越小越灵敏但可能跟着抖。
 // 后端 α = 2/(N+1)：1→即时，5→约 5 周期窗口，10→约 10 周期窗口。
@@ -527,6 +531,14 @@ export default function ControlPanel({
     : (temperature?.gpuTemp && temperature.gpuTemp > 0 ? `${temperature.gpuTemp}°C` : '--');
   const cpuSensors = useMemo(() => (Array.isArray(temperature?.cpuSensors) ? temperature.cpuSensors : []), [temperature?.cpuSensors]);
   const gpuSensors = useMemo(() => (Array.isArray(temperature?.gpuSensors) ? temperature.gpuSensors : []), [temperature?.gpuSensors]);
+  const cpuPowerSensors = useMemo(
+    () => (Array.isArray((temperature as any)?.cpuPowerSensors) ? ((temperature as any).cpuPowerSensors as types.PowerSensor[]) : []),
+    [temperature?.cpuPowerWatts, temperature?.cpuPowerSensors],
+  );
+  const gpuPowerSensors = useMemo(
+    () => (Array.isArray((temperature as any)?.gpuPowerSensors) ? ((temperature as any).gpuPowerSensors as types.PowerSensor[]) : []),
+    [temperature?.gpuPowerWatts, temperature?.gpuPowerSensors],
+  );
   // 收窄依赖：旧实现依赖整个 temperature 对象，温度每秒推送都会重算并产生新数组引用，
   // 导致下游 Select 等组件无谓重渲染。改为只依赖具体字段。
   const rawGpuDevices = (temperature as any)?.gpuDevices;
@@ -555,6 +567,13 @@ export default function ControlPanel({
     }
     return gpuSensors;
   }, [activeGpuDevice, gpuSensors]);
+  const effectiveGpuPowerSensors = useMemo(() => {
+    const devicePowerSensors = (activeGpuDevice as any)?.powerSensors;
+    if (Array.isArray(devicePowerSensors) && devicePowerSensors.length > 0) {
+      return devicePowerSensors as types.PowerSensor[];
+    }
+    return gpuPowerSensors;
+  }, [activeGpuDevice, gpuPowerSensors]);
   const selectedCpuSensor = useMemo(() => {
     const configured = (((config as any).cpuSensor as string) || 'auto');
     return cpuSensors.some((sensor) => sensor.key === configured) ? configured : 'auto';
@@ -563,6 +582,14 @@ export default function ControlPanel({
     const configured = (((config as any).gpuSensor as string) || 'auto');
     return effectiveGpuSensors.some((sensor) => sensor.key === configured) ? configured : 'auto';
   }, [config, effectiveGpuSensors]);
+  const selectedCpuPowerSensor = useMemo(() => {
+    const configured = (((config as any).cpuPowerSensor as string) || 'auto');
+    return cpuPowerSensors.some((sensor) => sensor.key === configured) ? configured : 'auto';
+  }, [config, cpuPowerSensors]);
+  const selectedGpuPowerSensor = useMemo(() => {
+    const configured = (((config as any).gpuPowerSensor as string) || 'auto');
+    return effectiveGpuPowerSensors.some((sensor) => sensor.key === configured) ? configured : 'auto';
+  }, [config, effectiveGpuPowerSensors]);
   const legionFnQConfig = useMemo(() => normalizeLegionFnQConfig((config as any).legionFnQ), [config]);
   const legionPowerModes = useMemo(
     () => LEGION_POWER_MODE_VALUES.map((value) => ({ value, label: t(`controlPanel.options.legionPowerModes.${value}`) })),
@@ -946,6 +973,7 @@ export default function ControlPanel({
         ...config,
         gpuDevice: deviceKey,
         gpuSensor: 'auto',
+        gpuPowerSensor: 'auto',
       });
       await apiService.updateConfig(newCfg);
       onConfigChange(newCfg);
@@ -959,6 +987,19 @@ export default function ControlPanel({
     setLoading(loadingKey, true);
     try {
       const patch = kind === 'cpu' ? { cpuSensor: sensorKey } : { gpuSensor: sensorKey };
+      const newCfg = types.AppConfig.createFrom({ ...config, ...patch });
+      await apiService.updateConfig(newCfg);
+      onConfigChange(newCfg);
+    } catch { /* noop */ } finally {
+      setLoading(loadingKey, false);
+    }
+  }, [config, onConfigChange]);
+
+  const handlePowerSensorChange = useCallback(async (kind: 'cpu' | 'gpu', sensorKey: string) => {
+    const loadingKey = kind === 'cpu' ? 'cpuPowerSensor' : 'gpuPowerSensor';
+    setLoading(loadingKey, true);
+    try {
+      const patch = kind === 'cpu' ? { cpuPowerSensor: sensorKey } : { gpuPowerSensor: sensorKey };
       const newCfg = types.AppConfig.createFrom({ ...config, ...patch });
       await apiService.updateConfig(newCfg);
       onConfigChange(newCfg);
@@ -1326,6 +1367,16 @@ export default function ControlPanel({
     { value: 'auto', label: effectiveGpuSensors.length > 0 ? t('controlPanel.options.sensor.autoRecommended') : t('controlPanel.options.sensor.auto') },
     ...effectiveGpuSensors.map((sensor) => ({ value: sensor.key, label: `${sensor.name} (${sensor.value}°C)` })),
   ], [effectiveGpuSensors, locale, t]);
+
+  const cpuPowerSensorOptions = useMemo(() => [
+    { value: 'auto', label: cpuPowerSensors.length > 0 ? t('controlPanel.options.sensor.autoRecommended') : t('controlPanel.options.sensor.auto') },
+    ...cpuPowerSensors.map((sensor) => ({ value: sensor.key, label: `${sensor.name} (${formatPowerSensorValue(sensor.value)})` })),
+  ], [cpuPowerSensors, locale, t]);
+
+  const gpuPowerSensorOptions = useMemo(() => [
+    { value: 'auto', label: effectiveGpuPowerSensors.length > 0 ? t('controlPanel.options.sensor.autoRecommended') : t('controlPanel.options.sensor.auto') },
+    ...effectiveGpuPowerSensors.map((sensor) => ({ value: sensor.key, label: `${sensor.name} (${formatPowerSensorValue(sensor.value)})` })),
+  ], [effectiveGpuPowerSensors, locale, t]);
 
   const requiredColorCount = getRequiredColorCount(lightStripConfig.mode);
 
@@ -1752,6 +1803,17 @@ export default function ControlPanel({
                         disabled={!cpuSensors.length}
                       />
                     </SelectionField>
+
+                    <SelectionField label={t('controlPanel.fan.powerSensor')}>
+                      <Select
+                        value={selectedCpuPowerSensor}
+                        onChange={(value: string | number) => handlePowerSensorChange('cpu', String(value))}
+                        options={cpuPowerSensorOptions}
+                        size="sm"
+                        className="w-full min-w-0"
+                        disabled={!cpuPowerSensors.length || loadingStates.cpuPowerSensor}
+                      />
+                    </SelectionField>
                   </div>
                   <div className="mt-2 text-xs text-muted-foreground">
                     {temperature?.cpuTemp && temperature.cpuTemp > 0 ? t('controlPanel.fan.currentBaselineTemperature', { temperature: temperature.cpuTemp }) : t('controlPanel.fan.noCpuTemperatureData')}
@@ -1790,6 +1852,17 @@ export default function ControlPanel({
                         size="sm"
                         className="w-full min-w-0"
                         disabled={gpuNotPolled || !effectiveGpuSensors.length}
+                      />
+                    </SelectionField>
+
+                    <SelectionField label={t('controlPanel.fan.powerSensor')}>
+                      <Select
+                        value={selectedGpuPowerSensor}
+                        onChange={(value: string | number) => handlePowerSensorChange('gpu', String(value))}
+                        options={gpuPowerSensorOptions}
+                        size="sm"
+                        className="w-full min-w-0"
+                        disabled={gpuNotPolled || !effectiveGpuPowerSensors.length || loadingStates.gpuPowerSensor}
                       />
                     </SelectionField>
                   </div>

@@ -761,6 +761,7 @@
       "processorDeviceHintWaiting": "CPU モデルはまだ認識されていません。TempBridge が利用可能になると自動表示されます。",
       "waitingRecognition": "認識待ち...",
       "temperatureSensor": "温度センサー",
+      "powerSensor": "電力センサー",
       "currentBaselineTemperature": "現在の基準温度 {{temperature}}°C",
       "noCpuTemperatureData": "現在利用可能な CPU 温度データはありません",
       "gpuBaseline": "GPU 基準",
