@@ -748,6 +748,7 @@
       "sectionTitle": "风扇控制",
       "autoControlTitle": "自动温度控制",
       "autoControlDescription": "根据温度曲线自动调节风扇速度",
+      "autoControlApplyFailed": "自动温度控制切换失败: {{error}}",
       "sampleSmoothingTitle": "温度平滑度",
       "sampleSmoothingDescription": "EMA 指数加权：值越大越平滑（更稳）、越小响应越快（更跟手），不确定保持默认",
       "temperatureBaselineTitle": "温度基准",

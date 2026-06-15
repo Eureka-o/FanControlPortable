@@ -748,6 +748,7 @@
       "sectionTitle": "Fan control",
       "autoControlTitle": "Automatic temperature control",
       "autoControlDescription": "Adjust fan speed automatically based on the temperature curve",
+      "autoControlApplyFailed": "Failed to switch automatic temperature control: {{error}}",
       "sampleSmoothingTitle": "Temperature smoothing",
       "sampleSmoothingDescription": "EMA weighting: larger values are smoother and steadier, smaller values respond faster. Keep the default if unsure.",
       "temperatureBaselineTitle": "Temperature baseline",

@@ -760,9 +760,13 @@ export default function ControlPanel({
     setLoading('autoControl', true);
     try {
       await apiService.setAutoControl(enabled);
-      onConfigChange(types.AppConfig.createFrom({ ...config, autoControl: enabled }));
-    } catch { /* noop */ } finally { setLoading('autoControl', false); }
-  }, [config, onConfigChange]);
+      const latest = await refreshDeviceConfig();
+      onConfigChange(types.AppConfig.createFrom({ ...latest, autoControl: enabled }));
+    } catch (error) {
+      toast.error(t('controlPanel.fan.autoControlApplyFailed', { error: getErrorMessage(error) }));
+      await refreshDeviceConfig();
+    } finally { setLoading('autoControl', false); }
+  }, [refreshDeviceConfig, t, onConfigChange]);
 
   const handleManualGearApply = useCallback(async () => {
     const gear = FAN_GEAR_VALUES.includes(manualGearDraft as any) ? manualGearDraft : '标准';

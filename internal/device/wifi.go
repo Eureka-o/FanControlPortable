@@ -330,43 +330,44 @@ func (m *Manager) setWiFiTargetSpeedLocked(speed types.FanSpeedValue) bool {
 	if err != nil {
 		return false
 	}
-	req, err := http.NewRequest(http.MethodPost, endpoint+"/api/speed", bytes.NewReader(payload))
-	if err != nil {
-		m.logError("创建 WiFi 速度请求失败: %v", err)
-		return false
-	}
-	req.Header.Set("Content-Type", "application/json")
+	var next *types.FanData
+	if err := retryDeviceSend("WiFi speed", func() error {
+		req, err := http.NewRequest(http.MethodPost, endpoint+"/api/speed", bytes.NewReader(payload))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
 
-	resp, err := m.wifiHTTPClient.Do(req)
-	if err != nil {
+		resp, err := m.wifiHTTPClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return fmt.Errorf("HTTP %d", resp.StatusCode)
+		}
+
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+		if err != nil {
+			return err
+		}
+		if err := validateWiFiSetSpeedResponse(body); err != nil {
+			return err
+		}
+
+		next, err = m.readWiFiStateLocked()
+		if err != nil {
+			return err
+		}
+		next.Transport = types.DeviceTransportWiFi
+		next.SpeedUnit = types.FanSpeedUnitPercent
+		if next.TargetRPM == 0 {
+			next.TargetRPM = uint16(percent)
+		}
+		return nil
+	}); err != nil {
 		m.logError("设置 WiFi 风扇速度失败: %v", err)
 		return false
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		m.logError("设置 WiFi 风扇速度失败: HTTP %d", resp.StatusCode)
-		return false
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-	if err != nil {
-		m.logError("读取 WiFi 速度响应失败: %v", err)
-		return false
-	}
-	if err := validateWiFiSetSpeedResponse(body); err != nil {
-		m.logError("WiFi 速度响应无效: %v", err)
-		return false
-	}
-
-	next, err := m.readWiFiStateLocked()
-	if err != nil {
-		m.logError("速度下发后读取 WiFi 状态失败: %v", err)
-		return false
-	}
-	next.Transport = types.DeviceTransportWiFi
-	next.SpeedUnit = types.FanSpeedUnitPercent
-	if next.TargetRPM == 0 {
-		next.TargetRPM = uint16(percent)
 	}
 	m.currentFanData.Store(next)
 

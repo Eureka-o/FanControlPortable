@@ -971,3 +971,11 @@ This checklist records the planned direction for turning FanControl into an exte
 - [x] The homepage prefers the runtime connected profile before falling back to configured profiles, preventing stale config from briefly showing the old English legacy name.
 - [x] Frontend device-disconnected events have a short display grace period; reconnect events cancel the pending clear so transient HID/BLE drops do not flash the homepage to "device not connected".
 - [x] Real FlyDigi hardware still needs validation for speed read/control reliability; this pass focuses on user-visible identity, profile routing, and transient disconnect display.
+
+## 2026-06-15 2.2.3 Known Bug Fix Scope
+
+- [x] Version scope: treat this as FanControl 2.2.3, a short known-bug and stability fix release.
+- [x] Release notes should stay brief and user-facing: fixed known issues, improved device control reliability, and improved transient temperature-read recovery.
+- [x] Do not include internal debugging details, diagnostic-log contents, sponsor changes, SHA256 hashes, or local-machine wording in the 2.2.3 release body.
+- [x] WiFi and FlyDigi speed sends should share the same high-level contract: retry boundedly, report failures clearly, and avoid silently treating failed sends as success.
+- [x] TempBridge transient `GetTemperature` timeout should use a short last-known-good bridge temperature window so the UI does not flash a scary warning for one recovered timeout.
