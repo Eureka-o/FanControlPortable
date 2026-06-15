@@ -169,6 +169,8 @@ type TemperatureSelection struct {
 	GpuDevice             string `json:"gpuDevice"`
 	CpuSensor             string `json:"cpuSensor"`
 	GpuSensor             string `json:"gpuSensor"`
+	CpuPowerSensor        string `json:"cpuPowerSensor"`
+	GpuPowerSensor        string `json:"gpuPowerSensor"`
 	GpuReadMode           string `json:"gpuReadMode"`
 	GpuLowPowerProtection bool   `json:"gpuLowPowerProtection"`
 }
@@ -179,6 +181,8 @@ func NormalizeTemperatureSelection(selection TemperatureSelection) TemperatureSe
 	selection.GpuDevice = NormalizeDeviceSelection(selection.GpuDevice)
 	selection.CpuSensor = NormalizeSensorSelection(selection.CpuSensor)
 	selection.GpuSensor = NormalizeSensorSelection(selection.GpuSensor)
+	selection.CpuPowerSensor = NormalizeSensorSelection(selection.CpuPowerSensor)
+	selection.GpuPowerSensor = NormalizeSensorSelection(selection.GpuPowerSensor)
 	if selection.GpuReadMode == "" {
 		if selection.GpuLowPowerProtection {
 			selection.GpuReadMode = GPUReadModeAuto
@@ -198,6 +202,8 @@ func GetDefaultTemperatureSelection() TemperatureSelection {
 		GpuDevice:             TempDeviceAuto,
 		CpuSensor:             TempSensorAuto,
 		GpuSensor:             TempSensorAuto,
+		CpuPowerSensor:        TempSensorAuto,
+		GpuPowerSensor:        TempSensorAuto,
 		GpuReadMode:           GPUReadModeAuto,
 		GpuLowPowerProtection: true,
 	}
@@ -212,10 +218,18 @@ type TemperatureSensor struct {
 
 // TemperatureGPUDevice 可选 GPU 设备信息。
 type TemperatureGPUDevice struct {
-	Key     string              `json:"key"`
-	Name    string              `json:"name"`
-	Vendor  string              `json:"vendor"`
-	Sensors []TemperatureSensor `json:"sensors"`
+	Key          string              `json:"key"`
+	Name         string              `json:"name"`
+	Vendor       string              `json:"vendor"`
+	Sensors      []TemperatureSensor `json:"sensors"`
+	PowerSensors []PowerSensor       `json:"powerSensors"`
+}
+
+// PowerSensor 可选功耗传感器信息。
+type PowerSensor struct {
+	Key   string  `json:"key"`
+	Name  string  `json:"name"`
+	Value float64 `json:"value"`
 }
 
 // FanCurveProfile 温控曲线方案
@@ -345,6 +359,8 @@ type TemperatureData struct {
 	GpuModel          string                 `json:"gpuModel"`          // 当前识别的 GPU 型号
 	CpuSensors        []TemperatureSensor    `json:"cpuSensors"`        // 当前识别到的 CPU 温度传感器
 	GpuSensors        []TemperatureSensor    `json:"gpuSensors"`        // 当前识别到的 GPU 温度传感器
+	CpuPowerSensors   []PowerSensor          `json:"cpuPowerSensors"`   // 当前识别到的 CPU 功耗传感器
+	GpuPowerSensors   []PowerSensor          `json:"gpuPowerSensors"`   // 当前识别到的 GPU 功耗传感器
 	GpuDevices        []TemperatureGPUDevice `json:"gpuDevices"`        // 当前识别到的 GPU 设备列表
 	UpdateTime        int64                  `json:"updateTime"`        // 更新时间戳
 	BridgeOk          bool                   `json:"bridgeOk"`          // 桥接程序是否正常
@@ -383,6 +399,8 @@ type BridgeTemperatureData struct {
 	GpuModel          string                 `json:"gpuModel"`
 	CpuSensors        []TemperatureSensor    `json:"cpuSensors"`
 	GpuSensors        []TemperatureSensor    `json:"gpuSensors"`
+	CpuPowerSensors   []PowerSensor          `json:"cpuPowerSensors"`
+	GpuPowerSensors   []PowerSensor          `json:"gpuPowerSensors"`
 	GpuDevices        []TemperatureGPUDevice `json:"gpuDevices"`
 	UpdateTime        int64                  `json:"updateTime"`
 	Success           bool                   `json:"success"`
@@ -499,6 +517,8 @@ type AppConfig struct {
 	GpuDevice                         string                                 `json:"gpuDevice"`               // GPU 设备选择: auto 或设备 key
 	CpuSensor                         string                                 `json:"cpuSensor"`               // CPU 传感器选择: auto 或传感器 key
 	GpuSensor                         string                                 `json:"gpuSensor"`               // GPU 传感器选择: auto 或传感器 key
+	CpuPowerSensor                    string                                 `json:"cpuPowerSensor"`          // CPU 功耗传感器选择: auto 或传感器 key
+	GpuPowerSensor                    string                                 `json:"gpuPowerSensor"`          // GPU 功耗传感器选择: auto 或传感器 key
 	GpuReadMode                       string                                 `json:"gpuReadMode"`
 	GpuLowPowerProtection             bool                                   `json:"gpuLowPowerProtection"`
 	ConfigPath                        string                                 `json:"configPath"`              // 配置文件路径
@@ -988,6 +1008,8 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		GpuDevice:               defaultTempSelection.GpuDevice,
 		CpuSensor:               defaultTempSelection.CpuSensor,
 		GpuSensor:               defaultTempSelection.GpuSensor,
+		CpuPowerSensor:          defaultTempSelection.CpuPowerSensor,
+		GpuPowerSensor:          defaultTempSelection.GpuPowerSensor,
 		GpuReadMode:             defaultTempSelection.GpuReadMode,
 		GpuLowPowerProtection:   defaultTempSelection.GpuLowPowerProtection,
 		ConfigPath:              "",

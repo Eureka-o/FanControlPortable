@@ -83,6 +83,12 @@ func compactTemperatureEventPayload(current, previous types.TemperatureData) typ
 	if reflect.DeepEqual(current.GpuSensors, previous.GpuSensors) {
 		compact.GpuSensors = nil
 	}
+	if reflect.DeepEqual(current.CpuPowerSensors, previous.CpuPowerSensors) {
+		compact.CpuPowerSensors = nil
+	}
+	if reflect.DeepEqual(current.GpuPowerSensors, previous.GpuPowerSensors) {
+		compact.GpuPowerSensors = nil
+	}
 	if reflect.DeepEqual(current.GpuDevices, previous.GpuDevices) {
 		compact.GpuDevices = nil
 	}
@@ -134,6 +140,8 @@ func (a *CoreApp) startTemperatureMonitoring() {
 		GpuDevice:             cfg.GpuDevice,
 		CpuSensor:             cfg.CpuSensor,
 		GpuSensor:             cfg.GpuSensor,
+		CpuPowerSensor:        cfg.CpuPowerSensor,
+		GpuPowerSensor:        cfg.GpuPowerSensor,
 		GpuReadMode:           cfg.GpuReadMode,
 		GpuLowPowerProtection: cfg.GpuLowPowerProtection,
 	}
@@ -190,6 +198,8 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				GpuDevice:             cfg.GpuDevice,
 				CpuSensor:             cfg.CpuSensor,
 				GpuSensor:             cfg.GpuSensor,
+				CpuPowerSensor:        cfg.CpuPowerSensor,
+				GpuPowerSensor:        cfg.GpuPowerSensor,
 				GpuReadMode:           cfg.GpuReadMode,
 				GpuLowPowerProtection: cfg.GpuLowPowerProtection,
 			}

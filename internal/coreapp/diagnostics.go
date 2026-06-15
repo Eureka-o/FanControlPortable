@@ -256,6 +256,8 @@ func buildDiagnosticsConfigSummary(cfg types.AppConfig) diagnosticsConfigSummary
 			GpuDevice:             cfg.GpuDevice,
 			CpuSensor:             cfg.CpuSensor,
 			GpuSensor:             cfg.GpuSensor,
+			CpuPowerSensor:        cfg.CpuPowerSensor,
+			GpuPowerSensor:        cfg.GpuPowerSensor,
 			GpuReadMode:           cfg.GpuReadMode,
 			GpuLowPowerProtection: cfg.GpuLowPowerProtection,
 		},

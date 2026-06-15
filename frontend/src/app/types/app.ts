@@ -46,12 +46,20 @@ export interface TemperatureData {
   gpuModel?: string;   // 当前识别的 GPU 型号
   cpuSensors?: TemperatureSensor[]; // 当前识别的 CPU 温度传感器
   gpuSensors?: TemperatureSensor[]; // 当前识别的 GPU 温度传感器
+  cpuPowerSensors?: PowerSensor[]; // 当前识别的 CPU 功耗传感器
+  gpuPowerSensors?: PowerSensor[]; // 当前识别的 GPU 功耗传感器
   updateTime: number;  // 更新时间戳
   bridgeOk?: boolean;  // 桥接程序是否正常
   bridgeMessage?: string; // 桥接程序提示
 }
 
 export interface TemperatureSensor {
+  key: string;
+  name: string;
+  value: number;
+}
+
+export interface PowerSensor {
   key: string;
   name: string;
   value: number;
@@ -82,6 +90,8 @@ export interface AppConfig {
   tempSource?: 'max' | 'cpu' | 'gpu';
   cpuSensor?: string;
   gpuSensor?: string;
+  cpuPowerSensor?: string;
+  gpuPowerSensor?: string;
   gpuReadMode?: 'auto' | 'always';
   gpuLowPowerProtection?: boolean;
   configPath: string;          // 配置文件路径

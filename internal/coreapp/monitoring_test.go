@@ -9,6 +9,8 @@ import (
 func TestCompactTemperatureEventPayload(t *testing.T) {
 	sharedCPUSensors := []types.TemperatureSensor{{Key: "cpu-package", Name: "CPU Package", Value: 71}}
 	sharedGPUSensors := []types.TemperatureSensor{{Key: "gpu-core", Name: "GPU Core", Value: 66}}
+	sharedCPUPowerSensors := []types.PowerSensor{{Key: "cpu-package-power", Name: "CPU Package", Value: 45.5}}
+	sharedGPUPowerSensors := []types.PowerSensor{{Key: "gpu-board-power", Name: "GPU Board", Value: 88.5}}
 	sharedGPUDevices := []types.TemperatureGPUDevice{{
 		Key:    "gpu0",
 		Name:   "GPU 0",
@@ -18,13 +20,20 @@ func TestCompactTemperatureEventPayload(t *testing.T) {
 			Name:  "GPU Core",
 			Value: 66,
 		}},
+		PowerSensors: []types.PowerSensor{{
+			Key:   "gpu-board-power",
+			Name:  "GPU Board",
+			Value: 88.5,
+		}},
 	}}
 
 	previous := types.TemperatureData{
-		CPUTemp:    70,
-		CpuSensors: sharedCPUSensors,
-		GpuSensors: sharedGPUSensors,
-		GpuDevices: sharedGPUDevices,
+		CPUTemp:         70,
+		CpuSensors:      sharedCPUSensors,
+		GpuSensors:      sharedGPUSensors,
+		CpuPowerSensors: sharedCPUPowerSensors,
+		GpuPowerSensors: sharedGPUPowerSensors,
+		GpuDevices:      sharedGPUDevices,
 	}
 	current := previous
 	current.CPUTemp = 72
@@ -36,6 +45,12 @@ func TestCompactTemperatureEventPayload(t *testing.T) {
 	if compact.GpuSensors != nil {
 		t.Fatal("compactTemperatureEventPayload() should strip unchanged gpuSensors")
 	}
+	if compact.CpuPowerSensors != nil {
+		t.Fatal("compactTemperatureEventPayload() should strip unchanged cpuPowerSensors")
+	}
+	if compact.GpuPowerSensors != nil {
+		t.Fatal("compactTemperatureEventPayload() should strip unchanged gpuPowerSensors")
+	}
 	if compact.GpuDevices != nil {
 		t.Fatal("compactTemperatureEventPayload() should strip unchanged gpuDevices")
 	}
@@ -45,6 +60,13 @@ func TestCompactTemperatureEventPayload(t *testing.T) {
 	compactChanged := compactTemperatureEventPayload(changed, previous)
 	if len(compactChanged.GpuSensors) != 1 || compactChanged.GpuSensors[0].Key != "gpu-hotspot" {
 		t.Fatal("compactTemperatureEventPayload() should keep changed gpuSensors")
+	}
+
+	changedPower := current
+	changedPower.GpuPowerSensors = []types.PowerSensor{{Key: "gpu-chip-power", Name: "GPU Chip", Value: 76.5}}
+	compactChangedPower := compactTemperatureEventPayload(changedPower, previous)
+	if len(compactChangedPower.GpuPowerSensors) != 1 || compactChangedPower.GpuPowerSensors[0].Key != "gpu-chip-power" {
+		t.Fatal("compactTemperatureEventPayload() should keep changed gpuPowerSensors")
 	}
 
 	cleared := current
