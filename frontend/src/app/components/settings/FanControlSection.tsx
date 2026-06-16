@@ -93,6 +93,7 @@ export default function FanControlSection({
   const [manualGearDraft, setManualGearDraft] = useState<string>(() => ((config as any).manualGear || '标准') as string);
   const [manualLevelDraft, setManualLevelDraft] = useState<string>(() => ((config as any).manualLevel || '中') as string);
   const [curveProfiles, setCurveProfiles] = useState<CurveProfile[]>([]);
+  const [curveActiveProfileId, setCurveActiveProfileId] = useState('');
   const [curveProfileLoading, setCurveProfileLoading] = useState(false);
   const [temperatureHistoryEnabled, setTemperatureHistoryEnabled] = useState(false);
 
@@ -102,7 +103,7 @@ export default function FanControlSection({
   );
   const customSpeedMinLabel = `${formatFanSpeedValue(overviewSpeedRange.min)}${overviewSpeedLabel}`;
   const customSpeedMaxLabel = `${formatFanSpeedValue(overviewSpeedRange.max)}${overviewSpeedLabel}`;
-  const activeCurveProfileId = ((config as any).activeFanCurveProfileId || '') as string;
+  const activeCurveProfileId = curveActiveProfileId || (((config as any).activeFanCurveProfileId || '') as string);
 
   const fanGearOptions = useMemo(
     () => FAN_GEAR_VALUES.map((value) => ({ value, label: getManualGearLabel(value) })),
@@ -309,8 +310,10 @@ export default function FanControlSection({
       const payload = await apiService.getFanCurveProfiles();
       const profiles = Array.isArray(payload?.profiles) ? payload.profiles : [];
       setCurveProfiles(profiles);
+      setCurveActiveProfileId(payload?.activeId || profiles[0]?.id || '');
     } catch {
       setCurveProfiles([]);
+      setCurveActiveProfileId('');
     }
   }, []);
 
@@ -319,6 +322,7 @@ export default function FanControlSection({
     try {
       setCurveProfileLoading(true);
       await apiService.setActiveFanCurveProfile(profileId);
+      setCurveActiveProfileId(profileId);
       onConfigChange(types.AppConfig.createFrom(await apiService.getConfig()));
       await loadCurveProfiles();
       toast.success(t('controlPanel.fan.toasts.profileSwitched'));

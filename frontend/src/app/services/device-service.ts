@@ -11,6 +11,7 @@ export interface DeviceStatusPayload {
   temperature?: types.TemperatureData | null;
   productId?: string;
   model?: string;
+  deviceName?: string;
   error?: string;
 }
 

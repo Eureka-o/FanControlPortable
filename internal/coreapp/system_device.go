@@ -514,6 +514,12 @@ func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string,
 	a.mutex.Unlock()
 	a.lastConnectionWasNative.Store(types.IsNativeDeviceTransport(a.deviceManager.GetDeviceType()))
 
+	if cfg, changed, err := a.applyConnectedRuntimeCurveState(); err != nil {
+		a.logError("sync runtime device curve failed: %v", err)
+	} else if changed && a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
+	}
+
 	settings, settingsErr := a.RefreshDeviceSettings()
 	if settingsErr != nil {
 		a.logError("读取设备设置失败: %v", settingsErr)
@@ -524,6 +530,7 @@ func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string,
 			eventPayload[key] = value
 		}
 		runtimeProfile := a.deviceManager.ActiveProfile()
+		eventPayload["deviceName"] = connectedDeviceDisplayName(runtimeProfile, eventPayloadString(eventPayload, "model"), settings, "")
 		eventPayload["deviceProfile"] = runtimeProfile
 		eventPayload["deviceCapabilities"] = runtimeProfile.Capabilities
 		eventPayload["currentData"] = a.deviceManager.GetCurrentFanData()
@@ -620,6 +627,7 @@ func (a *CoreApp) GetDeviceStatus() map[string]any {
 	}
 
 	model := a.deviceManager.GetModelName()
+	profile := a.deviceManager.ActiveProfile()
 
 	return map[string]any{
 		"connected":          a.isConnected,
@@ -628,8 +636,9 @@ func (a *CoreApp) GetDeviceStatus() map[string]any {
 		"temperature":        a.currentTemp,
 		"productId":          productIDHex,
 		"model":              model,
-		"deviceProfile":      a.deviceManager.ActiveProfile(),
-		"deviceCapabilities": a.deviceManager.ActiveCapabilities(),
+		"deviceName":         connectedDeviceDisplayName(profile, model, settings, ""),
+		"deviceProfile":      profile,
+		"deviceCapabilities": profile.Capabilities,
 		"deviceSettings":     settings,
 	}
 }
