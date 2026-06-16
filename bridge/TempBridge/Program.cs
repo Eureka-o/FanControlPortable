@@ -904,6 +904,40 @@ namespace FanControl.TempBridge
             return profile;
         }
 
+        static TemperatureGpuDevice[] BuildTemperatureGpuDevicesFromHardwareProfile(HardwareProfile profile)
+        {
+            if (profile == null || profile.GpuDevices == null || profile.GpuDevices.Length == 0)
+            {
+                return Array.Empty<TemperatureGpuDevice>();
+            }
+
+            return profile.GpuDevices
+                .Where(device => device != null && (!string.IsNullOrWhiteSpace(device.Name) || !string.IsNullOrWhiteSpace(device.PnpDeviceId)))
+                .Select((device, index) => new TemperatureGpuDevice
+                {
+                    Key = !string.IsNullOrWhiteSpace(device.PnpDeviceId) ? device.PnpDeviceId : "hardware:" + index,
+                    Name = device.Name ?? string.Empty,
+                    Vendor = device.Vendor ?? string.Empty,
+                    Sensors = Array.Empty<TemperatureSensor>(),
+                    PowerSensors = Array.Empty<PowerSensor>()
+                })
+                .ToArray();
+        }
+
+        static string ResolveGpuModelFromHardwareProfile(HardwareProfile profile)
+        {
+            if (profile == null || profile.GpuDevices == null)
+            {
+                return string.Empty;
+            }
+
+            var preferred = profile.GpuDevices
+                .Where(device => device != null && !string.IsNullOrWhiteSpace(device.Name))
+                .OrderByDescending(device => device.Discrete)
+                .FirstOrDefault();
+            return preferred != null ? preferred.Name ?? string.Empty : string.Empty;
+        }
+
         static bool IsDiscreteVideoController(string name, string pnpDeviceId, ulong adapterRam)
         {
             string text = ((name ?? string.Empty) + " " + (pnpDeviceId ?? string.Empty)).ToLowerInvariant();
@@ -1339,6 +1373,16 @@ namespace FanControl.TempBridge
             var gpuPowerSensors = selectedGpu != null ? selectedGpu.PowerSensors : new System.Collections.Generic.List<PowerSensor>();
             gpuModel = selectedGpu != null ? selectedGpu.Model : string.Empty;
             double gpuPowerWatts = selectedGpu != null ? selectedGpu.PowerWatts : 0;
+            var hardwareProfileGpuDevices = Array.Empty<TemperatureGpuDevice>();
+            if (selectedGpu == null || gpuCandidates.Count == 0)
+            {
+                var hardwareProfile = GetHardwareProfile();
+                hardwareProfileGpuDevices = BuildTemperatureGpuDevicesFromHardwareProfile(hardwareProfile);
+                if (string.IsNullOrWhiteSpace(gpuModel))
+                {
+                    gpuModel = ResolveGpuModelFromHardwareProfile(hardwareProfile);
+                }
+            }
             if (shouldPollGpu)
             {
                 gpuReadState = selectedGpu != null ? GpuReadStateActive : GpuReadStateUnavailable;
@@ -1361,7 +1405,7 @@ namespace FanControl.TempBridge
             result.GpuSensors = gpuSensors.ToArray();
             result.CpuPowerSensors = cpuPowerSensors.ToArray();
             result.GpuPowerSensors = gpuPowerSensors.ToArray();
-            result.GpuDevices = gpuCandidates.Select(candidate => new TemperatureGpuDevice
+            var runtimeGpuDevices = gpuCandidates.Select(candidate => new TemperatureGpuDevice
             {
                 Key = candidate.Key,
                 Name = candidate.Model,
@@ -1369,6 +1413,7 @@ namespace FanControl.TempBridge
                 Sensors = candidate.Sensors != null ? candidate.Sensors.ToArray() : Array.Empty<TemperatureSensor>(),
                 PowerSensors = candidate.PowerSensors != null ? candidate.PowerSensors.ToArray() : Array.Empty<PowerSensor>()
             }).ToArray();
+            result.GpuDevices = runtimeGpuDevices.Length > 0 ? runtimeGpuDevices : hardwareProfileGpuDevices;
 
             if (cpuTemp == 0 && gpuTemp == 0)
             {

@@ -259,6 +259,27 @@ func (a *CoreApp) reconnectDevice() bool {
 	return a.ConnectDevice()
 }
 
+func compatibilityConnectionEnabled(cfg types.AppConfig) bool {
+	types.NormalizeDeviceProfileConfig(&cfg)
+	profile := types.ActiveDeviceProfile(&cfg)
+	switch types.NormalizeDeviceTransport(profile.Transport) {
+	case types.DeviceTransportWiFi:
+		return cfg.WiFiCompatibilityEnabled
+	case types.DeviceTransportSerial:
+		return cfg.SerialCompatibilityEnabled
+	default:
+		return false
+	}
+}
+
+func shouldTryDynamicWiFiCompatibility(cfg types.AppConfig) bool {
+	if !cfg.WiFiCompatibilityEnabled {
+		return false
+	}
+	types.NormalizeDeviceProfileConfig(&cfg)
+	return types.NormalizeDeviceTransport(types.ActiveDeviceProfile(&cfg).Transport) == types.DeviceTransportWiFi
+}
+
 func (a *CoreApp) maybeRecoverFromSystemResume(source string, gap, expectedInterval time.Duration) bool {
 	if !shouldRecoverFromSystemResumeGap(gap, expectedInterval) {
 		return false
@@ -404,10 +425,27 @@ func (a *CoreApp) safeRun(name string, fn func()) {
 // ConnectDevice 连接设备
 func (a *CoreApp) ConnectDevice() bool {
 	a.autoReconnectSuppressed.Store(false)
-	a.lastConnectionWasNative.Store(false)
 	cfg := a.configManager.Get()
-	a.configureDeviceManager(cfg)
+	types.NormalizeDeviceProfileConfig(&cfg)
 
+	a.configureDeviceManager(cfg)
+	if success, deviceInfo := a.deviceManager.AutoConnectNativeProfiles(cfg.DeviceProfiles); success {
+		a.finishSuccessfulDeviceConnection(deviceInfo, "ConnectDevice")
+		return true
+	}
+
+	a.lastConnectionWasNative.Store(false)
+	if !compatibilityConnectionEnabled(cfg) {
+		if a.ipcServer != nil {
+			a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "未发现可自动识别的 BLE/HID 设备，且未启用兼容设备")
+		}
+		return false
+	}
+
+	if shouldTryDynamicWiFiCompatibility(cfg) {
+		_ = a.recoverDynamicWiFiEndpoint(&cfg)
+	}
+	a.configureDeviceManager(cfg)
 	success, deviceInfo := a.deviceManager.Connect()
 	if !success && a.recoverDynamicWiFiEndpoint(&cfg) {
 		success, deviceInfo = a.deviceManager.Connect()
@@ -533,7 +571,7 @@ func (a *CoreApp) reapplyConfigAfterReconnect() {
 		a.logInfo("重新启动智能变频")
 	} else if cfg.CustomSpeedEnabled {
 		// 重新应用自定义转速
-		unit := types.DeviceProfileSpeedUnit(&cfg)
+		unit := a.activeDeviceSpeedUnit(&cfg)
 		speed := types.ClampSpeedForUnit(cfg.CustomSpeedRPM, unit)
 		a.logInfo("重新应用自定义速度: %d%s", speed, types.FanSpeedDisplaySuffix(unit))
 		if !a.deviceManager.SetTargetSpeed(configSpeedToTargetUnit(speed, unit), unit) {

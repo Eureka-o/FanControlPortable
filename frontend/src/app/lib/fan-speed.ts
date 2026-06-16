@@ -45,6 +45,28 @@ function normalizeDeviceTransport(transport?: string) {
   return (transport || '').trim().toLowerCase();
 }
 
+function isNativeDeviceTransport(transport?: string) {
+  const normalized = normalizeDeviceTransport(transport);
+  return normalized === DEVICE_TRANSPORT_BLE || normalized === DEVICE_TRANSPORT_HID;
+}
+
+function getRuntimeDeviceProfile(runtimeProfile?: DeviceProfileCarrier | null): DeviceProfileCarrier | undefined {
+  if (!runtimeProfile) {
+    return undefined;
+  }
+  if (
+    runtimeProfile.id ||
+    runtimeProfile.transport ||
+    runtimeProfile.speedUnit ||
+    runtimeProfile.capabilities?.speedUnit ||
+    runtimeProfile.speedRange ||
+    runtimeProfile.capabilities?.speedRange
+  ) {
+    return runtimeProfile;
+  }
+  return undefined;
+}
+
 function configuredDeviceProfiles(config?: ConfigCarrier): DeviceProfileCarrier[] {
   return Array.isArray(config?.deviceProfiles) ? config.deviceProfiles : [];
 }
@@ -90,7 +112,18 @@ export function getActiveDeviceProfile(config?: ConfigCarrier): DeviceProfileCar
   return profiles[0];
 }
 
-export function getConfiguredFanSpeedUnit(config?: ConfigCarrier): FanSpeedUnit {
+export function getConfiguredFanSpeedUnit(config?: ConfigCarrier, runtimeProfile?: DeviceProfileCarrier | null): FanSpeedUnit {
+  const runtime = getRuntimeDeviceProfile(runtimeProfile);
+  if (runtime?.speedUnit) {
+    return normalizeFanSpeedUnit(runtime.speedUnit);
+  }
+  if (runtime?.capabilities?.speedUnit) {
+    return normalizeFanSpeedUnit(runtime.capabilities.speedUnit);
+  }
+  if (isNativeDeviceTransport(runtime?.transport)) {
+    return FAN_SPEED_UNIT_RPM;
+  }
+
   const activeProfile = getActiveDeviceProfile(config);
   if (activeProfile?.speedUnit) {
     return normalizeFanSpeedUnit(activeProfile.speedUnit);
@@ -104,40 +137,56 @@ export function getConfiguredFanSpeedUnit(config?: ConfigCarrier): FanSpeedUnit 
   return FAN_SPEED_UNIT_PERCENT;
 }
 
-export function getConfiguredDeviceTransport(config?: ConfigCarrier) {
+export function getConfiguredDeviceTransport(config?: ConfigCarrier, runtimeProfile?: DeviceProfileCarrier | null) {
+  const runtime = getRuntimeDeviceProfile(runtimeProfile);
+  if (runtime?.transport) {
+    return normalizeDeviceTransport(runtime.transport);
+  }
   const activeProfile = getActiveDeviceProfile(config);
   return normalizeDeviceTransport(activeProfile?.transport || config?.deviceTransport);
 }
 
-export function isFanDataForConfiguredDevice(fanData?: SpeedCarrier, config?: ConfigCarrier) {
+export function isFanDataForConfiguredDevice(fanData?: SpeedCarrier, config?: ConfigCarrier, runtimeProfile?: DeviceProfileCarrier | null) {
   const fanDataTransport = normalizeDeviceTransport(fanData?.transport);
-  const configuredTransport = getConfiguredDeviceTransport(config);
+  const runtimeTransport = normalizeDeviceTransport(getRuntimeDeviceProfile(runtimeProfile)?.transport);
+  if (fanDataTransport && runtimeTransport && fanDataTransport !== runtimeTransport) {
+    return false;
+  }
+  if (fanDataTransport && !runtimeTransport && isNativeDeviceTransport(fanDataTransport)) {
+    return true;
+  }
+
+  const configuredTransport = getConfiguredDeviceTransport(config, runtimeProfile);
   if (fanDataTransport && configuredTransport && fanDataTransport !== configuredTransport) {
     return false;
   }
 
   const fanDataUnit = fanData?.speedUnit ? normalizeFanSpeedUnit(fanData.speedUnit) : '';
-  const configuredProfile = getActiveDeviceProfile(config);
+  const configuredProfile = getRuntimeDeviceProfile(runtimeProfile) || getActiveDeviceProfile(config);
   if (fanDataUnit && configuredProfile) {
-    return fanDataUnit === getConfiguredFanSpeedUnit(config);
+    return fanDataUnit === getConfiguredFanSpeedUnit(config, runtimeProfile);
   }
 
   return true;
 }
 
-export function getFanSpeedUnit(fanData?: SpeedCarrier, config?: ConfigCarrier): FanSpeedUnit {
-  const configuredProfile = getActiveDeviceProfile(config);
-  if (configuredProfile?.speedUnit || configuredProfile?.capabilities?.speedUnit) {
-    return getConfiguredFanSpeedUnit(config);
+export function getFanSpeedUnit(fanData?: SpeedCarrier, config?: ConfigCarrier, runtimeProfile?: DeviceProfileCarrier | null): FanSpeedUnit {
+  const runtime = getRuntimeDeviceProfile(runtimeProfile);
+  if (runtime?.speedUnit || runtime?.capabilities?.speedUnit || isNativeDeviceTransport(runtime?.transport)) {
+    return getConfiguredFanSpeedUnit(config, runtime);
   }
-  if (fanData?.speedUnit && isFanDataForConfiguredDevice(fanData, config)) {
+  if (fanData?.speedUnit && isFanDataForConfiguredDevice(fanData, config, runtime)) {
     return normalizeFanSpeedUnit(fanData.speedUnit);
   }
-  return getConfiguredFanSpeedUnit(config);
+  return getConfiguredFanSpeedUnit(config, runtime);
 }
 
-export function getFanSpeedRange(config?: ConfigCarrier, unit: FanSpeedUnit = getConfiguredFanSpeedUnit(config)): Required<DeviceSpeedRange> {
-  const activeProfile = getActiveDeviceProfile(config);
+export function getFanSpeedRange(
+  config?: ConfigCarrier,
+  unit: FanSpeedUnit = getConfiguredFanSpeedUnit(config),
+  runtimeProfile?: DeviceProfileCarrier | null,
+): Required<DeviceSpeedRange> {
+  const activeProfile = getRuntimeDeviceProfile(runtimeProfile) || getActiveDeviceProfile(config);
   const range = activeProfile?.speedRange || activeProfile?.capabilities?.speedRange;
   const fallback = unit === FAN_SPEED_UNIT_RPM
     ? { min: 0, max: DEFAULT_RPM_SPEED_MAX, step: 1, tickScale: 1 }
@@ -231,9 +280,10 @@ export function readCurrentFanSpeed(
   fanData: unknown,
   unit: FanSpeedUnit = FAN_SPEED_UNIT_PERCENT,
   config?: ConfigCarrier,
+  runtimeProfile?: DeviceProfileCarrier | null,
 ): number | undefined {
   const data = (fanData ?? {}) as Record<string, unknown>;
-  if (config && !isFanDataForConfiguredDevice(data as SpeedCarrier, config)) {
+  if ((config || runtimeProfile) && !isFanDataForConfiguredDevice(data as SpeedCarrier, config, runtimeProfile)) {
     return undefined;
   }
   return sanitizeFanSpeed(
@@ -246,9 +296,10 @@ export function readTargetFanSpeed(
   fanData: unknown,
   unit: FanSpeedUnit = FAN_SPEED_UNIT_PERCENT,
   config?: ConfigCarrier,
+  runtimeProfile?: DeviceProfileCarrier | null,
 ): number | undefined {
   const data = (fanData ?? {}) as Record<string, unknown>;
-  if (config && !isFanDataForConfiguredDevice(data as SpeedCarrier, config)) {
+  if ((config || runtimeProfile) && !isFanDataForConfiguredDevice(data as SpeedCarrier, config, runtimeProfile)) {
     return undefined;
   }
   return sanitizeFanSpeed(

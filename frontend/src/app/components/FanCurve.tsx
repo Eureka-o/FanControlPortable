@@ -254,6 +254,7 @@ interface FanCurveProps {
   isConnected: boolean;
   fanData: types.FanData | null;
   temperature: types.TemperatureData | null;
+  runtimeDeviceProfile?: types.DeviceProfile | null;
   deviceModel: string | null;
   focusTarget: CurveFocusTarget | null;
   onFocusHandled: () => void;
@@ -392,7 +393,7 @@ const DraggablePoint = memo(function DraggablePoint({
    ─── Main FanCurve Component ───
    ═══════════════════════════════════════════════════════════ */
 
-const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, temperature, focusTarget, onFocusHandled }: FanCurveProps) {
+const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, temperature, runtimeDeviceProfile, focusTarget, onFocusHandled }: FanCurveProps) {
   const { t } = useTranslation();
   const { locale } = useLocale();
   const [localCurve, setLocalCurve] = useState<types.FanCurvePoint[]>([]);
@@ -423,9 +424,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
   const chartBoundsRef = useRef<{ top: number; bottom: number; left: number; right: number; yMin: number; yMax: number } | null>(null);
   const dragFrameRef = useRef<number | null>(null);
   const pendingDragYRef = useRef<number | null>(null);
-  const speedUnit = useMemo(() => getConfiguredFanSpeedUnit(config as any), [config]);
+  const runtimeProfileForSpeed = isConnected ? runtimeDeviceProfile : null;
+  const speedUnit = useMemo(() => getConfiguredFanSpeedUnit(config as any, runtimeProfileForSpeed as any), [config, runtimeProfileForSpeed]);
   const speedUnitSuffix = fanSpeedUnitLabel(speedUnit);
-  const configuredSpeedRange = useMemo(() => getFanSpeedRange(config as any, speedUnit), [config, speedUnit]);
+  const configuredSpeedRange = useMemo(() => getFanSpeedRange(config as any, speedUnit, runtimeProfileForSpeed as any), [config, runtimeProfileForSpeed, speedUnit]);
   const speedRange = useMemo(() => ({
     min: configuredSpeedRange.min,
     max: configuredSpeedRange.max,

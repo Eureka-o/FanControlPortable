@@ -258,7 +258,7 @@ func (a *CoreApp) initSystemTray() {
 			cfg := a.configManager.Get()
 			fanData := a.deviceManager.GetCurrentFanData()
 			var currentRPM uint16
-			speedUnit := types.DeviceProfileSpeedUnit(&cfg)
+			speedUnit := a.activeDeviceSpeedUnit(&cfg)
 			if fanData != nil {
 				currentRPM = fanData.CurrentRPM
 				if strings.TrimSpace(fanData.SpeedUnit) != "" {

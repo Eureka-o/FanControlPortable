@@ -80,6 +80,56 @@ func TestCompactTemperatureEventPayload(t *testing.T) {
 	}
 }
 
+func TestMergeTemperatureHardwareMetadataKeepsProfileWhenGpuNotPolled(t *testing.T) {
+	previous := types.TemperatureData{
+		CpuModel: "Ryzen 7",
+		GpuModel: "GeForce RTX 4060",
+		CpuSensors: []types.TemperatureSensor{{
+			Key:   "cpu-package",
+			Name:  "CPU Package",
+			Value: 71,
+		}},
+		GpuSensors: []types.TemperatureSensor{{
+			Key:   "gpu-core",
+			Name:  "GPU Core",
+			Value: 66,
+		}},
+		GpuPowerSensors: []types.PowerSensor{{
+			Key:   "gpu-board-power",
+			Name:  "GPU Board",
+			Value: 88.5,
+		}},
+		GpuDevices: []types.TemperatureGPUDevice{{
+			Key:    "gpu0",
+			Name:   "GeForce RTX 4060",
+			Vendor: "nvidia",
+		}},
+	}
+	incoming := types.TemperatureData{
+		CPUTemp:      72,
+		GPUReadState: types.GPUReadStateNotPolled,
+		GpuSensors:   []types.TemperatureSensor{},
+		GpuDevices:   []types.TemperatureGPUDevice{},
+	}
+
+	got := mergeTemperatureHardwareMetadata(previous, incoming)
+	if got.CpuModel != previous.CpuModel {
+		t.Fatalf("cpu model = %q, want %q", got.CpuModel, previous.CpuModel)
+	}
+	if got.GpuModel != previous.GpuModel {
+		t.Fatalf("gpu model = %q, want %q", got.GpuModel, previous.GpuModel)
+	}
+	if len(got.GpuSensors) != 1 || got.GpuSensors[0].Key != "gpu-core" {
+		t.Fatalf("gpu sensors = %#v, want previous gpu sensor metadata", got.GpuSensors)
+	}
+	if len(got.GpuPowerSensors) != 1 || got.GpuPowerSensors[0].Key != "gpu-board-power" {
+		t.Fatalf("gpu power sensors = %#v, want previous gpu power metadata", got.GpuPowerSensors)
+	}
+	if len(got.GpuDevices) != 1 || got.GpuDevices[0].Name != "GeForce RTX 4060" {
+		t.Fatalf("gpu devices = %#v, want previous gpu device metadata", got.GpuDevices)
+	}
+}
+
 func TestTrackBridgeTemperatureStaleness(t *testing.T) {
 	tests := []struct {
 		name           string

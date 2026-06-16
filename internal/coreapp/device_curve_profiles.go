@@ -99,8 +99,7 @@ func captureDeviceFanCurveState(cfg types.AppConfig) types.DeviceFanCurveProfile
 	}
 }
 
-func normalizeDeviceFanCurveStateForConfig(cfg types.AppConfig, state types.DeviceFanCurveProfilesState) types.DeviceFanCurveProfilesState {
-	unit := types.DeviceProfileSpeedUnit(&cfg)
+func normalizeDeviceFanCurveStateForUnit(cfg types.AppConfig, state types.DeviceFanCurveProfilesState, unit string) types.DeviceFanCurveProfilesState {
 	tmp := cfg
 	tmp.FanCurveProfiles = curveprofiles.CloneProfiles(state.Profiles)
 	tmp.ActiveFanCurveProfileID = strings.TrimSpace(state.ActiveID)
@@ -117,20 +116,28 @@ func normalizeDeviceFanCurveStateForConfig(cfg types.AppConfig, state types.Devi
 	return captureDeviceFanCurveState(tmp)
 }
 
-func storeDeviceFanCurveStateForKey(cfg *types.AppConfig, key string, source types.AppConfig) bool {
+func normalizeDeviceFanCurveStateForConfig(cfg types.AppConfig, state types.DeviceFanCurveProfilesState) types.DeviceFanCurveProfilesState {
+	return normalizeDeviceFanCurveStateForUnit(cfg, state, types.DeviceProfileSpeedUnit(&cfg))
+}
+
+func storeDeviceFanCurveStateForKeyAndUnit(cfg *types.AppConfig, key string, source types.AppConfig, unit string) bool {
 	if cfg == nil || strings.TrimSpace(key) == "" {
 		return false
 	}
 	if cfg.FanCurveProfilesByDevice == nil {
 		cfg.FanCurveProfilesByDevice = map[string]types.DeviceFanCurveProfilesState{}
 	}
-	normalized := normalizeDeviceFanCurveStateForConfig(source, captureDeviceFanCurveState(source))
+	normalized := normalizeDeviceFanCurveStateForUnit(source, captureDeviceFanCurveState(source), unit)
 	key = strings.TrimSpace(key)
 	if reflect.DeepEqual(cfg.FanCurveProfilesByDevice[key], normalized) {
 		return false
 	}
 	cfg.FanCurveProfilesByDevice[key] = normalized
 	return true
+}
+
+func storeDeviceFanCurveStateForKey(cfg *types.AppConfig, key string, source types.AppConfig) bool {
+	return storeDeviceFanCurveStateForKeyAndUnit(cfg, key, source, types.DeviceProfileSpeedUnit(&source))
 }
 
 func storeActiveDeviceFanCurveState(cfg *types.AppConfig) bool {
@@ -140,11 +147,11 @@ func storeActiveDeviceFanCurveState(cfg *types.AppConfig) bool {
 	return storeDeviceFanCurveStateForKey(cfg, deviceCurveScopeKey(*cfg), *cfg)
 }
 
-func applyDeviceFanCurveState(cfg *types.AppConfig, state types.DeviceFanCurveProfilesState) bool {
+func applyDeviceFanCurveStateForUnit(cfg *types.AppConfig, state types.DeviceFanCurveProfilesState, unit string) bool {
 	if cfg == nil {
 		return false
 	}
-	state = normalizeDeviceFanCurveStateForConfig(*cfg, state)
+	state = normalizeDeviceFanCurveStateForUnit(*cfg, state, unit)
 	changed := false
 	if !reflect.DeepEqual(cfg.FanCurveProfiles, state.Profiles) {
 		cfg.FanCurveProfiles = curveprofiles.CloneProfiles(state.Profiles)
@@ -161,11 +168,14 @@ func applyDeviceFanCurveState(cfg *types.AppConfig, state types.DeviceFanCurvePr
 	return changed
 }
 
-func loadActiveDeviceFanCurveState(cfg *types.AppConfig, useCurrentIfMissing bool) bool {
+func applyDeviceFanCurveState(cfg *types.AppConfig, state types.DeviceFanCurveProfilesState) bool {
+	return applyDeviceFanCurveStateForUnit(cfg, state, types.DeviceProfileSpeedUnit(cfg))
+}
+
+func loadDeviceFanCurveStateForKey(cfg *types.AppConfig, key string, unit string, useCurrentIfMissing bool) bool {
 	if cfg == nil {
 		return false
 	}
-	key := deviceCurveScopeKey(*cfg)
 	if key == "" {
 		return false
 	}
@@ -174,18 +184,25 @@ func loadActiveDeviceFanCurveState(cfg *types.AppConfig, useCurrentIfMissing boo
 	}
 
 	if state, ok := cfg.FanCurveProfilesByDevice[key]; ok && len(state.Profiles) > 0 {
-		changed := applyDeviceFanCurveState(cfg, state)
-		changed = storeActiveDeviceFanCurveState(cfg) || changed
+		changed := applyDeviceFanCurveStateForUnit(cfg, state, unit)
+		changed = storeDeviceFanCurveStateForKeyAndUnit(cfg, key, *cfg, unit) || changed
 		return changed
 	}
 
-	state := defaultDeviceFanCurveStateForUnit(types.DeviceProfileSpeedUnit(cfg))
+	state := defaultDeviceFanCurveStateForUnit(unit)
 	if useCurrentIfMissing && (len(cfg.FanCurveProfiles) > 0 || len(cfg.FanCurve) > 0) {
 		state = captureDeviceFanCurveState(*cfg)
 	}
-	changed := applyDeviceFanCurveState(cfg, state)
-	changed = storeActiveDeviceFanCurveState(cfg) || changed
+	changed := applyDeviceFanCurveStateForUnit(cfg, state, unit)
+	changed = storeDeviceFanCurveStateForKeyAndUnit(cfg, key, *cfg, unit) || changed
 	return changed
+}
+
+func loadActiveDeviceFanCurveState(cfg *types.AppConfig, useCurrentIfMissing bool) bool {
+	if cfg == nil {
+		return false
+	}
+	return loadDeviceFanCurveStateForKey(cfg, deviceCurveScopeKey(*cfg), types.DeviceProfileSpeedUnit(cfg), useCurrentIfMissing)
 }
 
 func syncDeviceFanCurveStateForStartup(cfg *types.AppConfig) bool {

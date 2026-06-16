@@ -48,7 +48,7 @@ func (a *CoreApp) ControlWiFiScan(action string) bool {
 }
 
 func (a *CoreApp) recoverDynamicWiFiEndpoint(cfg *types.AppConfig) bool {
-	if cfg == nil || !cfg.WiFiDynamicIPCompatibilityEnabled || !cfg.WiFiCompatibilityEnabled {
+	if cfg == nil || !cfg.WiFiCompatibilityEnabled {
 		return false
 	}
 	types.NormalizeDeviceProfileConfig(cfg)

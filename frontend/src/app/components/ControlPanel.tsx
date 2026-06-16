@@ -73,9 +73,10 @@ export default function ControlPanel({
   const { locale } = useLocale();
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
   // 安装目录/用户目录下发现的自定义主题（用于「界面主题」下拉动态渲染）
-  const overviewSpeedUnit = getFanSpeedUnit(fanData as any, config as any);
+  const overviewRuntimeProfile = isConnected ? runtimeDeviceProfile : null;
+  const overviewSpeedUnit = getFanSpeedUnit(fanData as any, config as any, overviewRuntimeProfile as any);
   const overviewSpeedLabel = fanSpeedUnitLabel(overviewSpeedUnit);
-  const overviewSpeedRange = useMemo(() => getFanSpeedRange(config as any, overviewSpeedUnit), [config, overviewSpeedUnit]);
+  const overviewSpeedRange = useMemo(() => getFanSpeedRange(config as any, overviewSpeedUnit, overviewRuntimeProfile as any), [config, overviewRuntimeProfile, overviewSpeedUnit]);
   const defaultCustomSpeed = useMemo(() => {
     const fallback = overviewSpeedUnit === 'rpm' ? 2000 : 45;
     return clampFanSpeedToRange(fallback, overviewSpeedRange, overviewSpeedRange.min) ?? overviewSpeedRange.min;
@@ -84,7 +85,7 @@ export default function ControlPanel({
     () => clampFanSpeedToRange((config as any).customSpeedRPM, overviewSpeedRange, defaultCustomSpeed) ?? defaultCustomSpeed,
     [config, defaultCustomSpeed, overviewSpeedRange],
   );
-  const overviewFanSpeed = clampFanSpeedToRange(readCurrentFanSpeed(fanData, overviewSpeedUnit, config as any), overviewSpeedRange)
+  const overviewFanSpeed = clampFanSpeedToRange(readCurrentFanSpeed(fanData, overviewSpeedUnit, config as any, overviewRuntimeProfile as any), overviewSpeedRange)
     ?? ((config as any).customSpeedEnabled ? configuredCustomSpeedValue : undefined);
   const [deviceProfiles, setDeviceProfiles] = useState<types.DeviceProfile[]>(() => configuredDeviceProfiles(config));
   const [activeDeviceProfileId, setActiveDeviceProfileId] = useState<string>(((config as any).activeDeviceProfileId || '') as string);
@@ -149,7 +150,9 @@ export default function ControlPanel({
     runtimeDeviceProfile?.transport || '',
     (fanData as any)?.transport || '',
   ].join(':');
-  const configuredDeviceCurveKey = `${((config as any).deviceTransport || '') as string}:${((config as any).activeDeviceProfileId || '') as string}`;
+  const configuredDeviceCurveKey = isConnected && effectiveDeviceProfile
+    ? `${normalizeTransport(effectiveDeviceProfile.transport)}:${effectiveDeviceProfile.id || effectiveDeviceProfile.model || effectiveDeviceProfile.displayName || ''}`
+    : `${((config as any).deviceTransport || '') as string}:${((config as any).activeDeviceProfileId || '') as string}`;
 
   const gpuReadState = (((temperature as any)?.gpuReadState as string) || 'unknown');
   const gpuNotPolled = gpuReadState === 'notPolled';
@@ -381,6 +384,7 @@ export default function ControlPanel({
           isConnected={isConnected}
           fanData={fanData}
           temperature={temperature}
+          runtimeDeviceProfile={effectiveDeviceProfile || null}
           supportsCustomSpeed={currentDeviceSupportsCustomSpeed}
           configuredDeviceCurveKey={configuredDeviceCurveKey}
         />
