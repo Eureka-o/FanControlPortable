@@ -32,7 +32,6 @@ type exportPayload struct {
 func SupportedProfiles() []types.DeviceProfile {
 	return []types.DeviceProfile{
 		NormalizeForStorage(types.DefaultWiFiPercentTemplateProfile(types.DefaultFanDeviceIP), ""),
-		NormalizeForStorage(types.LegacyRPMProfile(), ""),
 	}
 }
 

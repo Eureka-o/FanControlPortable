@@ -35,10 +35,31 @@ func TestValidateFanCurveForUnitRejectsPercentOverflow(t *testing.T) {
 }
 
 func TestNormalizeSpeedConfigKeepsRPMCurve(t *testing.T) {
+	serial := types.DeviceProfile{
+		ID:          "user.serial.rpm",
+		DisplayName: "Serial RPM",
+		Transport:   types.DeviceTransportSerial,
+		SpeedUnit:   types.FanSpeedUnitRPM,
+		SpeedRange:  types.DefaultRPMSpeedRange(),
+		Connection: types.DeviceConnectionSettings{
+			SerialPort:     "COM9",
+			SerialBaudRate: 115200,
+			SerialDataBits: 8,
+			SerialStopBits: 1,
+			SerialParity:   "none",
+		},
+		Capabilities: types.DeviceCapabilities{
+			Transport:         types.DeviceTransportSerial,
+			SpeedUnit:         types.FanSpeedUnitRPM,
+			SpeedRange:        types.DefaultRPMSpeedRange(),
+			SupportsReadState: true,
+			SupportsSetSpeed:  true,
+		},
+	}
 	cfg := types.GetDefaultConfig(false)
-	cfg.DeviceTransport = types.DeviceTransportHID
-	cfg.ActiveDeviceProfileID = types.LegacyRPMProfileID
-	cfg.DeviceProfiles = []types.DeviceProfile{types.LegacyRPMProfile()}
+	cfg.DeviceTransport = types.DeviceTransportSerial
+	cfg.ActiveDeviceProfileID = serial.ID
+	cfg.DeviceProfiles = []types.DeviceProfile{serial}
 	cfg.FanCurve = types.GetDefaultRPMFanCurve()
 	cfg.FanCurveProfiles = []types.FanCurveProfile{{ID: "rpm", Name: "RPM", Curve: types.GetDefaultRPMFanCurve()}}
 	cfg.ActiveFanCurveProfileID = "rpm"

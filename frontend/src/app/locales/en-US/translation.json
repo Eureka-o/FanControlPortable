@@ -69,7 +69,7 @@
   },
   "advancedDevices": {
     "title": "Supported devices",
-    "subtitle": "Manage device templates and user devices. Ordinary control follows the enabled device.",
+    "subtitle": "Manage WiFi/virtual serial compatibility devices and user BLE/HID native profiles. BLE/HID profiles are auto-traversed by native connect and are not manually enabled here.",
     "gate": {
       "title": "Advanced device area",
       "description": "This page is for supported-device records, DIY controllers, and raw protocol testing. Wrong commands or mismatched interfaces may cause device errors.",
@@ -85,7 +85,7 @@
       "manageDevices": "Manage devices",
       "editDevice": "Edit",
       "batchExport": "Batch export",
-      "setActive": "Enable device",
+      "setActive": "Enable compatibility device",
       "saveDevice": "Save device",
       "generate": "Generate",
       "send": "Send",
@@ -98,9 +98,9 @@
     },
     "sections": {
       "supported": "Device template library",
-      "supportedHint": "Built-in templates are read-only baselines for packet shape, speed mapping, parsers, and transport defaults.",
+      "supportedHint": "Built-in templates are read-only baselines for packets, speed mapping, parsers, and transport defaults.",
       "user": "User-entered devices",
-      "userHint": "The built-in default device plus imported or manually created devices live here and can be enabled for the current control path.",
+      "userHint": "Saved user devices live here. WiFi and virtual serial devices can be enabled manually; BLE/HID profiles stay as native-connect candidates and are traversed automatically.",
       "emptySupported": "No supported-device library entries were returned.",
       "emptyUser": "The device library is empty.",
       "importExport": "Import / export device information",
@@ -109,10 +109,10 @@
       "debugHint": "Use bounded raw-command tests while building a reusable device."
     },
     "connectionBanner": {
-      "title": "Enabled devices by connection",
-      "description": "Each connection type can enable one device. Normal Settings only chooses the connection category and daily connection fields; protocol details stay in Devices.",
-      "noDevice": "No enabled device",
-      "addHint": "Add or import a device first",
+      "title": "Compatibility device bindings",
+      "description": "Only WiFi and virtual serial compatibility devices are bound here. Native BLE/HID devices do not need enabling; scan connects them automatically.",
+      "noDevice": "No compatibility device",
+      "addHint": "Add or import a compatibility device first",
       "count": "{{count}} devices"
     },
     "status": {
@@ -149,7 +149,7 @@
       "wifi": "WiFi",
       "ble": "BLE",
       "serial": "Virtual COM",
-      "hid": "Legacy HID"
+      "hid": "Native HID"
     },
     "speedUnit": {
       "percent": "Percent",
@@ -326,8 +326,8 @@
     },
     "toast": {
       "loadFailed": "Failed to load devices: {{error}}",
-      "profileActivated": "Device enabled",
-      "activeFailed": "Failed to enable device: {{error}}",
+      "profileActivated": "Compatibility device enabled",
+      "activeFailed": "Failed to enable compatibility device: {{error}}",
       "saved": "Device saved",
       "deleted": "Device deleted",
       "deleteFailed": "Failed to delete device: {{error}}",
@@ -340,7 +340,8 @@
       "importFailed": "Failed to import devices: {{error}}",
       "importFileFailed": "Failed to read device file: {{error}}",
       "debugSent": "Debug command sent",
-      "debugFailed": "Debug command failed: {{error}}"
+      "debugFailed": "Debug command failed: {{error}}",
+      "nativeAutoManaged": "Native BLE/HID devices are auto-traversed when connecting and do not need enabling in Advanced Devices."
     }
   },
   "store": {
@@ -500,7 +501,7 @@
   },
   "aboutPanel": {
     "title": "About {{name}}",
-    "description": "{{name}} supports multiple cooler and fan-controller profiles across WiFi, BLE, virtual COM/serial, and legacy HID/RPM paths, reading state and sending speed commands according to each device capability.",
+    "description": "{{name}} supports multiple cooler and fan-controller profiles across WiFi, BLE, virtual COM/serial, and HID/RPM paths, reading state and sending speed commands according to each device capability.",
     "images": {
       "logoAlt": "{{name}} logo",
       "wordmarkAlt": "{{name}} wordmark",
@@ -543,7 +544,7 @@
         },
         {
           "question": "Which devices are currently supported?",
-          "answer": "The built-in default device is Slim pressure fan cooler Pro over WiFi HTTP. FanControl also provides device profiles and templates for WiFi, BLE, virtual COM/serial, and legacy HID/RPM controllers; DIY devices need correct connection, packet, and parser settings for their MCU protocol."
+          "answer": "The built-in default device is Slim pressure fan cooler Pro over WiFi HTTP. FanControl also provides device profiles and templates for WiFi, BLE, virtual COM/serial, and HID/RPM controllers; DIY devices need correct connection, packet, and parser settings for their MCU protocol."
         },
         {
           "question": "Can existing settings continue to work?",
@@ -888,7 +889,7 @@
       "reconnectTip": "Recommended to prevent fallback to the device default mode after disconnects",
       "deviceConnection": {
         "title": "Device connection",
-        "description": "BLE/HID connection types remain available for imported or manually configured devices; unverified device details stay hidden from the normal frontend for now. WiFi and virtual COM are configured as separate compatibility modes.",
+        "description": "Native BLE/HID devices do not need manual enabling; native connect automatically traverses HID and BLE profiles. WiFi and virtual COM are selected manually as compatibility modes.",
         "overviewLabel": "Device address",
         "transportLabel": "Connection",
         "profileLabel": "Profile",
@@ -896,10 +897,10 @@
         "noActiveProfile": "No active profile",
         "noProfilesOption": "No profile",
         "autoScanTitle": "Auto scan devices",
-        "autoScanDescription": "Scans matching rules from imported or manually configured BLE/HID devices. Configure WiFi and virtual COM below.",
+        "autoScanDescription": "Scans matching rules from imported or manually configured BLE/HID devices. Configure and enable WiFi and virtual COM below.",
         "autoScanAction": "Auto scan",
-        "scanAvailableDevices": "Scan devices",
-        "bluetoothScanOnlyHint": "Scans BLE/HID auto-identifiable devices only; WiFi and serial are not scanned here.",
+        "scanAvailableDevices": "Connect native device",
+        "bluetoothScanOnlyHint": "Automatically traverses native HID profiles first, then native BLE profiles. Use compatibility mode below for WiFi and virtual serial.",
         "discoveredDevicesTitle": "Discovered devices",
         "discoveredDevicesDescription": "BLE/HID devices that can be connected directly appear here after a manual scan; WiFi discovery will be added later.",
         "discoveredDevicesEmpty": "Scan finished. No identifiable BLE/HID device was found.",
@@ -933,7 +934,7 @@
         "bleService": "Service UUID",
         "bleWrite": "Write UUID",
         "bleNotify": "Notify UUID",
-        "bleHint": "BLE scan can help match the enabled BLE device. UUID and protocol details stay in Devices.",
+        "bleHint": "BLE scan can help complete or verify matching details for native BLE profiles. UUID and protocol details stay in Devices.",
         "bleScan": "Scan BLE",
         "bleScanFailed": "BLE scan failed: {{error}}",
         "bleScanEmpty": "No BLE devices were found. Keep the current device or add details in Devices.",
@@ -945,21 +946,21 @@
         "serialFrame": "Frame",
         "serialDelimiter": "Delimiter",
         "serialHint": "Maintain the virtual serial port, baud rate, and protocol in Advanced Device Settings; Settings only selects the saved device to enable.",
-        "hidHint": "Legacy HID uses the isolated RPM path and remains available only for compatible devices.",
+        "hidHint": "Native HID profiles are traversed automatically by native connect and do not need compatibility-mode enabling.",
         "notConfigured": "Not configured",
         "toasts": {
           "loadFailed": "Failed to load device profiles: {{error}}",
           "profileRequired": "Add or import a device for this connection type in Devices first.",
           "transportSaved": "Connection enabled",
           "transportFailed": "Failed to update connection type: {{error}}",
-          "profileSaved": "Device enabled",
-          "profileFailed": "Failed to enable device: {{error}}",
+          "profileSaved": "Compatibility device enabled",
+          "profileFailed": "Failed to enable compatibility device: {{error}}",
           "compatibilityEnabled": "Compatibility mode enabled",
           "compatibilityDisabled": "Compatibility mode disabled",
-          "autoScanMatched": "Matched and enabled {{device}}",
-          "autoScanMultiple": "Multiple matched devices found. Choose one from the list.",
+          "autoScanMatched": "Matched and connected {{device}}",
+          "autoScanMultiple": "Multiple matched devices found. Choose one to connect.",
           "autoScanConnected": "Current auto-matched device connection refreshed",
-          "autoScanComplete": "Scan complete. Choose a device from the list.",
+          "autoScanComplete": "Scan complete. Choose a device to connect.",
           "autoScanEmpty": "No auto-identifiable devices found.",
           "autoScanFound": "Found {{count}} identifiable device(s). Choose one from the scan results.",
           "autoScanConnectedDevice": "Connected {{device}}",
@@ -981,10 +982,10 @@
           "serialPortRequired": "Enter a COM port or virtual port name.",
           "serialBaudInvalid": "Enter a valid baud rate."
         },
-        "enabledDeviceLabel": "Enabled device",
+        "enabledDeviceLabel": "Compatibility device",
         "pairedDeviceLabel": "Bound device",
         "savedDeviceLabel": "Saved device",
-        "noEnabledDevice": "No enabled device",
+        "noEnabledDevice": "No compatibility device",
         "serialPortPlaceholder": "COM3 or virtual port name",
         "serialDetectPorts": "Detect ports",
         "serialPortsFailed": "Could not list COM ports: {{error}}",

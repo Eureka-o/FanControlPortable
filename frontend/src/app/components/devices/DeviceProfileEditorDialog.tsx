@@ -41,6 +41,10 @@ const CUSTOM_COMMAND_TYPES = [
 ] as const;
 type ProfileTestAction = 'connect' | 'readState' | 'setSpeed';
 
+function isManualCompatibilityTransport(transport?: string) {
+  return transport === 'wifi' || transport === 'serial';
+}
+
 interface DeviceProfileEditorDialogProps {
   open: boolean;
   supportedProfiles: types.DeviceProfile[];
@@ -159,6 +163,7 @@ export default function DeviceProfileEditorDialog({
   const { t } = useTranslation();
   const { draft, setDraft, libraryProfileId, setLibraryProfileId } = useDraftFormDefaults(open, initialDraft);
   const isEditing = Boolean(draft.id);
+  const canSetActive = isManualCompatibilityTransport(draft.transport);
   const [setActive, setSetActive] = useState(true);
   const [formError, setFormError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -179,7 +184,7 @@ export default function DeviceProfileEditorDialog({
 
   useEffect(() => {
     if (!open) return;
-    setSetActive(!initialDraft?.id);
+    setSetActive(!initialDraft?.id && isManualCompatibilityTransport(initialDraft?.transport || 'wifi'));
     setFormError('');
     setLoading(false);
     setBLEDevices([]);
@@ -202,10 +207,11 @@ export default function DeviceProfileEditorDialog({
 
   const libraryOptions = useMemo(() => [
     { value: 'blank', label: t('advancedDevices.dialog.blankProfile') },
-    ...supportedProfiles.map((profile) => ({
-      value: profile.id,
-      label: getProfileDisplayName(profile, t('advancedDevices.status.unnamedDevice')),
-    })),
+    ...supportedProfiles
+      .map((profile) => ({
+        value: profile.id,
+        label: getProfileDisplayName(profile, t('advancedDevices.status.unnamedDevice')),
+      })),
   ], [supportedProfiles, t]);
 
   const serialPortOptions = useMemo(() => {
@@ -473,7 +479,7 @@ export default function DeviceProfileEditorDialog({
     setLoading(true);
     setFormError('');
     try {
-      await onSave(buildProfileFromDraft(draft), setActive);
+      await onSave(buildProfileFromDraft(draft), setActive && canSetActive);
       onOpenChange(false);
     } catch (error) {
       setFormError(error instanceof Error ? error.message : String(error));
@@ -1078,12 +1084,14 @@ export default function DeviceProfileEditorDialog({
               )}
             </FieldGroup>
 
-            <ToggleSwitch
-              enabled={setActive}
-              onChange={setSetActive}
-              label={t('advancedDevices.dialog.setActiveAfterSave')}
-              size="sm"
-            />
+            {canSetActive && (
+              <ToggleSwitch
+                enabled={setActive}
+                onChange={setSetActive}
+                label={t('advancedDevices.dialog.setActiveAfterSave')}
+                size="sm"
+              />
+            )}
         </div>
 
         {formError && (

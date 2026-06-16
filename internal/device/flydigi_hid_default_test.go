@@ -66,6 +66,103 @@ func TestFlyDigiHIDProductIDsPreferSpecificProfile(t *testing.T) {
 	}
 }
 
+func TestNativeAutoConnectCandidatesKeepUserNativeProfilesBeforeBuiltInFallbacks(t *testing.T) {
+	userHID := types.LegacyRPMProfileForTransport(types.DeviceTransportHID)
+	userHID.ID = "user.hid.rpm"
+	userHID.DisplayName = "User HID RPM"
+	userHID.BuiltIn = false
+
+	userBLE := types.FlyDigiBS1Profile()
+	userBLE.ID = "user.ble.rpm"
+	userBLE.DisplayName = "User BLE RPM"
+	userBLE.BuiltIn = false
+
+	candidates := nativeAutoConnectCandidates([]types.DeviceProfile{
+		types.DefaultWiFiPercentProfile("10.0.0.25"),
+		types.FlyDigiBS1Profile(),
+		userBLE,
+		userHID,
+	})
+
+	gotIDs := make([]string, 0, len(candidates))
+	for _, profile := range candidates {
+		gotIDs = append(gotIDs, profile.ID)
+	}
+	wantIDs := []string{
+		userHID.ID,
+		types.LegacyRPMProfileID,
+		userBLE.ID,
+		types.FlyDigiBS1ProfileID,
+	}
+	if len(gotIDs) != len(wantIDs) {
+		t.Fatalf("candidate IDs = %#v, want %#v", gotIDs, wantIDs)
+	}
+	for i := range wantIDs {
+		if gotIDs[i] != wantIDs[i] {
+			t.Fatalf("candidate IDs = %#v, want %#v", gotIDs, wantIDs)
+		}
+	}
+}
+
+func TestNativeBLEDeviceInfoUsesMatchedUserProfile(t *testing.T) {
+	userBLE := types.FlyDigiBS1Profile()
+	userBLE.ID = "user.ble.rpm"
+	userBLE.DisplayName = "User BLE RPM"
+	userBLE.Vendor = "DIY"
+	userBLE.Model = "BLE Fan"
+	userBLE.BuiltIn = false
+
+	info := nativeBLEDeviceInfo(types.BLEDeviceInfo{
+		Address:                   "AA:BB:CC:00:00:07",
+		Name:                      "DIY BLE Fan",
+		Matched:                   true,
+		MatchedProfileID:          userBLE.ID,
+		MatchedProfileDisplayName: userBLE.DisplayName,
+	}, []types.DeviceProfile{userBLE, types.FlyDigiBS1Profile()})
+
+	if info["profileId"] != userBLE.ID {
+		t.Fatalf("profile id = %q, want %q", info["profileId"], userBLE.ID)
+	}
+	if info["manufacturer"] != "DIY" || info["product"] != userBLE.DisplayName {
+		t.Fatalf("scan info = %#v, want user BLE identity", info)
+	}
+	if info["transport"] != types.DeviceTransportBLE || info["endpoint"] != "AA:BB:CC:00:00:07" {
+		t.Fatalf("scan info = %#v, want BLE address endpoint", info)
+	}
+}
+
+func TestNativeHIDDeviceInfoKeepsUserProfileID(t *testing.T) {
+	userHID := types.LegacyRPMProfileForTransport(types.DeviceTransportHID)
+	userHID.ID = "user.hid.rpm"
+	userHID.DisplayName = "User HID RPM"
+	userHID.Vendor = "DIY"
+	userHID.BuiltIn = false
+
+	info := nativeHIDDeviceInfo(userHID, types.FlyDigiBS2PROProductID, `\\?\hid#vid_37d7&pid_1002`)
+
+	if info["profileId"] != userHID.ID {
+		t.Fatalf("profile id = %q, want %q", info["profileId"], userHID.ID)
+	}
+	if info["manufacturer"] != "DIY" || info["product"] != userHID.DisplayName {
+		t.Fatalf("scan info = %#v, want user HID identity", info)
+	}
+}
+
+func TestNativeHIDDeviceInfoMapsFallbackToConcreteFlyDigiProfile(t *testing.T) {
+	info := nativeHIDDeviceInfo(
+		types.LegacyRPMProfileForTransport(types.DeviceTransportHID),
+		types.FlyDigiBS3PROProductID,
+		`\\?\hid#vid_37d7&pid_1004`,
+	)
+
+	if info["profileId"] != types.FlyDigiBS3PROProfileID {
+		t.Fatalf("profile id = %q, want %q", info["profileId"], types.FlyDigiBS3PROProfileID)
+	}
+	if info["transport"] != types.DeviceTransportHID || info["productId"] != "0x1004" {
+		t.Fatalf("scan info = %#v, want HID BS3PRO identity", info)
+	}
+}
+
 func TestActiveProfileUsesConnectedFlyDigiProductID(t *testing.T) {
 	m := NewManager(nil)
 	m.ConfigureProfile(types.LegacyRPMProfile(), "")

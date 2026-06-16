@@ -60,6 +60,8 @@ type BLEExecutor struct {
 	lastState *types.FanData
 	now       func() time.Time
 	sleep     func(context.Context, time.Duration) error
+
+	heartbeatStop chan struct{}
 }
 
 func NewBLEExecutor(profile types.DeviceProfile, connector BLEConnector) (*BLEExecutor, error) {
@@ -122,6 +124,7 @@ func (e *BLEExecutor) Close() error {
 	e.mutex.Lock()
 	defer e.mutex.Unlock()
 
+	e.stopHeartbeatLocked()
 	if e.client == nil {
 		return nil
 	}
@@ -400,7 +403,53 @@ func (e *BLEExecutor) ensureOpenLocked(ctx context.Context) error {
 		return err
 	}
 	e.client = client
+	e.startBS1HeartbeatLocked()
 	return nil
+}
+
+func (e *BLEExecutor) startBS1HeartbeatLocked() {
+	if e.profile.ID != types.FlyDigiBS1ProfileID || e.heartbeatStop != nil {
+		return
+	}
+	stop := make(chan struct{})
+	e.heartbeatStop = stop
+	go e.bs1HeartbeatLoop(stop)
+}
+
+func (e *BLEExecutor) stopHeartbeatLocked() {
+	if e.heartbeatStop == nil {
+		return
+	}
+	close(e.heartbeatStop)
+	e.heartbeatStop = nil
+}
+
+func (e *BLEExecutor) bs1HeartbeatLoop(stop <-chan struct{}) {
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	commands := [][]byte{types.BS1CmdHeartbeat1, types.BS1CmdHeartbeat2}
+	index := 0
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			if err := e.writeHeartbeat(context.Background(), commands[index%len(commands)]); err != nil {
+				return
+			}
+			index++
+		}
+	}
+}
+
+func (e *BLEExecutor) writeHeartbeat(ctx context.Context, payload []byte) error {
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	if e.client == nil {
+		return io.ErrClosedPipe
+	}
+	return e.writeRawLocked(ctx, payload)
 }
 
 func (e *BLEExecutor) operationContext(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -548,7 +597,7 @@ func discoverBLEClient(device bluetooth.Device, profile types.DeviceProfile) (*r
 	if writeChar == nil {
 		return nil, fmt.Errorf("BLE write characteristic %q was not found", writeUUID)
 	}
-	if readChar == nil && notifyUUID != "" {
+	if readChar == nil && notifyUUID != "" && profile.ID != types.FlyDigiBS1ProfileID {
 		return nil, fmt.Errorf("BLE notify/read characteristic %q was not found", notifyUUID)
 	}
 

@@ -27,34 +27,34 @@ func TestConnectedFlyDigiProfileIDMatchesBS1BLEModel(t *testing.T) {
 	}
 }
 
-func TestSyncConnectedBuiltInDeviceProfilePersistsFlyDigiProfile(t *testing.T) {
+func TestSyncConnectedBuiltInDeviceProfileDoesNotPersistFlyDigiProfile(t *testing.T) {
 	cfg := types.GetDefaultConfig(false)
-	cfg.DeviceTransport = types.DeviceTransportHID
-	cfg.ActiveDeviceProfileID = types.LegacyRPMProfileID
+	cfg.DeviceTransport = types.DeviceTransportWiFi
+	cfg.ActiveDeviceProfileID = types.DefaultWiFiPercentProfileID
 	cfg.DeviceProfiles = []types.DeviceProfile{
 		types.DefaultWiFiPercentProfile("10.0.0.25"),
-		types.LegacyRPMProfile(),
+		types.FlyDigiBS2PROProfile(),
 	}
 	types.NormalizeDeviceProfileConfig(&cfg)
 	app := newDeviceProfileTestApp(t, cfg)
 
-	if !app.syncConnectedBuiltInDeviceProfile(map[string]string{
+	if app.syncConnectedBuiltInDeviceProfile(map[string]string{
 		"transport": "hid",
 		"model":     "BS2PRO",
 		"productId": "0x1002",
 	}) {
-		t.Fatal("FlyDigi profile should update the active profile")
+		t.Fatal("FlyDigi native runtime match should not update persistent active profile")
 	}
 
 	got := app.configManager.Get()
-	if got.ActiveDeviceProfileID != types.FlyDigiBS2PROProfileID {
-		t.Fatalf("active profile = %q, want %q", got.ActiveDeviceProfileID, types.FlyDigiBS2PROProfileID)
+	if got.ActiveDeviceProfileID != types.DefaultWiFiPercentProfileID {
+		t.Fatalf("active profile = %q, want %q", got.ActiveDeviceProfileID, types.DefaultWiFiPercentProfileID)
 	}
-	if got.DeviceTransport != types.DeviceTransportHID {
-		t.Fatalf("device transport = %q, want hid", got.DeviceTransport)
+	if got.DeviceTransport != types.DeviceTransportWiFi {
+		t.Fatalf("device transport = %q, want wifi", got.DeviceTransport)
 	}
-	if got.ActiveDeviceProfileIDsByTransport[types.DeviceTransportHID] != types.FlyDigiBS2PROProfileID {
-		t.Fatalf("remembered HID profile = %q, want %q", got.ActiveDeviceProfileIDsByTransport[types.DeviceTransportHID], types.FlyDigiBS2PROProfileID)
+	if _, ok := got.ActiveDeviceProfileIDsByTransport[types.DeviceTransportHID]; ok {
+		t.Fatalf("HID active profile should not persist: %#v", got.ActiveDeviceProfileIDsByTransport)
 	}
 }
 

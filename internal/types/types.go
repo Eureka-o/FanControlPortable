@@ -57,6 +57,24 @@ func NormalizeDeviceTransport(transport string) string {
 	}
 }
 
+func IsManualCompatibilityDeviceTransport(transport string) bool {
+	switch NormalizeDeviceTransport(transport) {
+	case DeviceTransportWiFi, DeviceTransportSerial:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsNativeDeviceTransport(transport string) bool {
+	switch NormalizeDeviceTransport(transport) {
+	case DeviceTransportBLE, DeviceTransportHID:
+		return true
+	default:
+		return false
+	}
+}
+
 func ClampFanPercent(percent int) int {
 	if percent < FanSpeedMinPercent {
 		return FanSpeedMinPercent

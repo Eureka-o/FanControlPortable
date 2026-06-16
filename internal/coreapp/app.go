@@ -55,6 +55,7 @@ type CoreApp struct {
 	legionFnQRegistered     atomic.Bool
 	reconnectInProgress     atomic.Bool
 	autoReconnectSuppressed atomic.Bool
+	lastConnectionWasNative atomic.Bool
 	resumeRecoveryRunning   atomic.Bool
 	systemSuspended         atomic.Bool
 	wifiStandbyApplied      atomic.Bool

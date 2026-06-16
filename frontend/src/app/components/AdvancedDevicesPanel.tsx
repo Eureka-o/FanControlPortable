@@ -74,6 +74,12 @@ function transportIcon(transport?: string) {
 }
 
 const DEVICE_TRANSPORT_VALUES: DeviceTransport[] = ['wifi', 'ble', 'serial', 'hid'];
+const COMPATIBILITY_TRANSPORT_VALUES: DeviceTransport[] = ['wifi', 'serial'];
+
+function isManualCompatibilityTransport(transport?: string) {
+  const normalized = normalizeTransport(transport);
+  return normalized === 'wifi' || normalized === 'serial';
+}
 
 function activeIdsByTransportFromConfig(config: types.AppConfig): Record<string, string> {
   const raw = (config as any).activeDeviceProfileIdsByTransport;
@@ -314,8 +320,8 @@ function ConnectionCategoryBanner({
         <div className="text-sm font-semibold text-foreground">{t('advancedDevices.connectionBanner.title')}</div>
         <div className="text-xs leading-relaxed text-muted-foreground">{t('advancedDevices.connectionBanner.description')}</div>
       </div>
-      <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
-        {DEVICE_TRANSPORT_VALUES.map((transport) => {
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+        {COMPATIBILITY_TRANSPORT_VALUES.map((transport) => {
           const profile = activeProfileForTransport(profiles, activeIdsByTransport, transport);
           const Icon = transportIcon(transport);
           const active = Boolean(profile?.id && profile.id === activeId);
@@ -595,9 +601,14 @@ function DebugProfilePanel({
             icon={<Save className="h-3.5 w-3.5" />}
             onClick={() => {
               toast.dismiss();
+              const transport = normalizeTransport(result.transport || activeProfile?.transport || (config as any).deviceTransport);
+              if (!isManualCompatibilityTransport(transport)) {
+                toast.info(t('advancedDevices.toast.nativeAutoManaged'));
+                return;
+              }
               const baseName = activeProfile
-                ? getProfileDisplayName(activeProfile, t(`advancedDevices.transport.${normalizeTransport(result.transport)}`))
-                : t(`advancedDevices.transport.${normalizeTransport(result.transport)}`);
+                ? getProfileDisplayName(activeProfile, t(`advancedDevices.transport.${transport}`))
+                : t(`advancedDevices.transport.${transport}`);
               onSaveDraft(profileDraftFromDebugResult({
                 activeProfile,
                 config,
@@ -752,7 +763,10 @@ export default function AdvancedDevicesPanel({ config, isConnected, onConfigChan
     () => profiles.find((profile) => profile.id === activeId) || profiles[0] || null,
     [activeId, profiles],
   );
-  const exportableUserProfiles = useMemo(() => profiles.filter((profile) => !profile.builtIn), [profiles]);
+  const exportableUserProfiles = useMemo(
+    () => profiles.filter((profile) => !profile.builtIn),
+    [profiles],
+  );
   const deviceProfilesByTransport = useMemo(
     () => DEVICE_TRANSPORT_VALUES
       .map((transport) => ({
@@ -807,6 +821,11 @@ export default function AdvancedDevicesPanel({ config, isConnected, onConfigChan
 
   const handleSelectProfile = async (profileID: string) => {
     if (!profileID || profileID === activeId) return;
+    const current = profiles.find((profile) => profile.id === profileID);
+    if (current && !isManualCompatibilityTransport(current.transport)) {
+      toast.info(t('advancedDevices.toast.nativeAutoManaged'));
+      return;
+    }
     setBusy(true);
     try {
       const profile = await apiService.setActiveDeviceProfile(profileID);
@@ -826,8 +845,9 @@ export default function AdvancedDevicesPanel({ config, isConnected, onConfigChan
   };
 
   const handleSaveProfile = async (profile: types.DeviceProfile, setActive: boolean) => {
-    const saved = await apiService.saveDeviceProfile(profile, setActive);
-    if (setActive) {
+    const shouldSetActive = setActive && isManualCompatibilityTransport(profile.transport);
+    const saved = await apiService.saveDeviceProfile(profile, shouldSetActive);
+    if (shouldSetActive) {
       setActiveId(saved.id);
       setActiveIdsByTransport((prev) => ({
         ...prev,
@@ -1035,6 +1055,7 @@ export default function AdvancedDevicesPanel({ config, isConnected, onConfigChan
                   profile={profile}
                   context="device"
                   active={profile.id === (activeIdsByTransport[normalizeTransport(profile.transport)] || activeId)}
+                  selectable={isManualCompatibilityTransport(profile.transport)}
                   onSelect={handleSelectProfile}
                   onEdit={handleEditProfile}
                   onDelete={requestDeleteProfile}
