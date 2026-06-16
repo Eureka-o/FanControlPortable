@@ -148,6 +148,53 @@ func TestLoadUpgradeConfigPreservesWiFiIPAndCurveProfiles(t *testing.T) {
 	}
 }
 
+func TestLoadPreservesPersistedNativeRPMCurveBeforeCompatibilityMigration(t *testing.T) {
+	installDir := t.TempDir()
+	configDir := filepath.Join(installDir, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+
+	curve := []types.FanCurvePoint{
+		{Temperature: 30, RPM: 800},
+		{Temperature: 55, RPM: 1400},
+		{Temperature: 75, RPM: 2300},
+		{Temperature: 95, RPM: 3600},
+	}
+	raw := map[string]any{
+		"deviceTransport":       types.DeviceTransportBLE,
+		"activeDeviceProfileId": types.FlyDigiBS1ProfileID,
+		"activeDeviceProfileIdsByTransport": map[string]string{
+			types.DeviceTransportBLE: types.FlyDigiBS1ProfileID,
+		},
+		"deviceProfiles":          []types.DeviceProfile{types.DefaultWiFiPercentProfile(types.DefaultFanDeviceIP), types.FlyDigiBS1Profile()},
+		"fanCurve":                curve,
+		"fanCurveProfiles":        []types.FanCurveProfile{{ID: "bs1-custom", Name: "BS1", Curve: curve}},
+		"activeFanCurveProfileId": "bs1-custom",
+		"customSpeedRPM":          1800,
+	}
+	data, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config.json"), data, 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg := NewManager(installDir, nil).Load(false)
+
+	if cfg.DeviceTransport != types.DeviceTransportWiFi {
+		t.Fatalf("device transport = %q, want compatibility wifi", cfg.DeviceTransport)
+	}
+	state := cfg.FanCurveProfilesByDevice[types.DeviceTransportBLE+"::"+types.FlyDigiBS1ProfileID]
+	if len(state.FanCurve) != len(curve) || state.FanCurve[2].RPM != 2300 {
+		t.Fatalf("native rpm curve state not preserved: %#v", state)
+	}
+	if len(cfg.FanCurve) > 0 && cfg.FanCurve[len(cfg.FanCurve)-1].RPM > types.FanSpeedMaxPercent {
+		t.Fatalf("compatibility root curve should be normalized away from native rpm view: %#v", cfg.FanCurve)
+	}
+}
+
 func TestLoadMigratesLegacyRootConfigJSONToInstallConfigDir(t *testing.T) {
 	installDir := t.TempDir()
 

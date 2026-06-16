@@ -186,7 +186,13 @@ func (a *CoreApp) SetFanCurve(curve []types.FanCurvePoint) error {
 	runtimeDeviceKey := a.activeDeviceCurveScopeKey(cfg)
 	storeSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey)
 	storeDeviceFanCurveStateForKeyAndUnit(&cfg, runtimeDeviceKey, cfg, unit)
-	return a.configManager.Update(cfg)
+	if err := a.configManager.Update(cfg); err != nil {
+		return err
+	}
+	if a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
+	}
+	return nil
 }
 
 // ResetLearnedOffsets 清空学习到的曲线偏移。

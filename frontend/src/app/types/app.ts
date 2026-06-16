@@ -257,6 +257,7 @@ export interface DeviceStatus {
   temperature: TemperatureData;
   productId?: string;
   model?: string;
+  deviceName?: string;
 }
 
 // 自定义主题元数据（由后端 ListThemes 返回）
@@ -276,6 +277,7 @@ export interface DeviceInfo {
   product: string;
   serial: string;
   model?: string;
+  deviceName?: string;
   productId?: string;
   deviceProfile?: import('../../../wailsjs/go/models').types.DeviceProfile | null;
   deviceCapabilities?: import('../../../wailsjs/go/models').types.DeviceCapabilities | null;

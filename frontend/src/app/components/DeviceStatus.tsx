@@ -601,6 +601,7 @@ export default function DeviceStatus({
   const { t } = useTranslation();
   const [bridgeWarningReady, setBridgeWarningReady] = useState(false);
   const [activeCurveProfileName, setActiveCurveProfileName] = useState('');
+  const [activeCurveProfileCurve, setActiveCurveProfileCurve] = useState<types.FanCurvePoint[] | null>(null);
   const [bridgeStatus, setBridgeStatus] = useState<BridgeRuntimeStatus | null>(null);
   const {
     points: temperatureHistory,
@@ -610,6 +611,13 @@ export default function DeviceStatus({
   const hasBridgeWarning = isConnected && temperature?.bridgeOk === false;
   const configuredDeviceProfile = useMemo(() => (getActiveDeviceProfile(config as any) as types.DeviceProfile | undefined) || null, [config]);
   const activeDeviceProfile = runtimeDeviceProfile || configuredDeviceProfile;
+  const activeCurveContextKey = [
+    isConnected ? 'connected' : 'offline',
+    runtimeDeviceProfile?.id || '',
+    runtimeDeviceProfile?.transport || '',
+    (config as any).deviceTransport || '',
+    (config as any).activeDeviceProfileId || '',
+  ].join(':');
 
   useEffect(() => {
     if (!hasBridgeWarning) {
@@ -653,14 +661,16 @@ export default function DeviceStatus({
       try {
         const payload = await apiService.getFanCurveProfiles();
         const profiles = Array.isArray(payload?.profiles) ? payload.profiles : [];
-        const preferredActiveId = ((config as any).activeFanCurveProfileId || payload?.activeId || profiles[0]?.id || '') as string;
+        const preferredActiveId = (payload?.activeId || (config as any).activeFanCurveProfileId || profiles[0]?.id || '') as string;
         const activeProfile = profiles.find((p) => p.id === preferredActiveId) ?? profiles[0];
         if (!cancelled) {
           setActiveCurveProfileName(activeProfile?.name || '');
+          setActiveCurveProfileCurve(Array.isArray(activeProfile?.curve) ? activeProfile.curve : null);
         }
       } catch {
         if (!cancelled) {
           setActiveCurveProfileName('');
+          setActiveCurveProfileCurve(null);
         }
       }
     };
@@ -669,7 +679,7 @@ export default function DeviceStatus({
     return () => {
       cancelled = true;
     };
-  }, [isConnected, (config as any).activeFanCurveProfileId]);
+  }, [activeCurveContextKey, (config as any).activeFanCurveProfileId]);
 
   const handleAutoControlChange = async (enabled: boolean) => {
     try {
@@ -1014,7 +1024,7 @@ export default function DeviceStatus({
           className="grid grid-cols-1 items-stretch gap-2.5 lg:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.95fr)]"
         >
           <MiniFanCurveChart
-            curve={config.fanCurve}
+            curve={activeCurveProfileCurve || config.fanCurve}
             currentTemp={referenceTemp}
             minSpeed={fanSpeedRange.min}
             maxSpeed={fanSpeedRange.max}

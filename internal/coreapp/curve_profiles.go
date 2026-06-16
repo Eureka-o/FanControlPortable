@@ -33,6 +33,42 @@ func (a *CoreApp) applyCurveProfilesConfig(cfg types.AppConfig) error {
 	return nil
 }
 
+func (a *CoreApp) applyConnectedRuntimeCurveState() (types.AppConfig, bool, error) {
+	cfg := a.configManager.Get()
+	profile, ok := a.connectedRuntimeDeviceProfile()
+	if !ok {
+		return cfg, false, nil
+	}
+
+	unit := a.activeDeviceSpeedUnit(&cfg)
+	runtimeDeviceKey := deviceCurveScopeKeyForProfile(profile)
+	if runtimeDeviceKey == "" {
+		return cfg, false, nil
+	}
+
+	changed := loadDeviceFanCurveStateForProfile(&cfg, profile, unit, runtimeCurveUseCurrentIfMissing(&cfg, unit, true))
+	if curveprofiles.NormalizeConfigForUnit(&cfg, unit) {
+		changed = true
+	}
+	if normalizedSmart, smartChanged := smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, unit); smartChanged {
+		cfg.SmartControl = normalizedSmart
+		changed = true
+	}
+	if syncSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey) {
+		changed = true
+	}
+	if storeDeviceFanCurveStateForKeyAndUnit(&cfg, runtimeDeviceKey, cfg, unit) {
+		changed = true
+	}
+	if !changed {
+		return cfg, false, nil
+	}
+	if err := a.configManager.Update(cfg); err != nil {
+		return cfg, false, err
+	}
+	return cfg, true, nil
+}
+
 func (a *CoreApp) GetFanCurveProfiles() types.FanCurveProfilesPayload {
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
@@ -40,7 +76,7 @@ func (a *CoreApp) GetFanCurveProfiles() types.FanCurveProfilesPayload {
 	cfg := a.configManager.Get()
 	unit := a.activeDeviceSpeedUnit(&cfg)
 	runtimeDeviceKey := a.activeDeviceCurveScopeKey(cfg)
-	changed := loadDeviceFanCurveStateForKey(&cfg, runtimeDeviceKey, unit, true)
+	changed := a.loadActiveRuntimeDeviceFanCurveState(&cfg, unit, true)
 	if curveprofiles.NormalizeConfigForUnit(&cfg, unit) {
 		changed = true
 	}
@@ -52,6 +88,9 @@ func (a *CoreApp) GetFanCurveProfiles() types.FanCurveProfilesPayload {
 		if err := a.configManager.Save(); err != nil {
 			a.logError("保存温控曲线方案默认配置失败: %v", err)
 		}
+	}
+	if changed && a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 	}
 	return a.fanCurveProfilesPayloadFromConfig(cfg)
 }

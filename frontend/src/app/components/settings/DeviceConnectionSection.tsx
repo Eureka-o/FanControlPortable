@@ -54,6 +54,10 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function firstNonEmptyDeviceName(...values: Array<string | undefined | null>) {
+  return values.map((value) => (value || '').trim()).find(Boolean) || '';
+}
+
 export default function DeviceConnectionSection({
   config,
   availableDeviceProfiles,
@@ -270,8 +274,23 @@ export default function DeviceConnectionSection({
       const connected = await apiService.connectNativeDevice();
       await refreshConnectedDeviceContext();
       if (connected) {
+        const status = await apiService.getDeviceStatus().catch(() => null) as {
+          deviceName?: string;
+          deviceProfile?: types.DeviceProfile | null;
+          model?: string;
+          deviceSettings?: { model?: string } | null;
+        } | null;
+        const profile = status?.deviceProfile || null;
+        const deviceName = firstNonEmptyDeviceName(
+          status?.deviceName,
+          profile ? profileLabel(profile) : '',
+          status?.model,
+          status?.deviceSettings?.model,
+          connectedDeviceProfile ? profileLabel(connectedDeviceProfile) : '',
+          t('controlPanel.system.deviceConnection.autoNativeDevice'),
+        );
         toast.success(t('controlPanel.system.deviceConnection.toasts.autoScanConnectedDevice', {
-          device: t('controlPanel.system.deviceConnection.autoNativeDevice'),
+          device: deviceName,
         }));
       } else {
         toast.error(t('controlPanel.system.deviceConnection.toasts.autoScanConnectFailed', { error: t('controlPanel.system.deviceConnection.toasts.autoScanEmpty') }));
@@ -281,7 +300,7 @@ export default function DeviceConnectionSection({
     } finally {
       setLoading('nativeAutoConnect', false);
     }
-  }, [refreshConnectedDeviceContext, t]);
+  }, [connectedDeviceProfile, refreshConnectedDeviceContext, t]);
 
   return (
     <>

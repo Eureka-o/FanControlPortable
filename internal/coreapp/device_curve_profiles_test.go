@@ -115,6 +115,38 @@ func TestDeviceCurveProfilesFollowActiveDeviceProfile(t *testing.T) {
 	}
 }
 
+func TestNativeRuntimeCurveStateInheritsLegacyNativeCurve(t *testing.T) {
+	bs1 := types.FlyDigiBS1Profile()
+	defaultState := defaultDeviceFanCurveStateForUnit(types.FanSpeedUnitRPM)
+	legacyCurve := offsetCurveSpeeds(types.GetDefaultRPMFanCurve(), -120)
+	legacyState := types.DeviceFanCurveProfilesState{
+		Profiles: []types.FanCurveProfile{{
+			ID:    "custom-bs1",
+			Name:  "BS1",
+			Curve: curveprofiles.CloneCurve(legacyCurve),
+		}},
+		ActiveID: "custom-bs1",
+		FanCurve: curveprofiles.CloneCurve(legacyCurve),
+	}
+
+	cfg := types.GetDefaultConfig(false)
+	cfg.FanCurveProfilesByDevice = map[string]types.DeviceFanCurveProfilesState{
+		deviceCurveScopeKeyForProfile(bs1):                                              defaultState,
+		types.DeviceTransportBLE + deviceCurveScopeSeparator + types.LegacyRPMProfileID: legacyState,
+	}
+
+	changed := loadDeviceFanCurveStateForProfile(&cfg, bs1, types.FanSpeedUnitRPM, false)
+	if !changed {
+		t.Fatal("expected native runtime curve state to change")
+	}
+	if !reflect.DeepEqual(cfg.FanCurve, legacyCurve) {
+		t.Fatalf("runtime curve = %#v, want legacy custom curve %#v", cfg.FanCurve, legacyCurve)
+	}
+	if got := cfg.FanCurveProfilesByDevice[deviceCurveScopeKeyForProfile(bs1)].FanCurve; !reflect.DeepEqual(got, legacyCurve) {
+		t.Fatalf("stored bs1 curve = %#v, want %#v", got, legacyCurve)
+	}
+}
+
 func TestLearningOffsetsAreScopedByDeviceAndCurveProfile(t *testing.T) {
 	wifi := types.DefaultWiFiPercentProfile("10.0.0.25")
 	rpm := testRPMDeviceProfile()

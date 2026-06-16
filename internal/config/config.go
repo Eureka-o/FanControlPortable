@@ -476,7 +476,111 @@ func applyMissingDeviceDefaults(cfg *types.AppConfig, rawConfig map[string]json.
 	if _, ok := rawConfig["deviceProfiles"]; !ok {
 		cfg.DeviceProfiles = []types.DeviceProfile{types.DefaultWiFiPercentProfile(cfg.FanControlDeviceIp)}
 	}
+	preserveNativeFanCurveStateBeforeCompatibilityMigration(cfg)
 	types.NormalizeDeviceProfileConfig(cfg)
+}
+
+func preserveNativeFanCurveStateBeforeCompatibilityMigration(cfg *types.AppConfig) {
+	profile, ok := rawNativeActiveProfile(cfg)
+	if !ok || !types.IsRPMSpeedUnit(profile.SpeedUnit) {
+		return
+	}
+	key := deviceCurveScopeKeyForProfile(profile)
+	if key == "" {
+		return
+	}
+	if cfg.FanCurveProfilesByDevice == nil {
+		cfg.FanCurveProfilesByDevice = map[string]types.DeviceFanCurveProfilesState{}
+	}
+	if existing := cfg.FanCurveProfilesByDevice[key]; len(existing.Profiles) > 0 {
+		return
+	}
+	state := types.DeviceFanCurveProfilesState{
+		Profiles: cloneFanCurveProfiles(cfg.FanCurveProfiles),
+		ActiveID: strings.TrimSpace(cfg.ActiveFanCurveProfileID),
+		FanCurve: cloneFanCurve(cfg.FanCurve),
+	}
+	if len(state.Profiles) == 0 && len(state.FanCurve) == 0 {
+		return
+	}
+	cfg.FanCurveProfilesByDevice[key] = state
+}
+
+func rawNativeActiveProfile(cfg *types.AppConfig) (types.DeviceProfile, bool) {
+	if cfg == nil {
+		return types.DeviceProfile{}, false
+	}
+	findByID := func(id string) (types.DeviceProfile, bool) {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return types.DeviceProfile{}, false
+		}
+		for _, profile := range cfg.DeviceProfiles {
+			if strings.TrimSpace(profile.ID) == id {
+				profile = types.NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp)
+				return profile, types.IsNativeDeviceTransport(profile.Transport)
+			}
+		}
+		if profile, ok := types.FlyDigiProfileByID(id); ok {
+			return types.NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp), true
+		}
+		return types.DeviceProfile{}, false
+	}
+	if profile, ok := findByID(cfg.ActiveDeviceProfileID); ok {
+		return profile, true
+	}
+	for _, transport := range []string{types.DeviceTransportBLE, types.DeviceTransportHID} {
+		if profile, ok := findByID(cfg.ActiveDeviceProfileIDsByTransport[transport]); ok {
+			return profile, true
+		}
+	}
+	switch types.NormalizeDeviceTransport(cfg.DeviceTransport) {
+	case types.DeviceTransportBLE:
+		return types.FlyDigiBS1Profile(), true
+	case types.DeviceTransportHID:
+		return types.LegacyRPMProfileForTransport(types.DeviceTransportHID), true
+	default:
+		return types.DeviceProfile{}, false
+	}
+}
+
+func deviceCurveScopeKeyForProfile(profile types.DeviceProfile) string {
+	transport := types.NormalizeDeviceTransport(profile.Transport)
+	profileID := strings.TrimSpace(profile.ID)
+	if profileID == "" {
+		profileID = strings.TrimSpace(profile.Model)
+	}
+	if profileID == "" {
+		profileID = strings.TrimSpace(profile.DisplayName)
+	}
+	if transport == "" || profileID == "" {
+		return ""
+	}
+	return transport + "::" + profileID
+}
+
+func cloneFanCurve(curve []types.FanCurvePoint) []types.FanCurvePoint {
+	if len(curve) == 0 {
+		return nil
+	}
+	out := make([]types.FanCurvePoint, len(curve))
+	copy(out, curve)
+	return out
+}
+
+func cloneFanCurveProfiles(profiles []types.FanCurveProfile) []types.FanCurveProfile {
+	if len(profiles) == 0 {
+		return nil
+	}
+	out := make([]types.FanCurveProfile, 0, len(profiles))
+	for _, profile := range profiles {
+		out = append(out, types.FanCurveProfile{
+			ID:    profile.ID,
+			Name:  profile.Name,
+			Curve: cloneFanCurve(profile.Curve),
+		})
+	}
+	return out
 }
 
 func normalizeSpeedConfig(cfg *types.AppConfig) {
