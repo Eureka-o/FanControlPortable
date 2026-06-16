@@ -4,8 +4,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/TIANLI0/THRM/internal/deviceprofiles"
-	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -54,40 +52,5 @@ func (a *CoreApp) syncConnectedBuiltInDeviceProfile(deviceInfo map[string]string
 	if profileID == "" {
 		return false
 	}
-	cfg := a.configManager.Get()
-	types.NormalizeDeviceProfileConfig(&cfg)
-	idx := deviceprofiles.FindIndex(cfg.DeviceProfiles, profileID)
-	if idx < 0 {
-		return false
-	}
-	profile := cfg.DeviceProfiles[idx]
-	transport := types.NormalizeDeviceTransport(profile.Transport)
-	changed := false
-	if cfg.ActiveDeviceProfileID != profile.ID {
-		cfg.ActiveDeviceProfileID = profile.ID
-		changed = true
-	}
-	if cfg.DeviceTransport != transport {
-		cfg.DeviceTransport = transport
-		changed = true
-	}
-	if cfg.ActiveDeviceProfileIDsByTransport == nil {
-		cfg.ActiveDeviceProfileIDsByTransport = map[string]string{}
-	}
-	if cfg.ActiveDeviceProfileIDsByTransport[transport] != profile.ID {
-		cfg.ActiveDeviceProfileIDsByTransport[transport] = profile.ID
-		changed = true
-	}
-	if !changed {
-		return false
-	}
-
-	a.configManager.Set(cfg)
-	if err := a.configManager.Save(); err != nil {
-		a.logError("failed to save auto-matched device profile %s: %v", profile.ID, err)
-	}
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
-	}
-	return true
+	return false
 }

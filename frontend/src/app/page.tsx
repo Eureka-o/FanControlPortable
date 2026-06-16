@@ -39,7 +39,6 @@ export default function Home() {
       config: state.config,
       fanData: state.fanData,
       temperature: state.temperature,
-      legionFnQSupported: state.legionFnQSupported,
       bridgeWarning: state.bridgeWarning,
       coreServiceError: state.coreServiceError,
       isLoading: state.isLoading,
@@ -141,7 +140,6 @@ export default function Home() {
           isConnected={view.isConnected}
           fanData={view.fanData}
           temperature={view.temperature}
-          legionFnQSupported={view.legionFnQSupported}
           runtimeDeviceProfile={view.runtimeDeviceProfile}
           runtimeDeviceCapabilities={view.runtimeDeviceCapabilities}
           onDeviceContextRefresh={refreshDeviceContext}

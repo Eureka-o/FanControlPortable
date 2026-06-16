@@ -229,21 +229,24 @@ func TestNormalizeDeviceProfileConfigDerivesFromOldFields(t *testing.T) {
 
 	cfg = &AppConfig{DeviceTransport: DeviceTransportHID}
 	NormalizeDeviceProfileConfig(cfg)
-	if DeviceProfileSpeedUnit(cfg) != FanSpeedUnitRPM {
-		t.Fatalf("HID legacy config unit = %q, want rpm", DeviceProfileSpeedUnit(cfg))
+	if cfg.DeviceTransport != DeviceTransportWiFi {
+		t.Fatalf("HID legacy config transport = %q, want wifi", cfg.DeviceTransport)
+	}
+	if DeviceProfileSpeedUnit(cfg) != FanSpeedUnitPercent {
+		t.Fatalf("HID legacy config unit = %q, want percent", DeviceProfileSpeedUnit(cfg))
 	}
 
 	cfg = &AppConfig{DeviceTransport: DeviceTransportBLE}
 	NormalizeDeviceProfileConfig(cfg)
-	if cfg.DeviceTransport != DeviceTransportBLE {
-		t.Fatalf("BLE legacy config transport = %q, want ble", cfg.DeviceTransport)
+	if cfg.DeviceTransport != DeviceTransportWiFi {
+		t.Fatalf("BLE legacy config transport = %q, want wifi", cfg.DeviceTransport)
 	}
-	if DeviceProfileSpeedUnit(cfg) != FanSpeedUnitRPM {
-		t.Fatalf("BLE legacy config unit = %q, want rpm", DeviceProfileSpeedUnit(cfg))
+	if DeviceProfileSpeedUnit(cfg) != FanSpeedUnitPercent {
+		t.Fatalf("BLE legacy config unit = %q, want percent", DeviceProfileSpeedUnit(cfg))
 	}
 }
 
-func TestNormalizeDeviceProfileConfigSwitchesRequestedTransport(t *testing.T) {
+func TestNormalizeDeviceProfileConfigMigratesNativeTransportToCompatibilityWiFi(t *testing.T) {
 	cfg := &AppConfig{
 		DeviceTransport:       DeviceTransportBLE,
 		FanControlDeviceIp:    "10.0.0.25",
@@ -252,17 +255,52 @@ func TestNormalizeDeviceProfileConfigSwitchesRequestedTransport(t *testing.T) {
 	}
 
 	if !NormalizeDeviceProfileConfig(cfg) {
-		t.Fatal("expected BLE transport request to update device profile config")
+		t.Fatal("expected native transport request to update device profile config")
 	}
-	if cfg.DeviceTransport != DeviceTransportBLE {
-		t.Fatalf("device transport = %q, want ble", cfg.DeviceTransport)
+	if cfg.DeviceTransport != DeviceTransportWiFi {
+		t.Fatalf("device transport = %q, want wifi", cfg.DeviceTransport)
 	}
-	if cfg.ActiveDeviceProfileID != FlyDigiBS1ProfileID {
-		t.Fatalf("active profile = %q, want %q", cfg.ActiveDeviceProfileID, FlyDigiBS1ProfileID)
+	if cfg.ActiveDeviceProfileID != DefaultWiFiPercentProfileID {
+		t.Fatalf("active profile = %q, want %q", cfg.ActiveDeviceProfileID, DefaultWiFiPercentProfileID)
+	}
+	if _, ok := cfg.ActiveDeviceProfileIDsByTransport[DeviceTransportBLE]; ok {
+		t.Fatalf("BLE active id should not persist in compatibility config: %#v", cfg.ActiveDeviceProfileIDsByTransport)
 	}
 	active := ActiveDeviceProfile(cfg)
-	if active.Transport != DeviceTransportBLE || active.SpeedUnit != FanSpeedUnitRPM {
-		t.Fatalf("active profile transport/unit = %q/%q, want ble/rpm", active.Transport, active.SpeedUnit)
+	if active.Transport != DeviceTransportWiFi || active.SpeedUnit != FanSpeedUnitPercent {
+		t.Fatalf("active profile transport/unit = %q/%q, want wifi/percent", active.Transport, active.SpeedUnit)
+	}
+}
+
+func TestNormalizeDeviceProfileConfigMigratesPersistedBS1ActiveConfig(t *testing.T) {
+	cfg := &AppConfig{
+		DeviceTransport:       DeviceTransportBLE,
+		FanControlDeviceIp:    "192.168.137.2",
+		ActiveDeviceProfileID: FlyDigiBS1ProfileID,
+		ActiveDeviceProfileIDsByTransport: map[string]string{
+			DeviceTransportBLE:  FlyDigiBS1ProfileID,
+			DeviceTransportWiFi: DefaultWiFiPercentProfileID,
+		},
+		DeviceProfiles: []DeviceProfile{
+			DefaultWiFiPercentProfile("192.168.137.2"),
+			FlyDigiBS1Profile(),
+		},
+	}
+
+	if !NormalizeDeviceProfileConfig(cfg) {
+		t.Fatal("expected persisted BS1 active config to be migrated")
+	}
+	if cfg.DeviceTransport != DeviceTransportWiFi {
+		t.Fatalf("device transport = %q, want wifi", cfg.DeviceTransport)
+	}
+	if cfg.ActiveDeviceProfileID != DefaultWiFiPercentProfileID {
+		t.Fatalf("active profile = %q, want %q", cfg.ActiveDeviceProfileID, DefaultWiFiPercentProfileID)
+	}
+	if _, ok := cfg.ActiveDeviceProfileIDsByTransport[DeviceTransportBLE]; ok {
+		t.Fatalf("BLE active id should be removed after migration: %#v", cfg.ActiveDeviceProfileIDsByTransport)
+	}
+	if cfg.ActiveDeviceProfileIDsByTransport[DeviceTransportWiFi] != DefaultWiFiPercentProfileID {
+		t.Fatalf("wifi remembered profile = %q, want %q", cfg.ActiveDeviceProfileIDsByTransport[DeviceTransportWiFi], DefaultWiFiPercentProfileID)
 	}
 }
 
@@ -397,7 +435,7 @@ func TestNormalizeDeviceProfileConfigUsesRememberedProfileForTransport(t *testin
 	}
 }
 
-func TestActiveDeviceProfilePrefersRequestedTransportOverStaleGlobalActiveID(t *testing.T) {
+func TestActiveDeviceProfileIgnoresNativeTransportInPersistentConfig(t *testing.T) {
 	cfg := &AppConfig{
 		DeviceTransport:       DeviceTransportHID,
 		FanControlDeviceIp:    "10.0.0.25",
@@ -413,15 +451,15 @@ func TestActiveDeviceProfilePrefersRequestedTransportOverStaleGlobalActiveID(t *
 	}
 
 	active := ActiveDeviceProfile(cfg)
-	if active.Transport != DeviceTransportHID || active.SpeedUnit != FanSpeedUnitRPM {
-		t.Fatalf("active profile transport/unit = %q/%q, want hid/rpm", active.Transport, active.SpeedUnit)
+	if active.Transport != DeviceTransportWiFi || active.SpeedUnit != FanSpeedUnitPercent {
+		t.Fatalf("active profile transport/unit = %q/%q, want wifi/percent", active.Transport, active.SpeedUnit)
 	}
-	if DeviceProfileSpeedUnit(cfg) != FanSpeedUnitRPM {
-		t.Fatalf("configured speed unit = %q, want rpm", DeviceProfileSpeedUnit(cfg))
+	if DeviceProfileSpeedUnit(cfg) != FanSpeedUnitPercent {
+		t.Fatalf("configured speed unit = %q, want percent", DeviceProfileSpeedUnit(cfg))
 	}
 }
 
-func TestActiveDeviceProfileUsesRequestedBuiltInRPMProfileWhenMissingFromConfig(t *testing.T) {
+func TestActiveDeviceProfileFallsBackToWiFiWhenNativeProfileMissingFromConfig(t *testing.T) {
 	cfg := &AppConfig{
 		DeviceTransport:       DeviceTransportHID,
 		FanControlDeviceIp:    "10.0.0.25",
@@ -430,10 +468,10 @@ func TestActiveDeviceProfileUsesRequestedBuiltInRPMProfileWhenMissingFromConfig(
 	}
 
 	active := ActiveDeviceProfile(cfg)
-	if active.Transport != DeviceTransportHID || active.SpeedUnit != FanSpeedUnitRPM {
-		t.Fatalf("active profile transport/unit = %q/%q, want hid/rpm", active.Transport, active.SpeedUnit)
+	if active.Transport != DeviceTransportWiFi || active.SpeedUnit != FanSpeedUnitPercent {
+		t.Fatalf("active profile transport/unit = %q/%q, want wifi/percent", active.Transport, active.SpeedUnit)
 	}
-	if active.ID != FlyDigiBS2ProfileID {
-		t.Fatalf("active HID profile = %q, want built-in fallback %q before config normalization", active.ID, FlyDigiBS2ProfileID)
+	if active.ID != DefaultWiFiPercentProfileID {
+		t.Fatalf("active profile = %q, want %q", active.ID, DefaultWiFiPercentProfileID)
 	}
 }

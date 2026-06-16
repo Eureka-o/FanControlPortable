@@ -234,7 +234,7 @@ func (a *CoreApp) runReconnectLoop(reason string, retryDelays []time.Duration) {
 		}
 
 		a.logInfo("尝试第 %d 次重连设备...", i+1)
-		if a.ConnectDevice() {
+		if a.reconnectDevice() {
 			a.logInfo("设备重连成功")
 
 			// 如果开启了断连保持配置模式，重新应用APP配置
@@ -250,6 +250,13 @@ func (a *CoreApp) runReconnectLoop(reason string, retryDelays []time.Duration) {
 	}
 
 	a.logError("所有重连尝试均失败，等待下次健康检查")
+}
+
+func (a *CoreApp) reconnectDevice() bool {
+	if a.lastConnectionWasNative.Load() {
+		return a.ConnectNativeDevice("")
+	}
+	return a.ConnectDevice()
 }
 
 func (a *CoreApp) maybeRecoverFromSystemResume(source string, gap, expectedInterval time.Duration) bool {
@@ -397,6 +404,7 @@ func (a *CoreApp) safeRun(name string, fn func()) {
 // ConnectDevice 连接设备
 func (a *CoreApp) ConnectDevice() bool {
 	a.autoReconnectSuppressed.Store(false)
+	a.lastConnectionWasNative.Store(false)
 	cfg := a.configManager.Get()
 	a.configureDeviceManager(cfg)
 
@@ -413,7 +421,9 @@ func (a *CoreApp) ConnectDevice() bool {
 }
 
 func (a *CoreApp) AutoScanDevices() map[string]any {
-	devices := a.deviceManager.ScanNativeDevices()
+	cfg := a.configManager.Get()
+	types.NormalizeDeviceProfileConfig(&cfg)
+	devices := a.deviceManager.ScanNativeDevicesProfiles(cfg.DeviceProfiles)
 	result := map[string]any{
 		"connected": a.deviceManager.IsConnected(),
 		"devices":   devices,
@@ -428,6 +438,7 @@ func (a *CoreApp) AutoScanDevices() map[string]any {
 }
 
 func (a *CoreApp) ConnectNativeDevice(profileID string) bool {
+	_ = profileID
 	a.autoReconnectSuppressed.Store(false)
 	cfg := a.configManager.Get()
 
@@ -442,45 +453,17 @@ func (a *CoreApp) ConnectNativeDevice(profileID string) bool {
 		}
 	}
 
-	profile, ok := types.FlyDigiProfileByID(profileID)
-	if !ok {
-		a.configureDeviceManager(cfg)
-		success, deviceInfo := a.deviceManager.AutoConnectNative()
-		if success {
-			a.finishSuccessfulDeviceConnection(deviceInfo, "ConnectNativeDevice")
-			return true
-		}
-		if a.ipcServer != nil {
-			a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "未发现可自动识别的原生设备")
-		}
-		return false
-	}
-
-	nativeCfg := cfg
-	nativeCfg.DeviceTransport = profile.Transport
-	nativeCfg.ActiveDeviceProfileID = profile.ID
-	if nativeCfg.ActiveDeviceProfileIDsByTransport == nil {
-		nativeCfg.ActiveDeviceProfileIDsByTransport = map[string]string{}
-	}
-	nativeCfg.ActiveDeviceProfileIDsByTransport[profile.Transport] = profile.ID
-	if err := a.UpdateConfig(nativeCfg); err != nil {
-		a.logError("切换原生设备通用 RPM 档案失败: %v", err)
-	}
-
-	a.deviceManager.ConfigureProfile(profile, cfg.FanControlDeviceIp)
-	success, deviceInfo := a.deviceManager.Connect()
+	// Native FlyDigi BLE/HID devices are auto-managed. Even if an older UI passes
+	// a concrete built-in profile ID, keep the reference behavior: try all HID
+	// product IDs first, then scan BS1 over BLE.
+	a.configureDeviceManager(cfg)
+	success, deviceInfo := a.deviceManager.AutoConnectNativeProfiles(cfg.DeviceProfiles)
 	if success {
 		a.finishSuccessfulDeviceConnection(deviceInfo, "ConnectNativeDevice")
 		return true
 	}
-
-	if err := a.UpdateConfig(cfg); err != nil {
-		a.logError("恢复原设备配置失败: %v", err)
-	} else {
-		a.configureDeviceManager(cfg)
-	}
 	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "连接扫描设备失败")
+		a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "未发现可自动识别的原生设备")
 	}
 	return false
 }
@@ -491,6 +474,7 @@ func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string,
 	a.mutex.Lock()
 	a.isConnected = true
 	a.mutex.Unlock()
+	a.lastConnectionWasNative.Store(types.IsNativeDeviceTransport(a.deviceManager.GetDeviceType()))
 
 	settings, settingsErr := a.RefreshDeviceSettings()
 	if settingsErr != nil {
@@ -525,6 +509,7 @@ func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string,
 // DisconnectDevice 断开设备连接
 func (a *CoreApp) DisconnectDevice() {
 	a.autoReconnectSuppressed.Store(true)
+	a.lastConnectionWasNative.Store(false)
 
 	a.mutex.Lock()
 	a.isConnected = false

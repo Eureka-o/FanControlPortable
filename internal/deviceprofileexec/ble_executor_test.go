@@ -182,6 +182,35 @@ func TestBLEExecutorFlyDigiBS1SetSpeedDoesNotFakeCurrentRPM(t *testing.T) {
 	}
 }
 
+func TestBLEExecutorFlyDigiBS1HeartbeatLifecycle(t *testing.T) {
+	client := &fakeBLEClient{}
+	executor, err := NewBLEExecutor(types.FlyDigiBS1Profile(), &fakeBLEConnector{client: client})
+	if err != nil {
+		t.Fatalf("NewBLEExecutor() error = %v", err)
+	}
+
+	state, err := executor.Open(nil)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	if state.Transport != types.DeviceTransportBLE || state.SpeedUnit != types.FanSpeedUnitRPM {
+		t.Fatalf("open state = %#v, want BS1 BLE RPM state", state)
+	}
+	if executor.heartbeatStop == nil {
+		t.Fatal("BS1 heartbeat should start after opening the BLE executor")
+	}
+
+	if err := executor.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if executor.heartbeatStop != nil {
+		t.Fatal("BS1 heartbeat stop channel should be cleared after Close")
+	}
+	if !client.closed {
+		t.Fatal("BLE client should be closed")
+	}
+}
+
 func TestBLEExecutorRateLimitsSpeedSends(t *testing.T) {
 	client := &fakeBLEClient{}
 	executor, err := NewBLEExecutor(types.DeviceProfile{

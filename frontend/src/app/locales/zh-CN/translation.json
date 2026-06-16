@@ -69,7 +69,7 @@
   },
   "advancedDevices": {
     "title": "已支持设备",
-    "subtitle": "管理内置模板和已录入设备。普通控制流程会跟随已启用设备切换。",
+    "subtitle": "管理 WiFi/虚拟串口兼容设备和用户 BLE/HID 原生档案。BLE/HID 会在连接原生设备时自动遍历，不在这里手动启用。",
     "gate": {
       "title": "高级设备区域",
       "description": "此页面用于已支持设备记录、DIY 主控适配和原始协议测试。错误命令或接口不匹配可能导致设备异常。",
@@ -85,7 +85,7 @@
       "manageDevices": "管理设备",
       "editDevice": "编辑",
       "batchExport": "批量导出",
-      "setActive": "启用设备",
+      "setActive": "启用兼容设备",
       "saveDevice": "保存设备",
       "generate": "生成",
       "send": "发送",
@@ -98,9 +98,9 @@
     },
     "sections": {
       "supported": "设备模板库",
-      "supportedHint": "内置模板是只读基线，用于提供发包形状、速度映射、解析规则和连接默认值，可作为新建设备的参考。",
+      "supportedHint": "内置模板是只读基线，用于兼容设备和自定义原生档案的发包、速度映射、解析规则和连接默认值。",
       "user": "设备库",
-      "userHint": "内置默认设备、导入设备和手动创建设备会显示在这里，并可启用为当前控制路径。",
+      "userHint": "这里显示已保存的用户设备。WiFi/虚拟串口可手动启用；BLE/HID 保留为原生连接候选，由扫描自动遍历。",
       "emptySupported": "后端没有返回设备模板条目。",
       "emptyUser": "设备库为空。",
       "importExport": "导入 / 导出设备信息",
@@ -109,10 +109,10 @@
       "debugHint": "创建设备时，可在这里进行有边界的原始命令测试。"
     },
     "connectionBanner": {
-      "title": "按连接方式启用设备",
-      "description": "每种连接方式最多启用一个设备。普通设置页只选择连接类别和日常连接字段，协议细节仍在设备管理中维护。",
-      "noDevice": "未启用设备",
-      "addHint": "请先新增或导入设备",
+      "title": "兼容设备绑定",
+      "description": "这里只绑定 WiFi 和虚拟串口兼容设备。BLE/HID 原生设备不需要启用，扫描连接时会自动遍历。",
+      "noDevice": "未绑定兼容设备",
+      "addHint": "请先新增或导入兼容设备",
       "count": "{{count}} 个设备"
     },
     "status": {
@@ -149,7 +149,7 @@
       "wifi": "WiFi",
       "ble": "蓝牙 BLE",
       "serial": "虚拟串口",
-      "hid": "旧版 HID"
+      "hid": "原生 HID"
     },
     "speedUnit": {
       "percent": "百分比",
@@ -326,8 +326,8 @@
     },
     "toast": {
       "loadFailed": "加载设备失败：{{error}}",
-      "profileActivated": "设备已启用",
-      "activeFailed": "启用设备失败：{{error}}",
+      "profileActivated": "兼容设备已启用",
+      "activeFailed": "启用兼容设备失败：{{error}}",
       "saved": "设备已保存",
       "deleted": "设备已删除",
       "deleteFailed": "删除设备失败：{{error}}",
@@ -340,7 +340,8 @@
       "importFailed": "导入设备失败：{{error}}",
       "importFileFailed": "读取设备文件失败：{{error}}",
       "debugSent": "调试命令已发送",
-      "debugFailed": "调试命令失败：{{error}}"
+      "debugFailed": "调试命令失败：{{error}}",
+      "nativeAutoManaged": "BLE/HID 原生设备会自动遍历连接，不需要在高级设备中启用。"
     }
   },
   "store": {
@@ -500,7 +501,7 @@
   },
   "aboutPanel": {
     "title": "关于 {{name}}",
-    "description": "{{name}} 面向多种散热控制设备，可按设备档案选择 WiFi、BLE、虚拟串口/COM 或 legacy HID/RPM，并根据设备能力读取状态、下发风速控制。",
+    "description": "{{name}} 面向多种散热控制设备，可按设备档案选择 WiFi、BLE、虚拟串口/COM 或 HID/RPM，并根据设备能力读取状态、下发风速控制。",
     "images": {
       "logoAlt": "{{name}} 标志",
       "wordmarkAlt": "{{name}} 字标",
@@ -543,7 +544,7 @@
         },
         {
           "question": "当前支持哪些设备？",
-          "answer": "当前默认支持 Slim 压风散热器 Pro 的 WiFi HTTP 控制，同时提供设备档案和模板机制，用于适配 WiFi、BLE、虚拟串口/COM 和 legacy HID/RPM 设备。不同 DIY 设备需要按主控协议填写正确的连接、发包和解析信息。"
+          "answer": "当前默认支持 Slim 压风散热器 Pro 的 WiFi HTTP 控制，同时提供设备档案和模板机制，用于适配 WiFi、BLE、虚拟串口/COM 和 HID/RPM 设备。不同 DIY 设备需要按主控协议填写正确的连接、发包和解析信息。"
         },
         {
           "question": "原有配置还能继续使用吗？",
@@ -888,7 +889,7 @@
       "reconnectTip": "推荐开启，防止断连后进入设备默认模式",
       "deviceConnection": {
         "title": "设备连接",
-        "description": "BLE/HID 连接方式仍保留，可用于已导入或手动配置的设备；当前普通入口不展示未验证设备信息。WiFi 和虚拟串口作为兼容模式单独配置。",
+        "description": "BLE/HID 原生设备不需要选择启用，点击连接原生设备会自动遍历 HID 与 BLE 原生档案。WiFi 和虚拟串口作为兼容模式手动选择。",
         "overviewLabel": "设备地址",
         "transportLabel": "连接方式",
         "profileLabel": "设备配置",
@@ -896,10 +897,10 @@
         "noActiveProfile": "暂无当前配置",
         "noProfilesOption": "暂无配置",
         "autoScanTitle": "自动扫描设备",
-        "autoScanDescription": "扫描已导入或手动配置的 BLE/HID 设备匹配规则。WiFi 和虚拟串口请在下方兼容模式中配置。",
+        "autoScanDescription": "扫描已导入或手动配置的 BLE/HID 设备匹配规则。WiFi 和虚拟串口请在下方兼容模式中配置并启用。",
         "autoScanAction": "自动扫描",
-        "scanAvailableDevices": "扫描可用设备",
-        "bluetoothScanOnlyHint": "只扫描 BLE/HID 自动识别设备，不扫描 WiFi 或串口。",
+        "scanAvailableDevices": "连接原生设备",
+        "bluetoothScanOnlyHint": "自动遍历 HID 原生档案，未找到时再遍历 BLE 原生档案；WiFi 和虚拟串口请使用下方兼容模式。",
         "discoveredDevicesTitle": "已发现设备",
         "discoveredDevicesDescription": "主动扫描后显示可直接连接的 BLE/HID 设备；WiFi 发现功能后续接入。",
         "discoveredDevicesEmpty": "扫描完成，暂未发现可识别的 BLE/HID 设备。",
@@ -933,7 +934,7 @@
         "bleService": "服务 UUID",
         "bleWrite": "写入 UUID",
         "bleNotify": "通知 UUID",
-        "bleHint": "BLE 扫描用于辅助匹配已启用的 BLE 设备。UUID、发包和解析细节保留在设备管理。",
+        "bleHint": "BLE 扫描用于补充或验证 BLE 原生档案的匹配信息。UUID、发包和解析细节保留在设备管理。",
         "bleScan": "扫描 BLE",
         "bleScanFailed": "BLE 扫描失败：{{error}}",
         "bleScanEmpty": "没有发现 BLE 设备。可以保留当前设备，或到设备管理补充详细信息。",
@@ -945,21 +946,21 @@
         "serialFrame": "帧格式",
         "serialDelimiter": "分隔符",
         "serialHint": "虚拟串口的端口、波特率和协议请在高级设备设置中维护；这里仅选择要启用的已保存设备。",
-        "hidHint": "旧版 HID 走隔离的 RPM 路径，仅在兼容设备中可用。",
+        "hidHint": "HID 原生档案会在连接原生设备时自动遍历，不需要在兼容模式中启用。",
         "notConfigured": "未配置",
         "toasts": {
           "loadFailed": "加载设备配置失败：{{error}}",
           "profileRequired": "请先在设备管理里为该连接方式添加或导入设备。",
           "transportSaved": "连接方式已启用",
           "transportFailed": "更新连接方式失败：{{error}}",
-          "profileSaved": "设备已启用",
-          "profileFailed": "启用设备失败：{{error}}",
+          "profileSaved": "兼容设备已启用",
+          "profileFailed": "启用兼容设备失败：{{error}}",
           "compatibilityEnabled": "兼容模式已开启",
           "compatibilityDisabled": "兼容模式已关闭",
-          "autoScanMatched": "已自动匹配并启用 {{device}}",
-          "autoScanMultiple": "发现多个可匹配设备，请在列表中选择要启用的设备。",
+          "autoScanMatched": "已自动匹配并连接 {{device}}",
+          "autoScanMultiple": "发现多个可匹配设备，请在列表中选择要连接的设备。",
           "autoScanConnected": "已刷新当前自动识别设备连接",
-          "autoScanComplete": "扫描完成，请在列表中选择要启用的设备。",
+          "autoScanComplete": "扫描完成，请在列表中选择要连接的设备。",
           "autoScanEmpty": "暂未发现可自动识别的设备。",
           "autoScanFound": "已发现 {{count}} 个可识别设备，请在扫描结果中选择连接。",
           "autoScanConnectedDevice": "已连接 {{device}}",
@@ -981,10 +982,10 @@
           "serialPortRequired": "请填写 COM 端口或虚拟端口名。",
           "serialBaudInvalid": "请填写有效的波特率。"
         },
-        "enabledDeviceLabel": "启用设备",
+        "enabledDeviceLabel": "兼容设备",
         "pairedDeviceLabel": "绑定设备",
         "savedDeviceLabel": "已保存设备",
-        "noEnabledDevice": "未启用设备",
+        "noEnabledDevice": "未绑定兼容设备",
         "serialPortPlaceholder": "COM3 或虚拟端口名",
         "serialDetectPorts": "检测端口",
         "serialPortsFailed": "无法列出 COM 端口：{{error}}",

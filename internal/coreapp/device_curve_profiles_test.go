@@ -9,7 +9,29 @@ import (
 )
 
 func testRPMDeviceProfile() types.DeviceProfile {
-	return types.FlyDigiBS2Profile()
+	return types.DeviceProfile{
+		ID:          "user.serial.rpm",
+		DisplayName: "Serial RPM",
+		Vendor:      "FanControl",
+		Model:       "Serial RPM",
+		Transport:   types.DeviceTransportSerial,
+		SpeedUnit:   types.FanSpeedUnitRPM,
+		SpeedRange:  types.DefaultRPMSpeedRange(),
+		Connection: types.DeviceConnectionSettings{
+			SerialPort:     "COM9",
+			SerialBaudRate: 115200,
+			SerialDataBits: 8,
+			SerialStopBits: 1,
+			SerialParity:   "none",
+		},
+		Capabilities: types.DeviceCapabilities{
+			Transport:         types.DeviceTransportSerial,
+			SpeedUnit:         types.FanSpeedUnitRPM,
+			SpeedRange:        types.DefaultRPMSpeedRange(),
+			SupportsReadState: true,
+			SupportsSetSpeed:  true,
+		},
+	}
 }
 
 func offsetCurveSpeeds(curve []types.FanCurvePoint, delta int) []types.FanCurvePoint {
@@ -61,8 +83,8 @@ func TestDeviceCurveProfilesFollowActiveDeviceProfile(t *testing.T) {
 		t.Fatalf("switch to rpm profile: %v", err)
 	}
 	gotRPM := app.configManager.Get()
-	if gotRPM.DeviceTransport != types.DeviceTransportHID || types.DeviceProfileSpeedUnit(&gotRPM) != types.FanSpeedUnitRPM {
-		t.Fatalf("active device after switch = %s/%s, want hid/rpm", gotRPM.DeviceTransport, types.DeviceProfileSpeedUnit(&gotRPM))
+	if gotRPM.DeviceTransport != types.DeviceTransportSerial || types.DeviceProfileSpeedUnit(&gotRPM) != types.FanSpeedUnitRPM {
+		t.Fatalf("active device after switch = %s/%s, want serial/rpm", gotRPM.DeviceTransport, types.DeviceProfileSpeedUnit(&gotRPM))
 	}
 	if reflect.DeepEqual(gotRPM.FanCurve, wifiCurve) {
 		t.Fatal("rpm device reused the wifi percent curve")

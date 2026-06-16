@@ -69,7 +69,7 @@
   },
   "advancedDevices": {
     "title": "対応デバイス",
-    "subtitle": "デバイステンプレートとユーザーデバイスを管理します。通常の制御は有効化したデバイスに従います。",
+    "subtitle": "WiFi/仮想シリアル互換デバイスとユーザー BLE/HID ネイティブプロファイルを管理します。BLE/HID はネイティブ接続時に自動で順番に試され、ここで手動有効化しません。",
     "gate": {
       "title": "高度なデバイス設定",
       "description": "このページは、対応デバイスの記録、DIY コントローラーの設定、Raw プロトコルテストに使用します。誤ったコマンドや不一致のインターフェースは、デバイスの異常を引き起こす可能性があります。",
@@ -85,7 +85,7 @@
       "manageDevices": "デバイス管理",
       "editDevice": "編集",
       "batchExport": "一括出力",
-      "setActive": "有効化",
+      "setActive": "互換デバイスを有効化",
       "saveDevice": "保存",
       "generate": "生成",
       "send": "送信",
@@ -100,7 +100,7 @@
       "supported": "デバイステンプレート",
       "supportedHint": "内蔵テンプレートは、パケット形状、速度マップ、解析ルール、接続既定値の読み取り専用ベースラインです。",
       "user": "ユーザー登録デバイス",
-      "userHint": "内蔵の既定デバイスと、インポートまたは手動作成したデバイスがここに表示され、現在の制御パスとして有効化できます。",
+      "userHint": "保存済みのユーザーデバイスがここに表示されます。WiFi/仮想シリアルは手動有効化でき、BLE/HID はネイティブ接続候補として自動で順番に試されます。",
       "emptySupported": "対応デバイスライブラリの項目がありません。",
       "emptyUser": "デバイスライブラリは空です。",
       "importExport": "デバイス情報のインポート / エクスポート",
@@ -109,10 +109,10 @@
       "debugHint": "再利用できるデバイスを作るため、範囲を限定した Raw コマンドテストを行います。"
     },
     "connectionBanner": {
-      "title": "接続方式ごとの有効デバイス",
-      "description": "各接続方式で有効化できるデバイスは 1 つです。通常設定では接続カテゴリと日常の接続項目だけを扱い、プロトコル詳細はデバイス管理に残します。",
-      "noDevice": "有効なデバイスなし",
-      "addHint": "先にデバイスを追加またはインポートしてください",
+      "title": "互換デバイスの紐付け",
+      "description": "ここで紐付けるのは WiFi と仮想シリアル互換デバイスのみです。BLE/HID ネイティブデバイスは有効化不要で、スキャン接続時に自動で順番に試されます。",
+      "noDevice": "互換デバイスなし",
+      "addHint": "先に互換デバイスを追加またはインポートしてください",
       "count": "{{count}} 台"
     },
     "status": {
@@ -149,7 +149,7 @@
       "wifi": "WiFi",
       "ble": "BLE",
       "serial": "仮想 COM",
-      "hid": "レガシー HID"
+      "hid": "ネイティブ HID"
     },
     "speedUnit": {
       "percent": "パーセント",
@@ -326,8 +326,8 @@
     },
     "toast": {
       "loadFailed": "デバイスの読み込みに失敗しました: {{error}}",
-      "profileActivated": "デバイスを有効化しました",
-      "activeFailed": "デバイスの有効化に失敗しました: {{error}}",
+      "profileActivated": "互換デバイスを有効化しました",
+      "activeFailed": "互換デバイスの有効化に失敗しました: {{error}}",
       "saved": "デバイスを保存しました",
       "deleted": "デバイスを削除しました",
       "deleteFailed": "デバイスの削除に失敗しました: {{error}}",
@@ -340,7 +340,8 @@
       "importFailed": "デバイスのインポートに失敗しました: {{error}}",
       "importFileFailed": "デバイスファイルを読み取れません: {{error}}",
       "debugSent": "デバッグコマンドを送信しました",
-      "debugFailed": "デバッグコマンドに失敗しました: {{error}}"
+      "debugFailed": "デバッグコマンドに失敗しました: {{error}}",
+      "nativeAutoManaged": "BLE/HID ネイティブデバイスは接続時に自動で順番に試されるため、高度なデバイスで有効化する必要はありません。"
     }
   },
   "store": {
@@ -500,7 +501,7 @@
   },
   "aboutPanel": {
     "title": "{{name}} について",
-    "description": "{{name}} は WiFi、BLE、仮想 COM/シリアル、legacy HID/RPM などのデバイスプロファイルに対応し、各デバイスの機能に応じて状態取得と速度制御を行います。",
+    "description": "{{name}} は WiFi、BLE、仮想 COM/シリアル、HID/RPM などのデバイスプロファイルに対応し、各デバイスの機能に応じて状態取得と速度制御を行います。",
     "images": {
       "logoAlt": "{{name}} ロゴ",
       "wordmarkAlt": "{{name}} ワードマーク",
@@ -543,7 +544,7 @@
         },
         {
           "question": "現在対応しているデバイスはどんなのがありますか？",
-          "answer": "内蔵の既定デバイスは WiFi HTTP 接続の Slim 圧風クーラー Pro です。FanControl は WiFi、BLE、仮想 COM/シリアル、legacy HID/RPM 向けのデバイスプロファイルとテンプレートも備えています。DIY デバイスでは MCU のプロトコルに合わせて接続、パケット、解析設定を正しく入力する必要があります。"
+          "answer": "内蔵の既定デバイスは WiFi HTTP 接続の Slim 圧風クーラー Pro です。FanControl は WiFi、BLE、仮想 COM/シリアル、HID/RPM 向けのデバイスプロファイルとテンプレートも備えています。DIY デバイスでは MCU のプロトコルに合わせて接続、パケット、解析設定を正しく入力する必要があります。"
         },
         {
           "question": "既存の設定はそのまま使えますか？",
@@ -888,7 +889,7 @@
       "reconnectTip": "切断後にデバイス既定モードへ戻るのを防ぐため、有効化を推奨します",
       "deviceConnection": {
         "title": "デバイス接続",
-        "description": "BLE/HID 接続方式は、インポート済みまたは手動設定したデバイス向けに引き続き使用できます。未検証のデバイス情報は通常画面には表示しません。WiFi と仮想 COM は個別の互換モードとして設定します。",
+        "description": "BLE/HID ネイティブデバイスは手動有効化不要です。ネイティブ接続時に HID と BLE のプロファイルを自動で順番に試します。WiFi と仮想 COM は互換モードとして手動選択します。",
         "overviewLabel": "デバイスアドレス",
         "transportLabel": "接続",
         "profileLabel": "プロファイル",
@@ -896,10 +897,10 @@
         "noActiveProfile": "使用中のプロファイルなし",
         "noProfilesOption": "プロファイルなし",
         "autoScanTitle": "デバイスを自動スキャン",
-        "autoScanDescription": "インポート済みまたは手動設定した BLE/HID デバイスの照合ルールをスキャンします。WiFi と仮想 COM は下の互換モードで設定します。",
+        "autoScanDescription": "インポート済みまたは手動設定した BLE/HID デバイスの照合ルールをスキャンします。WiFi と仮想 COM は下の互換モードで設定して有効化します。",
         "autoScanAction": "自動スキャン",
-        "scanAvailableDevices": "デバイスをスキャン",
-        "bluetoothScanOnlyHint": "BLE/HID の自動識別デバイスのみをスキャンします。WiFi とシリアルはここでは対象外です。",
+        "scanAvailableDevices": "ネイティブデバイスに接続",
+        "bluetoothScanOnlyHint": "HID ネイティブプロファイルを先に順番に試し、次に BLE ネイティブプロファイルを試します。WiFi と仮想シリアルは下の互換モードを使用してください。",
         "discoveredDevicesTitle": "検出済みデバイス",
         "discoveredDevicesDescription": "手動スキャン後、直接接続できる BLE/HID デバイスがここに表示されます。WiFi 検出は今後追加予定です。",
         "discoveredDevicesEmpty": "スキャンが完了しました。識別できる BLE/HID デバイスは見つかりませんでした。",
@@ -933,7 +934,7 @@
         "bleService": "サービス UUID",
         "bleWrite": "書き込み UUID",
         "bleNotify": "通知 UUID",
-        "bleHint": "BLE スキャンは有効な BLE デバイスの照合に使います。UUID とプロトコル詳細は Devices で管理します。",
+        "bleHint": "BLE スキャンは BLE ネイティブプロファイルの照合情報を補完または確認するために使います。UUID とプロトコル詳細は Devices で管理します。",
         "bleScan": "BLE スキャン",
         "bleScanFailed": "BLE スキャンに失敗しました: {{error}}",
         "bleScanEmpty": "BLE デバイスは見つかりません。現在のデバイスを使うか、Devices で詳細を追加してください。",
@@ -945,21 +946,21 @@
         "serialFrame": "フレーム",
         "serialDelimiter": "区切り",
         "serialHint": "仮想シリアルのポート、ボーレート、プロトコルは高度なデバイス設定で管理します。設定画面では有効にする保存済みデバイスだけを選択します。",
-        "hidHint": "旧 HID は分離された RPM 経路を使い、対応デバイスでのみ使用できます。",
+        "hidHint": "HID ネイティブプロファイルはネイティブ接続時に自動で順番に試されるため、互換モードで有効化する必要はありません。",
         "notConfigured": "未設定",
         "toasts": {
           "loadFailed": "デバイスプロファイルの読み込みに失敗しました: {{error}}",
           "profileRequired": "この接続方式のデバイスを先に Devices で追加またはインポートしてください。",
           "transportSaved": "接続を有効にしました",
           "transportFailed": "接続方式の更新に失敗しました: {{error}}",
-          "profileSaved": "デバイスを有効にしました",
-          "profileFailed": "デバイスの有効化に失敗しました: {{error}}",
+          "profileSaved": "互換デバイスを有効にしました",
+          "profileFailed": "互換デバイスの有効化に失敗しました: {{error}}",
           "compatibilityEnabled": "互換モードを有効にしました",
           "compatibilityDisabled": "互換モードを無効にしました",
-          "autoScanMatched": "{{device}} を照合して有効にしました",
-          "autoScanMultiple": "一致するデバイスが複数見つかりました。一覧から選択してください。",
+          "autoScanMatched": "{{device}} を照合して接続しました",
+          "autoScanMultiple": "一致するデバイスが複数見つかりました。接続するデバイスを選択してください。",
           "autoScanConnected": "現在の自動識別デバイス接続を更新しました",
-          "autoScanComplete": "スキャンが完了しました。一覧からデバイスを選択してください。",
+          "autoScanComplete": "スキャンが完了しました。接続するデバイスを選択してください。",
           "autoScanEmpty": "自動識別できるデバイスは見つかりませんでした。",
           "autoScanFound": "識別可能なデバイスが {{count}} 件見つかりました。スキャン結果から選んで接続してください。",
           "autoScanConnectedDevice": "{{device}} に接続しました",
@@ -981,10 +982,10 @@
           "serialPortRequired": "COM ポートまたは仮想ポート名を入力してください。",
           "serialBaudInvalid": "有効なボーレートを入力してください。"
         },
-        "enabledDeviceLabel": "有効なデバイス",
+        "enabledDeviceLabel": "互換デバイス",
         "pairedDeviceLabel": "紐付けデバイス",
         "savedDeviceLabel": "保存済みデバイス",
-        "noEnabledDevice": "有効なデバイスなし",
+        "noEnabledDevice": "互換デバイスなし",
         "serialPortPlaceholder": "COM3 または仮想ポート名",
         "serialDetectPorts": "ポート検出",
         "serialPortsFailed": "COM ポートを取得できません: {{error}}",

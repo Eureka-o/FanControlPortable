@@ -44,6 +44,10 @@ func userDeviceProfilesFromConfig(cfg types.AppConfig) []types.DeviceProfile {
 	return profiles
 }
 
+func isManualCompatibilityDeviceTransport(transport string) bool {
+	return types.IsManualCompatibilityDeviceTransport(transport)
+}
+
 func (a *CoreApp) GetUserDeviceProfiles() []types.DeviceProfile {
 	cfg := a.configManager.Get()
 	types.NormalizeDeviceProfileConfig(&cfg)
@@ -57,6 +61,9 @@ func (a *CoreApp) SetActiveDeviceProfile(profileID string) (types.DeviceProfile,
 	idx := deviceprofiles.FindIndex(cfg.DeviceProfiles, profileID)
 	if idx < 0 {
 		return types.DeviceProfile{}, fmt.Errorf("device profile not found")
+	}
+	if !isManualCompatibilityDeviceTransport(cfg.DeviceProfiles[idx].Transport) {
+		return types.DeviceProfile{}, fmt.Errorf("BLE/HID native devices are auto-managed")
 	}
 
 	cfg.ActiveDeviceProfileID = cfg.DeviceProfiles[idx].ID
@@ -99,7 +106,7 @@ func (a *CoreApp) SaveDeviceProfile(params ipc.SaveDeviceProfileParams) (types.D
 		cfg.DeviceProfiles[idx] = profile
 	}
 
-	if params.SetActive || cfg.ActiveDeviceProfileID == profile.ID {
+	if (params.SetActive || cfg.ActiveDeviceProfileID == profile.ID) && isManualCompatibilityDeviceTransport(profile.Transport) {
 		cfg.ActiveDeviceProfileID = profile.ID
 		cfg.DeviceTransport = profile.Transport
 		markCompatibilityModeForTransport(&cfg, profile.Transport)
@@ -147,11 +154,11 @@ func (a *CoreApp) DeleteDeviceProfile(profileID string) error {
 	}
 	if cfg.ActiveDeviceProfileID == profileID {
 		nextIdx := deviceprofiles.FindFirstByTransport(cfg.DeviceProfiles, deletedTransport)
+		if nextIdx < 0 || !isManualCompatibilityDeviceTransport(cfg.DeviceProfiles[nextIdx].Transport) {
+			nextIdx = deviceprofiles.FindFirstByTransport(cfg.DeviceProfiles, types.DeviceTransportWiFi)
+		}
 		if nextIdx < 0 {
-			nextIdx = idx
-			if nextIdx >= len(cfg.DeviceProfiles) {
-				nextIdx = len(cfg.DeviceProfiles) - 1
-			}
+			nextIdx = deviceprofiles.FindFirstByTransport(cfg.DeviceProfiles, types.DeviceTransportSerial)
 		}
 		cfg.ActiveDeviceProfileID = cfg.DeviceProfiles[nextIdx].ID
 		cfg.DeviceTransport = cfg.DeviceProfiles[nextIdx].Transport
@@ -221,13 +228,19 @@ func (a *CoreApp) ImportDeviceProfiles(code string) error {
 		cfg.ActiveDeviceProfileIDsByTransport = map[string]string{}
 	}
 	for transport, profileID := range deviceprofiles.FilterActiveIDsByTransport(activeIDsByTransport, userImported) {
+		if !isManualCompatibilityDeviceTransport(transport) {
+			continue
+		}
 		if deviceprofiles.FindIndex(cfg.DeviceProfiles, profileID) >= 0 {
 			cfg.ActiveDeviceProfileIDsByTransport[transport] = profileID
 		}
 	}
 	if activeID != "" && deviceprofiles.FindIndex(userImported, activeID) >= 0 && deviceprofiles.FindIndex(cfg.DeviceProfiles, activeID) >= 0 {
-		cfg.ActiveDeviceProfileID = activeID
 		if idx := deviceprofiles.FindIndex(cfg.DeviceProfiles, activeID); idx >= 0 {
+			if !isManualCompatibilityDeviceTransport(cfg.DeviceProfiles[idx].Transport) {
+				return a.UpdateConfig(cfg)
+			}
+			cfg.ActiveDeviceProfileID = activeID
 			cfg.DeviceTransport = cfg.DeviceProfiles[idx].Transport
 			cfg.ActiveDeviceProfileIDsByTransport[types.NormalizeDeviceTransport(cfg.DeviceProfiles[idx].Transport)] = activeID
 		}
