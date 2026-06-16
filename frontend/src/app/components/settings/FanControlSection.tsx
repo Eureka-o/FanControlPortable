@@ -38,6 +38,7 @@ interface FanControlSectionProps {
   isConnected: boolean;
   fanData: types.FanData | null;
   temperature: types.TemperatureData | null;
+  runtimeDeviceProfile?: types.DeviceProfile | null;
   supportsCustomSpeed: boolean;
   configuredDeviceCurveKey: string;
 }
@@ -70,6 +71,7 @@ export default function FanControlSection({
   isConnected,
   fanData,
   temperature,
+  runtimeDeviceProfile,
   supportsCustomSpeed,
   configuredDeviceCurveKey,
 }: FanControlSectionProps) {
@@ -77,9 +79,10 @@ export default function FanControlSection({
   const { locale } = useLocale();
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
   const [showCustomSpeedWarning, setShowCustomSpeedWarning] = useState(false);
-  const overviewSpeedUnit = getFanSpeedUnit(fanData as any, config as any);
+  const overviewRuntimeProfile = isConnected ? runtimeDeviceProfile : null;
+  const overviewSpeedUnit = getFanSpeedUnit(fanData as any, config as any, overviewRuntimeProfile as any);
   const overviewSpeedLabel = fanSpeedUnitLabel(overviewSpeedUnit);
-  const overviewSpeedRange = useMemo(() => getFanSpeedRange(config as any, overviewSpeedUnit), [config, overviewSpeedUnit]);
+  const overviewSpeedRange = useMemo(() => getFanSpeedRange(config as any, overviewSpeedUnit, overviewRuntimeProfile as any), [config, overviewRuntimeProfile, overviewSpeedUnit]);
   const defaultCustomSpeed = useMemo(() => {
     const fallback = overviewSpeedUnit === 'rpm' ? 2000 : 45;
     return clampFanSpeedToRange(fallback, overviewSpeedRange, overviewSpeedRange.min) ?? overviewSpeedRange.min;

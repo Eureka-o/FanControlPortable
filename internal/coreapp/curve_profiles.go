@@ -19,10 +19,11 @@ func (a *CoreApp) fanCurveProfilesPayloadFromConfig(cfg types.AppConfig) types.F
 }
 
 func (a *CoreApp) applyCurveProfilesConfig(cfg types.AppConfig) error {
-	unit := types.DeviceProfileSpeedUnit(&cfg)
+	unit := a.activeDeviceSpeedUnit(&cfg)
+	runtimeDeviceKey := a.activeDeviceCurveScopeKey(cfg)
 	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, unit)
-	syncSmartControlOffsetsForActiveProfile(&cfg)
-	storeActiveDeviceFanCurveState(&cfg)
+	syncSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey)
+	storeDeviceFanCurveStateForKeyAndUnit(&cfg, runtimeDeviceKey, cfg, unit)
 	if err := a.configManager.Update(cfg); err != nil {
 		return err
 	}
@@ -37,11 +38,13 @@ func (a *CoreApp) GetFanCurveProfiles() types.FanCurveProfilesPayload {
 	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
-	changed := loadActiveDeviceFanCurveState(&cfg, true)
-	if curveprofiles.NormalizeConfigForUnit(&cfg, types.DeviceProfileSpeedUnit(&cfg)) {
+	unit := a.activeDeviceSpeedUnit(&cfg)
+	runtimeDeviceKey := a.activeDeviceCurveScopeKey(cfg)
+	changed := loadDeviceFanCurveStateForKey(&cfg, runtimeDeviceKey, unit, true)
+	if curveprofiles.NormalizeConfigForUnit(&cfg, unit) {
 		changed = true
 	}
-	if storeActiveDeviceFanCurveState(&cfg) {
+	if storeDeviceFanCurveStateForKeyAndUnit(&cfg, runtimeDeviceKey, cfg, unit) {
 		changed = true
 	}
 	if changed {
@@ -58,9 +61,10 @@ func (a *CoreApp) SetActiveFanCurveProfile(profileID string) (types.FanCurveProf
 	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
-	unit := types.DeviceProfileSpeedUnit(&cfg)
+	unit := a.activeDeviceSpeedUnit(&cfg)
+	runtimeDeviceKey := a.activeDeviceCurveScopeKey(cfg)
 	curveprofiles.NormalizeConfigForUnit(&cfg, unit)
-	storeSmartControlOffsetsForActiveProfile(&cfg)
+	storeSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey)
 
 	idx := curveprofiles.FindIndex(cfg.FanCurveProfiles, profileID)
 	if idx < 0 {
@@ -69,7 +73,7 @@ func (a *CoreApp) SetActiveFanCurveProfile(profileID string) (types.FanCurveProf
 
 	cfg.ActiveFanCurveProfileID = cfg.FanCurveProfiles[idx].ID
 	cfg.FanCurve = curveprofiles.CloneCurve(cfg.FanCurveProfiles[idx].Curve)
-	syncSmartControlOffsetsForActiveProfile(&cfg)
+	syncSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey)
 	if err := a.applyCurveProfilesConfig(cfg); err != nil {
 		return types.FanCurveProfile{}, err
 	}
@@ -85,9 +89,10 @@ func (a *CoreApp) CycleFanCurveProfile() (types.FanCurveProfile, error) {
 	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
-	unit := types.DeviceProfileSpeedUnit(&cfg)
+	unit := a.activeDeviceSpeedUnit(&cfg)
+	runtimeDeviceKey := a.activeDeviceCurveScopeKey(cfg)
 	curveprofiles.NormalizeConfigForUnit(&cfg, unit)
-	storeSmartControlOffsetsForActiveProfile(&cfg)
+	storeSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey)
 
 	if len(cfg.FanCurveProfiles) == 0 {
 		return types.FanCurveProfile{}, fmt.Errorf("暂无可用温控曲线方案")
@@ -97,7 +102,7 @@ func (a *CoreApp) CycleFanCurveProfile() (types.FanCurveProfile, error) {
 	nextIdx := (idx + 1) % len(cfg.FanCurveProfiles)
 	cfg.ActiveFanCurveProfileID = cfg.FanCurveProfiles[nextIdx].ID
 	cfg.FanCurve = curveprofiles.CloneCurve(cfg.FanCurveProfiles[nextIdx].Curve)
-	syncSmartControlOffsetsForActiveProfile(&cfg)
+	syncSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey)
 
 	if err := a.applyCurveProfilesConfig(cfg); err != nil {
 		return types.FanCurveProfile{}, err
@@ -115,9 +120,10 @@ func (a *CoreApp) SaveFanCurveProfile(params ipc.SaveFanCurveProfileParams) (typ
 	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
-	unit := types.DeviceProfileSpeedUnit(&cfg)
+	unit := a.activeDeviceSpeedUnit(&cfg)
+	runtimeDeviceKey := a.activeDeviceCurveScopeKey(cfg)
 	curveprofiles.NormalizeConfigForUnit(&cfg, unit)
-	storeSmartControlOffsetsForActiveProfile(&cfg)
+	storeSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey)
 
 	curve := curveprofiles.CloneCurve(params.Curve)
 	if err := cfgpkg.ValidateFanCurveForUnit(curve, unit); err != nil {
@@ -143,7 +149,7 @@ func (a *CoreApp) SaveFanCurveProfile(params ipc.SaveFanCurveProfileParams) (typ
 	if params.SetActive || cfg.ActiveFanCurveProfileID == cfg.FanCurveProfiles[idx].ID {
 		cfg.ActiveFanCurveProfileID = cfg.FanCurveProfiles[idx].ID
 		cfg.FanCurve = curveprofiles.CloneCurve(cfg.FanCurveProfiles[idx].Curve)
-		syncSmartControlOffsetsForActiveProfile(&cfg)
+		syncSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey)
 	} else if _, ok := cfg.SmartControl.LearnedOffsetsByProfile[cfg.FanCurveProfiles[idx].ID]; !ok {
 		cfg.SmartControl.LearnedOffsetsByProfile[cfg.FanCurveProfiles[idx].ID] = make([]int, len(curve))
 	}
@@ -161,9 +167,10 @@ func (a *CoreApp) DeleteFanCurveProfile(profileID string) error {
 	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
-	unit := types.DeviceProfileSpeedUnit(&cfg)
+	unit := a.activeDeviceSpeedUnit(&cfg)
+	runtimeDeviceKey := a.activeDeviceCurveScopeKey(cfg)
 	curveprofiles.NormalizeConfigForUnit(&cfg, unit)
-	storeSmartControlOffsetsForActiveProfile(&cfg)
+	storeSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey)
 
 	if len(cfg.FanCurveProfiles) <= 1 {
 		return fmt.Errorf("至少保留一个温控曲线方案")
@@ -187,7 +194,7 @@ func (a *CoreApp) DeleteFanCurveProfile(profileID string) error {
 		}
 		cfg.ActiveFanCurveProfileID = cfg.FanCurveProfiles[nextIdx].ID
 		cfg.FanCurve = curveprofiles.CloneCurve(cfg.FanCurveProfiles[nextIdx].Curve)
-		syncSmartControlOffsetsForActiveProfile(&cfg)
+		syncSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey)
 	}
 
 	return a.applyCurveProfilesConfig(cfg)
@@ -198,9 +205,10 @@ func (a *CoreApp) ExportFanCurveProfiles() (string, error) {
 	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
-	unit := types.DeviceProfileSpeedUnit(&cfg)
+	unit := a.activeDeviceSpeedUnit(&cfg)
+	runtimeDeviceKey := a.activeDeviceCurveScopeKey(cfg)
 	curveprofiles.NormalizeConfigForUnit(&cfg, unit)
-	storeSmartControlOffsetsForActiveProfile(&cfg)
+	storeSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey)
 	if idx := curveprofiles.FindIndex(cfg.FanCurveProfiles, cfg.ActiveFanCurveProfileID); idx >= 0 {
 		cfg.FanCurveProfiles[idx].Curve = curveprofiles.CloneCurve(cfg.FanCurve)
 	}
@@ -220,10 +228,11 @@ func (a *CoreApp) ImportFanCurveProfiles(code string) error {
 	cfg := a.configManager.Get()
 	cfg.FanCurveProfiles = curveprofiles.CloneProfiles(profiles)
 	cfg.ActiveFanCurveProfileID = activeID
-	if curveprofiles.NormalizeConfigForUnit(&cfg, types.DeviceProfileSpeedUnit(&cfg)) {
+	unit := a.activeDeviceSpeedUnit(&cfg)
+	if curveprofiles.NormalizeConfigForUnit(&cfg, unit) {
 		// normalized in place
 	}
-	syncSmartControlOffsetsForActiveProfile(&cfg)
+	syncSmartControlOffsetsForDeviceKey(&cfg, a.activeDeviceCurveScopeKey(cfg))
 
 	return a.applyCurveProfilesConfig(cfg)
 }

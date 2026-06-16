@@ -94,7 +94,7 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	}
 	cfg.WiFiSmartStartStopStandbySpeed = types.ClampWiFiSmartStartStopStandbyPercent(cfg.WiFiSmartStartStopStandbySpeed)
 	types.NormalizeDeviceProfileConfig(&cfg)
-	unit := types.DeviceProfileSpeedUnit(&cfg)
+	unit := a.activeDeviceSpeedUnit(&cfg)
 	cfg.TempSource = types.NormalizeTempSource(cfg.TempSource)
 	cfg.GpuDevice = types.NormalizeDeviceSelection(cfg.GpuDevice)
 	cfg.CpuSensor = types.NormalizeSensorSelection(cfg.CpuSensor)
@@ -117,8 +117,9 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	}
 	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, unit)
 	prepareSmartControlOffsetsForUpdate(&cfg, oldCfg)
-	syncSmartControlOffsetsForActiveProfile(&cfg)
-	storeActiveDeviceFanCurveState(&cfg)
+	runtimeDeviceKey := a.activeDeviceCurveScopeKey(cfg)
+	syncSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey)
+	storeDeviceFanCurveStateForKeyAndUnit(&cfg, runtimeDeviceKey, cfg, unit)
 	cfg.LegionFnQ = types.NormalizeLegionFnQConfig(cfg.LegionFnQ)
 	if a.legionFnQSupportChecked.Load() && !a.legionFnQSupported.Load() && (cfg.LegionFnQ.Enabled || cfg.LegionFnQ.TakeOverFan) {
 		return fmt.Errorf("Lenovo Legion Fn+Q 仅支持拯救者设备")
@@ -170,7 +171,7 @@ func (a *CoreApp) SetFanCurve(curve []types.FanCurvePoint) error {
 	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
-	unit := types.DeviceProfileSpeedUnit(&cfg)
+	unit := a.activeDeviceSpeedUnit(&cfg)
 	if err := config.ValidateFanCurveForUnit(curve, unit); err != nil {
 		return err
 	}
@@ -182,8 +183,9 @@ func (a *CoreApp) SetFanCurve(curve []types.FanCurvePoint) error {
 		cfg.FanCurveProfiles[idx].Curve = curveprofiles.CloneCurve(cfg.FanCurve)
 	}
 	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, unit)
-	storeSmartControlOffsetsForActiveProfile(&cfg)
-	storeActiveDeviceFanCurveState(&cfg)
+	runtimeDeviceKey := a.activeDeviceCurveScopeKey(cfg)
+	storeSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey)
+	storeDeviceFanCurveStateForKeyAndUnit(&cfg, runtimeDeviceKey, cfg, unit)
 	return a.configManager.Update(cfg)
 }
 
@@ -194,7 +196,7 @@ func (a *CoreApp) ResetLearnedOffsets() error {
 
 	cfg := a.configManager.Get()
 	cfg.SmartControl = smartcontrol.ResetLearnedState(cfg.SmartControl, cfg.FanCurve)
-	resetSmartControlOffsetsForActiveProfile(&cfg)
+	resetSmartControlOffsetsForDeviceKey(&cfg, a.activeDeviceCurveScopeKey(cfg))
 	if err := a.configManager.Update(cfg); err != nil {
 		return err
 	}
@@ -255,7 +257,7 @@ func (a *CoreApp) applyCurrentGearSetting() error {
 	}
 	level := a.getRememberedManualLevel(setGear, cfg.ManualLevel)
 	rpm := cfg.ResolveGearRPM(setGear, level)
-	unit := types.DeviceProfileSpeedUnit(&cfg)
+	unit := a.activeDeviceSpeedUnit(&cfg)
 	if rpm <= 0 {
 		return fmt.Errorf("当前手动挡位没有可用速度")
 	}
@@ -278,7 +280,7 @@ func (a *CoreApp) SetManualGear(gear, level string) bool {
 		cfg.ManualGearLevels = map[string]string{}
 	}
 	cfg.ManualGearLevels[gear] = normalizeManualLevel(level)
-	unit := types.DeviceProfileSpeedUnit(&cfg)
+	unit := a.activeDeviceSpeedUnit(&cfg)
 	types.NormalizeManualGearRPMForUnit(&cfg, unit)
 	rpm := cfg.ResolveGearRPM(gear, level)
 	a.configManager.Update(cfg)
@@ -296,7 +298,7 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 	a.mutex.Lock()
 
 	cfg := a.configManager.Get()
-	unit := types.DeviceProfileSpeedUnit(&cfg)
+	unit := a.activeDeviceSpeedUnit(&cfg)
 	wasConnected := a.isConnected
 
 	if enabled {
@@ -532,7 +534,7 @@ func (a *CoreApp) SetDebugMode(enabled bool) error {
 
 	cfg := a.configManager.Get()
 	cfg.DebugMode = enabled
-	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, enabled, types.DeviceProfileSpeedUnit(&cfg))
+	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, enabled, a.activeDeviceSpeedUnit(&cfg))
 	a.debugMode = enabled
 
 	if a.logger != nil {

@@ -54,10 +54,16 @@ func mergeLearnedOffsetsMaps(base, overlay map[string][]int) map[string][]int {
 }
 
 func activeLearningScopeKey(cfg *types.AppConfig) string {
+	if cfg == nil {
+		return ""
+	}
+	return activeLearningScopeKeyForDeviceKey(cfg, deviceCurveScopeKey(*cfg))
+}
+
+func activeLearningScopeKeyForDeviceKey(cfg *types.AppConfig, deviceKey string) string {
 	if cfg == nil || cfg.ActiveFanCurveProfileID == "" {
 		return ""
 	}
-	deviceKey := deviceCurveScopeKey(*cfg)
 	if deviceKey == "" {
 		return cfg.ActiveFanCurveProfileID
 	}
@@ -73,11 +79,10 @@ func hasScopedLearningOffsets(offsets map[string][]int) bool {
 	return false
 }
 
-func migrateLegacyLearningOffsetsToActiveDevice(cfg *types.AppConfig) bool {
+func migrateLegacyLearningOffsetsToDeviceKey(cfg *types.AppConfig, deviceKey string) bool {
 	if cfg == nil || len(cfg.SmartControl.LearnedOffsetsByProfile) == 0 || hasScopedLearningOffsets(cfg.SmartControl.LearnedOffsetsByProfile) {
 		return false
 	}
-	deviceKey := deviceCurveScopeKey(*cfg)
 	if deviceKey == "" {
 		return false
 	}
@@ -95,6 +100,13 @@ func migrateLegacyLearningOffsetsToActiveDevice(cfg *types.AppConfig) bool {
 		changed = true
 	}
 	return changed
+}
+
+func migrateLegacyLearningOffsetsToActiveDevice(cfg *types.AppConfig) bool {
+	if cfg == nil {
+		return false
+	}
+	return migrateLegacyLearningOffsetsToDeviceKey(cfg, deviceCurveScopeKey(*cfg))
 }
 
 func prepareSmartControlOffsetsForUpdate(cfg *types.AppConfig, oldCfg types.AppConfig) bool {
@@ -117,7 +129,14 @@ func prepareSmartControlOffsetsForUpdate(cfg *types.AppConfig, oldCfg types.AppC
 }
 
 func storeSmartControlOffsetsForActiveProfile(cfg *types.AppConfig) bool {
-	key := activeLearningScopeKey(cfg)
+	if cfg == nil {
+		return false
+	}
+	return storeSmartControlOffsetsForDeviceKey(cfg, deviceCurveScopeKey(*cfg))
+}
+
+func storeSmartControlOffsetsForDeviceKey(cfg *types.AppConfig, deviceKey string) bool {
+	key := activeLearningScopeKeyForDeviceKey(cfg, deviceKey)
 	if cfg == nil || key == "" {
 		return false
 	}
@@ -127,12 +146,19 @@ func storeSmartControlOffsetsForActiveProfile(cfg *types.AppConfig) bool {
 }
 
 func syncSmartControlOffsetsForActiveProfile(cfg *types.AppConfig) bool {
-	key := activeLearningScopeKey(cfg)
+	if cfg == nil {
+		return false
+	}
+	return syncSmartControlOffsetsForDeviceKey(cfg, deviceCurveScopeKey(*cfg))
+}
+
+func syncSmartControlOffsetsForDeviceKey(cfg *types.AppConfig, deviceKey string) bool {
+	key := activeLearningScopeKeyForDeviceKey(cfg, deviceKey)
 	if cfg == nil || key == "" {
 		return false
 	}
 	ensureLearnedOffsetsByProfile(cfg)
-	changed := migrateLegacyLearningOffsetsToActiveDevice(cfg)
+	changed := migrateLegacyLearningOffsetsToDeviceKey(cfg, deviceKey)
 	expectedLen := len(cfg.FanCurve)
 	loaded, ok := cfg.SmartControl.LearnedOffsetsByProfile[key]
 	if !ok {
@@ -178,7 +204,14 @@ func resizeIntSlice(input []int, size int) []int {
 }
 
 func resetSmartControlOffsetsForActiveProfile(cfg *types.AppConfig) {
-	key := activeLearningScopeKey(cfg)
+	if cfg == nil {
+		return
+	}
+	resetSmartControlOffsetsForDeviceKey(cfg, deviceCurveScopeKey(*cfg))
+}
+
+func resetSmartControlOffsetsForDeviceKey(cfg *types.AppConfig, deviceKey string) {
+	key := activeLearningScopeKeyForDeviceKey(cfg, deviceKey)
 	if cfg == nil || key == "" {
 		return
 	}

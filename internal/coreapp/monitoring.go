@@ -95,6 +95,31 @@ func compactTemperatureEventPayload(current, previous types.TemperatureData) typ
 	return compact
 }
 
+func mergeTemperatureHardwareMetadata(previous, incoming types.TemperatureData) types.TemperatureData {
+	if incoming.CpuModel == "" {
+		incoming.CpuModel = previous.CpuModel
+	}
+	if incoming.GpuModel == "" {
+		incoming.GpuModel = previous.GpuModel
+	}
+	if incoming.CpuSensors == nil {
+		incoming.CpuSensors = previous.CpuSensors
+	}
+	if incoming.GpuSensors == nil || (incoming.GPUReadState == types.GPUReadStateNotPolled && len(incoming.GpuSensors) == 0) {
+		incoming.GpuSensors = previous.GpuSensors
+	}
+	if incoming.CpuPowerSensors == nil {
+		incoming.CpuPowerSensors = previous.CpuPowerSensors
+	}
+	if incoming.GpuPowerSensors == nil || (incoming.GPUReadState == types.GPUReadStateNotPolled && len(incoming.GpuPowerSensors) == 0) {
+		incoming.GpuPowerSensors = previous.GpuPowerSensors
+	}
+	if incoming.GpuDevices == nil || (incoming.GPUReadState == types.GPUReadStateNotPolled && len(incoming.GpuDevices) == 0) {
+		incoming.GpuDevices = previous.GpuDevices
+	}
+	return incoming
+}
+
 func (a *CoreApp) stopTemperatureMonitoring() {
 	if !a.monitoringTemp.Load() {
 		return
@@ -163,7 +188,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	smartCfgRevision := cfgRevision - 1
 
 	// 每个曲线点对应一个稳态采样桶。
-	speedUnit := types.DeviceProfileSpeedUnit(&cfg)
+	speedUnit := a.activeDeviceSpeedUnit(&cfg)
 	steadyObserver := newStableObserverForActiveUnit(len(cfg.FanCurve), speedUnit)
 	timer := time.NewTimer(updateInterval)
 	wifiOverviewTimer := time.NewTimer(wifiOverviewStateRefreshInterval)
@@ -233,6 +258,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 
 			a.mutex.Lock()
 			previousTemp := a.currentTemp
+			temp = mergeTemperatureHardwareMetadata(previousTemp, temp)
 			a.currentTemp = temp
 			a.mutex.Unlock()
 
@@ -250,7 +276,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 
 			if cfgRevision != smartCfgRevision {
 				smartChanged := false
-				speedUnit = types.DeviceProfileSpeedUnit(&cfg)
+				speedUnit = a.activeDeviceSpeedUnit(&cfg)
 				smartCfg, smartChanged = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, speedUnit)
 				smartCfgRevision = cfgRevision
 				if smartChanged {
@@ -263,7 +289,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			}
 
 			if cfg.AutoControl && temp.ControlTemp > 0 {
-				speedUnit = types.DeviceProfileSpeedUnit(&cfg)
+				speedUnit = a.activeDeviceSpeedUnit(&cfg)
 				controlCurve := smartcontrol.CurveForUnit(cfg.FanCurve, speedUnit)
 				// 采样窗口变化时重置 EMA，避免阶跃。
 				newSampleCount := max(cfg.TempSampleCount, 1)
@@ -385,7 +411,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 						if changed {
 							smartCfg.LearnedOffsets = newOffsets
 							cfg.SmartControl = smartCfg
-							storeSmartControlOffsetsForActiveProfile(&cfg)
+							storeSmartControlOffsetsForDeviceKey(&cfg, a.activeDeviceCurveScopeKey(cfg))
 							a.configManager.Set(cfg)
 							learningDirty = true
 						}

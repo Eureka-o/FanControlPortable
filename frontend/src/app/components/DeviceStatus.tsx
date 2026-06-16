@@ -689,11 +689,11 @@ export default function DeviceStatus({
   const activeDeviceName = activeDeviceProfile?.displayName?.trim() || '';
   const deviceModelName = (isConnected ? deviceModel?.trim() : '') || activeDeviceName || deviceModel?.trim() || t('deviceStatus.device.unknown');
   const modeTitle = config.autoControl ? t('deviceStatus.mode.smartControl') : config.customSpeedEnabled ? t('deviceStatus.mode.fixedSpeed') : t('deviceStatus.mode.manualStrategy');
-  const fanSpeedUnit = getFanSpeedUnit(fanData as any, config as any);
+  const fanSpeedUnit = getFanSpeedUnit(fanData as any, config as any, runtimeDeviceProfile as any);
   const fanSpeedLabel = fanSpeedUnitLabel(fanSpeedUnit);
-  const fanSpeedRange = useMemo(() => getFanSpeedRange(config as any, fanSpeedUnit), [config, fanSpeedUnit]);
-  const currentFanSpeed = clampFanSpeedToRange(readCurrentFanSpeed(fanData, fanSpeedUnit, config as any), fanSpeedRange);
-  const targetFanSpeed = clampFanSpeedToRange(readTargetFanSpeed(fanData, fanSpeedUnit, config as any), fanSpeedRange);
+  const fanSpeedRange = useMemo(() => getFanSpeedRange(config as any, fanSpeedUnit, runtimeDeviceProfile as any), [config, fanSpeedUnit, runtimeDeviceProfile]);
+  const currentFanSpeed = clampFanSpeedToRange(readCurrentFanSpeed(fanData, fanSpeedUnit, config as any, runtimeDeviceProfile as any), fanSpeedRange);
+  const targetFanSpeed = clampFanSpeedToRange(readTargetFanSpeed(fanData, fanSpeedUnit, config as any, runtimeDeviceProfile as any), fanSpeedRange);
   const fixedModeSpeed = clampFanSpeedToRange(config.customSpeedRPM, fanSpeedRange, currentFanSpeed);
   const modeDesc = config.autoControl
     ? t('deviceStatus.mode.smartDescription')

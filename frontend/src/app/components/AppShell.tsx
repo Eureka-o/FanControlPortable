@@ -212,9 +212,9 @@ function StatusBadges({
   compact?: boolean;
 }) {
   const { t } = useTranslation();
-  const fanSpeedUnit = getFanSpeedUnit(fanData as any, config as any);
-  const fanSpeedRange = getFanSpeedRange(config as any, fanSpeedUnit);
-  const fanSpeed = clampFanSpeedToRange(readCurrentFanSpeed(fanData, fanSpeedUnit, config as any), fanSpeedRange);
+  const fanSpeedUnit = getFanSpeedUnit(fanData as any, config as any, runtimeDeviceProfile as any);
+  const fanSpeedRange = getFanSpeedRange(config as any, fanSpeedUnit, runtimeDeviceProfile as any);
+  const fanSpeed = clampFanSpeedToRange(readCurrentFanSpeed(fanData, fanSpeedUnit, config as any, runtimeDeviceProfile as any), fanSpeedRange);
   const fanSpeedLabel = fanSpeedUnitLabel(fanSpeedUnit);
   const fanSpinDuration = getFanSpinDuration(fanSpeed, fanSpeedRange.min, fanSpeedRange.max);
   const baseClass = compact
