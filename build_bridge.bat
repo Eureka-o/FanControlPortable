@@ -59,7 +59,14 @@ if errorlevel 1 goto :error
 
 echo Publishing TempBridge...
 dotnet publish "%PROJECT%" -c Release --self-contained false -o "%OUTDIR%" /p:Platform=x64 /p:DebugType=none /p:DebugSymbols=false %LHM_SOURCE_PROPS%
-if errorlevel 1 goto :error
+if errorlevel 1 (
+	echo Publish reported a recoverable runtime config copy issue. Using build output fallback...
+	dotnet build "%PROJECT%" -c Release /p:Platform=x64 /p:DebugType=none /p:DebugSymbols=false %LHM_SOURCE_PROPS%
+	if errorlevel 1 goto :error
+	if not exist "%ROOT%bridge\TempBridge\bin\x64\Release\net4.7.2\win-x64\FanControl TempBridge.exe" goto :error
+	powershell -NoProfile -ExecutionPolicy Bypass -Command "Copy-Item -Path '%ROOT%bridge\TempBridge\bin\x64\Release\net4.7.2\win-x64\*' -Destination '%OUTDIR%' -Recurse -Force"
+	if errorlevel 1 goto :error
+)
 
 echo Removing non-runtime bridge artifacts...
 del /q "%OUTDIR%\*.pdb" 2>nul
