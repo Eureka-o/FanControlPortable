@@ -276,11 +276,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
         const info = deviceInfo as {
           productId?: string;
           model?: string;
+          deviceName?: string;
           currentData?: types.FanData | null;
           deviceProfile?: types.DeviceProfile | null;
           deviceCapabilities?: types.DeviceCapabilities | null;
         };
         const settings = (deviceInfo as { deviceSettings?: DeviceSettings | null })?.deviceSettings || null;
+        const connectedDeviceName = [
+          info.deviceName,
+          info.deviceProfile?.displayName,
+          info.deviceProfile?.model,
+          info.model,
+        ].map((value) => (typeof value === 'string' ? value.trim() : '')).find(Boolean);
         set({
           isConnected: true,
           deviceProductId: info.productId || null,
@@ -292,6 +299,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
           coreServiceError: null,
           error: null,
         });
+        if (connectedDeviceName) {
+          toast.success(i18n.t('store.device.connectedTitle'), {
+            description: i18n.t('store.device.connectedDescription', { device: connectedDeviceName }),
+            duration: 2200,
+          });
+        }
         void get().refreshDeviceContext();
       })
     );

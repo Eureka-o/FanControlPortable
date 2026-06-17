@@ -697,7 +697,19 @@ export default function DeviceStatus({
   };
 
   const activeDeviceName = activeDeviceProfile?.displayName?.trim() || '';
-  const deviceModelName = (isConnected ? deviceModel?.trim() : '') || activeDeviceName || deviceModel?.trim() || t('deviceStatus.device.unknown');
+  const configuredCompatibilityTransport = ((configuredDeviceProfile?.transport || (config as any).deviceTransport || '') as string).trim().toLowerCase();
+  const configuredCompatibilityEnabled =
+    configuredCompatibilityTransport === 'wifi'
+      ? (config as any).wifiCompatibilityEnabled === true
+      : configuredCompatibilityTransport === 'serial'
+        ? (config as any).serialCompatibilityEnabled === true
+        : false;
+  const shouldShowDisconnectedDeviceName = !isConnected && configuredCompatibilityEnabled && activeDeviceName !== '';
+  const deviceModelName = isConnected
+    ? (deviceModel?.trim() || activeDeviceName || t('deviceStatus.device.unknown'))
+    : shouldShowDisconnectedDeviceName
+      ? (activeDeviceName || deviceModel?.trim() || t('deviceStatus.device.unknown'))
+      : t('deviceStatus.disconnected.title');
   const modeTitle = config.autoControl ? t('deviceStatus.mode.smartControl') : config.customSpeedEnabled ? t('deviceStatus.mode.fixedSpeed') : t('deviceStatus.mode.manualStrategy');
   const fanSpeedUnit = getFanSpeedUnit(fanData as any, config as any, runtimeDeviceProfile as any);
   const fanSpeedLabel = fanSpeedUnitLabel(fanSpeedUnit);
@@ -803,7 +815,11 @@ export default function DeviceStatus({
               )}
               {!isConnected && (
                 <p className={clsx('mt-1 text-xs', coreServiceError ? 'text-destructive' : 'text-muted-foreground')}>
-                  {coreServiceError ? t('deviceStatus.hero.coreUnavailable') : t('deviceStatus.hero.waitingDeviceConnection', { name: deviceModelName })}
+                  {coreServiceError
+                    ? t('deviceStatus.hero.coreUnavailable')
+                    : shouldShowDisconnectedDeviceName
+                      ? t('deviceStatus.hero.waitingDeviceConnection', { name: deviceModelName })
+                      : t('deviceStatus.disconnected.description')}
                 </p>
               )}
             </div>
@@ -883,8 +899,16 @@ export default function DeviceStatus({
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-muted">
             <Wifi className="h-7 w-7 text-muted-foreground" />
           </div>
-          <h3 className="mb-1.5 text-lg font-semibold">{t('deviceStatus.disconnected.titleWithDevice', { name: deviceModelName })}</h3>
-          <p className="mb-5 text-base text-muted-foreground">{t('deviceStatus.disconnected.descriptionWithDevice', { name: deviceModelName })}</p>
+          <h3 className="mb-1.5 text-lg font-semibold">
+            {shouldShowDisconnectedDeviceName
+              ? t('deviceStatus.disconnected.titleWithDevice', { name: deviceModelName })
+              : t('deviceStatus.disconnected.title')}
+          </h3>
+          <p className="mb-5 text-base text-muted-foreground">
+            {shouldShowDisconnectedDeviceName
+              ? t('deviceStatus.disconnected.descriptionWithDevice', { name: deviceModelName })
+              : t('deviceStatus.disconnected.description')}
+          </p>
           <Button onClick={onConnect} size="md" icon={<RotateCw className="h-4 w-4" />}>
             {t('deviceStatus.actions.connectDevice')}
           </Button>

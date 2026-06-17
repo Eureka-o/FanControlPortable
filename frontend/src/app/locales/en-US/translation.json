@@ -361,6 +361,10 @@
       "successTitle": "Feature updated",
       "failureTitle": "Action failed"
     },
+    "device": {
+      "connectedTitle": "Device connected",
+      "connectedDescription": "{{device}}"
+    },
     "legionFnQ": {
       "modeChangedTitle": "Legion performance mode changed",
       "modeDescription": "Current mode: {{mode}}"
@@ -457,7 +461,7 @@
     },
     "disconnected": {
       "title": "Device not connected",
-      "description": "Enter the device address in Settings, then connect the cooler.",
+      "description": "Connect a device to search for available hardware.",
       "titleWithDevice": "{{name}} is not connected",
       "descriptionWithDevice": "{{name}} is the enabled device. Check its connection type and address, then connect."
     },

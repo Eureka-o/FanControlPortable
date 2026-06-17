@@ -429,33 +429,32 @@ func (a *CoreApp) ConnectDevice() bool {
 	types.NormalizeDeviceProfileConfig(&cfg)
 
 	a.configureDeviceManager(cfg)
+	if compatibilityConnectionEnabled(cfg) {
+		a.lastConnectionWasNative.Store(false)
+		if shouldTryDynamicWiFiCompatibility(cfg) {
+			_ = a.recoverDynamicWiFiEndpoint(&cfg)
+		}
+		a.configureDeviceManager(cfg)
+		success, deviceInfo := a.deviceManager.Connect()
+		if !success && a.recoverDynamicWiFiEndpoint(&cfg) {
+			success, deviceInfo = a.deviceManager.Connect()
+		}
+		if success {
+			a.finishSuccessfulDeviceConnection(deviceInfo, "ConnectDevice")
+		} else if a.ipcServer != nil {
+			a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "连接失败")
+		}
+		return success
+	}
+
 	if success, deviceInfo := a.deviceManager.AutoConnectNativeProfiles(cfg.DeviceProfiles); success {
 		a.finishSuccessfulDeviceConnection(deviceInfo, "ConnectDevice")
 		return true
 	}
-
-	a.lastConnectionWasNative.Store(false)
-	if !compatibilityConnectionEnabled(cfg) {
-		if a.ipcServer != nil {
-			a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "未发现可自动识别的 BLE/HID 设备，且未启用兼容设备")
-		}
-		return false
+	if a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "未发现可自动识别的 BLE/HID 设备，且未启用兼容设备")
 	}
-
-	if shouldTryDynamicWiFiCompatibility(cfg) {
-		_ = a.recoverDynamicWiFiEndpoint(&cfg)
-	}
-	a.configureDeviceManager(cfg)
-	success, deviceInfo := a.deviceManager.Connect()
-	if !success && a.recoverDynamicWiFiEndpoint(&cfg) {
-		success, deviceInfo = a.deviceManager.Connect()
-	}
-	if success {
-		a.finishSuccessfulDeviceConnection(deviceInfo, "ConnectDevice")
-	} else if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "连接失败")
-	}
-	return success
+	return false
 }
 
 func (a *CoreApp) AutoScanDevices() map[string]any {

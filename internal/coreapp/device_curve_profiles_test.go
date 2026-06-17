@@ -147,6 +147,25 @@ func TestNativeRuntimeCurveStateInheritsLegacyNativeCurve(t *testing.T) {
 	}
 }
 
+func TestNativeRuntimeStateInheritsLegacyRPMManualGear(t *testing.T) {
+	bs3pro := types.FlyDigiBS3PROProfile()
+	cfg := types.GetDefaultConfig(false)
+	cfg.ManualGearRPM = types.CloneDefaultRPMManualGearRPM()
+	cfg.ManualGearRPM["强劲"]["高"] = 4200
+
+	changed := loadDeviceFanCurveStateForProfile(&cfg, bs3pro, types.FanSpeedUnitRPM, false)
+	if !changed {
+		t.Fatal("expected native runtime state to inherit legacy manual gear table")
+	}
+	if got := cfg.ManualGearRPM["强劲"]["高"]; got != 4200 {
+		t.Fatalf("runtime manual gear 强劲/高 = %d, want 4200", got)
+	}
+	state := cfg.FanCurveProfilesByDevice[deviceCurveScopeKeyForProfile(bs3pro)]
+	if got := state.ManualGearRPM["强劲"]["高"]; got != 4200 {
+		t.Fatalf("stored bs3pro manual gear 强劲/高 = %d, want 4200", got)
+	}
+}
+
 func TestLearningOffsetsAreScopedByDeviceAndCurveProfile(t *testing.T) {
 	wifi := types.DefaultWiFiPercentProfile("10.0.0.25")
 	rpm := testRPMDeviceProfile()

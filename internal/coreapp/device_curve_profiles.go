@@ -10,11 +10,77 @@ import (
 
 const deviceCurveScopeSeparator = "::"
 
+func cloneManualGearRPMMap(input map[string]map[string]int) map[string]map[string]int {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]map[string]int, len(input))
+	for gear, levels := range input {
+		gear = strings.TrimSpace(gear)
+		if gear == "" || len(levels) == 0 {
+			continue
+		}
+		inner := make(map[string]int, len(levels))
+		for level, rpm := range levels {
+			if trimmed := strings.TrimSpace(level); trimmed != "" {
+				inner[trimmed] = rpm
+			}
+		}
+		if len(inner) > 0 {
+			out[gear] = inner
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func manualGearValueRangeForUnit(unit string) (int, int) {
+	if types.IsRPMSpeedUnit(unit) {
+		return types.LegacyRPMManualGearMin, types.LegacyRPMManualGearMax
+	}
+	return types.ManualGearMinRPM, types.ManualGearMaxRPM
+}
+
+func manualGearRPMMapCompatibleWithUnit(input map[string]map[string]int, unit string) bool {
+	if len(input) == 0 {
+		return false
+	}
+	minValue, maxValue := manualGearValueRangeForUnit(unit)
+	for _, gear := range types.ManualGearOrder {
+		levels := input[gear]
+		if levels == nil {
+			return false
+		}
+		for _, level := range types.ManualLevelOrder {
+			value, ok := levels[level]
+			if !ok || value < minValue || value > maxValue {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func normalizedManualGearRPMMapForUnit(input map[string]map[string]int, unit string) map[string]map[string]int {
+	tmp := types.AppConfig{ManualGearRPM: cloneManualGearRPMMap(input)}
+	types.NormalizeManualGearRPMForUnit(&tmp, unit)
+	return cloneManualGearRPMMap(tmp.ManualGearRPM)
+}
+
+func manualGearRPMMapLooksDefaultForUnit(input map[string]map[string]int, unit string) bool {
+	normalized := normalizedManualGearRPMMapForUnit(input, unit)
+	defaults := normalizedManualGearRPMMapForUnit(types.CloneDefaultManualGearRPMForUnit(unit), unit)
+	return reflect.DeepEqual(normalized, defaults)
+}
+
 func cloneDeviceFanCurveState(state types.DeviceFanCurveProfilesState) types.DeviceFanCurveProfilesState {
 	return types.DeviceFanCurveProfilesState{
-		Profiles: curveprofiles.CloneProfiles(state.Profiles),
-		ActiveID: strings.TrimSpace(state.ActiveID),
-		FanCurve: curveprofiles.CloneCurve(state.FanCurve),
+		Profiles:      curveprofiles.CloneProfiles(state.Profiles),
+		ActiveID:      strings.TrimSpace(state.ActiveID),
+		FanCurve:      curveprofiles.CloneCurve(state.FanCurve),
+		ManualGearRPM: cloneManualGearRPMMap(state.ManualGearRPM),
 	}
 }
 
@@ -89,8 +155,9 @@ func defaultDeviceFanCurveStateForUnit(unit string) types.DeviceFanCurveProfiles
 			Name:  name,
 			Curve: curveprofiles.CloneCurve(curve),
 		}},
-		ActiveID: "default",
-		FanCurve: curveprofiles.CloneCurve(curve),
+		ActiveID:      "default",
+		FanCurve:      curveprofiles.CloneCurve(curve),
+		ManualGearRPM: types.CloneDefaultManualGearRPMForUnit(unit),
 	}
 }
 
@@ -102,9 +169,10 @@ func captureDeviceFanCurveState(cfg types.AppConfig) types.DeviceFanCurveProfile
 		profiles[idx].Curve = curveprofiles.CloneCurve(curve)
 	}
 	return types.DeviceFanCurveProfilesState{
-		Profiles: profiles,
-		ActiveID: activeID,
-		FanCurve: curve,
+		Profiles:      profiles,
+		ActiveID:      activeID,
+		FanCurve:      curve,
+		ManualGearRPM: cloneManualGearRPMMap(cfg.ManualGearRPM),
 	}
 }
 
@@ -113,6 +181,11 @@ func normalizeDeviceFanCurveStateForUnit(cfg types.AppConfig, state types.Device
 	tmp.FanCurveProfiles = curveprofiles.CloneProfiles(state.Profiles)
 	tmp.ActiveFanCurveProfileID = strings.TrimSpace(state.ActiveID)
 	tmp.FanCurve = curveprofiles.CloneCurve(state.FanCurve)
+	if state.ManualGearRPM != nil {
+		tmp.ManualGearRPM = cloneManualGearRPMMap(state.ManualGearRPM)
+	} else if !manualGearRPMMapCompatibleWithUnit(tmp.ManualGearRPM, unit) {
+		tmp.ManualGearRPM = types.CloneDefaultManualGearRPMForUnit(unit)
+	}
 	if len(tmp.FanCurve) == 0 && len(tmp.FanCurveProfiles) > 0 {
 		activeIdx := curveprofiles.FindIndex(tmp.FanCurveProfiles, tmp.ActiveFanCurveProfileID)
 		if activeIdx < 0 {
@@ -122,6 +195,7 @@ func normalizeDeviceFanCurveStateForUnit(cfg types.AppConfig, state types.Device
 		tmp.FanCurve = curveprofiles.CloneCurve(tmp.FanCurveProfiles[activeIdx].Curve)
 	}
 	curveprofiles.NormalizeConfigForUnit(&tmp, unit)
+	types.NormalizeManualGearRPMForUnit(&tmp, unit)
 	return captureDeviceFanCurveState(tmp)
 }
 
@@ -132,7 +206,8 @@ func normalizeDeviceFanCurveStateForConfig(cfg types.AppConfig, state types.Devi
 func deviceFanCurveStateLooksDefaultForUnit(cfg types.AppConfig, state types.DeviceFanCurveProfilesState, unit string) bool {
 	normalized := normalizeDeviceFanCurveStateForUnit(cfg, state, unit)
 	defaultState := normalizeDeviceFanCurveStateForUnit(cfg, defaultDeviceFanCurveStateForUnit(unit), unit)
-	return reflect.DeepEqual(normalized.FanCurve, defaultState.FanCurve)
+	manualGearDefault := state.ManualGearRPM == nil || manualGearRPMMapLooksDefaultForUnit(state.ManualGearRPM, unit)
+	return reflect.DeepEqual(normalized.FanCurve, defaultState.FanCurve) && manualGearDefault
 }
 
 func deviceFanCurveStateCandidateKeysForProfile(profile types.DeviceProfile) []string {
@@ -244,6 +319,10 @@ func applyDeviceFanCurveStateForUnit(cfg *types.AppConfig, state types.DeviceFan
 		cfg.FanCurve = curveprofiles.CloneCurve(state.FanCurve)
 		changed = true
 	}
+	if state.ManualGearRPM != nil && !reflect.DeepEqual(cfg.ManualGearRPM, state.ManualGearRPM) {
+		cfg.ManualGearRPM = cloneManualGearRPMMap(state.ManualGearRPM)
+		changed = true
+	}
 	return changed
 }
 
@@ -291,6 +370,8 @@ func loadDeviceFanCurveStateForKey(cfg *types.AppConfig, key string, unit string
 	state := defaultDeviceFanCurveStateForUnit(unit)
 	if useCurrentIfMissing && (len(cfg.FanCurveProfiles) > 0 || len(cfg.FanCurve) > 0) {
 		state = captureDeviceFanCurveState(*cfg)
+	} else if manualGearRPMMapCompatibleWithUnit(cfg.ManualGearRPM, unit) && !manualGearRPMMapLooksDefaultForUnit(cfg.ManualGearRPM, unit) {
+		state.ManualGearRPM = cloneManualGearRPMMap(cfg.ManualGearRPM)
 	}
 	changed := applyDeviceFanCurveStateForUnit(cfg, state, unit)
 	changed = storeDeviceFanCurveStateForKeyAndUnit(cfg, key, *cfg, unit) || changed

@@ -54,6 +54,9 @@ func (a *CoreApp) applyConnectedRuntimeCurveState() (types.AppConfig, bool, erro
 		cfg.SmartControl = normalizedSmart
 		changed = true
 	}
+	if types.NormalizeManualGearRPMForUnit(&cfg, unit) {
+		changed = true
+	}
 	if syncSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey) {
 		changed = true
 	}

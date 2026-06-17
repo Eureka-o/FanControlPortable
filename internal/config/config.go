@@ -14,6 +14,8 @@ import (
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
+const configLearningCurveScopeSeparator = "::curve::"
+
 // Manager 配置管理器
 //
 // 注意：内部所有对 config 字段的读写均通过 mu 保护，避免并发场景下的数据竞争。
@@ -492,18 +494,25 @@ func preserveNativeFanCurveStateBeforeCompatibilityMigration(cfg *types.AppConfi
 	if cfg.FanCurveProfilesByDevice == nil {
 		cfg.FanCurveProfilesByDevice = map[string]types.DeviceFanCurveProfilesState{}
 	}
-	if existing := cfg.FanCurveProfilesByDevice[key]; len(existing.Profiles) > 0 {
-		return
-	}
-	state := types.DeviceFanCurveProfilesState{
-		Profiles: cloneFanCurveProfiles(cfg.FanCurveProfiles),
-		ActiveID: strings.TrimSpace(cfg.ActiveFanCurveProfileID),
-		FanCurve: cloneFanCurve(cfg.FanCurve),
-	}
+	state := cfg.FanCurveProfilesByDevice[key]
+	changed := false
 	if len(state.Profiles) == 0 && len(state.FanCurve) == 0 {
+		state.Profiles = cloneFanCurveProfiles(cfg.FanCurveProfiles)
+		state.ActiveID = strings.TrimSpace(cfg.ActiveFanCurveProfileID)
+		state.FanCurve = cloneFanCurve(cfg.FanCurve)
+		changed = true
+	}
+	if len(state.ManualGearRPM) == 0 {
+		state.ManualGearRPM = normalizedManualGearRPMForUnit(cfg.ManualGearRPM, profile.SpeedUnit)
+		changed = true
+	}
+	preserveNativeLearningOffsetsBeforeCompatibilityMigration(cfg, key)
+	if len(state.Profiles) == 0 && len(state.FanCurve) == 0 && len(state.ManualGearRPM) == 0 {
 		return
 	}
-	cfg.FanCurveProfilesByDevice[key] = state
+	if changed {
+		cfg.FanCurveProfilesByDevice[key] = state
+	}
 }
 
 func rawNativeActiveProfile(cfg *types.AppConfig) (types.DeviceProfile, bool) {
@@ -581,6 +590,71 @@ func cloneFanCurveProfiles(profiles []types.FanCurveProfile) []types.FanCurvePro
 		})
 	}
 	return out
+}
+
+func cloneManualGearRPM(input map[string]map[string]int) map[string]map[string]int {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]map[string]int, len(input))
+	for gear, levels := range input {
+		gear = strings.TrimSpace(gear)
+		if gear == "" || len(levels) == 0 {
+			continue
+		}
+		inner := make(map[string]int, len(levels))
+		for level, rpm := range levels {
+			if level = strings.TrimSpace(level); level != "" {
+				inner[level] = rpm
+			}
+		}
+		if len(inner) > 0 {
+			out[gear] = inner
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func normalizedManualGearRPMForUnit(input map[string]map[string]int, unit string) map[string]map[string]int {
+	tmp := types.AppConfig{ManualGearRPM: cloneManualGearRPM(input)}
+	types.NormalizeManualGearRPMForUnit(&tmp, unit)
+	return cloneManualGearRPM(tmp.ManualGearRPM)
+}
+
+func cloneIntSlice(input []int) []int {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make([]int, len(input))
+	copy(out, input)
+	return out
+}
+
+func preserveNativeLearningOffsetsBeforeCompatibilityMigration(cfg *types.AppConfig, deviceKey string) bool {
+	if cfg == nil || strings.TrimSpace(deviceKey) == "" || strings.TrimSpace(cfg.ActiveFanCurveProfileID) == "" {
+		return false
+	}
+	deviceKey = strings.TrimSpace(deviceKey)
+	profileID := strings.TrimSpace(cfg.ActiveFanCurveProfileID)
+	scopedKey := deviceKey + configLearningCurveScopeSeparator + profileID
+	if cfg.SmartControl.LearnedOffsetsByProfile == nil {
+		cfg.SmartControl.LearnedOffsetsByProfile = map[string][]int{}
+	}
+	if _, ok := cfg.SmartControl.LearnedOffsetsByProfile[scopedKey]; ok {
+		return false
+	}
+	if offsets, ok := cfg.SmartControl.LearnedOffsetsByProfile[profileID]; ok && len(offsets) > 0 {
+		cfg.SmartControl.LearnedOffsetsByProfile[scopedKey] = cloneIntSlice(offsets)
+		return true
+	}
+	if len(cfg.SmartControl.LearnedOffsets) > 0 {
+		cfg.SmartControl.LearnedOffsetsByProfile[scopedKey] = cloneIntSlice(cfg.SmartControl.LearnedOffsets)
+		return true
+	}
+	return false
 }
 
 func normalizeSpeedConfig(cfg *types.AppConfig) {
@@ -668,13 +742,32 @@ func resetLearnedPercentOffsets(cfg *types.AppConfig) {
 	if cfg == nil {
 		return
 	}
+	scopedLearning := cloneScopedLearningOffsets(cfg.SmartControl.LearnedOffsetsByProfile)
 	curveLen := len(cfg.FanCurve)
 	cfg.SmartControl.LearnedOffsets = make([]int, curveLen)
 	cfg.SmartControl.LearnedOffsetsHeat = make([]int, curveLen)
 	cfg.SmartControl.LearnedOffsetsCool = make([]int, curveLen)
 	cfg.SmartControl.LearnedRateHeat = make([]int, 7)
 	cfg.SmartControl.LearnedRateCool = make([]int, 7)
-	cfg.SmartControl.LearnedOffsetsByProfile = nil
+	cfg.SmartControl.LearnedOffsetsByProfile = scopedLearning
+}
+
+func cloneScopedLearningOffsets(input map[string][]int) map[string][]int {
+	if len(input) == 0 {
+		return nil
+	}
+	out := map[string][]int{}
+	for key, offsets := range input {
+		key = strings.TrimSpace(key)
+		if key == "" || !strings.Contains(key, configLearningCurveScopeSeparator) {
+			continue
+		}
+		out[key] = cloneIntSlice(offsets)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func defaultFanCurveSpeedAt(defaultCurve []types.FanCurvePoint, index int, temperature int) int {
