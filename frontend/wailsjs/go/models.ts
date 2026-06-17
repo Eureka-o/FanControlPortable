@@ -147,6 +147,7 @@ export namespace types {
 	    profiles: FanCurveProfile[];
 	    activeId: string;
 	    fanCurve?: FanCurvePoint[];
+	    manualGearRpm?: Record<string, any>;
 
 	    static createFrom(source: any = {}) {
 	        return new DeviceFanCurveProfilesState(source);
@@ -157,6 +158,7 @@ export namespace types {
 	        this.profiles = this.convertValues(source["profiles"], FanCurveProfile);
 	        this.activeId = source["activeId"];
 	        this.fanCurve = this.convertValues(source["fanCurve"], FanCurvePoint);
+	        this.manualGearRpm = source["manualGearRpm"];
 	    }
 
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

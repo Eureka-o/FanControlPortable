@@ -361,6 +361,10 @@
       "successTitle": "機能が更新されました",
       "failureTitle": "操作に失敗しました"
     },
+    "device": {
+      "connectedTitle": "デバイスを接続しました",
+      "connectedDescription": "{{device}}"
+    },
     "legionFnQ": {
       "modeChangedTitle": "Legion パフォーマンスモードが変更されました",
       "modeDescription": "現在のモード: {{mode}}"
@@ -457,7 +461,7 @@
     },
     "disconnected": {
       "title": "デバイスが接続されていません",
-      "description": "設定でデバイスアドレスを入力し、クーラーに接続してください",
+      "description": "デバイス接続で利用可能なハードウェアを検索します",
       "titleWithDevice": "{{name}} は未接続です",
       "descriptionWithDevice": "現在有効なデバイスは {{name}} です。接続方式とアドレスを確認してから接続してください。"
     },

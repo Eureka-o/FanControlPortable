@@ -47,7 +47,8 @@ import {
 } from './ui/index';
 import clsx from 'clsx';
 import {
-  MANUAL_GEAR_PRESETS,
+  getManualGearDefaultPresets,
+  getManualGearValueRange,
   getEffectiveManualGearPresets,
   normalizeManualGearRpmMap,
   getManualGearLabel,
@@ -1105,8 +1106,16 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
   }, [config]);
 
   const manualGearPresets = useMemo(() => {
-    return getEffectiveManualGearPresets(customGearRpm);
-  }, [customGearRpm]);
+    return getEffectiveManualGearPresets(customGearRpm, speedUnit);
+  }, [customGearRpm, speedUnit]);
+
+  const manualGearDefaultPresets = useMemo(() => {
+    return getManualGearDefaultPresets(speedUnit);
+  }, [speedUnit]);
+
+  const manualGearValueRange = useMemo(() => {
+    return getManualGearValueRange(speedUnit);
+  }, [speedUnit]);
 
   const manualPoints = useMemo(() => {
     return manualGearPresets.flatMap((preset, gearIndex) => preset.levels.map((item, levelIndex) => ({
@@ -1166,15 +1175,14 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
 
   const buildDraftFrom = useCallback((source: ManualGearRpmMap | null): ManualGearRpmMap => {
     const base: ManualGearRpmMap = {};
-    MANUAL_GEAR_PRESETS.forEach((preset) => {
+    getEffectiveManualGearPresets(source, speedUnit).forEach((preset) => {
       base[preset.gear] = {};
       preset.levels.forEach((lv) => {
-        const value = source?.[preset.gear]?.[lv.level];
-        base[preset.gear][lv.level] = typeof value === 'number' && value >= speedRange.min && value <= speedRange.max ? value : lv.rpm;
+        base[preset.gear][lv.level] = Math.max(manualGearValueRange.min, Math.min(manualGearValueRange.max, lv.rpm));
       });
     });
     return base;
-  }, [speedRange.max, speedRange.min]);
+  }, [manualGearValueRange.max, manualGearValueRange.min, speedUnit]);
 
   const openGearEditor = useCallback(() => {
     setDraftGearRpm(buildDraftFrom(customGearRpm));
@@ -1191,7 +1199,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
   const saveGearRpm = useCallback(async () => {
     setGearRpmSaving(true);
     try {
-      const normalized = normalizeManualGearRpmMap(draftGearRpm, speedRange.min, speedRange.max);
+      const normalized = normalizeManualGearRpmMap(draftGearRpm, manualGearValueRange.min, manualGearValueRange.max, speedUnit);
       const next = types.AppConfig.createFrom({ ...config, manualGearRpm: normalized });
       await apiService.updateConfig(next);
       const ok = await apiService.setManualGear(next.manualGear || '标准', next.manualLevel || '中');
@@ -1207,7 +1215,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
     } finally {
       setGearRpmSaving(false);
     }
-  }, [config, draftGearRpm, onConfigChange, speedRange.max, speedRange.min, t]);
+  }, [config, draftGearRpm, manualGearValueRange.max, manualGearValueRange.min, onConfigChange, speedUnit, t]);
 
   const CustomDot = useCallback((props: any): React.ReactElement<SVGElement> => {
     const { cx, cy, index, payload } = props;
@@ -1350,10 +1358,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>{t('fanCurve.manualGear.editTitle')}</DialogTitle>
-              <DialogDescription>{t('fanCurve.manualGear.editHint', { max: `${formatSpeedValue(speedRange.max)}${speedUnitSuffix}` })}</DialogDescription>
+              <DialogDescription>{t('fanCurve.manualGear.editHint', { max: `${formatSpeedValue(manualGearValueRange.max)}${speedUnitSuffix}` })}</DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
-              {MANUAL_GEAR_PRESETS.map((preset) => (
+              {manualGearDefaultPresets.map((preset) => (
                 <div key={preset.gear} className="rounded-xl border border-border/70 bg-background/40 p-3">
                   <div className={clsx('mb-2 text-sm font-semibold', preset.colorClass)}>{getManualGearLabel(preset.gear)}</div>
                   <div className="grid grid-cols-3 gap-2">
@@ -1363,8 +1371,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                         <NumberInput
                           value={draftGearRpm[preset.gear]?.[lv.level] ?? lv.rpm}
                           onChange={(value) => setDraftRpm(preset.gear, lv.level, value)}
-                          min={speedRange.min}
-                          max={speedRange.max}
+                          min={manualGearValueRange.min}
+                          max={manualGearValueRange.max}
                           step={1}
                           suffix={speedUnitSuffix}
                         />

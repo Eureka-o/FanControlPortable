@@ -80,7 +80,7 @@ func hasScopedLearningOffsets(offsets map[string][]int) bool {
 }
 
 func migrateLegacyLearningOffsetsToDeviceKey(cfg *types.AppConfig, deviceKey string) bool {
-	if cfg == nil || len(cfg.SmartControl.LearnedOffsetsByProfile) == 0 || hasScopedLearningOffsets(cfg.SmartControl.LearnedOffsetsByProfile) {
+	if cfg == nil || len(cfg.SmartControl.LearnedOffsetsByProfile) == 0 {
 		return false
 	}
 	if deviceKey == "" {

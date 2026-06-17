@@ -259,9 +259,10 @@ type FanCurveProfile struct {
 
 // DeviceFanCurveProfilesState stores curve profiles for a single device.
 type DeviceFanCurveProfilesState struct {
-	Profiles []FanCurveProfile `json:"profiles"`
-	ActiveID string            `json:"activeId"`
-	FanCurve []FanCurvePoint   `json:"fanCurve,omitempty"`
+	Profiles      []FanCurveProfile         `json:"profiles"`
+	ActiveID      string                    `json:"activeId"`
+	FanCurve      []FanCurvePoint           `json:"fanCurve,omitempty"`
+	ManualGearRPM map[string]map[string]int `json:"manualGearRpm,omitempty"`
 }
 
 // FanCurveProfilesPayload 风扇曲线方案返回载荷

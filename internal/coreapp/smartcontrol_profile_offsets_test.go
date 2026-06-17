@@ -67,3 +67,31 @@ func TestSmartControlOffsetsStartEmptyForNewProfileAfterMigration(t *testing.T) 
 		}
 	}
 }
+
+func TestLegacyLearningOffsetsCanMigrateAfterScopedKeysExist(t *testing.T) {
+	cfg := types.GetDefaultConfig(false)
+	legacyOffsets := []int{11, 22, 33}
+	cfg.SmartControl.LearnedOffsetsByProfile = map[string][]int{
+		cfg.ActiveFanCurveProfileID: cloneIntSlice(legacyOffsets),
+	}
+
+	wifiKey := deviceCurveScopeKey(cfg)
+	if !syncSmartControlOffsetsForDeviceKey(&cfg, wifiKey) {
+		t.Fatal("expected first sync to create wifi scoped learning offsets")
+	}
+	nativeKey := deviceCurveScopeKeyForProfile(types.FlyDigiBS3PROProfile())
+	if !syncSmartControlOffsetsForDeviceKey(&cfg, nativeKey) {
+		t.Fatal("expected native sync to inherit legacy learning offsets")
+	}
+
+	scopedKey := activeLearningScopeKeyForDeviceKey(&cfg, nativeKey)
+	got := cfg.SmartControl.LearnedOffsetsByProfile[scopedKey]
+	if len(got) < len(legacyOffsets) {
+		t.Fatalf("native scoped offsets len = %d, want at least %d", len(got), len(legacyOffsets))
+	}
+	for i, want := range legacyOffsets {
+		if got[i] != want {
+			t.Fatalf("native scoped offsets[%d] = %d, want %d", i, got[i], want)
+		}
+	}
+}

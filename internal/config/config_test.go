@@ -161,6 +161,14 @@ func TestLoadPreservesPersistedNativeRPMCurveBeforeCompatibilityMigration(t *tes
 		{Temperature: 75, RPM: 2300},
 		{Temperature: 95, RPM: 3600},
 	}
+	manualGearRPM := types.CloneDefaultRPMManualGearRPM()
+	manualGearRPM["强劲"]["高"] = 4200
+	smartControl := types.GetDefaultSmartControlConfigForUnit(curve, types.FanSpeedUnitRPM)
+	smartControl.LearnedOffsets = []int{0, 11, 22, 33}
+	smartControl.LearnedOffsetsByProfile = map[string][]int{
+		"bs1-custom": {3, 5, 7, 9},
+	}
+	deviceKey := types.DeviceTransportBLE + "::" + types.FlyDigiBS1ProfileID
 	raw := map[string]any{
 		"deviceTransport":       types.DeviceTransportBLE,
 		"activeDeviceProfileId": types.FlyDigiBS1ProfileID,
@@ -172,6 +180,15 @@ func TestLoadPreservesPersistedNativeRPMCurveBeforeCompatibilityMigration(t *tes
 		"fanCurveProfiles":        []types.FanCurveProfile{{ID: "bs1-custom", Name: "BS1", Curve: curve}},
 		"activeFanCurveProfileId": "bs1-custom",
 		"customSpeedRPM":          1800,
+		"manualGearRpm":           manualGearRPM,
+		"smartControl":            smartControl,
+		"fanCurveProfilesByDevice": map[string]types.DeviceFanCurveProfilesState{
+			deviceKey: {
+				Profiles: []types.FanCurveProfile{{ID: "bs1-custom", Name: "BS1", Curve: curve}},
+				ActiveID: "bs1-custom",
+				FanCurve: curve,
+			},
+		},
 	}
 	data, err := json.MarshalIndent(raw, "", "  ")
 	if err != nil {
@@ -186,9 +203,16 @@ func TestLoadPreservesPersistedNativeRPMCurveBeforeCompatibilityMigration(t *tes
 	if cfg.DeviceTransport != types.DeviceTransportWiFi {
 		t.Fatalf("device transport = %q, want compatibility wifi", cfg.DeviceTransport)
 	}
-	state := cfg.FanCurveProfilesByDevice[types.DeviceTransportBLE+"::"+types.FlyDigiBS1ProfileID]
+	state := cfg.FanCurveProfilesByDevice[deviceKey]
 	if len(state.FanCurve) != len(curve) || state.FanCurve[2].RPM != 2300 {
 		t.Fatalf("native rpm curve state not preserved: %#v", state)
+	}
+	if got := state.ManualGearRPM["强劲"]["高"]; got != 4200 {
+		t.Fatalf("native manual gear rpm not preserved: got %d, want 4200 in %#v", got, state.ManualGearRPM)
+	}
+	learningKey := deviceKey + "::curve::bs1-custom"
+	if got := cfg.SmartControl.LearnedOffsetsByProfile[learningKey]; len(got) != 4 || got[2] != 7 {
+		t.Fatalf("native learned offsets not preserved under %q: %#v", learningKey, cfg.SmartControl.LearnedOffsetsByProfile)
 	}
 	if len(cfg.FanCurve) > 0 && cfg.FanCurve[len(cfg.FanCurve)-1].RPM > types.FanSpeedMaxPercent {
 		t.Fatalf("compatibility root curve should be normalized away from native rpm view: %#v", cfg.FanCurve)

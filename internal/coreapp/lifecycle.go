@@ -78,7 +78,7 @@ func (a *CoreApp) Start() error {
 			a.logError("保存挡位记忆默认配置失败: %v", err)
 		}
 	}
-	if types.NormalizeManualGearRPMForUnit(&cfg, unit) {
+	if types.NormalizeManualGearRPMForUnit(&cfg, startupManualGearSpeedUnit(cfg)) {
 		a.configManager.Set(cfg)
 		if err := a.configManager.Save(); err != nil {
 			a.logError("保存挡位转速默认配置失败: %v", err)
@@ -180,6 +180,13 @@ func (a *CoreApp) Start() error {
 	})
 
 	return nil
+}
+
+func startupManualGearSpeedUnit(cfg types.AppConfig) string {
+	if compatibilityConnectionEnabled(cfg) {
+		return types.DeviceProfileSpeedUnit(&cfg)
+	}
+	return types.FanSpeedUnitRPM
 }
 
 // Stop 停止核心服务

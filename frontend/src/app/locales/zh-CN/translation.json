@@ -361,6 +361,10 @@
       "successTitle": "功能变动",
       "failureTitle": "操作失败"
     },
+    "device": {
+      "connectedTitle": "已连接设备",
+      "connectedDescription": "{{device}}"
+    },
     "legionFnQ": {
       "modeChangedTitle": "拯救者性能模式变化",
       "modeDescription": "当前模式：{{mode}}"
@@ -457,7 +461,7 @@
     },
     "disconnected": {
       "title": "设备未连接",
-      "description": "请在设置中填写设备地址并连接散热器",
+      "description": "点击连接设备以搜索可用设备",
       "titleWithDevice": "{{name}} 未连接",
       "descriptionWithDevice": "当前启用设备为 {{name}}，确认连接方式和地址后即可连接。"
     },
