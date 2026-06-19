@@ -201,6 +201,10 @@ LangString THRM_STR_INSTALLING_BRIDGE ${LANG_SIMPCHINESE} "正在安装桥接组
 LangString THRM_STR_INSTALLING_BRIDGE ${LANG_ENGLISH} "Installing bridge components..."
 LangString THRM_STR_INSTALLING_BRIDGE ${LANG_JAPANESE} "ブリッジコンポーネントをインストールしています..."
 
+LangString THRM_STR_INSTALLING_THEMES ${LANG_SIMPCHINESE} "正在安装内置主题..."
+LangString THRM_STR_INSTALLING_THEMES ${LANG_ENGLISH} "Installing built-in themes..."
+LangString THRM_STR_INSTALLING_THEMES ${LANG_JAPANESE} "内蔵テーマをインストールしています..."
+
 LangString THRM_STR_CREATING_SHORTCUTS ${LANG_SIMPCHINESE} "正在创建快捷方式..."
 LangString THRM_STR_CREATING_SHORTCUTS ${LANG_ENGLISH} "Creating shortcuts..."
 LangString THRM_STR_CREATING_SHORTCUTS ${LANG_JAPANESE} "ショートカットを作成しています..."

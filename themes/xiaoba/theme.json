@@ -1,0 +1,9 @@
+{
+  "$comment": "FanControl custom theme manifest. Folder name, id, and html[data-theme] prefix should stay aligned.",
+  "id": "xiaoba",
+  "name": "小八",
+  "base": "light",
+  "author": "FanControl",
+  "version": "1.0.0",
+  "description": "蓝白小八主题，使用柔和蓝白配色、圆润纹理与右侧主题插画。"
+}

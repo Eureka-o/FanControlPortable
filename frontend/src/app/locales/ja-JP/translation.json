@@ -668,7 +668,7 @@
         "gpuPeak": "GPU 最大値",
         "fanPeak": "% 最大値",
         "averageTemperature": "平均 {{value}}°C",
-        "averageFan": "平均 {{value}} %",
+        "averageFan": "平均 {{value}}{{unit}}",
         "noCpuTemperature": "CPU 温度データなし",
         "noGpuTemperature": "GPU 温度データなし",
         "noFanData": "ファン %データなし",

@@ -1,0 +1,9 @@
+{
+  "$comment": "FanControl custom theme manifest. Folder name, id, and html[data-theme] prefix should stay aligned.",
+  "id": "doro",
+  "name": "Doro",
+  "base": "light",
+  "author": "FanControl",
+  "version": "1.0.0",
+  "description": "Doro pearl bridal theme with ivory surfaces, champagne accents, and soft lavender details."
+}

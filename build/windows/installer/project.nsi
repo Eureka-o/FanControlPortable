@@ -499,6 +499,11 @@ Section "$(THRM_STR_SECTION_MAIN)" SEC_MAIN
     SetOutPath $INSTDIR\bridge
     File /r "..\..\bin\bridge\*.*"
 
+    # Copy built-in themes so they are visible/editable in the install directory.
+    DetailPrint "$(THRM_STR_INSTALLING_THEMES)"
+    SetOutPath $INSTDIR\themes
+    File /r "..\..\bin\themes\*.*"
+
     # Return to main install directory
     SetOutPath $INSTDIR
 
@@ -510,9 +515,9 @@ Section "$(THRM_STR_SECTION_MAIN)" SEC_MAIN
 
     # Create shortcuts
     DetailPrint "$(THRM_STR_CREATING_SHORTCUTS)"
-    CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
+    CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}" "" "$INSTDIR\${PRODUCT_EXECUTABLE}" 0
     SetShellVarContext current
-    CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
+    CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}" "" "$INSTDIR\${PRODUCT_EXECUTABLE}" 0
     !insertmacro wails.setShellContext
 
     !insertmacro wails.associateFiles

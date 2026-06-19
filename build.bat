@@ -89,6 +89,12 @@ if not exist "build\windows\icon.ico" (
     echo WARNING: build\windows\icon.ico not found, executable/installer icon may be incorrect
 )
 
+REM Keep built-in themes in build/bin so both NSIS and portable packages ship them.
+echo Syncing built-in themes...
+if exist "!BUILD_BIN!\themes" rmdir /s /q "!BUILD_BIN!\themes"
+xcopy /E /I /Y "themes" "!BUILD_BIN!\themes" >nul
+if errorlevel 1 exit /b 1
+
 REM Build main application with wails
 echo Building main application...
 wails build -nsis -ldflags "!LDFLAGS!"
