@@ -1,26 +1,29 @@
-// Package theme 负责「自定义界面主题」的发现、播种与读取。
+// Package theme discovers, seeds, migrates, and reads FanControl UI themes.
 package theme
 
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
+	"time"
 )
 
 const (
 	manifestName = "theme.json"
 	styleName    = "theme.css"
 
-	// SourceUser/SourceInstall/SourceBuiltin 标记主题来源，便于前端提示与排序。
 	SourceUser    = "user"
 	SourceInstall = "install"
 	SourceBuiltin = "builtin"
 )
 
-// Meta 是主题清单（theme.json）解析后的元数据，同时作为返回给前端的结构。
+// Meta is parsed from theme.json and returned to the frontend theme picker.
 type Meta struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
@@ -31,26 +34,66 @@ type Meta struct {
 	Source      string `json:"source"` // user | install | builtin
 }
 
-// Manager 统一管理主题的发现与读取。
+// Manager keeps install-root themes authoritative.
+//
+// legacyDirs are old user-profile theme folders from earlier versions. They are
+// read only as a compatibility source and migration input; new files are never
+// written there.
 type Manager struct {
-	installDir string // 安装目录下的 themes 目录
-	userDir    string // 用户目录下的 themes 目录（可写兜底）
-	builtin    fs.FS  // 程序内置的默认主题（已 Sub 到 themes 根，路径形如 thrm/theme.json）
+	installDir string
+	legacyDirs []string
+	builtin    fs.FS
 }
 
-// NewManager 创建主题管理器。
-//   - installThemesDir：安装目录下的 themes 目录（一般与可执行文件同级）。
-//   - userThemesDir：用户目录下的 themes 目录（如 ~/.thrm/themes），用于安装目录不可写时兜底。
-//   - builtin：内置默认主题文件系统，根目录下应直接是各主题文件夹（thrm/...）。可为 nil。
-func NewManager(installThemesDir, userThemesDir string, builtin fs.FS) *Manager {
+// NewManager creates a theme manager.
+func NewManager(installThemesDir string, legacyThemeDirs []string, builtin fs.FS) *Manager {
 	return &Manager{
-		installDir: installThemesDir,
-		userDir:    userThemesDir,
+		installDir: cleanOptionalPath(installThemesDir),
+		legacyDirs: normalizeLegacyDirs(installThemesDir, legacyThemeDirs),
 		builtin:    builtin,
 	}
 }
 
-// validID 校验主题 id：仅允许小写字母、数字、连字符、下划线，避免被用作路径穿越或非法选择器。
+func cleanOptionalPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	return filepath.Clean(path)
+}
+
+func normalizeLegacyDirs(installThemesDir string, dirs []string) []string {
+	installKey := pathKey(installThemesDir)
+	seen := map[string]bool{}
+	out := make([]string, 0, len(dirs))
+	for _, dir := range dirs {
+		dir = cleanOptionalPath(dir)
+		if dir == "" {
+			continue
+		}
+		key := pathKey(dir)
+		if key == "" || key == installKey || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, dir)
+	}
+	return out
+}
+
+func pathKey(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	if abs, err := filepath.Abs(filepath.Clean(path)); err == nil {
+		path = abs
+	} else {
+		path = filepath.Clean(path)
+	}
+	return strings.ToLower(path)
+}
+
 func validID(id string) bool {
 	if id == "" || len(id) > 64 {
 		return false
@@ -74,15 +117,19 @@ func normalizeBase(base string) string {
 	return "light"
 }
 
-// EnsureSeeded 在首次运行时把内置主题播种到磁盘，方便用户直接编辑。
+// EnsureSeeded copies built-in themes to the install-root themes folder and
+// then tries to migrate old user-profile themes into that same folder.
 //
-// 对每个内置主题：若安装目录与用户目录都不存在该主题，则尝试写入安装目录；
-// 安装目录不可写（如 Program Files 无权限）时退而写入用户目录。全程尽力而为，
-// 失败不影响后续从内置读取。
+// All work here is best effort: missing legacy folders, read errors, write
+// errors, and cleanup failures never block app startup or installation.
 func (m *Manager) EnsureSeeded() {
-	if m.builtin == nil {
-		return
+	if m.builtin != nil {
+		m.seedBuiltinThemes()
 	}
+	m.migrateLegacyThemes()
+}
+
+func (m *Manager) seedBuiltinThemes() {
 	entries, err := fs.ReadDir(m.builtin, ".")
 	if err != nil {
 		return
@@ -92,16 +139,10 @@ func (m *Manager) EnsureSeeded() {
 			continue
 		}
 		id := entry.Name()
-		if !validID(id) {
+		if !validID(id) || m.themeExistsOnDisk(m.installDir, id) {
 			continue
 		}
-		if m.themeExistsOnDisk(m.installDir, id) || m.themeExistsOnDisk(m.userDir, id) {
-			continue
-		}
-		if err := m.copyBuiltin(id, m.installDir); err != nil {
-			// 安装目录写入失败（多为权限问题），改写用户目录。
-			_ = m.copyBuiltin(id, m.userDir)
-		}
+		_ = m.copyBuiltin(id, m.installDir)
 	}
 }
 
@@ -113,10 +154,9 @@ func (m *Manager) themeExistsOnDisk(baseDir, id string) bool {
 	return err == nil
 }
 
-// copyBuiltin 把内置主题 id 复制到 baseDir/id。
 func (m *Manager) copyBuiltin(id, baseDir string) error {
 	if baseDir == "" {
-		return fmt.Errorf("目标目录为空")
+		return fmt.Errorf("empty theme destination")
 	}
 	srcRoot := id
 	entries, err := fs.ReadDir(m.builtin, srcRoot)
@@ -129,7 +169,7 @@ func (m *Manager) copyBuiltin(id, baseDir string) error {
 	}
 	for _, entry := range entries {
 		if entry.IsDir() {
-			continue // 内置主题为扁平结构，忽略子目录
+			continue
 		}
 		data, err := fs.ReadFile(m.builtin, srcRoot+"/"+entry.Name())
 		if err != nil {
@@ -142,11 +182,242 @@ func (m *Manager) copyBuiltin(id, baseDir string) error {
 	return nil
 }
 
-// List 返回所有可用主题，按来源合并去重（用户 > 安装 > 内置），并按名称排序。
+type legacyCandidate struct {
+	id      string
+	dir     string
+	meta    Meta
+	modTime time.Time
+}
+
+func (m *Manager) migrateLegacyThemes() {
+	if m.installDir == "" || len(m.legacyDirs) == 0 {
+		return
+	}
+
+	grouped := map[string][]legacyCandidate{}
+	for _, legacyDir := range m.legacyDirs {
+		for _, candidate := range scanLegacyCandidates(legacyDir) {
+			grouped[candidate.id] = append(grouped[candidate.id], candidate)
+		}
+	}
+
+	for id, candidates := range grouped {
+		if len(candidates) == 0 {
+			continue
+		}
+
+		if m.themeExistsOnDisk(m.installDir, id) {
+			removeLegacyCandidates(candidates, m.legacyDirs)
+			continue
+		}
+
+		chosen := chooseNewestCandidate(candidates)
+		if err := copyLegacyTheme(chosen, m.installDir); err != nil {
+			continue
+		}
+		removeLegacyCandidates(candidates, m.legacyDirs)
+	}
+
+	for _, legacyDir := range m.legacyDirs {
+		_ = os.Remove(legacyDir)
+		_ = os.Remove(filepath.Dir(legacyDir))
+	}
+}
+
+func scanLegacyCandidates(legacyDir string) []legacyCandidate {
+	entries, err := os.ReadDir(legacyDir)
+	if err != nil {
+		return nil
+	}
+
+	var out []legacyCandidate
+	for _, entry := range entries {
+		if !entry.IsDir() || !validID(entry.Name()) {
+			continue
+		}
+		manifestPath := filepath.Join(legacyDir, entry.Name(), manifestName)
+		data, err := os.ReadFile(manifestPath)
+		if err != nil {
+			continue
+		}
+		meta, ok := parseMeta(data, entry.Name())
+		if !ok {
+			continue
+		}
+		info, err := os.Stat(manifestPath)
+		if err != nil {
+			continue
+		}
+		out = append(out, legacyCandidate{
+			id:      meta.ID,
+			dir:     filepath.Join(legacyDir, entry.Name()),
+			meta:    meta,
+			modTime: info.ModTime(),
+		})
+	}
+	return out
+}
+
+func chooseNewestCandidate(candidates []legacyCandidate) legacyCandidate {
+	best := candidates[0]
+	for _, candidate := range candidates[1:] {
+		if compareVersion(candidate.meta.Version, best.meta.Version) > 0 {
+			best = candidate
+			continue
+		}
+		if compareVersion(candidate.meta.Version, best.meta.Version) == 0 && candidate.modTime.After(best.modTime) {
+			best = candidate
+		}
+	}
+	return best
+}
+
+func compareVersion(a, b string) int {
+	aa := versionParts(a)
+	bb := versionParts(b)
+	maxLen := len(aa)
+	if len(bb) > maxLen {
+		maxLen = len(bb)
+	}
+	for i := 0; i < maxLen; i++ {
+		av, bv := 0, 0
+		if i < len(aa) {
+			av = aa[i]
+		}
+		if i < len(bb) {
+			bv = bb[i]
+		}
+		if av > bv {
+			return 1
+		}
+		if av < bv {
+			return -1
+		}
+	}
+	return 0
+}
+
+func versionParts(version string) []int {
+	fields := strings.FieldsFunc(version, func(r rune) bool {
+		return r < '0' || r > '9'
+	})
+	parts := make([]int, 0, len(fields))
+	for _, field := range fields {
+		if field == "" {
+			continue
+		}
+		value, err := strconv.Atoi(field)
+		if err != nil {
+			continue
+		}
+		parts = append(parts, value)
+	}
+	return parts
+}
+
+func copyLegacyTheme(candidate legacyCandidate, installDir string) error {
+	if installDir == "" || candidate.id == "" {
+		return fmt.Errorf("empty theme migration target")
+	}
+	if err := os.MkdirAll(installDir, 0o755); err != nil {
+		return err
+	}
+
+	tmpDir := filepath.Join(installDir, "."+candidate.id+".migration")
+	dstDir := filepath.Join(installDir, candidate.id)
+	_ = os.RemoveAll(tmpDir)
+	if err := copyDir(candidate.dir, tmpDir); err != nil {
+		_ = os.RemoveAll(tmpDir)
+		return err
+	}
+	_ = os.RemoveAll(dstDir)
+	if err := os.Rename(tmpDir, dstDir); err != nil {
+		_ = os.RemoveAll(tmpDir)
+		return err
+	}
+	return nil
+}
+
+func copyDir(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil
+		}
+		if entry.IsDir() {
+			return os.MkdirAll(target, info.Mode().Perm())
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		return copyFile(path, target, info.Mode().Perm())
+	})
+}
+
+func copyFile(src, dst string, mode fs.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
+}
+
+func removeLegacyCandidates(candidates []legacyCandidate, legacyDirs []string) {
+	for _, candidate := range candidates {
+		if isUnderAnyDir(candidate.dir, legacyDirs) {
+			_ = os.RemoveAll(candidate.dir)
+		}
+	}
+}
+
+func isUnderAnyDir(path string, roots []string) bool {
+	pathKeyValue := pathKey(path)
+	for _, root := range roots {
+		rootKey := pathKey(root)
+		if rootKey == "" {
+			continue
+		}
+		rel, err := filepath.Rel(rootKey, pathKeyValue)
+		if err != nil {
+			continue
+		}
+		if rel == "." || (rel != "" && !strings.HasPrefix(rel, "..")) {
+			return true
+		}
+	}
+	return false
+}
+
+// List returns available themes. Install-root themes win over legacy user
+// residue and embedded built-ins.
 func (m *Manager) List() []Meta {
 	merged := map[string]Meta{}
 
-	// 内置（最低优先级）
 	if m.builtin != nil {
 		if entries, err := fs.ReadDir(m.builtin, "."); err == nil {
 			for _, entry := range entries {
@@ -160,12 +431,13 @@ func (m *Manager) List() []Meta {
 		}
 	}
 
-	// 安装目录覆盖内置
-	for _, meta := range m.scanDir(m.installDir, SourceInstall) {
-		merged[meta.ID] = meta
+	for _, legacyDir := range m.legacyDirs {
+		for _, meta := range m.scanDir(legacyDir, SourceUser) {
+			merged[meta.ID] = meta
+		}
 	}
-	// 用户目录优先级最高
-	for _, meta := range m.scanDir(m.userDir, SourceUser) {
+
+	for _, meta := range m.scanDir(m.installDir, SourceInstall) {
 		merged[meta.ID] = meta
 	}
 
@@ -223,7 +495,6 @@ func (m *Manager) readBuiltinMeta(id string) (Meta, bool) {
 	return meta, true
 }
 
-// parseMeta 解析 theme.json；folderName 用于在清单缺少 id 时兜底，并校验 id 合法性。
 func parseMeta(data []byte, folderName string) (Meta, bool) {
 	var meta Meta
 	if err := json.Unmarshal(data, &meta); err != nil {
@@ -242,19 +513,20 @@ func parseMeta(data []byte, folderName string) (Meta, bool) {
 	return meta, true
 }
 
-// ReadCSS 读取指定主题的 theme.css 内容。
-// 查找顺序：用户目录 > 安装目录 > 内置，返回首个命中的内容。
+// ReadCSS reads theme.css. The install package wins over old user residue.
 func (m *Manager) ReadCSS(id string) (string, error) {
 	if !validID(id) {
-		return "", fmt.Errorf("非法主题 id: %q", id)
+		return "", fmt.Errorf("invalid theme id: %q", id)
 	}
 
-	for _, baseDir := range []string{m.userDir, m.installDir} {
-		if baseDir == "" {
-			continue
+	if m.installDir != "" {
+		if data, err := os.ReadFile(filepath.Join(m.installDir, id, styleName)); err == nil {
+			return string(data), nil
 		}
-		path := filepath.Join(baseDir, id, styleName)
-		if data, err := os.ReadFile(path); err == nil {
+	}
+
+	for _, legacyDir := range m.legacyDirs {
+		if data, err := os.ReadFile(filepath.Join(legacyDir, id, styleName)); err == nil {
 			return string(data), nil
 		}
 	}
@@ -265,19 +537,13 @@ func (m *Manager) ReadCSS(id string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("未找到主题 %q 的样式文件", id)
+	return "", fmt.Errorf("theme %q style file not found", id)
 }
 
-// ResolveDir 返回应优先暴露给用户编辑的 themes 目录（用于「打开主题文件夹」）。
+// ResolveDir returns the install-root themes folder exposed by "Open themes".
 func (m *Manager) ResolveDir() string {
 	if m.installDir != "" {
-		if _, err := os.Stat(m.installDir); err == nil {
-			return m.installDir
-		}
-	}
-	if m.userDir != "" {
-		_ = os.MkdirAll(m.userDir, 0o755)
-		return m.userDir
+		_ = os.MkdirAll(m.installDir, 0o755)
 	}
 	return m.installDir
 }
