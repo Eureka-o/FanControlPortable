@@ -18,7 +18,7 @@ import (
 //go:embed all:themes
 var embeddedThemes embed.FS
 
-// newThemeManager 基于当前可执行文件位置与用户目录构造主题管理器。
+// newThemeManager 基于当前可执行文件位置构造主题管理器。
 func newThemeManager() *theme.Manager {
 	// 内置主题：把 embed 根从 "themes" 下沉，使路径形如 "thrm/theme.json"。
 	var builtin fs.FS
@@ -32,11 +32,16 @@ func newThemeManager() *theme.Manager {
 		installThemesDir = filepath.Join(filepath.Dir(exePath), "themes")
 	}
 
-	// 用户目录下的 themes（安装目录不可写时的可写兜底）。
-	userThemesDir := ""
+	// 旧版本可能把主题留在用户目录。新版只读取这些位置做一次迁移，
+	// 默认写入目标始终是可执行文件同级的 themes 文件夹。
+	legacyThemeDirs := []string{}
 	if home, err := os.UserHomeDir(); err == nil {
-		userThemesDir = filepath.Join(appmeta.UserConfigDir(home), "themes")
+		configDirs := []string{appmeta.UserConfigDir(home)}
+		configDirs = append(configDirs, appmeta.LegacyUserConfigDirs(home)...)
+		for _, dir := range configDirs {
+			legacyThemeDirs = append(legacyThemeDirs, filepath.Join(dir, "themes"))
+		}
 	}
 
-	return theme.NewManager(installThemesDir, userThemesDir, builtin)
+	return theme.NewManager(installThemesDir, legacyThemeDirs, builtin)
 }

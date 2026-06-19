@@ -205,6 +205,10 @@ LangString THRM_STR_INSTALLING_THEMES ${LANG_SIMPCHINESE} "正在安装内置主
 LangString THRM_STR_INSTALLING_THEMES ${LANG_ENGLISH} "Installing built-in themes..."
 LangString THRM_STR_INSTALLING_THEMES ${LANG_JAPANESE} "内蔵テーマをインストールしています..."
 
+LangString THRM_STR_MIGRATING_THEMES ${LANG_SIMPCHINESE} "正在整理旧版主题文件..."
+LangString THRM_STR_MIGRATING_THEMES ${LANG_ENGLISH} "Migrating previous theme files..."
+LangString THRM_STR_MIGRATING_THEMES ${LANG_JAPANESE} "以前のテーマファイルを整理しています..."
+
 LangString THRM_STR_CREATING_SHORTCUTS ${LANG_SIMPCHINESE} "正在创建快捷方式..."
 LangString THRM_STR_CREATING_SHORTCUTS ${LANG_ENGLISH} "Creating shortcuts..."
 LangString THRM_STR_CREATING_SHORTCUTS ${LANG_JAPANESE} "ショートカットを作成しています..."

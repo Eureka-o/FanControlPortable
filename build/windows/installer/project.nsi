@@ -503,6 +503,16 @@ Section "$(THRM_STR_SECTION_MAIN)" SEC_MAIN
     DetailPrint "$(THRM_STR_INSTALLING_THEMES)"
     SetOutPath $INSTDIR\themes
     File /r "..\..\bin\themes\*.*"
+    SetOutPath $INSTDIR\tools
+    File /nonfatal "resources\migrate-themes.ps1"
+    ${If} ${FileExists} "$INSTDIR\tools\migrate-themes.ps1"
+        DetailPrint "$(THRM_STR_MIGRATING_THEMES)"
+        nsExec::ExecToStack /TIMEOUT=30000 '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\tools\migrate-themes.ps1" -InstallThemesDir "$INSTDIR\themes"'
+        Pop $0
+        Pop $1
+        Delete "$INSTDIR\tools\migrate-themes.ps1"
+        RMDir "$INSTDIR\tools"
+    ${EndIf}
 
     # Return to main install directory
     SetOutPath $INSTDIR
