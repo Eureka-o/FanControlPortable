@@ -668,7 +668,7 @@
         "gpuPeak": "GPU peak",
         "fanPeak": "Fan peak",
         "averageTemperature": "Avg {{value}}°C",
-        "averageFan": "Avg {{value}} %",
+        "averageFan": "Avg {{value}}{{unit}}",
         "noCpuTemperature": "No CPU temperature yet",
         "noGpuTemperature": "No GPU temperature yet",
         "noFanData": "No fan data yet",

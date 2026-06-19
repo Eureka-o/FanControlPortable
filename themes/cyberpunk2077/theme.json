@@ -1,0 +1,9 @@
+{
+  "$comment": "FanControl custom theme manifest. Folder name, id, and html[data-theme] prefix should stay aligned.",
+  "id": "cyberpunk2077",
+  "name": "Cyberpunk 2077",
+  "base": "dark",
+  "author": "FanControl",
+  "version": "1.0.0",
+  "description": "Dark Night City theme with cyberpunk yellow, cyan HUD lines, magenta glitch accents, and an embedded portable hero image."
+}

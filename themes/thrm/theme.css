@@ -466,3 +466,16 @@ html[data-theme="thrm"] .glacier-shell input,
 html[data-theme="thrm"] .glacier-shell [role="tab"] {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
 }
+
+/* 填满自定义标题栏/内容区圆角，避免左上角露出原生窗口背景。 */
+html[data-theme="thrm"] .glacier-titlebar,
+html[data-theme="thrm"] .glacier-content,
+html[data-theme="thrm"] .glacier-content-panel,
+html[data-theme="thrm"] .glacier-shell > section {
+  border-top-left-radius: 0 !important;
+}
+
+html[data-theme="thrm"] .glacier-shell,
+html[data-theme="thrm"] .glacier-shell > section {
+  background-color: var(--background) !important;
+}

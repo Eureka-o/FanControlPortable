@@ -668,7 +668,7 @@
         "gpuPeak": "GPU 峰值",
         "fanPeak": "风扇峰值",
         "averageTemperature": "平均 {{value}}°C",
-        "averageFan": "平均 {{value}}%",
+        "averageFan": "平均 {{value}}{{unit}}",
         "noCpuTemperature": "暂无 CPU 温度",
         "noGpuTemperature": "暂无 GPU 温度",
         "noFanData": "暂无风扇数据",
