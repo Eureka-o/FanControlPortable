@@ -18,12 +18,12 @@ export function Section({
   className?: string;
 }) {
   return (
-    <section className={clsx('rounded-2xl border border-border bg-card shadow-sm', className)}>
-      <div className="flex items-center gap-2.5 border-b border-border/60 px-5 py-4">
+    <section data-theme-ui="setting-section" className={clsx('rounded-[22px] border border-border/70 bg-card/92 shadow-sm shadow-black/5 backdrop-blur-xl', className)}>
+      <div data-theme-ui="setting-section-header" className="flex items-center gap-2.5 border-b border-border/50 px-5 py-4">
         <Icon className="h-4.5 w-4.5 text-muted-foreground" />
         <h3 className="text-base font-semibold text-foreground">{title}</h3>
       </div>
-      <div className="divide-y divide-border/60">{children}</div>
+      <div className="divide-y divide-border/45">{children}</div>
     </section>
   );
 }
@@ -44,10 +44,10 @@ export function SettingRow({
   disabled?: boolean;
 }) {
   return (
-    <div className={clsx('flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between', disabled && 'opacity-50')}>
+    <div data-theme-ui="setting-row" className={clsx('flex flex-col gap-4 px-5 py-4 transition-colors duration-200 hover:bg-muted/18 sm:flex-row sm:items-center sm:justify-between', disabled && 'opacity-50')}>
       <div className="flex items-center gap-3 min-w-0">
         {icon && (
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+          <div data-theme-ui="setting-row-icon" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-muted-foreground shadow-inner shadow-white/20">
             {icon}
           </div>
         )}
@@ -57,7 +57,7 @@ export function SettingRow({
           {tip && <div className="mt-0.5 text-xs text-primary/80">{tip}</div>}
         </div>
       </div>
-      {children && <div className="w-full sm:w-auto sm:shrink-0">{children}</div>}
+      {children && <div data-theme-ui="setting-row-control" className="w-full sm:w-auto sm:shrink-0">{children}</div>}
     </div>
   );
 }
@@ -153,7 +153,7 @@ export function ConnectionPanel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-w-0 rounded-lg border border-border/70 bg-background/45 p-3">
+    <div data-theme-ui="connection-panel" className="min-w-0 rounded-2xl border border-border/60 bg-background/45 p-3 shadow-inner shadow-white/10">
       <div className="mb-2 min-w-0 text-sm font-medium text-foreground">{title}</div>
       {description && <p className="mb-3 text-xs leading-relaxed text-muted-foreground">{description}</p>}
       {children}
@@ -163,10 +163,10 @@ export function ConnectionPanel({
 
 export function CompatibilitySubmenu({ children }: { children: React.ReactNode }) {
   return (
-    <div className="border-t border-border/60 bg-muted/10 px-5 py-3">
+    <div data-theme-ui="compatibility-submenu" className="border-t border-border/50 bg-muted/10 px-5 py-3">
       <div className="sm:pl-12">
-        <div className="overflow-hidden rounded-xl border border-border/70 bg-card">
-          <div className="divide-y divide-border/60">{children}</div>
+        <div className="overflow-hidden rounded-2xl border border-border/60 bg-card/86 shadow-sm shadow-black/5">
+          <div className="divide-y divide-border/45">{children}</div>
         </div>
       </div>
     </div>
@@ -189,11 +189,11 @@ export function CompatibilitySubmenuRow({
   below?: React.ReactNode;
 }) {
   return (
-    <div className="px-5 py-4">
+    <div data-theme-ui="compatibility-submenu-row" className="px-5 py-4 transition-colors duration-200 hover:bg-muted/16">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex min-w-0 items-start gap-3">
           {icon && (
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <div data-theme-ui="setting-row-icon" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-muted-foreground shadow-inner shadow-white/20">
               {icon}
             </div>
           )}

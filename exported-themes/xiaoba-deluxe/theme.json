@@ -1,0 +1,9 @@
+{
+  "$comment": "FanControl custom theme manifest. This upgraded theme is intentionally separate from the built-in xiaoba theme.",
+  "id": "xiaoba-deluxe",
+  "name": "\u5c0f\u516b Plus",
+  "base": "light",
+  "author": "FanControl",
+  "version": "1.0.2",
+  "description": "\u5c0f\u516b\u5347\u7ea7\u7248\u4e3b\u9898\u3002\u4fdd\u7559\u84dd\u767d\u89d2\u8272\u6c14\u8d28\uff0c\u4f7f\u7528\u66f4\u67d4\u548c\u7684\u7eb8\u611f\u5c42\u7ea7\u3001\u8d34\u7eb8\u88c5\u9970\u548c\u672c\u5730\u53ef\u643a\u5e26\u7d20\u6750\u3002"
+}

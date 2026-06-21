@@ -22,16 +22,17 @@ function DialogClose({ ...props }: React.ComponentProps<typeof DialogPrimitive.C
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />;
 }
 
-function DialogOverlay({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
+function DialogOverlay({ className, style, ...props }: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
   return (
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 z-50 bg-black/55",
+        "fixed inset-0",
         "data-[state=open]:animate-in data-[state=closed]:animate-out",
         "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         className
       )}
+      style={{ ...style, zIndex: "var(--layer-dialog-overlay)" }}
       {...props}
     />
   );
@@ -42,25 +43,27 @@ type DialogContentProps = React.ComponentProps<typeof DialogPrimitive.Content> &
   overlayClassName?: string;
 };
 
-function DialogContent({ className, children, hideClose = false, overlayClassName, ...props }: DialogContentProps) {
+function DialogContent({ className, children, hideClose = false, overlayClassName, style, ...props }: DialogContentProps) {
   return (
     <DialogPortal>
       <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%]",
-          "gap-4 rounded-xl border bg-card p-6 text-card-foreground shadow-lg duration-200",
+          "fixed left-[50%] top-[50%] grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%]",
+          "gap-4 rounded-xl border bg-card p-6 text-card-foreground duration-200",
           "data-[state=open]:animate-in data-[state=closed]:animate-out",
           "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
           className
         )}
+        style={{ ...style, zIndex: "var(--layer-dialog-content)" }}
         {...props}
       >
         {children}
         {!hideClose && (
           <DialogPrimitive.Close
-            className="absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
+            data-slot="dialog-close"
+            className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-lg opacity-75 transition hover:opacity-100 disabled:pointer-events-none"
             aria-label="Close"
           >
             <X className="h-4 w-4" />

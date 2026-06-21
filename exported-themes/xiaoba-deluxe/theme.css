@@ -1,0 +1,1443 @@
+﻿/* 灏忓叓涓婚锛氬崱閫氳创绾搁銆傚鍒舵湰涓婚鏃惰鍚屾淇敼 theme.json 鐨?id 涓庝笅鏂?data-theme 鍓嶇紑銆?*/
+
+html[data-theme="xiaoba-deluxe"] {
+  --background: #fff9e9;
+  --foreground: #3f302b;
+  --card: #fffefa;
+  --card-foreground: #3f302b;
+  --muted: #e9f7fb;
+  --muted-foreground: #665f58;
+  --border: #b7dce9;
+  --input: #a9cedf;
+  --ring: #70aad0;
+  --primary: #6fa9d0;
+  --primary-foreground: #ffffff;
+  --destructive: #ef4444;
+  --scrollbar-thumb: color-mix(in srgb, #6fa9d0 32%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, #6fa9d0 48%, transparent);
+  --scrollbar-track: color-mix(in srgb, #fff9e9 82%, transparent);
+  --overlay-scrollbar-thumb: color-mix(in srgb, #6fa9d0 26%, transparent);
+  --overlay-scrollbar-thumb-hover: color-mix(in srgb, #6fa9d0 40%, transparent);
+  --chart-grid: color-mix(in srgb, #d6edf4 58%, transparent);
+  --chart-axis: color-mix(in srgb, #accfe0 58%, transparent);
+  --chart-tick: #6c5650;
+  --chart-primary: #6fa9d0;
+  --chart-primary-active: #5b94bb;
+  --chart-primary-glow: rgba(111, 169, 208, 0.28);
+  --chart-cpu-temperature: #6fa9d0;
+  --chart-gpu-temperature: #e98da2;
+  --chart-fan-speed: #7fc6b3;
+  --chart-cpu-power: #79bde0;
+  --chart-gpu-power: #e7a16f;
+  --chart-temperature-indicator: #e98da2;
+  --chart-tooltip-bg: rgba(255, 254, 250, 0.98);
+  --chart-tooltip-border: #b7dce9;
+  --chart-tooltip-shadow: 0 16px 30px -20px rgba(63, 48, 43, 0.25);
+  --chart-tooltip-text: #3f302b;
+  --popover: #fffefa;
+  --popover-foreground: #3f302b;
+  --secondary: #e4f5fa;
+  --secondary-foreground: #3f302b;
+  --accent: #ffe6ef;
+  --accent-foreground: #3f302b;
+  --sidebar: #fffefa;
+  --sidebar-foreground: #3f302b;
+  --sidebar-primary: #6fa9d0;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e9f7fb;
+  --sidebar-accent-foreground: #3f302b;
+  --sidebar-border: #b7dce9;
+  --sidebar-ring: #70aad0;
+  --mica-content-surface: color-mix(in srgb, var(--background) 92%, var(--card) 8%);
+  --mica-content-border: color-mix(in srgb, var(--border) 82%, var(--card) 18%);
+  --theme-page-home-background: linear-gradient(135deg, rgba(255, 249, 233, 0.94), rgba(230, 247, 251, 0.88));
+  --theme-page-settings-background: linear-gradient(135deg, rgba(255, 254, 250, 0.95), rgba(236, 249, 252, 0.88));
+  --theme-page-curve-background: linear-gradient(135deg, rgba(255, 254, 250, 0.94), rgba(234, 248, 252, 0.88));
+  --theme-card-background: linear-gradient(180deg, rgba(255, 254, 250, 0.97), rgba(242, 250, 252, 0.94));
+  --theme-card-border: color-mix(in srgb, var(--border) 72%, rgba(63, 48, 43, 0.1));
+  --theme-card-shadow: 0 14px 28px -24px rgba(63, 48, 43, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.86);
+  --theme-card-hover-border: color-mix(in srgb, #6fa9d0 38%, var(--theme-card-border));
+  --theme-card-hover-shadow: 0 18px 32px -27px rgba(63, 48, 43, 0.23), 0 0 0 1px rgba(111, 169, 208, 0.09);
+  --theme-card-hover-transform: translateY(-1px);
+  --theme-card-backdrop-filter: blur(9px) saturate(112%);
+  --theme-dialog-overlay-background: rgba(63, 48, 43, 0.34);
+  --theme-toast-background: linear-gradient(180deg, rgba(255, 254, 250, 0.98), rgba(242, 250, 252, 0.95));
+  --theme-toast-shadow: 0 16px 32px -24px rgba(63, 48, 43, 0.26);
+  --theme-toast-backdrop-filter: blur(9px) saturate(112%);
+  --theme-control-hover-border: color-mix(in srgb, #6fa9d0 40%, transparent);
+  --theme-switch-hover-border: color-mix(in srgb, #6fa9d0 54%, transparent);
+  --theme-switch-hover-shadow: 0 0 0 2px rgba(111, 169, 208, 0.1);
+  --theme-switch-checked-shadow: 0 0 0 3px rgba(111, 169, 208, 0.14);
+  --theme-switch-checked-hover-shadow: 0 0 0 3px rgba(111, 169, 208, 0.16);
+  --xiaoba-deluxe-hero-image: url("/theme-assets/xiaoba-deluxe/hero.webp");
+  --xiaoba-deluxe-sparkles: url("/theme-assets/xiaoba-deluxe/decorations/sparkles.svg");
+  --xiaoba-deluxe-cloud: url("/theme-assets/xiaoba-deluxe/decorations/cloud.svg");
+  --xiaoba-deluxe-star: url("/theme-assets/xiaoba-deluxe/decorations/star.svg");
+  --xiaoba-deluxe-heart: url("/theme-assets/xiaoba-deluxe/decorations/heart.svg");
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell {
+  background:
+    radial-gradient(ellipse at 84% 8%, rgba(255, 229, 132, 0.24), transparent 14rem),
+    radial-gradient(circle at 12% 88%, rgba(168, 216, 207, 0.18), transparent 22rem),
+    radial-gradient(circle at 72% 82%, rgba(240, 152, 171, 0.12), transparent 16rem),
+    linear-gradient(135deg, #fff9e9 0%, #e8f8fb 48%, #d9eff8 100%);
+  isolation: isolate;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 5% 12%, rgba(255, 235, 174, 0.22) 0 4.8rem, transparent 5rem),
+    radial-gradient(ellipse at 96% 18%, rgba(240, 152, 171, 0.12) 0 5.4rem, transparent 5.8rem),
+    radial-gradient(ellipse at 18% 82%, rgba(127, 198, 179, 0.14) 0 6rem, transparent 6.4rem),
+    var(--xiaoba-deluxe-cloud) 8% 74% / 88px 88px no-repeat,
+    var(--xiaoba-deluxe-sparkles) 92% 13% / 62px 62px no-repeat,
+    linear-gradient(115deg, transparent 0 48%, rgba(111, 169, 208, 0.045) 48% 49%, transparent 49% 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 90%, transparent 100%);
+  opacity: 0.74;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar,
+html[data-theme="xiaoba-deluxe"] .glacier-shell > section {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-titlebar {
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 32%, transparent);
+  border-top-left-radius: 1.25rem;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(255, 249, 233, 0.97), rgba(232, 248, 251, 0.9)),
+    color-mix(in srgb, var(--background) 94%, var(--card) 6%);
+  box-shadow: 0 10px 24px -31px rgba(63, 48, 43, 0.28);
+  backdrop-filter: blur(18px) saturate(128%);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-content {
+  border-top-left-radius: 1.25rem;
+  background:
+    linear-gradient(135deg, rgba(255, 249, 233, 0.93), rgba(230, 247, 251, 0.86));
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.58);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-content-panel {
+  border-top-left-radius: 1.2rem;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell .bg-card {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 98%, white) 0%, color-mix(in srgb, var(--card) 88%, #e4f5fa) 100%);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell .border-border,
+html[data-theme="xiaoba-deluxe"] .glacier-shell .border-border\/70,
+html[data-theme="xiaoba-deluxe"] .glacier-shell .border-border\/80 {
+  border-color: color-mix(in srgb, var(--border) 82%, rgba(75, 48, 42, 0.16));
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell .shadow-sm {
+  box-shadow:
+    0 5px 0 -4px rgba(111, 169, 208, 0.12),
+    0 10px 18px -23px rgba(63, 48, 43, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar {
+  position: relative;
+  overflow: hidden;
+  border-right-color: color-mix(in srgb, var(--border) 36%, transparent) !important;
+  background:
+    radial-gradient(ellipse at 50% 6%, rgba(255, 235, 174, 0.28), transparent 3.8rem),
+    radial-gradient(ellipse at 42% 92%, rgba(240, 152, 171, 0.16), transparent 4.2rem),
+    linear-gradient(180deg, rgba(255, 254, 250, 0.96), rgba(231, 247, 251, 0.96));
+  box-shadow:
+    inset -1px 0 0 rgba(111, 169, 208, 0.18),
+    inset 1px 0 0 rgba(255, 255, 255, 0.62);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar::before {
+  content: "";
+  position: absolute;
+  inset: 0.48rem 0.32rem;
+  border: 1px solid rgba(111, 169, 208, 0.18);
+  border-radius: 1.4rem;
+  pointer-events: none;
+  background:
+    var(--xiaoba-deluxe-star) 50% 0.85rem / 1.25rem 1.25rem no-repeat,
+    radial-gradient(ellipse at 50% 1.2rem, rgba(255, 255, 255, 0.64), transparent 1.8rem),
+    radial-gradient(ellipse at 50% calc(100% - 1rem), rgba(127, 198, 179, 0.1), transparent 2rem);
+  opacity: 0.86;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar > * {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar::after {
+  content: "Chiikawa";
+  position: absolute;
+  bottom: 4.85rem;
+  left: 50%;
+  z-index: 0;
+  transform: translateX(-50%);
+  color: color-mix(in srgb, var(--primary) 48%, transparent);
+  font-family: "Segoe Script", "Bradley Hand ITC", "Comic Sans MS", cursive;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  writing-mode: vertical-rl;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar [role="img"] {
+  border-width: 1px !important;
+  border-color: color-mix(in srgb, var(--primary) 38%, white) !important;
+  border-radius: 1.25rem !important;
+  background:
+    var(--xiaoba-deluxe-sparkles) 80% 20% / 1rem 1rem no-repeat,
+    radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.82), transparent 1.1rem),
+    linear-gradient(145deg, rgba(255, 254, 250, 0.99), rgba(231, 247, 251, 0.92)) !important;
+  color: color-mix(in srgb, var(--primary) 86%, #3f302b 14%) !important;
+  box-shadow:
+    0 7px 0 -5px rgba(111, 169, 208, 0.18),
+    0 15px 22px -23px rgba(63, 48, 43, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.84) !important;
+  transform: rotate(-1deg);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar [role="img"] svg,
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar button svg {
+  stroke-width: 2.45;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar button {
+  border: 1px solid transparent;
+  border-radius: 1.18rem !important;
+  background: transparent;
+  box-shadow: none;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar button:hover {
+  border-color: color-mix(in srgb, var(--primary) 24%, transparent);
+  background:
+    radial-gradient(circle at 30% 22%, rgba(255, 235, 174, 0.26), transparent 1.2rem),
+    linear-gradient(150deg, rgba(255, 254, 250, 0.94), rgba(231, 247, 251, 0.76)) !important;
+  color: color-mix(in srgb, var(--primary) 82%, var(--foreground) 18%) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 9px 16px -17px rgba(63, 48, 43, 0.3);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar button[aria-selected="true"] {
+  border-color: color-mix(in srgb, var(--primary) 36%, white);
+  background:
+    var(--xiaoba-deluxe-cloud) 88% 74% / 1.2rem 1.2rem no-repeat,
+    radial-gradient(circle at 24% 24%, rgba(255, 235, 174, 0.38), transparent 1.15rem),
+    radial-gradient(circle at 82% 84%, rgba(240, 152, 171, 0.15), transparent 1rem),
+    linear-gradient(145deg, rgba(255, 254, 250, 0.99), rgba(231, 247, 251, 0.94)) !important;
+  color: color-mix(in srgb, var(--primary) 86%, var(--foreground) 14%) !important;
+  transform: translateX(1px);
+  box-shadow:
+    0 8px 0 -5px rgba(111, 169, 208, 0.18),
+    0 15px 24px -25px rgba(63, 48, 43, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar button[aria-selected="true"] > span {
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-card {
+  min-height: 104px;
+  border-width: 1px;
+  background:
+    radial-gradient(circle at 82% 22%, rgba(240, 152, 171, 0.1), transparent 18%),
+    radial-gradient(circle at 88% 80%, rgba(127, 198, 179, 0.15), transparent 22%),
+    linear-gradient(90deg, rgba(255, 254, 250, 0.99), rgba(246, 253, 255, 0.95) 43%, rgba(218, 243, 250, 0.68)),
+    linear-gradient(135deg, rgba(255, 235, 174, 0.17), transparent 48%);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-content {
+  padding-right: clamp(220px, 28vw, 340px);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-actions {
+  position: relative;
+  z-index: 2;
+  padding: 0.38rem 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card) 94%, rgba(231, 247, 251, 0.5));
+  border: 1px solid color-mix(in srgb, var(--border) 46%, transparent);
+  backdrop-filter: blur(12px) saturate(126%);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-art {
+  top: 0.42rem;
+  right: clamp(3.7rem, 5.8vw, 5.8rem);
+  bottom: -0.38rem;
+  width: clamp(238px, 28vw, 368px);
+  overflow: hidden;
+  border-left: 1px solid color-mix(in srgb, var(--primary) 10%, transparent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  mask-image:
+    linear-gradient(to right, transparent 0%, black 18%, black 88%, transparent 100%),
+    linear-gradient(to bottom, transparent 0%, black 8%, black 96%, transparent 100%);
+  mask-composite: intersect;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-art .glacier-operator-art {
+  opacity: 0 !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-art > .absolute {
+  opacity: 0;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-art::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--xiaoba-deluxe-hero-image) 69% 59% / auto 105% no-repeat;
+  z-index: 1;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-art::after {
+  content: "Chiikawa";
+  position: absolute;
+  top: 0.34rem;
+  right: 0.48rem;
+  display: block;
+  padding: 0.1rem 0.48rem 0.14rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.52);
+  background:
+    var(--xiaoba-deluxe-sparkles) calc(100% - 0.2rem) 50% / 0.78rem 0.78rem no-repeat,
+    linear-gradient(135deg, rgba(255, 254, 250, 0.74), rgba(232, 248, 251, 0.38));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.68),
+    0 8px 16px -18px rgba(63, 48, 43, 0.24);
+  color: color-mix(in srgb, var(--primary) 56%, #3f302b 44%);
+  font-family: "Lucida Handwriting", "Segoe Print", "Comic Sans MS", cursive;
+  font-size: clamp(13px, 1.18vw, 18px);
+  font-weight: 600;
+  font-style: italic;
+  letter-spacing: 0.015em;
+  line-height: 1;
+  opacity: 0.74;
+  text-shadow:
+    0 1px 0 rgba(255, 254, 250, 0.82),
+    0 5px 12px rgba(63, 48, 43, 0.12);
+  transform: rotate(-5deg) translateX(0.1rem);
+  transform-origin: top right;
+  pointer-events: none;
+  z-index: 2;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-art-label,
+html[data-theme="xiaoba-deluxe"] .glacier-hero-card > .theme-thrm-only.glacier-hero-art-label,
+html[data-theme="xiaoba-deluxe"] .glacier-hero-card [class*="glacier-hero-art-label"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-actions button[role="switch"] {
+  overflow: hidden;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-actions button[role="switch"] > span {
+  box-shadow:
+    0 1px 4px -2px rgba(75, 48, 42, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.68) !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-card::before,
+html[data-theme="xiaoba-deluxe"] .glacier-hero-card::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-card::before {
+  inset: 0.74rem 1.28rem auto auto;
+  width: 58px;
+  height: 58px;
+  background:
+    var(--xiaoba-deluxe-cloud) center / contain no-repeat;
+  transform: rotate(-8deg);
+  opacity: 0.34;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-card::after {
+  right: 1.42rem;
+  bottom: 0.72rem;
+  width: 42px;
+  height: 42px;
+  background:
+    var(--xiaoba-deluxe-star) center / contain no-repeat;
+  opacity: 0.26;
+  transform: rotate(10deg);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell .glacier-metric-card,
+html[data-theme="xiaoba-deluxe"] .glacier-shell .glacier-control-card,
+html[data-theme="xiaoba-deluxe"] .glacier-shell .glacier-chart-card {
+  position: relative;
+  overflow: hidden;
+  border-width: 1px;
+  background:
+    linear-gradient(135deg, rgba(255, 254, 250, 0.98) 0%, rgba(246, 253, 255, 0.94) 48%, rgba(232, 248, 251, 0.7) 100%),
+    radial-gradient(circle at 18% 0%, rgba(240, 152, 171, 0.1), transparent 42%);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell .glacier-metric-card::before,
+html[data-theme="xiaoba-deluxe"] .glacier-shell .glacier-control-card::before,
+html[data-theme="xiaoba-deluxe"] .glacier-shell .glacier-chart-card::before {
+  content: "";
+  position: absolute;
+  inset: 0.62rem;
+  pointer-events: none;
+  border-radius: 0.65rem;
+  background:
+    linear-gradient(90deg, rgba(111, 169, 208, 0.12) 0 32px, transparent 32px calc(100% - 32px), rgba(240, 152, 171, 0.08) calc(100% - 32px) 100%) top / 100% 1px no-repeat,
+    linear-gradient(90deg, rgba(231, 184, 93, 0.08) 0 28px, transparent 28px calc(100% - 28px), rgba(127, 198, 179, 0.1) calc(100% - 28px) 100%) bottom / 100% 1px no-repeat;
+  opacity: 0.42;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell .glacier-metric-card::after {
+  content: "";
+  position: absolute;
+  right: 0.92rem;
+  bottom: 0.62rem;
+  width: 34px;
+  height: 34px;
+  pointer-events: none;
+  background:
+    var(--xiaoba-deluxe-sparkles) center / contain no-repeat;
+  opacity: 0.2;
+  transform: rotate(-7deg);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-metric-card > *,
+html[data-theme="xiaoba-deluxe"] .glacier-chart-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-metric-card {
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-metric-card .metric-header-icon {
+  color: color-mix(in srgb, var(--primary) 82%, var(--foreground) 18%);
+  filter: drop-shadow(0 0 5px rgba(111, 169, 208, 0.16));
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-metric-card .metric-header-icon svg {
+  color: currentColor;
+  stroke: currentColor;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-metric-card .semi-gauge-svg path:first-child {
+  stroke: rgba(111, 169, 208, 0.12);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-metric-card .semi-gauge-svg path:last-child {
+  filter: drop-shadow(0 0 8px rgba(111, 169, 208, 0.24));
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-metric-card:hover {
+  transform: var(--theme-card-hover-transform);
+  border-color: var(--theme-card-hover-border);
+  box-shadow: var(--theme-card-hover-shadow);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-control-card {
+  padding: 0.85rem;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-stat-tile {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(241, 249, 252, 0.66)),
+    linear-gradient(135deg, rgba(240, 152, 171, 0.06), transparent 48%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    0 6px 14px -18px rgba(75, 48, 42, 0.24);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-stat-tile::before {
+  content: "";
+  position: absolute;
+  top: 0.55rem;
+  right: 0.6rem;
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+  border-radius: 999px;
+  background:
+    var(--xiaoba-deluxe-star) center / contain no-repeat;
+  opacity: 0.18;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-chart-card {
+  min-height: 0;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-chart-card::after {
+  content: "";
+  position: absolute;
+  right: 0.9rem;
+  bottom: 0.68rem;
+  width: 40px;
+  height: 40px;
+  pointer-events: none;
+  background:
+    var(--xiaoba-deluxe-cloud) center / contain no-repeat;
+  opacity: 0.16;
+  transform: rotate(-4deg);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-chart-canvas {
+  position: relative;
+  border: 0;
+  border-radius: 0.95rem;
+  background:
+    radial-gradient(circle at 12% 12%, rgba(255, 235, 174, 0.08), transparent 3rem),
+    linear-gradient(115deg, transparent 0 47%, rgba(111, 169, 208, 0.025) 47% 48%, transparent 48% 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.38), rgba(230, 243, 255, 0.12));
+  background-size: 100% 100%, 104px 104px, 100% 100%;
+  box-shadow: none;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-chart-canvas::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(111, 169, 208, 0.036), transparent);
+  transform: translateX(-55%);
+  animation: xiaoba-deluxe-scan 6.2s ease-in-out infinite;
+}
+
+@keyframes xiaoba-deluxe-scan {
+  0%,
+  58% {
+    transform: translateX(-65%);
+    opacity: 0;
+  }
+  68% {
+    opacity: 0.46;
+  }
+  100% {
+    transform: translateX(65%);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="xiaoba-deluxe"] .glacier-chart-canvas::before {
+    animation: none;
+    opacity: 0;
+  }
+
+  html[data-theme="xiaoba-deluxe"] .glacier-metric-card:hover {
+    transform: none;
+  }
+}
+
+html[data-theme="xiaoba-deluxe"] .theme-thrm-only {
+  display: block !important;
+}
+
+@media (max-width: 767px) {
+  html[data-theme="xiaoba-deluxe"] .theme-thrm-only {
+    display: none !important;
+  }
+}
+
+@media (max-width: 1023px) {
+  html[data-theme="xiaoba-deluxe"] .glacier-hero-content {
+    padding-right: 0;
+  }
+
+  html[data-theme="xiaoba-deluxe"] .glacier-hero-art,
+  html[data-theme="xiaoba-deluxe"] .glacier-hero-art-label {
+    display: none !important;
+  }
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell button,
+html[data-theme="xiaoba-deluxe"] .glacier-shell input,
+html[data-theme="xiaoba-deluxe"] .glacier-shell [role="tab"] {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.44);
+}
+
+/* Keep custom shell corners filled so the native window background never peeks through. */
+html[data-theme="xiaoba-deluxe"] .glacier-titlebar,
+html[data-theme="xiaoba-deluxe"] .glacier-content,
+html[data-theme="xiaoba-deluxe"] .glacier-content-panel,
+html[data-theme="xiaoba-deluxe"] .glacier-shell > section {
+  border-top-left-radius: 0 !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell,
+html[data-theme="xiaoba-deluxe"] .glacier-shell > section {
+  background-color: var(--background) !important;
+}
+
+/* Richness pass: restore the fuller Xiaoba Plus look without rewriting the base theme. */
+html[data-theme="xiaoba-deluxe"] {
+  --theme-card-background:
+    radial-gradient(ellipse at 18% 0%, rgba(255, 236, 166, 0.18), transparent 38%),
+    linear-gradient(180deg, rgba(255, 254, 250, 0.78), rgba(242, 250, 252, 0.64));
+  --theme-card-border: color-mix(in srgb, var(--border) 64%, rgba(63, 48, 43, 0.13));
+  --theme-card-shadow:
+    0 18px 34px -27px rgba(63, 48, 43, 0.24),
+    0 4px 0 -3px rgba(111, 169, 208, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.74);
+  --theme-card-hover-shadow:
+    0 20px 36px -28px rgba(63, 48, 43, 0.25),
+    0 5px 0 -3px rgba(240, 152, 171, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  --theme-preview-card-background:
+    linear-gradient(180deg, rgba(255, 254, 250, 0.72), rgba(242, 250, 252, 0.54));
+  --theme-tile-background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(241, 249, 252, 0.46));
+  --theme-card-backdrop-filter: blur(8px) saturate(112%);
+  --theme-toast-backdrop-filter: blur(8px) saturate(112%);
+  --xiaoba-deluxe-hero-image: url("hero.webp");
+  --xiaoba-deluxe-sparkles: url("decorations/sparkles.svg");
+  --xiaoba-deluxe-cloud: url("decorations/cloud.svg");
+  --xiaoba-deluxe-star: url("decorations/star.svg");
+  --xiaoba-deluxe-heart: url("decorations/heart.svg");
+  --xiaoba-deluxe-curtain-image: url("assets/stickers/curtain.webp");
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-content-panel {
+  position: relative;
+  isolation: isolate;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell:not([data-theme-page="devices"]) .glacier-content-panel::before {
+  content: "";
+  position: absolute;
+  inset: -1.4rem -2rem -1rem;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--xiaoba-deluxe-curtain-image) center / cover no-repeat;
+  opacity: 0.95;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="devices"] .glacier-content-panel::before {
+  content: none;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-content-panel > .app-scroll-root {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-content-panel > .app-overlay-scrollbar {
+  position: absolute;
+  z-index: var(--layer-scrollbar);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-card,
+html[data-theme="xiaoba-deluxe"] .glacier-shell .glacier-metric-card,
+html[data-theme="xiaoba-deluxe"] .glacier-shell .glacier-control-card,
+html[data-theme="xiaoba-deluxe"] .glacier-shell .glacier-chart-card {
+  border-color: rgba(143, 194, 223, 0.36);
+  background:
+    radial-gradient(ellipse at 18% 0%, rgba(255, 236, 166, 0.2), transparent 36%),
+    radial-gradient(ellipse at 88% 100%, rgba(240, 152, 171, 0.13), transparent 42%),
+    linear-gradient(135deg, rgba(255, 254, 250, 0.76) 0%, rgba(246, 253, 255, 0.64) 52%, rgba(232, 248, 251, 0.5) 100%) !important;
+  box-shadow: var(--theme-card-shadow);
+  -webkit-backdrop-filter: var(--theme-card-backdrop-filter);
+  backdrop-filter: var(--theme-card-backdrop-filter);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-card {
+  border-width: 1px;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-art {
+  right: clamp(3.65rem, 5.8vw, 5.8rem);
+  width: clamp(240px, 28vw, 370px);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-art::before {
+  background: var(--xiaoba-deluxe-hero-image) 69% 59% / auto 108% no-repeat;
+  opacity: 1 !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-art::after {
+  opacity: 0.78;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-card::before {
+  background: var(--xiaoba-deluxe-cloud) center / contain no-repeat;
+  opacity: 0.42;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-card::after {
+  background: var(--xiaoba-deluxe-star) center / contain no-repeat;
+  opacity: 0.3;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell .glacier-metric-card::before,
+html[data-theme="xiaoba-deluxe"] .glacier-shell .glacier-control-card::before,
+html[data-theme="xiaoba-deluxe"] .glacier-shell .glacier-chart-card::before {
+  border: 1px solid rgba(143, 194, 223, 0.16);
+  border-radius: 0.85rem;
+  background:
+    linear-gradient(90deg, rgba(111, 169, 208, 0.1) 0 1.45rem, transparent 1.45rem calc(100% - 1.45rem), rgba(240, 152, 171, 0.09) calc(100% - 1.45rem) 100%) top / 100% 1px no-repeat,
+    linear-gradient(90deg, rgba(231, 184, 93, 0.08) 0 1.3rem, transparent 1.3rem calc(100% - 1.3rem), rgba(127, 198, 179, 0.1) calc(100% - 1.3rem) 100%) bottom / 100% 1px no-repeat;
+  opacity: 0.48;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell .glacier-metric-card::after,
+html[data-theme="xiaoba-deluxe"] .glacier-control-card::after,
+html[data-theme="xiaoba-deluxe"] .glacier-chart-card::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  background: var(--xiaoba-deluxe-sparkles) center / contain no-repeat;
+  opacity: 0.2;
+  transform: rotate(-8deg);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell .glacier-metric-card::after {
+  right: 0.9rem;
+  bottom: 0.62rem;
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-control-card::after {
+  right: 1rem;
+  top: 0.72rem;
+  width: 2.35rem;
+  height: 2.35rem;
+  background-image: var(--xiaoba-deluxe-heart);
+  opacity: 0.13;
+  transform: rotate(8deg);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-chart-card::after {
+  right: 0.92rem;
+  bottom: 0.68rem;
+  width: 2.7rem;
+  height: 2.7rem;
+  background-image: var(--xiaoba-deluxe-cloud);
+  opacity: 0.16;
+  transform: rotate(-4deg);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-stat-tile {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.58), rgba(241, 249, 252, 0.42)) !important;
+  border-color: rgba(143, 194, 223, 0.3);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-stat-tile::before {
+  top: 0.42rem;
+  right: 0.48rem;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 0;
+  background: var(--xiaoba-deluxe-star) center / contain no-repeat !important;
+  opacity: 0.16;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-stat-tile:nth-child(2n)::before {
+  background-image: var(--xiaoba-deluxe-sparkles) !important;
+  transform: rotate(10deg);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-stat-tile:nth-child(3n)::before {
+  background-image: var(--xiaoba-deluxe-heart) !important;
+  opacity: 0.12;
+  transform: rotate(-7deg);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-chart-canvas::before {
+  content: none !important;
+  animation: none !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .semi-gauge-svg path:first-child,
+html[data-theme="xiaoba-deluxe"] .semi-gauge-svg path:last-child,
+html[data-theme="xiaoba-deluxe"] .metric-header-icon,
+html[data-theme="xiaoba-deluxe"] .metric-header-icon svg,
+html[data-theme="xiaoba-deluxe"] .glacier-stat-tile svg {
+  filter: none !important;
+}
+
+/* Xiaoba Plus final polish: clean typography, lighter cards, and stable hover feedback. */
+html[data-theme="xiaoba-deluxe"] {
+  --xiaoba-deluxe-ui-font:
+    "Manrope",
+    "Noto Sans SC",
+    "Source Han Sans CN",
+    "思源黑体 CN",
+    "Segoe UI Variable",
+    "Segoe UI",
+    "DengXian",
+    "Microsoft YaHei UI",
+    "Microsoft YaHei",
+    sans-serif;
+  --font-sans: "Manrope", "Noto Sans SC", "Source Han Sans CN", "思源黑体 CN", "Segoe UI Variable", "Segoe UI", "DengXian", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-ui-cjk: "Noto Sans SC", "Source Han Sans CN", "思源黑体 CN", "DengXian", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+}
+
+html[data-theme="xiaoba-deluxe"] body,
+html[data-theme="xiaoba-deluxe"] .glacier-shell,
+html[data-theme="xiaoba-deluxe"] .glacier-shell :where(button, input, textarea, select, [data-theme-card], .glacier-titlebar, .glacier-sidebar, .glacier-content-panel) {
+  font-family: var(--xiaoba-deluxe-ui-font) !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-hero-art::after,
+html[data-theme="xiaoba-deluxe"] .glacier-shell .glacier-metric-card::after {
+  content: none !important;
+  display: none !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar [role="img"] {
+  background:
+    radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.84), transparent 1.1rem),
+    linear-gradient(145deg, rgba(255, 254, 250, 0.99), rgba(231, 247, 251, 0.92)) !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="status"] :where(
+  [data-theme-card="device-hero"],
+  [data-theme-card="cpu-temperature"],
+  [data-theme-card="gpu-temperature"],
+  [data-theme-card="fan-speed"],
+  [data-theme-section="control-protection"],
+  [data-theme-card="fan-curve-preview"],
+  [data-theme-card="temperature-history"]
+) {
+  background-color: rgba(255, 254, 250, 0.5) !important;
+  background-image:
+    radial-gradient(ellipse at 16% 2%, rgba(255, 236, 166, 0.14), transparent 38%),
+    radial-gradient(ellipse at 86% 100%, rgba(240, 152, 171, 0.08), transparent 44%),
+    linear-gradient(135deg, rgba(255, 254, 250, 0.58) 0%, rgba(246, 253, 255, 0.42) 54%, rgba(232, 248, 251, 0.3) 100%) !important;
+  -webkit-backdrop-filter: blur(10px) saturate(112%);
+  backdrop-filter: blur(10px) saturate(112%);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="status"] .glacier-stat-tile {
+  background-color: rgba(255, 255, 255, 0.38) !important;
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(241, 249, 252, 0.28)) !important;
+  border-color: rgba(143, 194, 223, 0.32) !important;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-stat-tile:hover {
+  transform: translateY(-1px) scale(1.006);
+  border-color: color-mix(in srgb, var(--primary) 48%, white) !important;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(255, 236, 166, 0.24), transparent 42%),
+    radial-gradient(circle at 94% 100%, rgba(240, 152, 171, 0.12), transparent 44%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(241, 249, 252, 0.6)) !important;
+  box-shadow:
+    0 12px 20px -22px rgba(63, 48, 43, 0.36),
+    0 0 0 1px rgba(111, 169, 208, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88) !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-stat-tile:focus-within,
+html[data-theme="xiaoba-deluxe"] .glacier-stat-tile:active {
+  border-color: color-mix(in srgb, var(--primary) 56%, white) !important;
+  box-shadow:
+    0 0 0 3px rgba(111, 169, 208, 0.13),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88) !important;
+}
+
+@font-face {
+  font-family: "Xiaoba Round";
+  src: url("assets/fonts/xiaoba-round-subset.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Xiaoba Plus repair: use a compact bundled rounded Chinese subset and restore card feedback. */
+html[data-theme="xiaoba-deluxe"] {
+  --xiaoba-deluxe-cjk-font:
+    "Xiaoba Round",
+    "Microsoft YaHei UI",
+    "Microsoft YaHei",
+    "Microsoft JhengHei UI",
+    "Microsoft JhengHei",
+    "HONOR SANS CN",
+    "DengXian",
+    "Noto Sans SC",
+    sans-serif;
+  --xiaoba-deluxe-ui-font:
+    "Comic Sans MS",
+    var(--xiaoba-deluxe-cjk-font);
+  --font-sans: var(--xiaoba-deluxe-ui-font);
+  --font-ui-sans: var(--xiaoba-deluxe-ui-font);
+  --font-ui-cjk: var(--xiaoba-deluxe-cjk-font);
+  --theme-card-hover-transform: translateY(-2px);
+  --theme-card-hover-border: color-mix(in srgb, var(--primary) 46%, rgba(255, 255, 255, 0.7));
+}
+
+html[data-theme="xiaoba-deluxe"] {
+  --xiaoba-deluxe-soft-title-font:
+    "Xiaoba Round",
+    "Microsoft YaHei UI",
+    "Microsoft YaHei",
+    "Microsoft JhengHei UI",
+    "HONOR SANS CN",
+    "Comic Sans MS",
+    sans-serif;
+}
+
+html[data-theme="xiaoba-deluxe"] {
+  --xiaoba-deluxe-readable-font:
+    "Comic Sans MS",
+    "Xiaoba Round",
+    "Microsoft YaHei UI",
+    "Microsoft YaHei",
+    "HONOR SANS CN",
+    "Segoe UI Variable",
+    "Segoe UI",
+    sans-serif;
+}
+
+html[data-theme="xiaoba-deluxe"],
+html[data-theme="xiaoba-deluxe"] body,
+html[data-theme="xiaoba-deluxe"] .glacier-shell,
+html[data-theme="xiaoba-deluxe"] .glacier-shell *:not(svg):not(path) {
+  font-family: var(--xiaoba-deluxe-ui-font) !important;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+  font-weight: 500;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell :where(
+  h1,
+  h2,
+  h3,
+  h4,
+  .text-lg,
+  .text-xl,
+  .text-2xl,
+  .font-medium,
+  .font-semibold,
+  .font-bold,
+  [data-theme-card] > div:first-child,
+  [data-theme-card] .text-sm
+) {
+  font-family: var(--xiaoba-deluxe-soft-title-font) !important;
+  font-weight: 650;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell :where(.tabular-nums, [data-theme-card] .text-2xl, [data-theme-card] .text-3xl, [data-theme-card] .text-4xl) {
+  font-family: var(--xiaoba-deluxe-readable-font) !important;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  font-weight: 700;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell :where(.text-muted-foreground, .text-foreground\/70, .text-foreground\/65) {
+  font-weight: 520;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="status"] :is(
+  .glacier-hero-card,
+  .glacier-metric-card,
+  .glacier-control-card,
+  .glacier-chart-card,
+  [data-theme-card="device-hero"],
+  [data-theme-card="cpu-temperature"],
+  [data-theme-card="gpu-temperature"],
+  [data-theme-card="fan-speed"],
+  [data-theme-section="control-protection"],
+  [data-theme-card="fan-curve-preview"],
+  [data-theme-card="temperature-history"]
+) {
+  background:
+    radial-gradient(ellipse at 18% 0%, rgba(255, 236, 166, 0.18), transparent 38%),
+    radial-gradient(ellipse at 88% 100%, rgba(240, 152, 171, 0.1), transparent 46%),
+    linear-gradient(135deg, rgba(255, 254, 250, 0.66) 0%, rgba(246, 253, 255, 0.48) 54%, rgba(232, 248, 251, 0.34) 100%) !important;
+  border-color: rgba(143, 194, 223, 0.36) !important;
+  box-shadow:
+    0 18px 34px -28px rgba(63, 48, 43, 0.24),
+    0 1px 0 rgba(255, 255, 255, 0.56) inset !important;
+  -webkit-backdrop-filter: blur(10px) saturate(114%) !important;
+  backdrop-filter: blur(10px) saturate(114%) !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="status"] [data-theme-section="control-protection"] {
+  transform: none !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="status"] [data-theme-section="control-protection"] .glacier-stat-tile,
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="status"] .glacier-control-card .glacier-stat-tile {
+  cursor: default;
+  background:
+    radial-gradient(circle at 16% 0%, rgba(255, 236, 166, 0.12), transparent 40%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.58), rgba(241, 249, 252, 0.34)) !important;
+  border-color: rgba(143, 194, 223, 0.34) !important;
+  box-shadow:
+    0 8px 18px -20px rgba(63, 48, 43, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.76) !important;
+  transition:
+    transform 170ms cubic-bezier(0.2, 0.85, 0.25, 1),
+    border-color 170ms ease,
+    background 170ms ease,
+    box-shadow 170ms ease,
+    color 170ms ease !important;
+  will-change: transform;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="status"] [data-theme-section="control-protection"] .glacier-stat-tile:hover,
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="status"] .glacier-control-card .glacier-stat-tile:hover,
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="status"] [data-theme-card="control-mode"]:hover,
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="status"] [data-theme-card="temperature-state"]:hover,
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="status"] [data-theme-card="work-mode"]:hover,
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="status"] [data-theme-card="cpu-power"]:hover,
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="status"] [data-theme-card="gpu-power"]:hover {
+  transform: translateY(-2px) scale(1.015) !important;
+  border-color: color-mix(in srgb, var(--primary) 54%, white) !important;
+  background:
+    radial-gradient(circle at 15% 0%, rgba(255, 236, 166, 0.28), transparent 42%),
+    radial-gradient(circle at 94% 100%, rgba(240, 152, 171, 0.14), transparent 44%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(241, 249, 252, 0.6)) !important;
+  box-shadow:
+    0 18px 28px -24px rgba(63, 48, 43, 0.36),
+    0 0 0 1px rgba(111, 169, 208, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="status"] .glacier-stat-tile:hover::before {
+  opacity: 0.24 !important;
+  transform: rotate(-8deg) scale(1.08);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell :is(
+  [data-theme-card]:not([data-theme-card="curve-header"]),
+  [data-theme-ui="setting-card"],
+  [data-theme-ui="setting-section"],
+  [data-theme-ui="connection-panel"],
+  [data-theme-ui="compatibility-submenu"],
+  .glacier-chart-card,
+  .glacier-metric-card,
+  .glacier-control-card
+) {
+  background:
+    radial-gradient(ellipse at 18% 0%, rgba(255, 236, 166, 0.16), transparent 38%),
+    radial-gradient(ellipse at 88% 100%, rgba(240, 152, 171, 0.09), transparent 45%),
+    linear-gradient(135deg, rgba(255, 254, 250, 0.72) 0%, rgba(246, 253, 255, 0.54) 56%, rgba(232, 248, 251, 0.38) 100%) !important;
+  border-color: rgba(143, 194, 223, 0.34) !important;
+  box-shadow:
+    0 16px 32px -29px rgba(63, 48, 43, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72) !important;
+  -webkit-backdrop-filter: blur(9px) saturate(112%) !important;
+  backdrop-filter: blur(9px) saturate(112%) !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell :is(
+  [data-theme-card="curve-header"],
+  [data-theme-card="fan-curve-preview"] .glacier-chart-canvas,
+  [data-theme-card="temperature-history"] .glacier-chart-canvas
+) {
+  background: transparent !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell :is(
+  [data-theme-card="curve-history-summary"],
+  [data-theme-card="curve-history-chart"],
+  [data-theme-card="settings-overview-temperature"],
+  [data-theme-card="settings-overview-speed"],
+  [data-theme-card="settings-overview-device"]
+) {
+  background:
+    radial-gradient(circle at 14% 0%, rgba(255, 236, 166, 0.12), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.54), rgba(241, 249, 252, 0.34)) !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="control"] :is(
+  .rounded-2xl.border.border-border.bg-card,
+  .rounded-xl.border.border-border\/70.bg-background,
+  .rounded-xl.border.border-border.bg-background,
+  .rounded-xl.bg-muted\/50,
+  .rounded-md.bg-muted\/45
+),
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="about"] :is(
+  section.rounded-\[28px\],
+  .rounded-3xl.border,
+  .rounded-2xl.border,
+  .rounded-xl.border,
+  .fixed.rounded-3xl.border
+) {
+  background:
+    radial-gradient(ellipse at 18% 0%, rgba(255, 236, 166, 0.15), transparent 38%),
+    radial-gradient(ellipse at 88% 100%, rgba(240, 152, 171, 0.08), transparent 45%),
+    linear-gradient(135deg, rgba(255, 254, 250, 0.74) 0%, rgba(246, 253, 255, 0.56) 56%, rgba(232, 248, 251, 0.4) 100%) !important;
+  border-color: rgba(143, 194, 223, 0.34) !important;
+  box-shadow:
+    0 16px 32px -29px rgba(63, 48, 43, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72) !important;
+  -webkit-backdrop-filter: blur(9px) saturate(112%) !important;
+  backdrop-filter: blur(9px) saturate(112%) !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="control"] :is(
+  .min-h-56.max-h-\[min\(55vh\,30rem\)\],
+  pre,
+  input.font-mono,
+  .font-mono
+) {
+  font-family: "Cascadia Mono", "Consolas", monospace !important;
+}
+
+/* Xiaoba Plus glass restore: keep cards readable while letting the paper backdrop show through. */
+html[data-theme="xiaoba-deluxe"] {
+  --scrollbar-thumb: rgba(111, 169, 208, 0.42);
+  --scrollbar-thumb-hover: rgba(240, 152, 171, 0.56);
+  --scrollbar-track: rgba(255, 249, 233, 0.34);
+  --overlay-scrollbar-thumb: linear-gradient(180deg, rgba(111, 169, 208, 0.58), rgba(255, 235, 174, 0.48) 58%, rgba(240, 152, 171, 0.42));
+  --overlay-scrollbar-thumb-hover: linear-gradient(180deg, rgba(111, 169, 208, 0.72), rgba(255, 235, 174, 0.6) 54%, rgba(240, 152, 171, 0.56));
+  --theme-card-background:
+    radial-gradient(ellipse at 18% 0%, rgba(255, 236, 166, 0.16), transparent 38%),
+    radial-gradient(ellipse at 88% 100%, rgba(240, 152, 171, 0.09), transparent 45%),
+    linear-gradient(135deg, rgba(255, 254, 250, 0.52) 0%, rgba(246, 253, 255, 0.38) 56%, rgba(232, 248, 251, 0.24) 100%);
+  --theme-preview-card-background:
+    linear-gradient(180deg, rgba(255, 254, 250, 0.46), rgba(242, 250, 252, 0.3));
+  --theme-tile-background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(241, 249, 252, 0.22));
+  --theme-card-backdrop-filter: blur(10px) saturate(116%);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell :is(
+  [data-theme-card]:not([data-theme-card="curve-header"]),
+  [data-theme-ui="setting-card"],
+  [data-theme-ui="setting-section"],
+  [data-theme-ui="connection-panel"],
+  [data-theme-ui="compatibility-submenu"],
+  .glacier-chart-card,
+  .glacier-metric-card,
+  .glacier-control-card
+) {
+  background:
+    radial-gradient(ellipse at 18% 0%, rgba(255, 236, 166, 0.16), transparent 38%),
+    radial-gradient(ellipse at 88% 100%, rgba(240, 152, 171, 0.09), transparent 45%),
+    linear-gradient(135deg, rgba(255, 254, 250, 0.52) 0%, rgba(246, 253, 255, 0.38) 56%, rgba(232, 248, 251, 0.24) 100%) !important;
+  border-color: rgba(143, 194, 223, 0.36) !important;
+  box-shadow:
+    0 16px 30px -30px rgba(63, 48, 43, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.68) !important;
+  -webkit-backdrop-filter: blur(10px) saturate(116%) !important;
+  backdrop-filter: blur(10px) saturate(116%) !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="status"] :is(
+  .glacier-hero-card,
+  .glacier-metric-card,
+  .glacier-control-card,
+  .glacier-chart-card,
+  [data-theme-card="device-hero"],
+  [data-theme-card="cpu-temperature"],
+  [data-theme-card="gpu-temperature"],
+  [data-theme-card="fan-speed"],
+  [data-theme-section="control-protection"],
+  [data-theme-card="fan-curve-preview"],
+  [data-theme-card="temperature-history"]
+) {
+  background:
+    radial-gradient(ellipse at 18% 0%, rgba(255, 236, 166, 0.18), transparent 38%),
+    radial-gradient(ellipse at 88% 100%, rgba(240, 152, 171, 0.1), transparent 46%),
+    linear-gradient(135deg, rgba(255, 254, 250, 0.5) 0%, rgba(246, 253, 255, 0.36) 54%, rgba(232, 248, 251, 0.24) 100%) !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="status"] [data-theme-section="control-protection"] .glacier-stat-tile,
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="status"] .glacier-control-card .glacier-stat-tile,
+html[data-theme="xiaoba-deluxe"] .glacier-shell :is(
+  [data-theme-card="curve-history-summary"],
+  [data-theme-card="curve-history-chart"],
+  [data-theme-card="settings-overview-temperature"],
+  [data-theme-card="settings-overview-speed"],
+  [data-theme-card="settings-overview-device"]
+) {
+  background:
+    radial-gradient(circle at 14% 0%, rgba(255, 236, 166, 0.12), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(241, 249, 252, 0.22)) !important;
+  border-color: rgba(143, 194, 223, 0.32) !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="control"] :is(
+  .rounded-2xl.border.border-border.bg-card,
+  .rounded-xl.border.border-border\/70.bg-background,
+  .rounded-xl.border.border-border.bg-background,
+  .rounded-xl.bg-muted\/50,
+  .rounded-md.bg-muted\/45
+),
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="about"] :is(
+  section.rounded-\[28px\],
+  .rounded-3xl.border,
+  .rounded-2xl.border,
+  .rounded-xl.border,
+  .fixed.rounded-3xl.border
+) {
+  background:
+    radial-gradient(ellipse at 18% 0%, rgba(255, 236, 166, 0.14), transparent 38%),
+    radial-gradient(ellipse at 88% 100%, rgba(240, 152, 171, 0.08), transparent 45%),
+    linear-gradient(135deg, rgba(255, 254, 250, 0.54) 0%, rgba(246, 253, 255, 0.4) 56%, rgba(232, 248, 251, 0.26) 100%) !important;
+  border-color: rgba(143, 194, 223, 0.34) !important;
+  -webkit-backdrop-filter: blur(10px) saturate(116%) !important;
+  backdrop-filter: blur(10px) saturate(116%) !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+html[data-theme="xiaoba-deluxe"] *::-webkit-scrollbar-track {
+  background:
+    linear-gradient(180deg, rgba(255, 249, 233, 0.32), rgba(232, 248, 251, 0.22));
+  border-radius: 999px;
+}
+
+html[data-theme="xiaoba-deluxe"] *::-webkit-scrollbar-thumb {
+  background:
+    linear-gradient(180deg, rgba(111, 169, 208, 0.52), rgba(255, 235, 174, 0.42) 58%, rgba(240, 152, 171, 0.36)) !important;
+  border: 2px solid rgba(255, 254, 250, 0.5);
+  border-radius: 999px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.64),
+    0 6px 14px -12px rgba(63, 48, 43, 0.28);
+}
+
+html[data-theme="xiaoba-deluxe"] *::-webkit-scrollbar-thumb:hover {
+  background:
+    linear-gradient(180deg, rgba(111, 169, 208, 0.68), rgba(255, 235, 174, 0.56) 54%, rgba(240, 152, 171, 0.5)) !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-content-panel > .app-overlay-scrollbar {
+  right: 0.32rem;
+  width: 0.68rem;
+  padding: 0.12rem;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 254, 250, 0.18), rgba(232, 248, 251, 0.14));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.34),
+    0 10px 22px -18px rgba(63, 48, 43, 0.24);
+}
+
+html[data-theme="xiaoba-deluxe"] .app-overlay-scrollbar-thumb {
+  width: 0.36rem;
+  margin-inline: auto;
+  background: var(--overlay-scrollbar-thumb) !important;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: 999px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.68),
+    0 8px 16px -13px rgba(63, 48, 43, 0.3);
+}
+
+html[data-theme="xiaoba-deluxe"] .app-overlay-scrollbar-thumb:hover {
+  background: var(--overlay-scrollbar-thumb-hover) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 10px 18px -13px rgba(63, 48, 43, 0.34);
+}
+
+/* Xiaoba Plus curtain visibility: make the sticker backdrop readable through cards. */
+html[data-theme="xiaoba-deluxe"] {
+  --theme-card-background:
+    radial-gradient(ellipse at 18% 0%, rgba(255, 236, 166, 0.12), transparent 38%),
+    radial-gradient(ellipse at 88% 100%, rgba(240, 152, 171, 0.07), transparent 45%),
+    linear-gradient(135deg, rgba(255, 254, 250, 0.34) 0%, rgba(246, 253, 255, 0.24) 56%, rgba(232, 248, 251, 0.16) 100%);
+  --theme-preview-card-background:
+    linear-gradient(180deg, rgba(255, 254, 250, 0.28), rgba(242, 250, 252, 0.16));
+  --theme-tile-background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(241, 249, 252, 0.14));
+  --theme-card-backdrop-filter: blur(5px) saturate(110%);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell :is(
+  [data-theme-card]:not([data-theme-card="curve-header"]),
+  [data-theme-ui="setting-card"],
+  [data-theme-ui="setting-section"],
+  [data-theme-ui="connection-panel"],
+  [data-theme-ui="compatibility-submenu"],
+  .glacier-chart-card,
+  .glacier-metric-card,
+  .glacier-control-card
+) {
+  background-color: transparent !important;
+  background-image:
+    radial-gradient(ellipse at 18% 0%, rgba(255, 236, 166, 0.12), transparent 38%),
+    radial-gradient(ellipse at 88% 100%, rgba(240, 152, 171, 0.07), transparent 45%),
+    linear-gradient(135deg, rgba(255, 254, 250, 0.34) 0%, rgba(246, 253, 255, 0.24) 56%, rgba(232, 248, 251, 0.16) 100%) !important;
+  border-color: rgba(143, 194, 223, 0.4) !important;
+  box-shadow:
+    0 14px 28px -29px rgba(63, 48, 43, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.52) !important;
+  -webkit-backdrop-filter: blur(5px) saturate(110%) !important;
+  backdrop-filter: blur(5px) saturate(110%) !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="status"] :is(
+  .glacier-hero-card,
+  .glacier-metric-card,
+  .glacier-control-card,
+  .glacier-chart-card,
+  [data-theme-card="device-hero"],
+  [data-theme-card="cpu-temperature"],
+  [data-theme-card="gpu-temperature"],
+  [data-theme-card="fan-speed"],
+  [data-theme-section="control-protection"],
+  [data-theme-card="fan-curve-preview"],
+  [data-theme-card="temperature-history"]
+) {
+  background-color: transparent !important;
+  background-image:
+    radial-gradient(ellipse at 18% 0%, rgba(255, 236, 166, 0.13), transparent 38%),
+    radial-gradient(ellipse at 88% 100%, rgba(240, 152, 171, 0.08), transparent 46%),
+    linear-gradient(135deg, rgba(255, 254, 250, 0.32) 0%, rgba(246, 253, 255, 0.22) 54%, rgba(232, 248, 251, 0.15) 100%) !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell .glacier-metric-card::before,
+html[data-theme="xiaoba-deluxe"] .glacier-shell .glacier-control-card::before,
+html[data-theme="xiaoba-deluxe"] .glacier-shell .glacier-chart-card::before {
+  opacity: 0.2 !important;
+  border-color: rgba(143, 194, 223, 0.1) !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="status"] [data-theme-section="control-protection"] .glacier-stat-tile,
+html[data-theme="xiaoba-deluxe"] .glacier-shell[data-theme-page="status"] .glacier-control-card .glacier-stat-tile,
+html[data-theme="xiaoba-deluxe"] .glacier-stat-tile,
+html[data-theme="xiaoba-deluxe"] .glacier-shell :is(
+  [data-theme-card="curve-history-summary"],
+  [data-theme-card="curve-history-chart"],
+  [data-theme-card="settings-overview-temperature"],
+  [data-theme-card="settings-overview-speed"],
+  [data-theme-card="settings-overview-device"]
+) {
+  background-color: transparent !important;
+  background-image:
+    radial-gradient(circle at 14% 0%, rgba(255, 236, 166, 0.1), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(241, 249, 252, 0.12)) !important;
+  border-color: rgba(143, 194, 223, 0.34) !important;
+  -webkit-backdrop-filter: blur(4px) saturate(108%) !important;
+  backdrop-filter: blur(4px) saturate(108%) !important;
+}
+
+/* Xiaoba Plus sidebar press feedback: soft tap, small glow, no layout shift. */
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar button[data-theme-ui="sidebar-item"] {
+  transform-origin: 50% 58%;
+  transition:
+    transform 150ms cubic-bezier(0.2, 0.85, 0.25, 1.18),
+    border-color 150ms ease,
+    background 150ms ease,
+    box-shadow 150ms ease,
+    color 150ms ease !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar button[data-theme-ui="sidebar-item"]::after {
+  content: "";
+  position: absolute;
+  inset: 0.4rem;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle, rgba(255, 235, 174, 0.56) 0 18%, rgba(111, 169, 208, 0.18) 38%, transparent 68%);
+  opacity: 0;
+  transform: scale(0.58);
+  transition:
+    opacity 160ms ease,
+    transform 190ms cubic-bezier(0.2, 0.85, 0.25, 1);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar button[data-theme-ui="sidebar-item"] > svg {
+  transition:
+    transform 150ms cubic-bezier(0.2, 0.85, 0.25, 1.18),
+    filter 150ms ease;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar button[data-theme-ui="sidebar-item"]:hover {
+  transform: translateY(-0.5px) scale(1.018) rotate(-1deg);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar button[data-theme-ui="sidebar-item"]:active {
+  transform: translateY(1px) scale(0.965) rotate(0.8deg) !important;
+  box-shadow:
+    0 4px 12px -14px rgba(63, 48, 43, 0.28),
+    inset 0 2px 5px rgba(111, 169, 208, 0.13),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.52) !important;
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar button[data-theme-ui="sidebar-item"]:active::after {
+  opacity: 0.42;
+  transform: scale(1);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar button[data-theme-ui="sidebar-item"]:active > svg {
+  transform: scale(0.92) rotate(-4deg);
+  filter: drop-shadow(0 2px 5px rgba(111, 169, 208, 0.18));
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar button[data-theme-ui="sidebar-item"][aria-selected="true"] {
+  animation: xiaoba-deluxe-sidebar-pop 220ms cubic-bezier(0.18, 0.9, 0.26, 1.14);
+}
+
+html[data-theme="xiaoba-deluxe"] .glacier-sidebar button[data-theme-ui="sidebar-item"][aria-selected="true"] > span {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.62),
+    0 0 0 1px rgba(255, 235, 174, 0.2) !important;
+}
+
+@keyframes xiaoba-deluxe-sidebar-pop {
+  0% {
+    transform: translateY(1px) scale(0.96);
+  }
+  68% {
+    transform: translateY(-0.5px) scale(1.035) rotate(-1deg);
+  }
+  100% {
+    transform: translateX(1px) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="xiaoba-deluxe"] .glacier-sidebar button[data-theme-ui="sidebar-item"][aria-selected="true"] {
+    animation: none !important;
+  }
+}

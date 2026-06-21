@@ -1223,12 +1223,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
     return <DraggablePoint key={`dot-${index}`} cx={cx} cy={cy} index={index} temperature={payload.temperature} speed={payload.rpm} unitSuffix={speedUnitSuffix} onDragStart={handleDragStart} isActive={dragIndex === index} />;
   }, [dragIndex, handleDragStart, speedUnitSuffix]);
 
-  /* ═══════════════════ RENDER ═══════════════════ */
-
   return (
-    <div className="relative space-y-4 px-1 pb-2">
-        {/* ── Header ── */}
+    <div data-theme-section="curve-page" className="relative space-y-4 px-1 pb-2">
         <motion.div
+          data-theme-card="curve-header"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.2 }}
@@ -1262,7 +1260,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
           </div>
         </motion.div>
 
-        {/* ── Manual gear (when auto off) ── */}
         <AnimatePresence>
           {!config.autoControl && isConnected && (
             <motion.div
@@ -1271,7 +1268,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
               exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden"
             >
-              <div className="rounded-2xl border border-border/70 bg-card p-4 space-y-4 shadow-sm">
+              <div data-theme-card="curve-manual-gears" className="rounded-2xl border border-border/70 bg-card p-4 space-y-4 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-sm font-medium">{t('fanCurve.manualGear.title')}</span>
                   <div className="flex flex-wrap items-center gap-2">
@@ -1353,7 +1350,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
           )}
         </AnimatePresence>
 
-        {/* ── Manual gear speed editor dialog ── */}
         <Dialog open={gearEditOpen} onOpenChange={setGearEditOpen}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
@@ -1396,8 +1392,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
           </DialogContent>
         </Dialog>
 
-        {/* ── Chart ── */}
-        <div ref={curveEditorRef}>
+        <div ref={curveEditorRef} data-theme-card="curve-editor">
           <div
             ref={chartRef}
             className={clsx('relative rounded-3xl border bg-card p-4 shadow-sm', dragIndex !== null ? 'ring-2 ring-primary/40 border-primary/30' : 'border-border/70')}
@@ -1427,7 +1422,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
           </div>
         </div>
 
-        <section className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm">
+        <section data-theme-card="curve-prediction" className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
@@ -1456,7 +1451,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
           </div>
         </section>
 
-        <section className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm">
+        <section data-theme-card="curve-learning" className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
@@ -1562,13 +1557,12 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
           </div>
         </section>
 
-        {/* ── Tips ── */}
-        <div className="flex flex-wrap gap-2">
+        <div data-theme-ui="curve-hints" className="flex flex-wrap gap-2">
           <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur-lg">拖动蓝色点调整速度（{speedUnitSuffix}）</span>
           {showCoupledCurve && <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur-lg">{t('fanCurve.hints.curveLegend')}</span>}
         </div>
 
-        <section ref={historyDetailsRef} className="rounded-2xl border border-border/70 bg-card p-4 space-y-4">
+        <section ref={historyDetailsRef} data-theme-card="curve-history" className="rounded-2xl border border-border/70 bg-card p-4 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <History className="h-4 w-4 text-primary" />
@@ -1603,7 +1597,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                   [t('fanCurve.history.summary.cpuPowerPeak'), historySummary.cpuPowerPeak ? `${formatPowerValue(historySummary.cpuPowerPeak)} W` : '-- W', historySummary.cpuPowerAverage ? t('fanCurve.history.summary.averagePower', { value: formatPowerValue(historySummary.cpuPowerAverage) }) : t('fanCurve.history.summary.noPowerData')],
                   [t('fanCurve.history.summary.gpuPowerPeak'), historySummary.gpuPowerPeak ? `${formatPowerValue(historySummary.gpuPowerPeak)} W` : '-- W', historySummary.gpuPowerAverage ? t('fanCurve.history.summary.averagePower', { value: formatPowerValue(historySummary.gpuPowerAverage) }) : t('fanCurve.history.summary.noPowerData')],
                 ].map(([label, value, hint]) => (
-                  <div key={label} className="rounded-xl border border-border/70 bg-background/35 p-3">
+                  <div key={label} data-theme-card="curve-history-summary" className="rounded-xl border border-border/70 bg-background/35 p-3">
                     <div className="text-[11px] text-muted-foreground">{label}</div>
                     <div className="mt-1 text-sm font-semibold text-foreground">{value}</div>
                     <div className="mt-1 text-[11px] text-muted-foreground">{hint}</div>
@@ -1611,7 +1605,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                 ))}
               </div>
 
-              <div className="rounded-xl border border-border/70 bg-background/35 p-3 space-y-3">
+              <div data-theme-card="curve-history-chart" className="rounded-xl border border-border/70 bg-background/35 p-3 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.history.recentTrend')}</div>
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -1701,7 +1695,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
           )}
         </section>
 
-        <section className="rounded-2xl border border-border/70 bg-card p-4 space-y-4">
+        <section data-theme-card="curve-profiles" className="rounded-2xl border border-border/70 bg-card p-4 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">{t('fanCurve.profiles.title')}</span>
@@ -1742,7 +1736,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
           </div>
         </section>
 
-        <section className="rounded-2xl border border-border/70 bg-card p-4 space-y-3">
+        <section data-theme-card="curve-import-export" className="rounded-2xl border border-border/70 bg-card p-4 space-y-3">
           <div className="flex items-center justify-between gap-2">
             <span className="text-sm font-medium">{t('fanCurve.importExport.title')}</span>
             <span className="text-xs text-muted-foreground">{t('fanCurve.importExport.description')}</span>

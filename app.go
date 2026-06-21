@@ -1,6 +1,9 @@
 package main
 
-import "github.com/TIANLI0/THRM/internal/guiapp"
+import (
+	"github.com/TIANLI0/THRM/internal/guiapp"
+	"github.com/TIANLI0/THRM/internal/theme"
+)
 
 // App keeps the Wails binding surface in package main while delegating implementation to internal/guiapp.
 type App struct {
@@ -8,5 +11,9 @@ type App struct {
 }
 
 func NewApp() *App {
-	return &App{App: guiapp.New(newThemeManager())}
+	return NewAppWithThemeManager(newThemeManager())
+}
+
+func NewAppWithThemeManager(themeManager *theme.Manager) *App {
+	return &App{App: guiapp.New(themeManager)}
 }

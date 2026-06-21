@@ -88,6 +88,39 @@ const getFanSpinDuration = (speed?: number, minSpeed = 0, maxSpeed = 100) => {
   return 1.35;
 };
 
+const FAN_CURVE_PREVIEW_MIN_TEMP = 20;
+const FAN_CURVE_PREVIEW_MAX_TEMP = 110;
+
+function normalizePreviewCurvePoints(points: types.FanCurvePoint[]) {
+  const unique = points
+    .filter((point) => point.temperature >= FAN_CURVE_PREVIEW_MIN_TEMP && point.temperature <= FAN_CURVE_PREVIEW_MAX_TEMP)
+    .sort((left, right) => left.temperature - right.temperature)
+    .reduce<types.FanCurvePoint[]>((acc, point) => {
+      const previous = acc[acc.length - 1];
+      if (previous?.temperature === point.temperature) {
+        acc[acc.length - 1] = point;
+      } else {
+        acc.push(point);
+      }
+      return acc;
+    }, []);
+
+  const first = unique[0];
+  const last = unique[unique.length - 1];
+  if (!first || !last) {
+    return unique;
+  }
+
+  const preview = [...unique];
+  if (first.temperature > FAN_CURVE_PREVIEW_MIN_TEMP) {
+    preview.unshift({ temperature: FAN_CURVE_PREVIEW_MIN_TEMP, rpm: first.rpm });
+  }
+  if (last.temperature < FAN_CURVE_PREVIEW_MAX_TEMP) {
+    preview.push({ temperature: FAN_CURVE_PREVIEW_MAX_TEMP, rpm: last.rpm });
+  }
+  return preview;
+}
+
 const formatPowerWatts = (watts?: number | null) => {
   const value = Number(watts || 0);
   if (!Number.isFinite(value) || value <= 0) return '-- W';
@@ -340,13 +373,14 @@ const MiniFanCurveChart = memo(function MiniFanCurveChart({
     const maxPointSpeed = points.reduce((max, point) => Math.max(max, point.rpm), 0);
     const effectivePoints = maxSpeed > 100 && maxPointSpeed <= 100 ? [] : points;
     const fallbackSpeed = (ratio: number) => Math.round(minSpeed + (maxSpeed - minSpeed) * ratio);
-    const source = effectivePoints.length > 0 ? effectivePoints : [
+    const rawSource = effectivePoints.length > 0 ? effectivePoints : [
       { temperature: 20, rpm: fallbackSpeed(0.2) },
       { temperature: 40, rpm: fallbackSpeed(0.35) },
       { temperature: 60, rpm: fallbackSpeed(0.55) },
       { temperature: 80, rpm: fallbackSpeed(0.75) },
       { temperature: 110, rpm: maxSpeed },
     ];
+    const source = normalizePreviewCurvePoints(rawSource);
     // 单遍扫描计算 min/max，避免旧实现 4 次 Math.min/Math.max(...source.map(...)) 重建临时数组。
     let minTemp = 20;
     let maxTemp = 110;
@@ -366,7 +400,12 @@ const MiniFanCurveChart = memo(function MiniFanCurveChart({
     const linePoints = source
       .map((point) => `${xForTemp(point.temperature).toFixed(1)},${yForRpm(point.rpm).toFixed(1)}`)
       .join(' ');
-    const areaPoints = `${pad.left},${pad.top + plotHeight} ${linePoints} ${pad.left + plotWidth},${pad.top + plotHeight}`;
+    const firstPoint = source[0] ?? { temperature: minTemp, rpm: minSpeed };
+    const lastPoint = source[source.length - 1] ?? firstPoint;
+    const areaStartX = xForTemp(firstPoint.temperature).toFixed(1);
+    const areaEndX = xForTemp(lastPoint.temperature).toFixed(1);
+    const baselineY = (pad.top + plotHeight).toFixed(1);
+    const areaPoints = `${areaStartX},${baselineY} ${linePoints} ${areaEndX},${baselineY}`;
     const yTicks: number[] = getFanSpeedTicks(minSpeed, maxSpeed);
     return { width, height, pad, plotWidth, plotHeight, minTemp, maxTemp, xForTemp, yForRpm, linePoints, areaPoints, yTicks };
   }, [curve, maxSpeed, minSpeed]);
@@ -380,6 +419,7 @@ const MiniFanCurveChart = memo(function MiniFanCurveChart({
   return (
     <button
       type="button"
+      data-theme-card="fan-curve-preview"
       onClick={onOpen}
       className={clsx(
         'glacier-chart-card group flex h-full w-full flex-col rounded-xl border border-border bg-card p-3 text-left shadow-sm shadow-black/5',
@@ -521,6 +561,7 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
 
   return (
     <div
+      data-theme-card="temperature-history"
       role={onOpen ? 'button' : undefined}
       tabIndex={onOpen ? 0 : undefined}
       onClick={onOpen}
@@ -770,7 +811,7 @@ export default function DeviceStatus({
   return (
     <div className="space-y-3">
       {/* ── Device header card ── */}
-      <div className="glacier-hero-card relative overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm shadow-black/5">
+      <div data-theme-section="hero" data-theme-card="device-hero" className="glacier-hero-card relative overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm shadow-black/5">
         <div className="theme-thrm-only glacier-hero-art pointer-events-none absolute inset-y-0 right-0 hidden overflow-hidden md:block" aria-hidden="true">
           <img
             src="/theme/ice-operator-banner.png"
@@ -825,7 +866,7 @@ export default function DeviceStatus({
             </div>
           </div>
 
-          <div className="glacier-hero-actions flex items-center gap-3">
+          <div data-theme-ui="hero-actions" className="glacier-hero-actions flex items-center gap-3">
             {isConnected && (
               <ToggleSwitch
                 enabled={config.autoControl}
@@ -855,7 +896,7 @@ export default function DeviceStatus({
           className="grid grid-cols-1 items-stretch gap-3 md:grid-cols-3"
         >
           {/* CPU */}
-          <div className="glacier-metric-card flex h-full min-h-[148px] flex-col items-center rounded-xl border border-border bg-card px-4 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[158px]">
+          <div data-theme-card="cpu-temperature" className="glacier-metric-card flex h-full min-h-[148px] flex-col items-center rounded-xl border border-border bg-card px-4 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[158px]">
             <MetricHeader
               icon={<Cpu className="h-4 w-4" />}
               label={cpuMetricLabel}
@@ -864,7 +905,7 @@ export default function DeviceStatus({
           </div>
 
           {/* GPU */}
-          <div className="glacier-metric-card flex h-full min-h-[148px] flex-col items-center rounded-xl border border-border bg-card px-4 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[158px]">
+          <div data-theme-card="gpu-temperature" className="glacier-metric-card flex h-full min-h-[148px] flex-col items-center rounded-xl border border-border bg-card px-4 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[158px]">
             <MetricHeader
               icon={<Gpu className="h-4 w-4" />}
               label={t('deviceStatus.metrics.gpuTemperature')}
@@ -873,7 +914,7 @@ export default function DeviceStatus({
           </div>
 
           {/* Fan */}
-          <div className="glacier-metric-card flex h-full min-h-[148px] flex-col items-center rounded-xl border border-border bg-card px-4 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[158px]">
+          <div data-theme-card="fan-speed" className="glacier-metric-card flex h-full min-h-[148px] flex-col items-center rounded-xl border border-border bg-card px-4 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[158px]">
             <MetricHeader
               icon={(
                 <SpinningFanIcon duration={fanSpinDuration} className="h-4 w-4" />
@@ -975,6 +1016,7 @@ export default function DeviceStatus({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.15, duration: 0.3 }}
+          data-theme-section="control-protection"
           className="glacier-control-card rounded-xl border border-border bg-card p-4 shadow-sm shadow-black/5"
         >
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2 px-1">
@@ -988,7 +1030,7 @@ export default function DeviceStatus({
           </div>
 
           <div className="grid grid-cols-2 gap-2.5 md:grid-cols-5">
-            <div className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3">
+            <div data-theme-card="control-mode" className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3">
               <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Sparkles className="h-3.5 w-3.5" />
                 {t('deviceStatus.stats.controlMode')}
@@ -998,7 +1040,7 @@ export default function DeviceStatus({
               </div>
             </div>
 
-            <div className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3">
+            <div data-theme-card="temperature-state" className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3">
               <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <ShieldCheck className="h-3.5 w-3.5" />
                 {t('deviceStatus.stats.tempStatus')}
@@ -1008,7 +1050,7 @@ export default function DeviceStatus({
               </div>
             </div>
 
-            <div className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3">
+            <div data-theme-card="work-mode" className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3">
               <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Fan className="h-3.5 w-3.5" />
                 {t('deviceStatus.stats.workMode')}
@@ -1016,7 +1058,7 @@ export default function DeviceStatus({
               <div className="text-sm font-semibold">{translateWorkModeLabel(fanData?.workMode, t)}</div>
             </div>
 
-            <div className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3">
+            <div data-theme-card="cpu-power" className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3">
               <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Cpu className="h-3.5 w-3.5" />
                 {t('deviceStatus.stats.cpuPower')}
@@ -1026,7 +1068,7 @@ export default function DeviceStatus({
               </div>
             </div>
 
-            <div className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3">
+            <div data-theme-card="gpu-power" className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3">
               <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Gpu className="h-3.5 w-3.5" />
                 {t('deviceStatus.stats.gpuPower')}

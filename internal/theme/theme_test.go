@@ -107,6 +107,85 @@ func TestResolveDirReturnsInstallDirAndDoesNotCreateLegacyDir(t *testing.T) {
 	}
 }
 
+func TestReadCSSRewritesRelativeThemeAssets(t *testing.T) {
+	root := t.TempDir()
+	installDir := filepath.Join(root, "install", "themes")
+	writeTheme(t, installDir, "xiaoba", "Xiaoba", "1.0.0", `a{background:url("hero.webp")} b{background:url(data:image/png;base64,aaa)} c{background:url("/absolute.webp")}`)
+	writeThemeAsset(t, installDir, "xiaoba", "hero.webp", []byte("webp"))
+
+	manager := NewManager(installDir, nil, nil)
+	css, err := manager.ReadCSS("xiaoba")
+	if err != nil {
+		t.Fatalf("ReadCSS failed: %v", err)
+	}
+	if !strings.Contains(css, `url("data:image/webp;base64,d2VicA==")`) {
+		t.Fatalf("expected relative asset URL to be inlined, got %q", css)
+	}
+	if !strings.Contains(css, "data:image/png") || !strings.Contains(css, `url("/absolute.webp")`) {
+		t.Fatalf("absolute/data URLs should stay unchanged, got %q", css)
+	}
+}
+
+func TestReadCSSInlinesThemeAssetRouteURLs(t *testing.T) {
+	root := t.TempDir()
+	installDir := filepath.Join(root, "install", "themes")
+	writeTheme(t, installDir, "xiaoba", "Xiaoba", "1.0.0", `a{background:url("/theme-assets/xiaoba/decorations/star.svg")} b{background:url("/theme-assets/other/star.svg")}`)
+	writeThemeAsset(t, installDir, "xiaoba", "decorations/star.svg", []byte("<svg/>"))
+
+	manager := NewManager(installDir, nil, nil)
+	css, err := manager.ReadCSS("xiaoba")
+	if err != nil {
+		t.Fatalf("ReadCSS failed: %v", err)
+	}
+	if !strings.Contains(css, `url("data:image/svg+xml;base64,PHN2Zy8+")`) {
+		t.Fatalf("expected theme asset route URL to be inlined, got %q", css)
+	}
+	if !strings.Contains(css, `url("/theme-assets/other/star.svg")`) {
+		t.Fatalf("other theme asset route should stay unchanged, got %q", css)
+	}
+}
+
+func TestEnsureSeededCopiesBuiltinThemeAssets(t *testing.T) {
+	root := t.TempDir()
+	installDir := filepath.Join(root, "install", "themes")
+	manager := NewManager(installDir, nil, fstest.MapFS{
+		"xiaoba/" + manifestName: {Data: []byte(`{"id":"xiaoba","name":"Xiaoba","base":"light","version":"1.0.0"}`)},
+		"xiaoba/" + styleName:    {Data: []byte(`a{background:url("hero.webp")} b{background:url("textures/noise.webp")}`)},
+		"xiaoba/hero.webp":       {Data: []byte("webp")},
+		"xiaoba/textures/noise.webp": {
+			Data: []byte("noise"),
+		},
+	})
+
+	manager.EnsureSeeded()
+
+	asset, err := manager.ReadAsset("xiaoba", "hero.webp")
+	if err != nil {
+		t.Fatalf("ReadAsset failed: %v", err)
+	}
+	if string(asset.Data) != "webp" {
+		t.Fatalf("unexpected asset data %q", string(asset.Data))
+	}
+	nestedAsset, err := manager.ReadAsset("xiaoba", "textures/noise.webp")
+	if err != nil {
+		t.Fatalf("ReadAsset for nested asset failed: %v", err)
+	}
+	if string(nestedAsset.Data) != "noise" {
+		t.Fatalf("unexpected nested asset data %q", string(nestedAsset.Data))
+	}
+}
+
+func TestReadAssetRejectsTraversal(t *testing.T) {
+	root := t.TempDir()
+	installDir := filepath.Join(root, "install", "themes")
+	writeTheme(t, installDir, "xiaoba", "Xiaoba", "1.0.0", "/* css */")
+	manager := NewManager(installDir, nil, nil)
+
+	if _, err := manager.ReadAsset("xiaoba", "../theme.css"); err == nil {
+		t.Fatal("expected traversal asset path to be rejected")
+	}
+}
+
 func builtinThemeFS(id, name, version, css string) fstest.MapFS {
 	return fstest.MapFS{
 		id + "/" + manifestName: {Data: []byte(`{"id":"` + id + `","name":"` + name + `","base":"light","version":"` + version + `"}`)},
@@ -126,5 +205,16 @@ func writeTheme(t *testing.T, baseDir, id, name, version, css string) {
 	}
 	if err := os.WriteFile(filepath.Join(dir, styleName), []byte(css), 0o644); err != nil {
 		t.Fatalf("write css failed: %v", err)
+	}
+}
+
+func writeThemeAsset(t *testing.T, baseDir, id, assetPath string, data []byte) {
+	t.Helper()
+	target := filepath.Join(baseDir, id, filepath.FromSlash(assetPath))
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("MkdirAll asset dir failed: %v", err)
+	}
+	if err := os.WriteFile(target, data, 0o644); err != nil {
+		t.Fatalf("write asset failed: %v", err)
 	}
 }
