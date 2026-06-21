@@ -88,6 +88,27 @@ export default function SystemSettingsSection({
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    setLoading('windowsAutoStart', true);
+    apiService
+      .checkWindowsAutoStart()
+      .then((enabled) => {
+        if (!cancelled && enabled !== config.windowsAutoStart) {
+          onConfigChange(types.AppConfig.createFrom({ ...config, windowsAutoStart: enabled }));
+        }
+      })
+      .catch(() => {
+        /* Keep the persisted value if the system check is unavailable. */
+      })
+      .finally(() => {
+        if (!cancelled) setLoading('windowsAutoStart', false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const handleThemeModeChange = useCallback(async (mode: string) => {
     const isBuiltin = mode === 'light' || mode === 'dark' || mode === 'system';
     const isKnownCustom = customThemes.some((theme) => theme.id === mode);

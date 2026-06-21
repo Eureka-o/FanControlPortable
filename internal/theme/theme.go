@@ -2,12 +2,16 @@
 package theme
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
+	"mime"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,7 +25,11 @@ const (
 	SourceUser    = "user"
 	SourceInstall = "install"
 	SourceBuiltin = "builtin"
+
+	AssetURLPrefix = "/theme-assets/"
 )
+
+var cssURLPattern = regexp.MustCompile(`url\(\s*['"]?([^'")]+)['"]?\s*\)`)
 
 // Meta is parsed from theme.json and returned to the frontend theme picker.
 type Meta struct {
@@ -159,27 +167,45 @@ func (m *Manager) copyBuiltin(id, baseDir string) error {
 		return fmt.Errorf("empty theme destination")
 	}
 	srcRoot := id
-	entries, err := fs.ReadDir(m.builtin, srcRoot)
-	if err != nil {
-		return err
-	}
 	dstDir := filepath.Join(baseDir, id)
 	if err := os.MkdirAll(dstDir, 0o755); err != nil {
 		return err
 	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
+	return fs.WalkDir(m.builtin, srcRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
-		data, err := fs.ReadFile(m.builtin, srcRoot+"/"+entry.Name())
+		rel, err := filepath.Rel(srcRoot, path)
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(filepath.Join(dstDir, entry.Name()), data, 0o644); err != nil {
+		if rel == "." {
+			return nil
+		}
+		target := filepath.Join(dstDir, rel)
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		info, err := entry.Info()
+		if err != nil {
 			return err
 		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		return copyFSFile(m.builtin, path, target, info.Mode().Perm())
+	})
+}
+
+func copyFSFile(source fs.FS, src, dst string, mode fs.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
 	}
-	return nil
+	data, err := fs.ReadFile(source, src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, mode)
 }
 
 type legacyCandidate struct {
@@ -521,23 +547,199 @@ func (m *Manager) ReadCSS(id string) (string, error) {
 
 	if m.installDir != "" {
 		if data, err := os.ReadFile(filepath.Join(m.installDir, id, styleName)); err == nil {
-			return string(data), nil
+			return m.rewriteCSSAssetURLs(string(data), id), nil
 		}
 	}
 
 	for _, legacyDir := range m.legacyDirs {
 		if data, err := os.ReadFile(filepath.Join(legacyDir, id, styleName)); err == nil {
-			return string(data), nil
+			return m.rewriteCSSAssetURLs(string(data), id), nil
 		}
 	}
 
 	if m.builtin != nil {
 		if data, err := fs.ReadFile(m.builtin, id+"/"+styleName); err == nil {
-			return string(data), nil
+			return m.rewriteCSSAssetURLs(string(data), id), nil
 		}
 	}
 
 	return "", fmt.Errorf("theme %q style file not found", id)
+}
+
+type Asset struct {
+	Name    string
+	Data    []byte
+	ModTime time.Time
+}
+
+func (m *Manager) ReadAsset(id, assetPath string) (Asset, error) {
+	if !validID(id) {
+		return Asset{}, fmt.Errorf("invalid theme id: %q", id)
+	}
+	assetPath, ok := cleanThemeAssetPath(assetPath)
+	if !ok {
+		return Asset{}, fmt.Errorf("invalid theme asset path: %q", assetPath)
+	}
+
+	if asset, err := readDiskThemeAsset(m.installDir, id, assetPath); err == nil {
+		return asset, nil
+	}
+	for _, legacyDir := range m.legacyDirs {
+		if asset, err := readDiskThemeAsset(legacyDir, id, assetPath); err == nil {
+			return asset, nil
+		}
+	}
+	if m.builtin != nil {
+		if data, err := fs.ReadFile(m.builtin, id+"/"+assetPath); err == nil {
+			modTime := time.Now()
+			if info, statErr := fs.Stat(m.builtin, id+"/"+assetPath); statErr == nil {
+				modTime = info.ModTime()
+			}
+			return Asset{Name: filepath.Base(assetPath), Data: data, ModTime: modTime}, nil
+		}
+	}
+	return Asset{}, fmt.Errorf("theme asset %q not found", assetPath)
+}
+
+func readDiskThemeAsset(baseDir, id, assetPath string) (Asset, error) {
+	if baseDir == "" {
+		return Asset{}, fmt.Errorf("empty theme asset base")
+	}
+	fullPath := filepath.Join(baseDir, id, filepath.FromSlash(assetPath))
+	if !isUnderDir(fullPath, filepath.Join(baseDir, id)) {
+		return Asset{}, fmt.Errorf("theme asset escapes theme dir")
+	}
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		return Asset{}, err
+	}
+	if info.IsDir() || !info.Mode().IsRegular() {
+		return Asset{}, fmt.Errorf("theme asset is not a regular file")
+	}
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		return Asset{}, err
+	}
+	return Asset{Name: filepath.Base(assetPath), Data: data, ModTime: info.ModTime()}, nil
+}
+
+func isUnderDir(path, root string) bool {
+	path = pathKey(path)
+	root = pathKey(root)
+	if path == "" || root == "" {
+		return false
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != "" && !strings.HasPrefix(rel, ".."))
+}
+
+func (m *Manager) rewriteCSSAssetURLs(css, id string) string {
+	if !validID(id) || css == "" {
+		return css
+	}
+	return cssURLPattern.ReplaceAllStringFunc(css, func(match string) string {
+		parts := cssURLPattern.FindStringSubmatch(match)
+		if len(parts) < 2 {
+			return match
+		}
+		assetRef := strings.TrimSpace(parts[1])
+		assetPath, ok := themeAssetPathFromCSSRef(assetRef, id)
+		if !ok {
+			return match
+		}
+		if asset, err := m.ReadAsset(id, assetPath); err == nil {
+			return `url("` + assetDataURL(asset) + `")`
+		}
+		return `url("` + ThemeAssetURL(id, assetPath) + `")`
+	})
+}
+
+func themeAssetPathFromCSSRef(raw, id string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(raw, AssetURLPrefix) {
+		rest := strings.TrimPrefix(raw, AssetURLPrefix)
+		parts := strings.SplitN(rest, "/", 2)
+		if len(parts) != 2 {
+			return "", false
+		}
+		refID, err := url.PathUnescape(parts[0])
+		if err != nil || refID != id {
+			return "", false
+		}
+		return cleanThemeAssetPath(parts[1])
+	}
+	if !shouldRewriteAssetURL(raw) {
+		return "", false
+	}
+	return cleanThemeAssetPath(raw)
+}
+
+func assetDataURL(asset Asset) string {
+	contentType := mime.TypeByExtension(filepath.Ext(asset.Name))
+	if contentType == "" {
+		switch strings.ToLower(filepath.Ext(asset.Name)) {
+		case ".webp":
+			contentType = "image/webp"
+		case ".svg":
+			contentType = "image/svg+xml"
+		default:
+			contentType = "application/octet-stream"
+		}
+	}
+	return "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(asset.Data)
+}
+
+func shouldRewriteAssetURL(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.HasPrefix(raw, "#") || strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") {
+		return false
+	}
+	lower := strings.ToLower(raw)
+	for _, prefix := range []string{"data:", "http:", "https:", "blob:", "about:", "file:"} {
+		if strings.HasPrefix(lower, prefix) {
+			return false
+		}
+	}
+	if idx := strings.IndexAny(raw, ":/?#"); idx >= 0 && raw[idx] == ':' {
+		return false
+	}
+	return true
+}
+
+func cleanThemeAssetPath(raw string) (string, bool) {
+	pathOnly := strings.TrimSpace(raw)
+	if idx := strings.IndexAny(pathOnly, "?#"); idx >= 0 {
+		pathOnly = pathOnly[:idx]
+	}
+	if decoded, err := url.PathUnescape(pathOnly); err == nil {
+		pathOnly = decoded
+	}
+	pathOnly = strings.TrimPrefix(strings.ReplaceAll(pathOnly, "\\", "/"), "./")
+	cleaned := filepath.ToSlash(filepath.Clean(pathOnly))
+	if cleaned == "." || cleaned == "" || strings.HasPrefix(cleaned, "../") || cleaned == ".." || strings.Contains(cleaned, "/../") {
+		return "", false
+	}
+	if strings.HasPrefix(cleaned, "/") {
+		return "", false
+	}
+	return cleaned, true
+}
+
+func ThemeAssetURL(id, assetPath string) string {
+	assetPath, ok := cleanThemeAssetPath(assetPath)
+	if !validID(id) || !ok {
+		return ""
+	}
+	segments := strings.Split(assetPath, "/")
+	escaped := make([]string, 0, len(segments)+1)
+	escaped = append(escaped, url.PathEscape(id))
+	for _, segment := range segments {
+		escaped = append(escaped, url.PathEscape(segment))
+	}
+	return AssetURLPrefix + strings.Join(escaped, "/")
 }
 
 // ResolveDir returns the install-root themes folder exposed by "Open themes".

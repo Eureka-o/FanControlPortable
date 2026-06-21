@@ -1,0 +1,12 @@
+Maoken Zhuyuan Ti / MaokenZhuyuanTi
+
+This theme includes a compact WOFF2 subset generated from MaokenZhuyuanTi.
+Original font copyright:
+Copyright 2022-2023 LongZhuTi Project Authors.
+Copyright 2020 The RocknRoll Project Authors (https://github.com/fontworks-fonts/RocknRoll).
+
+License: SIL Open Font License 1.1
+License URL: https://scripts.sil.org/OFL
+
+The bundled subset is used only by the xiaoba-deluxe theme to provide a
+portable rounded Chinese UI style without shipping the full source font.

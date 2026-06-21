@@ -1,0 +1,9 @@
+{
+  "$comment": "FanControl custom theme manifest. Uses local relative assets so the theme folder is portable.",
+  "id": "shinchan",
+  "name": "蜡笔小新",
+  "base": "light",
+  "author": "FanControl",
+  "version": "1.0.0",
+  "description": "蜡笔小新主题。使用暖奶油底色、红黄蓝蜡笔配色、本地插画和幕布资源，保持便携与兼容。"
+}

@@ -574,3 +574,32 @@ func (a *CoreApp) SendDeviceDebugCommand(hexCommand string, waitMs int) (types.D
 func (a *CoreApp) GetDeviceDebugFrames() []types.DeviceDebugFrame {
 	return a.deviceManager.GetDebugFrames()
 }
+
+func (a *CoreApp) SetAutoStartWithMethod(enable bool, method string) error {
+	if err := a.autostartManager.SetAutoStartWithMethod(enable, method); err != nil {
+		return err
+	}
+	a.syncWindowsAutoStartConfig(enable, true)
+	return nil
+}
+
+func (a *CoreApp) CheckWindowsAutoStart() bool {
+	enabled := a.autostartManager.CheckWindowsAutoStart()
+	a.syncWindowsAutoStartConfig(enabled, true)
+	return enabled
+}
+
+func (a *CoreApp) syncWindowsAutoStartConfig(enabled bool, broadcast bool) {
+	cfg := a.configManager.Get()
+	if cfg.WindowsAutoStart == enabled {
+		return
+	}
+	cfg.WindowsAutoStart = enabled
+	if err := a.configManager.Update(cfg); err != nil {
+		a.logError("sync Windows auto-start config failed: %v", err)
+		return
+	}
+	if broadcast && a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
+	}
+}

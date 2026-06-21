@@ -1,7 +1,9 @@
 export const CUSTOM_STYLE_ID = 'thrm-custom-theme-style';
 export const THEME_BOOTSTRAP_STORAGE_KEY = 'thrm.theme-bootstrap';
 
-const THEME_BOOTSTRAP_VERSION = 1;
+// Bump this when custom theme CSS resource semantics change, so stale cached
+// CSS cannot point at assets unavailable to the current executable.
+const THEME_BOOTSTRAP_VERSION = 3;
 const BUILTIN_THEME_MODES = ['system', 'light', 'dark'] as const;
 
 export type BuiltinThemeMode = (typeof BUILTIN_THEME_MODES)[number];

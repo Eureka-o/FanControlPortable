@@ -45,8 +45,6 @@ interface ControlPanelProps {
   onDeviceContextRefresh?: () => Promise<unknown>;
 }
 
-/* ── Helpers ── */
-
 const SMART_START_STOP_OPTIONS = [
   { value: 'off', labelKey: 'controlPanel.options.smartStartStop.off.label', descriptionKey: 'controlPanel.options.smartStartStop.off.description' },
   { value: 'immediate', labelKey: 'controlPanel.options.smartStartStop.immediate.label', descriptionKey: 'controlPanel.options.smartStartStop.immediate.description' },
@@ -72,7 +70,6 @@ export default function ControlPanel({
   const { t } = useTranslation();
   const { locale } = useLocale();
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
-  // 安装目录/用户目录下发现的自定义主题（用于「界面主题」下拉动态渲染）
   const overviewRuntimeProfile = isConnected ? runtimeDeviceProfile : null;
   const overviewSpeedUnit = getFanSpeedUnit(fanData as any, config as any, overviewRuntimeProfile as any);
   const overviewSpeedLabel = fanSpeedUnitLabel(overviewSpeedUnit);
@@ -169,8 +166,6 @@ export default function ControlPanel({
     [],
   );
   const setLoading = (key: string, value: boolean) => setLoadingStates((prev) => ({ ...prev, [key]: value }));
-
-  /* ── Handlers (same logic as before) ── */
 
   const refreshDeviceConfig = useCallback(async () => {
     const latest = await apiService.getConfig();
@@ -318,14 +313,14 @@ export default function ControlPanel({
 
   return (
     <>
-      <div className="space-y-4">
-        <section className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+      <div data-theme-section="settings-page" className="space-y-4">
+        <section data-theme-card="settings-overview" className="rounded-2xl border border-border bg-card p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-2">
             <Settings className="h-4 w-4 text-muted-foreground" />
             <h3 className="text-base font-semibold text-foreground">{t('controlPanel.overview.title')}</h3>
           </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div className="rounded-xl border border-border/70 bg-muted/30 p-4 text-center">
+            <div data-theme-card="settings-overview-temperature" className="rounded-xl border border-border/70 bg-muted/30 p-4 text-center">
               <div className="text-sm text-muted-foreground">{t('controlPanel.overview.currentTemperature')}</div>
               <div className={clsx(
                 'mt-1 text-2xl font-semibold tabular-nums',
@@ -335,12 +330,12 @@ export default function ControlPanel({
               </div>
               <div className="mt-1 text-xs text-muted-foreground">{t('controlPanel.overview.cpuGpuTemperatureFormatted', { cpu: cpuOverviewTemperature, gpu: gpuOverviewTemperature })}</div>
             </div>
-            <div className="rounded-xl border border-border/70 bg-muted/30 p-4 text-center">
+            <div data-theme-card="settings-overview-speed" className="rounded-xl border border-border/70 bg-muted/30 p-4 text-center">
               <div className="text-sm text-muted-foreground">{t('controlPanel.overview.currentRpm')}</div>
               <div className="mt-1 text-2xl font-semibold tabular-nums text-primary">{overviewFanSpeed ?? '--'}{overviewSpeedLabel}</div>
               <div className="mt-1 text-xs text-muted-foreground">{config.autoControl ? t('appShell.status.smartControl') : t('appShell.status.manualMode')}</div>
             </div>
-            <div className="rounded-xl border border-border/70 bg-muted/30 p-4 text-center">
+            <div data-theme-card="settings-overview-device" className="rounded-xl border border-border/70 bg-muted/30 p-4 text-center">
               <div className="text-sm text-muted-foreground">{t('controlPanel.system.deviceConnection.overviewLabel')}</div>
               <div className="mx-auto mt-1 max-w-full truncate text-2xl font-semibold text-primary">{overviewConnectionName}</div>
               <div className="mx-auto mt-1 max-w-full truncate text-xs text-muted-foreground">{overviewConnectionDetail}</div>
@@ -348,7 +343,6 @@ export default function ControlPanel({
           </div>
         </section>
 
-        {/* ═══════════ 1. 灯光效果 ═══════════ */}
         <DeviceFeaturePanel
           config={config}
           isConnected={isConnected}
@@ -377,7 +371,6 @@ export default function ControlPanel({
           ) : undefined}
         />
 
-        {/* ═══════════ 2. 风扇控制 ═══════════ */}
         <FanControlSection
           config={config}
           onConfigChange={onConfigChange}
@@ -389,7 +382,6 @@ export default function ControlPanel({
           configuredDeviceCurveKey={configuredDeviceCurveKey}
         />
 
-        {/* ═══════════ 4. 系统设置 ═══════════ */}
         <SystemSettingsSection
           config={config}
           availableDeviceProfiles={availableDeviceProfiles}
@@ -403,23 +395,19 @@ export default function ControlPanel({
           loadDeviceProfiles={loadDeviceProfiles}
           refreshConnectedDeviceContext={refreshConnectedDeviceContext}
         />
-        {/* ═══════════ Offline tip ═══════════ */}
         {!isConnected && (
-          <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+          <div data-theme-card="settings-offline-tip" className="flex items-center gap-2 rounded-xl border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
             <TriangleAlert className="h-4 w-4 shrink-0" />
             {t('controlPanel.offline.message')}
           </div>
         )}
 
-        {/* ═══════════ 5. 调试面板 ═══════════ */}
         <DeviceDebugPanel
           config={config}
           isConnected={isConnected}
           onConfigChange={onConfigChange}
         />
       </div>
-
-      {/* ═══════════ Custom speed warning dialog ═══════════ */}
     </>
   );
 }

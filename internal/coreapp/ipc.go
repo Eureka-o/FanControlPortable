@@ -378,7 +378,7 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		return a.successResponse(true)
 
 	case ipc.ReqCheckWindowsAutoStart:
-		enabled := a.autostartManager.CheckWindowsAutoStart()
+		enabled := a.CheckWindowsAutoStart()
 		return a.dataResponse(enabled)
 
 	case ipc.ReqIsRunningAsAdmin:
@@ -394,7 +394,7 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		if err := json.Unmarshal(req.Data, &params); err != nil {
 			return a.errorResponse("解析参数失败: " + err.Error())
 		}
-		if err := a.autostartManager.SetAutoStartWithMethod(params.Enable, params.Method); err != nil {
+		if err := a.SetAutoStartWithMethod(params.Enable, params.Method); err != nil {
 			return a.errorResponse(err.Error())
 		}
 		return a.successResponse(true)

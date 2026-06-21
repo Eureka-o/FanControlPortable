@@ -22,8 +22,8 @@
   --scrollbar-track: color-mix(in srgb, var(--background) 88%, transparent);
   --overlay-scrollbar-thumb: color-mix(in srgb, var(--foreground) 24%, transparent);
   --overlay-scrollbar-thumb-hover: color-mix(in srgb, var(--foreground) 34%, transparent);
-  --chart-grid: #e8edf5;
-  --chart-axis: #d8e0ec;
+  --chart-grid: color-mix(in srgb, #e8edf5 82%, var(--background) 18%);
+  --chart-axis: color-mix(in srgb, #d8e0ec 80%, var(--background) 20%);
   --chart-tick: #6b7280;
   --chart-primary: #2f6df6;
   --chart-primary-active: #1f57da;
@@ -61,8 +61,83 @@
   --sidebar-accent-foreground: #111827;
   --sidebar-border: #e5ebf4;
   --sidebar-ring: #2f6df6;
-  --mica-content-surface: color-mix(in srgb, var(--background) 75%, transparent);
-  --mica-content-border: color-mix(in srgb, var(--border) 90%, transparent);
+  --mica-content-surface: color-mix(in srgb, var(--background) 94%, var(--card) 6%);
+  --mica-content-border: color-mix(in srgb, var(--border) 92%, var(--background) 8%);
+  --surface-layer: color-mix(in srgb, var(--card) 96%, var(--background) 4%);
+  --surface-layer-strong: color-mix(in srgb, var(--card) 98%, var(--background) 2%);
+  --surface-soft-shadow:
+    0 12px 30px -24px rgba(15, 23, 42, 0.22),
+    0 1px 2px -1px rgba(15, 23, 42, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.68);
+  --surface-hairline: color-mix(in srgb, var(--border) 92%, var(--foreground) 8%);
+  --layer-scrollbar: 40;
+  --layer-titlebar: 60;
+  --layer-floating-popover: 80;
+  --layer-dialog-overlay: 90;
+  --layer-dialog-content: 100;
+  --theme-dialog-overlay-background: color-mix(in srgb, black 55%, transparent);
+  --theme-dialog-overlay-backdrop-filter: none;
+  --theme-dialog-content-shadow: 0 24px 60px -30px rgba(15, 23, 42, 0.48);
+  --theme-dialog-close-hover-background: color-mix(in srgb, var(--primary) 9%, var(--muted) 91%);
+  --theme-dialog-close-hover-border: color-mix(in srgb, var(--primary) 24%, transparent);
+  --theme-dialog-close-hover-shadow: 0 8px 16px -14px color-mix(in srgb, var(--primary) 48%, transparent);
+  --theme-dialog-close-focus-ring: color-mix(in srgb, var(--primary) 30%, transparent);
+  --theme-toast-background: color-mix(in srgb, var(--popover) 96%, var(--background) 4%);
+  --theme-toast-shadow: 0 14px 34px -16px rgba(16, 24, 40, 0.45);
+  --theme-toast-backdrop-filter: blur(8px) saturate(118%);
+  --theme-icon-stroke-width: 1.85;
+  --theme-page-home-background: transparent;
+  --theme-page-settings-background: transparent;
+  --theme-page-curve-background: transparent;
+  --theme-card-background: var(--surface-layer-strong);
+  --theme-card-border: var(--surface-hairline);
+  --theme-card-shadow: var(--surface-soft-shadow);
+  --theme-card-hover-border: color-mix(in srgb, var(--primary) 28%, var(--theme-card-border));
+  --theme-card-hover-shadow:
+    0 14px 32px -24px color-mix(in srgb, var(--primary) 30%, rgba(15, 23, 42, 0.18)),
+    0 1px 2px -1px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  --theme-card-hover-transform: translateY(-1px);
+  --theme-card-backdrop-filter: none;
+  --theme-card-radius: var(--radius-2xl);
+  --theme-preview-card-background: color-mix(in srgb, var(--card) 97%, var(--background) 3%);
+  --theme-preview-card-border: color-mix(in srgb, var(--theme-card-border) 92%, transparent);
+  --theme-preview-card-shadow:
+    0 10px 24px -24px rgba(15, 23, 42, 0.2),
+    0 1px 2px -1px rgba(15, 23, 42, 0.09),
+    inset 0 1px 0 rgba(255, 255, 255, 0.68);
+  --theme-preview-card-hover-border: color-mix(in srgb, var(--primary) 20%, var(--theme-preview-card-border));
+  --theme-preview-card-hover-shadow:
+    0 12px 26px -25px color-mix(in srgb, var(--primary) 22%, rgba(15, 23, 42, 0.14)),
+    0 1px 2px -1px rgba(15, 23, 42, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  --theme-preview-card-hover-transform: none;
+  --theme-tile-background: color-mix(in srgb, var(--card) 90%, var(--background) 10%);
+  --theme-tile-border: color-mix(in srgb, var(--theme-card-border) 86%, transparent);
+  --theme-tile-shadow:
+    0 10px 22px -22px rgba(15, 23, 42, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  --theme-tile-hover-shadow:
+    0 12px 24px -22px color-mix(in srgb, var(--primary) 24%, rgba(15, 23, 42, 0.16)),
+    inset 0 1px 0 rgba(255, 255, 255, 0.68);
+  --theme-chart-canvas-background: color-mix(in srgb, var(--background) 58%, var(--card) 42%);
+  --theme-chart-canvas-border: color-mix(in srgb, var(--theme-card-border) 64%, transparent);
+  --theme-chart-canvas-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.58);
+  --theme-control-hover-border: color-mix(in srgb, var(--primary) 32%, transparent);
+  --theme-control-hover-background: color-mix(in srgb, var(--primary) 7%, var(--background) 93%);
+  --theme-control-hover-shadow: 0 14px 28px -22px color-mix(in srgb, var(--primary) 54%, transparent);
+  --theme-control-focus-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+  --theme-switch-border: color-mix(in srgb, var(--border) 68%, transparent);
+  --theme-switch-hover-border: color-mix(in srgb, var(--primary) 44%, transparent);
+  --theme-switch-hover-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 12%, transparent);
+  --theme-switch-checked-border: color-mix(in srgb, var(--primary) 52%, transparent);
+  --theme-switch-checked-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+  --theme-switch-checked-hover-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+  --theme-switch-unchecked-background: color-mix(in srgb, var(--muted) 78%, var(--card) 22%);
+  --theme-switch-checked-background: var(--primary);
+  --theme-switch-thumb-background: var(--card);
+  --theme-switch-surface-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.48);
+  --theme-switch-thumb-shadow: 0 2px 8px -3px rgba(15, 23, 42, 0.34);
 }
 
 @theme inline {
@@ -164,8 +239,85 @@
   --sidebar-accent-foreground: #e5e7eb;
   --sidebar-border: #202631;
   --sidebar-ring: #ff4b26;
-  --mica-content-surface: color-mix(in srgb, var(--background) 75%, transparent);
-  --mica-content-border: color-mix(in srgb, var(--border) 90%, transparent);
+  --mica-content-surface: color-mix(in srgb, var(--background) 94%, var(--card) 6%);
+  --mica-content-border: color-mix(in srgb, var(--border) 88%, var(--background) 12%);
+  --surface-layer: color-mix(in srgb, var(--card) 90%, var(--background) 10%);
+  --surface-layer-strong: color-mix(in srgb, var(--card) 94%, var(--background) 6%);
+  --surface-soft-shadow:
+    0 16px 38px -28px rgba(0, 0, 0, 0.68),
+    0 1px 2px -1px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --surface-hairline: color-mix(in srgb, var(--border) 90%, var(--foreground) 10%);
+  --layer-scrollbar: 40;
+  --layer-titlebar: 60;
+  --layer-floating-popover: 80;
+  --layer-dialog-overlay: 90;
+  --layer-dialog-content: 100;
+  --theme-dialog-overlay-background: color-mix(in srgb, black 62%, transparent);
+  --theme-dialog-overlay-backdrop-filter: none;
+  --theme-dialog-content-shadow: 0 26px 70px -32px rgba(0, 0, 0, 0.78);
+  --theme-dialog-close-hover-background: color-mix(in srgb, var(--primary) 14%, var(--muted) 86%);
+  --theme-dialog-close-hover-border: color-mix(in srgb, var(--primary) 30%, transparent);
+  --theme-dialog-close-hover-shadow: 0 9px 18px -14px color-mix(in srgb, var(--primary) 54%, transparent);
+  --theme-dialog-close-focus-ring: color-mix(in srgb, var(--primary) 34%, transparent);
+  --theme-toast-background: color-mix(in srgb, var(--popover) 94%, var(--background) 6%);
+  --theme-toast-shadow: 0 16px 38px -18px rgba(0, 0, 0, 0.72);
+  --theme-toast-backdrop-filter: blur(8px) saturate(118%);
+  --theme-icon-stroke-width: 1.85;
+  --theme-page-home-background: transparent;
+  --theme-page-settings-background: transparent;
+  --theme-page-curve-background: transparent;
+  --theme-card-background: var(--surface-layer-strong);
+  --theme-card-border: var(--surface-hairline);
+  --theme-card-shadow: var(--surface-soft-shadow);
+  --theme-card-hover-border: color-mix(in srgb, var(--primary) 34%, var(--theme-card-border));
+  --theme-card-hover-shadow:
+    0 18px 40px -28px color-mix(in srgb, var(--primary) 34%, rgba(0, 0, 0, 0.68)),
+    0 1px 2px -1px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --theme-card-hover-transform: translateY(-1px);
+  --theme-card-backdrop-filter: none;
+  --theme-card-radius: var(--radius-2xl);
+  --theme-preview-card-background: color-mix(in srgb, var(--card) 92%, var(--background) 8%);
+  --theme-preview-card-border: color-mix(in srgb, var(--theme-card-border) 88%, transparent);
+  --theme-preview-card-shadow:
+    0 12px 28px -26px rgba(0, 0, 0, 0.6),
+    0 1px 2px -1px rgba(0, 0, 0, 0.52),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  --theme-preview-card-hover-border: color-mix(in srgb, var(--primary) 24%, var(--theme-preview-card-border));
+  --theme-preview-card-hover-shadow:
+    0 14px 30px -26px color-mix(in srgb, var(--primary) 25%, rgba(0, 0, 0, 0.58)),
+    0 1px 2px -1px rgba(0, 0, 0, 0.56),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --theme-preview-card-hover-transform: none;
+  --theme-tile-background: color-mix(in srgb, var(--card) 86%, var(--background) 14%);
+  --theme-tile-border: color-mix(in srgb, var(--theme-card-border) 82%, transparent);
+  --theme-tile-shadow:
+    0 12px 28px -24px rgba(0, 0, 0, 0.58),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  --theme-tile-hover-shadow:
+    0 14px 30px -24px color-mix(in srgb, var(--primary) 30%, rgba(0, 0, 0, 0.58)),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --theme-chart-canvas-background: color-mix(in srgb, var(--background) 58%, var(--card) 42%);
+  --theme-chart-canvas-border: color-mix(in srgb, var(--theme-card-border) 62%, transparent);
+  --theme-chart-canvas-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  --theme-control-hover-border: color-mix(in srgb, var(--primary) 34%, transparent);
+  --theme-control-hover-background: color-mix(in srgb, var(--primary) 12%, var(--background) 88%);
+  --theme-control-hover-shadow: 0 16px 30px -22px color-mix(in srgb, var(--primary) 62%, transparent);
+  --theme-control-focus-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
+  --theme-switch-border: color-mix(in srgb, var(--border) 72%, transparent);
+  --theme-switch-hover-border: color-mix(in srgb, var(--primary) 48%, transparent);
+  --theme-switch-hover-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 14%, transparent);
+  --theme-switch-checked-border: color-mix(in srgb, var(--primary) 56%, transparent);
+  --theme-switch-checked-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+  --theme-switch-checked-hover-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent);
+  --theme-switch-unchecked-background: color-mix(in srgb, var(--muted) 76%, var(--foreground) 10%);
+  --theme-switch-checked-background: var(--primary);
+  --theme-switch-thumb-background: color-mix(in srgb, var(--card) 82%, var(--foreground) 18%);
+  --theme-switch-surface-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.32);
+  --theme-switch-thumb-shadow: 0 2px 8px -3px rgba(0, 0, 0, 0.72);
 }
 
 .theme-thrm-only {
@@ -173,25 +325,24 @@
 }
 
 body:has(.glacier-native-backdrop) {
-  background: transparent;
+  background: var(--background);
 }
 
 .glacier-native-backdrop {
-  background: transparent !important;
+  background: var(--background) !important;
 }
 
 .glacier-native-backdrop .glacier-sidebar {
-  background: transparent;
-  border-right-color: transparent;
-  box-shadow: none;
+  background: var(--sidebar);
+  border-right-color: var(--sidebar-border);
 }
 
 .glacier-native-backdrop .glacier-titlebar {
-  background: transparent;
+  background: color-mix(in srgb, var(--background) 94%, var(--card) 6%);
 }
 
 .glacier-native-backdrop .glacier-content {
-  background: transparent;
+  background: var(--background);
 }
 
 .glacier-native-backdrop .glacier-content-panel {
@@ -207,6 +358,223 @@ body:has(.glacier-native-backdrop) {
   box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.06) inset;
 }
 
+.glacier-shell svg {
+  stroke-width: var(--theme-icon-stroke-width, 2);
+}
+
+.glacier-shell[data-theme-page="status"] [data-theme-section="content-panel"] {
+  background: var(--theme-page-home-background, var(--mica-content-surface));
+}
+
+.glacier-shell[data-theme-page="control"] [data-theme-section="content-panel"] {
+  background: var(--theme-page-settings-background, var(--mica-content-surface));
+}
+
+.glacier-shell[data-theme-page="curve"] [data-theme-section="content-panel"] {
+  background: var(--theme-page-curve-background, var(--mica-content-surface));
+}
+
+.glacier-shell [data-theme-ui="setting-section"],
+.glacier-shell [data-theme-card][class*="rounded"],
+.glacier-shell .glacier-hero-card,
+.glacier-shell .glacier-metric-card,
+.glacier-shell .glacier-control-card,
+.glacier-shell .glacier-chart-card {
+  background: var(--theme-card-background);
+  border-color: var(--theme-card-border);
+  border-radius: var(--theme-card-radius);
+  box-shadow: var(--theme-card-shadow);
+  backdrop-filter: var(--theme-card-backdrop-filter);
+}
+
+.glacier-shell .glacier-hero-card,
+.glacier-shell .glacier-metric-card,
+.glacier-shell .glacier-chart-card,
+.glacier-shell .glacier-control-card,
+.glacier-shell .glacier-stat-tile {
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.glacier-shell .glacier-stat-tile {
+  background: var(--theme-tile-background);
+  border-color: var(--theme-tile-border);
+  box-shadow: var(--theme-tile-shadow);
+  backdrop-filter: var(--theme-card-backdrop-filter);
+}
+
+.glacier-shell .glacier-chart-canvas {
+  border: 1px solid var(--theme-chart-canvas-border);
+  border-radius: calc(var(--theme-card-radius) - 0.5rem);
+  background: var(--theme-chart-canvas-background);
+  box-shadow: var(--theme-chart-canvas-shadow);
+}
+
+.glacier-shell .glacier-chart-canvas > svg,
+.glacier-shell .glacier-chart-canvas > div > svg {
+  display: block;
+}
+
+.glacier-shell [data-theme-card="fan-curve-preview"] .glacier-chart-canvas,
+.glacier-shell [data-theme-card="temperature-history"] .glacier-chart-canvas {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.glacier-shell .glacier-metric-card:hover,
+.glacier-shell .glacier-chart-card:hover {
+  transform: var(--theme-card-hover-transform);
+  border-color: var(--theme-card-hover-border);
+  box-shadow: var(--theme-card-hover-shadow);
+}
+
+.glacier-shell [data-theme-card="fan-curve-preview"],
+.glacier-shell [data-theme-card="temperature-history"] {
+  background: var(--theme-preview-card-background, var(--theme-card-background));
+  border-color: var(--theme-preview-card-border, var(--theme-card-border));
+  box-shadow: var(--theme-preview-card-shadow, var(--theme-card-shadow));
+}
+
+.glacier-shell [data-theme-card="fan-curve-preview"]:hover,
+.glacier-shell [data-theme-card="temperature-history"]:hover {
+  transform: var(--theme-preview-card-hover-transform, none);
+  border-color: var(--theme-preview-card-hover-border, var(--theme-card-hover-border));
+  box-shadow: var(--theme-preview-card-hover-shadow, var(--theme-card-hover-shadow));
+}
+
+.glacier-shell .glacier-stat-tile:hover {
+  transform: var(--theme-card-hover-transform);
+  border-color: var(--theme-card-hover-border);
+  box-shadow: var(--theme-tile-hover-shadow);
+}
+
+.glacier-shell [data-theme-ui="setting-section"],
+.glacier-shell [data-theme-card][class*="rounded"] {
+  overflow: hidden;
+}
+
+.glacier-shell [data-theme-card="curve-header"] {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.glacier-shell [data-theme-card="curve-editor"] {
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+[data-slot="dialog-overlay"] {
+  background: var(--theme-dialog-overlay-background);
+  backdrop-filter: var(--theme-dialog-overlay-backdrop-filter);
+}
+
+[data-slot="dialog-content"] {
+  box-shadow: var(--theme-dialog-content-shadow);
+}
+
+[data-slot="dialog-close"] {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted-foreground);
+  box-shadow: none;
+}
+
+[data-slot="dialog-close"]:not(:disabled):hover {
+  background: var(--theme-dialog-close-hover-background);
+  border-color: var(--theme-dialog-close-hover-border);
+  color: var(--foreground);
+  box-shadow: var(--theme-dialog-close-hover-shadow);
+}
+
+[data-slot="dialog-close"]:focus-visible {
+  outline: none;
+  border-color: var(--theme-dialog-close-hover-border);
+  box-shadow: 0 0 0 3px var(--theme-dialog-close-focus-ring);
+}
+
+.glacier-shell [data-theme-ui="setting-row-icon"],
+.glacier-shell [data-theme-ui="brand-mark"] {
+  background: color-mix(in srgb, var(--muted) 76%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 58%, transparent);
+}
+
+.glacier-shell [data-theme-ui="setting-row"],
+.glacier-shell [data-theme-ui="compatibility-submenu-row"] {
+  transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.glacier-shell [data-theme-ui="setting-row"]:hover,
+.glacier-shell [data-theme-ui="compatibility-submenu-row"]:hover {
+  box-shadow: inset 2px 0 0 var(--theme-control-hover-border);
+}
+
+.glacier-shell [data-theme-ui="select-trigger"] {
+  transition:
+    transform 0.18s ease,
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.glacier-shell [data-theme-ui="select-trigger"]:not(:disabled):hover,
+.glacier-shell [data-theme-ui="select-trigger"][data-state="open"] {
+  transform: translateY(-0.5px);
+  background: var(--theme-control-hover-background);
+  border-color: var(--theme-control-hover-border);
+  box-shadow: var(--theme-control-hover-shadow);
+}
+
+.glacier-shell [data-theme-ui="select-trigger"]:focus-visible {
+  border-color: var(--theme-control-hover-border);
+  box-shadow: var(--theme-control-focus-shadow);
+}
+
+.glacier-shell [data-theme-ui="switch"] {
+  background: var(--theme-switch-unchecked-background);
+  border-color: var(--theme-switch-border);
+  box-shadow: var(--theme-switch-surface-shadow);
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+}
+
+.glacier-shell [data-theme-ui="switch"]:not(:disabled):hover {
+  transform: none;
+  border-color: var(--theme-switch-hover-border);
+  box-shadow: var(--theme-switch-hover-shadow);
+}
+
+.glacier-shell [data-theme-ui="switch"][data-state="checked"] {
+  background: var(--theme-switch-checked-background);
+  border-color: var(--theme-switch-checked-border);
+  box-shadow: var(--theme-switch-checked-shadow);
+}
+
+.glacier-shell [data-theme-ui="switch"][data-state="checked"]:not(:disabled):hover {
+  box-shadow: var(--theme-switch-checked-hover-shadow);
+}
+
+.glacier-shell [data-theme-ui="switch-thumb"] {
+  background: var(--theme-switch-thumb-background);
+  box-shadow: var(--theme-switch-thumb-shadow);
+}
+
+.glacier-shell [data-theme-ui="sidebar-item"] {
+  border: 1px solid transparent;
+}
+
+.glacier-shell [data-theme-ui="sidebar-item"][aria-selected="true"] {
+  background: color-mix(in srgb, var(--primary) 12%, var(--sidebar) 88%);
+  border-color: color-mix(in srgb, var(--primary) 18%, transparent);
+  box-shadow: 0 10px 24px -18px color-mix(in srgb, var(--primary) 50%, transparent);
+}
+
 html,
 body {
   height: 100%;
@@ -220,13 +588,13 @@ body {
 
 body {
   overflow: hidden;
-  /* 西文优先 Manrope，中文使用内置 CJK 字体，日文直接走系统字体回退 */
+  /* Western text prefers Manrope; CJK text falls back to bundled/system fonts. */
   font-family: var(--font-sans), "PingFang SC", "Hiragino Sans GB",
     "Hiragino Sans", "Yu Gothic UI", "HarmonyOS Sans SC", "Source Han Sans SC", "Noto Sans CJK SC",
     "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI Variable",
     "Segoe UI", -apple-system, BlinkMacSystemFont, Arial, Helvetica,
     sans-serif;
-  /* 子像素几何提升锐度（Chromium / Electron 有效） */
+  /* Improve text sharpness in Chromium/WebView. */
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   -ms-user-select: none;
@@ -234,7 +602,7 @@ body {
   user-select: none;
 }
 
-/* 等宽场景同样使用平滑渲染 */
+/* Keep monospace text visually consistent with the rest of the UI. */
 code,
 kbd,
 pre,
@@ -283,7 +651,7 @@ textarea,
   padding: 0 1px;
   opacity: 0;
   pointer-events: none;
-  z-index: 40;
+  z-index: var(--layer-scrollbar);
   transition: opacity 0.2s ease;
 }
 
@@ -365,10 +733,10 @@ textarea,
 
 .cn-toast {
   border: 1px solid color-mix(in srgb, var(--border) 88%, transparent) !important;
-  background: color-mix(in srgb, var(--popover) 96%, transparent) !important;
+  background: var(--theme-toast-background) !important;
   color: var(--popover-foreground) !important;
-  box-shadow: 0 14px 34px -16px rgba(16, 24, 40, 0.45) !important;
-  backdrop-filter: blur(8px) saturate(118%);
+  box-shadow: var(--theme-toast-shadow) !important;
+  backdrop-filter: var(--theme-toast-backdrop-filter);
   border-radius: calc(var(--radius) + 2px) !important;
 }
 

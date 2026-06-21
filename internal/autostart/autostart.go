@@ -129,17 +129,27 @@ func (m *Manager) deleteScheduledTask() error {
 
 // removeRegistryAutoStart 删除注册表自启动项
 func (m *Manager) removeRegistryAutoStart() error {
-	key, err := registry.OpenKey(registry.CURRENT_USER, `SOFTWARE\Microsoft\Windows\CurrentVersion\Run`, registry.SET_VALUE)
-	if err != nil {
-		return fmt.Errorf("open registry failed: %v", err)
-	}
-	defer key.Close()
-
-	for _, valueName := range []string{appmeta.AppName, appmeta.LegacyAppName} {
-		err = key.DeleteValue(valueName)
-		if err != nil && err != registry.ErrNotExist {
-			return fmt.Errorf("delete registry value failed: %v", err)
+	var firstErr error
+	for _, root := range []registry.Key{registry.CURRENT_USER, registry.LOCAL_MACHINE} {
+		key, err := registry.OpenKey(root, `SOFTWARE\Microsoft\Windows\CurrentVersion\Run`, registry.SET_VALUE)
+		if err != nil {
+			if root == registry.LOCAL_MACHINE {
+				continue
+			}
+			return fmt.Errorf("open registry failed: %v", err)
 		}
+
+		for _, valueName := range []string{appmeta.AppName, appmeta.LegacyAppName} {
+			err = key.DeleteValue(valueName)
+			if err != nil && err != registry.ErrNotExist && firstErr == nil {
+				firstErr = err
+			}
+		}
+		key.Close()
+	}
+
+	if firstErr != nil {
+		return fmt.Errorf("delete registry value failed: %v", firstErr)
 	}
 
 	m.logger.Info("Deleted registry auto-start values")
@@ -230,7 +240,7 @@ func (m *Manager) checkScheduledTask() bool {
 			continue
 		}
 		command := scheduledTaskCommandLine(string(output))
-		if commandTargetsCurrentCore(command) {
+		if command == "" || commandTargetsFanControl(command) {
 			return true
 		}
 	}
@@ -239,21 +249,23 @@ func (m *Manager) checkScheduledTask() bool {
 
 // checkRegistryAutoStart 检查注册表中的自启动项
 func (m *Manager) checkRegistryAutoStart() bool {
-	key, err := registry.OpenKey(registry.CURRENT_USER, `SOFTWARE\Microsoft\Windows\CurrentVersion\Run`, registry.QUERY_VALUE)
-	if err != nil {
-		m.logger.Debug("open registry failed: %v", err)
-		return false
-	}
-	defer key.Close()
-
-	for _, valueName := range []string{appmeta.AppName, appmeta.LegacyAppName} {
-		value, _, err := key.GetStringValue(valueName)
+	for _, root := range []registry.Key{registry.CURRENT_USER, registry.LOCAL_MACHINE} {
+		key, err := registry.OpenKey(root, `SOFTWARE\Microsoft\Windows\CurrentVersion\Run`, registry.QUERY_VALUE)
 		if err != nil {
+			m.logger.Debug("open registry failed: %v", err)
 			continue
 		}
-		if commandTargetsCurrentCore(value) {
-			return true
+		for _, valueName := range []string{appmeta.AppName, appmeta.LegacyAppName} {
+			value, _, err := key.GetStringValue(valueName)
+			if err != nil {
+				continue
+			}
+			if commandTargetsFanControl(value) {
+				key.Close()
+				return true
+			}
 		}
+		key.Close()
 	}
 	return false
 }
@@ -290,6 +302,45 @@ func commandTargetsCurrentCore(command string) bool {
 		expected = expectedAbs
 	}
 	return strings.EqualFold(filepath.Clean(target), filepath.Clean(expected))
+}
+
+func commandTargetsFanControl(command string) bool {
+	target := firstCommandPath(command)
+	if target == "" {
+		return false
+	}
+	if commandTargetsCurrentCore(command) {
+		return true
+	}
+	base := filepath.Base(target)
+	if !isFanControlExecutableName(base) {
+		return false
+	}
+	cleanTarget := strings.ToLower(filepath.ToSlash(filepath.Clean(target)))
+	for _, marker := range []string{
+		"/fancontrol/",
+		"/fancontrolportable/",
+		"/eureka-o fancontrol/",
+	} {
+		if strings.Contains(cleanTarget, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func isFanControlExecutableName(name string) bool {
+	for _, expected := range []string{
+		appmeta.CoreExecutableName,
+		appmeta.LegacyCoreExecutable,
+		appmeta.ExecutableName,
+		appmeta.LegacyExecutableName,
+	} {
+		if strings.EqualFold(name, expected) {
+			return true
+		}
+	}
+	return false
 }
 
 func firstCommandPath(command string) string {

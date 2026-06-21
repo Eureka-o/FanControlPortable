@@ -174,8 +174,8 @@ function TitleBar({
 }) {
   return (
     <div
-      className="glacier-titlebar pointer-events-auto absolute left-16 right-0 top-0 z-[9999] flex h-10 items-center justify-between bg-background"
-      style={DRAG_STYLE}
+      className="glacier-titlebar pointer-events-auto absolute left-16 right-0 top-0 flex h-10 items-center justify-between bg-background"
+      style={{ ...DRAG_STYLE, zIndex: 'var(--layer-titlebar)' }}
       onDoubleClick={onToggleMaximise}
     >
       <div className="flex h-full min-w-0 flex-1 items-center px-3 pt-1">
@@ -560,6 +560,8 @@ export default function AppShell({
 
   return (
     <div
+      data-theme-page={activeTab}
+      data-theme-section="app-shell"
       className={clsx(
         'glacier-shell relative flex h-dvh w-full overflow-hidden bg-background text-foreground',
         isWindowsChrome && 'glacier-native-backdrop',
@@ -579,11 +581,12 @@ export default function AppShell({
         />
       )}
 
-      <aside className="glacier-sidebar flex w-16 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[1px_0_0_rgba(15,23,42,0.04)] dark:shadow-[1px_0_0_rgba(255,255,255,0.04)]">
+      <aside data-theme-section="sidebar" className="glacier-sidebar flex w-16 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[1px_0_0_rgba(15,23,42,0.04)] dark:shadow-[1px_0_0_rgba(255,255,255,0.04)]">
         <div className="flex h-[76px] items-center justify-center px-2" style={DRAG_STYLE}>
           <div
             aria-label={BRAND.name}
             role="img"
+            data-theme-ui="brand-mark"
             tabIndex={0}
             onKeyDown={handleLogoKeyDown}
             className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-primary shadow-sm shadow-black/5 outline-none"
@@ -603,6 +606,8 @@ export default function AppShell({
                 <TooltipTrigger asChild>
                   <button
                     role="tab"
+                    data-theme-ui="sidebar-item"
+                    data-theme-tab={tab.id}
                     aria-label={tabTitle}
                     aria-selected={isActive}
                     onClick={() => handleTabChange(tab.id)}
@@ -632,6 +637,8 @@ export default function AppShell({
             <TooltipTrigger asChild>
               <button
                 type="button"
+                data-theme-ui="sidebar-item"
+                data-theme-tab={ABOUT_TAB.id}
                 aria-label={t(ABOUT_TAB.titleKey)}
                 aria-selected={activeTab === ABOUT_TAB.id}
                 onClick={() => handleTabChange(ABOUT_TAB.id)}
@@ -653,7 +660,7 @@ export default function AppShell({
         </div>
       </aside>
 
-      <section className="glacier-content relative flex min-w-0 flex-1 flex-col overflow-hidden">
+      <section data-theme-section="content" className="glacier-content relative flex min-w-0 flex-1 flex-col overflow-hidden">
         {!isWindowsChrome && (
           <header
             className="shrink-0 border-b border-border/65 bg-background/92 px-4 pb-3 pt-3 backdrop-blur-xl sm:px-5 lg:px-6"
@@ -665,7 +672,7 @@ export default function AppShell({
           </header>
         )}
 
-        <div className="glacier-content-panel relative min-h-0 flex-1 overflow-hidden">
+        <div data-theme-section="content-panel" className="glacier-content-panel relative min-h-0 flex-1 overflow-hidden">
           <div
             ref={scrollRef}
             className="app-scroll-root app-scroll-root--hide-native h-full"
