@@ -25,7 +25,12 @@ import {
   getFanSpeedUnit,
 } from '../../lib/fan-speed';
 import { useLocale } from '../../lib/i18n';
-import { getManualGearLabel, getManualLevelLabel } from '../../lib/manualGearPresets';
+import {
+  getFlyDigiRuntimeCapability,
+  getManualGearLabel,
+  getManualLevelLabel,
+  isManualGearAllowedForFlyDigi,
+} from '../../lib/manualGearPresets';
 import { apiService } from '../../services/api';
 import FanCurveProfileSelect from '../FanCurveProfileSelect';
 import { Button, Select, ToggleSwitch } from '../ui';
@@ -40,6 +45,7 @@ interface FanControlSectionProps {
   temperature: types.TemperatureData | null;
   runtimeDeviceProfile?: types.DeviceProfile | null;
   supportsCustomSpeed: boolean;
+  supportsManualGears: boolean;
   configuredDeviceCurveKey: string;
 }
 
@@ -73,6 +79,7 @@ export default function FanControlSection({
   temperature,
   runtimeDeviceProfile,
   supportsCustomSpeed,
+  supportsManualGears,
   configuredDeviceCurveKey,
 }: FanControlSectionProps) {
   const { t } = useTranslation();
@@ -106,8 +113,15 @@ export default function FanControlSection({
   const activeCurveProfileId = curveActiveProfileId || (((config as any).activeFanCurveProfileId || '') as string);
 
   const fanGearOptions = useMemo(
-    () => FAN_GEAR_VALUES.map((value) => ({ value, label: getManualGearLabel(value) })),
-    [locale],
+    () => {
+      const capability = getFlyDigiRuntimeCapability(fanData as any);
+      return FAN_GEAR_VALUES.map((value) => ({
+        value,
+        label: getManualGearLabel(value),
+        disabled: !isManualGearAllowedForFlyDigi(value, capability),
+      }));
+    },
+    [fanData, locale],
   );
   const fanLevelOptions = useMemo(
     () => FAN_LEVEL_VALUES.map((value) => ({ value, label: getManualLevelLabel(value) })),
@@ -155,8 +169,20 @@ export default function FanControlSection({
   }, [onConfigChange, runWithLoading, t]);
 
   const handleManualGearApply = useCallback(async () => {
+    if (!supportsManualGears) {
+      toast.error(t('controlPanel.fan.manualGearUnavailable'));
+      return;
+    }
     const gear = FAN_GEAR_VALUES.includes(manualGearDraft as any) ? manualGearDraft : '标准';
     const level = FAN_LEVEL_VALUES.includes(manualLevelDraft as any) ? manualLevelDraft : '中';
+    const capability = getFlyDigiRuntimeCapability(fanData as any);
+    if (!isManualGearAllowedForFlyDigi(gear, capability)) {
+      const limit = capability?.maxGearLabel && capability?.maxRpm
+        ? t('fanCurve.manualGear.runtimeLimit', { gear: getManualGearLabel(capability.maxGearLabel), rpm: capability.maxRpm })
+        : '';
+      toast.error(t('fanCurve.manualGear.runtimeUnavailable', { gear: getManualGearLabel(gear), limit }));
+      return;
+    }
     await runWithLoading('manualGear', async () => {
       try {
         const ok = await apiService.setManualGear(gear, level);
@@ -172,7 +198,7 @@ export default function FanControlSection({
         toast.error(t('controlPanel.fan.manualGearApplyFailed', { error: getErrorMessage(error) }));
       }
     });
-  }, [manualGearDraft, manualLevelDraft, onConfigChange, runWithLoading, t]);
+  }, [fanData, manualGearDraft, manualLevelDraft, onConfigChange, runWithLoading, supportsManualGears, t]);
 
   const handleCustomSpeedApply = useCallback(async (enabled: boolean, speed: unknown) => {
     await runWithLoading('customSpeed', async () => {
@@ -409,40 +435,42 @@ export default function FanControlSection({
           )}
         </AnimatePresence>
 
-        <SettingRow
-          icon={<Settings className="h-4 w-4" />}
-          title={t('controlPanel.fan.manualGearTitle')}
-          description={isConnected ? t('controlPanel.fan.manualGearDescription') : t('controlPanel.fan.manualGearDisconnected')}
-          disabled={!isConnected}
-        >
-          <div className="grid w-full grid-cols-1 gap-2 sm:w-[27rem] sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-            <Select
-              value={manualGearDraft}
-              onChange={(value: string | number) => setManualGearDraft(String(value))}
-              options={fanGearOptions}
-              size="sm"
-              disabled={!isConnected || loadingStates.manualGear}
-            />
-            <Select
-              value={manualLevelDraft}
-              onChange={(value: string | number) => setManualLevelDraft(String(value))}
-              options={fanLevelOptions}
-              size="sm"
-              disabled={!isConnected || loadingStates.manualGear}
-            />
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleManualGearApply}
-              loading={loadingStates.manualGear}
-              disabled={!isConnected}
-              icon={<CheckCircle2 className="h-3.5 w-3.5" />}
-              className="w-full sm:w-auto"
-            >
-              {t('common.actions.apply')}
-            </Button>
-          </div>
-        </SettingRow>
+        {supportsManualGears && (
+          <SettingRow
+            icon={<Settings className="h-4 w-4" />}
+            title={t('controlPanel.fan.manualGearTitle')}
+            description={isConnected ? t('controlPanel.fan.manualGearDescription') : t('controlPanel.fan.manualGearDisconnected')}
+            disabled={!isConnected}
+          >
+            <div className="grid w-full grid-cols-1 gap-2 sm:w-[27rem] sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+              <Select
+                value={manualGearDraft}
+                onChange={(value: string | number) => setManualGearDraft(String(value))}
+                options={fanGearOptions}
+                size="sm"
+                disabled={!isConnected || loadingStates.manualGear}
+              />
+              <Select
+                value={manualLevelDraft}
+                onChange={(value: string | number) => setManualLevelDraft(String(value))}
+                options={fanLevelOptions}
+                size="sm"
+                disabled={!isConnected || loadingStates.manualGear}
+              />
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleManualGearApply}
+                loading={loadingStates.manualGear}
+                disabled={!isConnected}
+                icon={<CheckCircle2 className="h-3.5 w-3.5" />}
+                className="w-full sm:w-auto"
+              >
+                {t('common.actions.apply')}
+              </Button>
+            </div>
+          </SettingRow>
+        )}
 
         <TemperatureBaselineSection
           config={config}

@@ -387,11 +387,21 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				}
 
 				fanData := a.deviceManager.GetCurrentFanData()
+				targetLimited := false
+				requestedTargetRPM := targetRPM
+				targetRPM, targetLimited = applyFlyDigiRuntimeCapabilityToTarget(targetRPM, fanData, speedUnit)
+				if targetLimited {
+					a.logInfo("智能控温目标受飞智当前供电/挡位上限限制: %dRPM -> %dRPM", requestedTargetRPM, targetRPM)
+				}
 				observedRPM := targetRPM
 				if fanData != nil && fanData.CurrentRPM > 0 {
 					observedRPM = fanDataSpeedForControlUnit(int(fanData.CurrentRPM), speedUnit)
 				}
-				if shouldSendTargetSpeed(targetRPM, prevTargetRPM, smartCfg.MinRPMChange, fanData, speedUnit) {
+				forceSend := false
+				if targetRPM > 0 {
+					forceSend = a.forceNextAutoTarget.Swap(false)
+				}
+				if targetRPM > 0 && (forceSend || shouldSendTargetSpeed(targetRPM, prevTargetRPM, smartCfg.MinRPMChange, fanData, speedUnit)) {
 					if a.deviceManager.SetTargetSpeed(targetRPM, speedUnit) {
 						lastTargetRPM = targetRPM
 						if a.deviceManager.GetDeviceType() == types.DeviceTransportWiFi {
@@ -403,7 +413,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					}
 				}
 
-				if smartCfg.Learning && !spikeSuppressed && !risePredictionBoosted {
+				if smartCfg.Learning && !spikeSuppressed && !risePredictionBoosted && !targetLimited {
 					powerWatts, havePower := totalTemperaturePowerWatts(temp)
 					steady := steadyObserver.ObserveWithPower(controlTemp, observedRPM, powerWatts, havePower, controlCurve, smartCfg)
 					if steady.Ready && steady.BucketIdx >= 0 {
@@ -428,7 +438,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 							}
 						}
 					}
-				} else if !smartCfg.Learning || risePredictionBoosted {
+				} else if !smartCfg.Learning || risePredictionBoosted || targetLimited {
 					steadyObserver.Reset()
 				}
 
@@ -516,6 +526,17 @@ func learnSteadyOffsetForActiveUnit(bucketIdx int, meanTemp int, meanPower float
 		return smartcontrol.LearnPercentSteadyOffsetTicksWithPower(bucketIdx, meanTemp, meanPower, havePower, localEff, haveEff, curve, prevOffsets, cfg)
 	}
 	return smartcontrol.LearnLegacyRPMSteadyOffsetWithPower(bucketIdx, meanTemp, meanPower, havePower, localEff, haveEff, curve, prevOffsets, cfg)
+}
+
+func applyFlyDigiRuntimeCapabilityToTarget(targetRPM int, fanData *types.FanData, unit string) (int, bool) {
+	if targetRPM <= 0 || !types.IsRPMSpeedUnit(unit) || fanData == nil || fanData.Transport != types.DeviceTransportHID {
+		return targetRPM, false
+	}
+	capability := types.DecodeFlyDigiRuntimeCapability(fanData, nil)
+	if fanData.FlyDigiCapability != nil {
+		capability = *fanData.FlyDigiCapability
+	}
+	return types.FlyDigiClampRPMForCapability(targetRPM, capability)
 }
 
 func shouldSendTargetSpeed(targetRPM, prevTargetRPM, minRPMChange int, fanData *types.FanData, unit string) bool {

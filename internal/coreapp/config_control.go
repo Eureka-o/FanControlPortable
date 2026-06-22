@@ -61,6 +61,11 @@ func (a *CoreApp) activeDeviceCapabilities() types.DeviceCapabilities {
 	return types.ActiveDeviceProfile(&cfg).Capabilities
 }
 
+func (a *CoreApp) activeDeviceSupportsManualGears() bool {
+	caps := a.activeDeviceCapabilities()
+	return caps.SupportsManualGears || caps.SupportsSetSpeed || caps.SupportsCustomSpeed
+}
+
 // UpdateConfig 更新配置
 func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	a.mutex.Lock()
@@ -228,8 +233,18 @@ func (a *CoreApp) SetAutoControl(enabled bool) error {
 
 	if enabled {
 		a.userSetAutoControl = true
+		a.forceNextAutoTarget.Store(true)
 	}
 	applyManualAfterDisable := !enabled && a.isConnected
+	if applyManualAfterDisable {
+		a.mutex.Unlock()
+		if applyErr := a.applyCurrentGearSetting(); applyErr != nil {
+			return applyErr
+		}
+		a.mutex.Lock()
+		cfg = a.configManager.Get()
+		cfg.AutoControl = enabled
+	}
 
 	a.configManager.Set(cfg)
 	err := a.configManager.Save()
@@ -238,17 +253,18 @@ func (a *CoreApp) SetAutoControl(enabled bool) error {
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 	}
-	if applyManualAfterDisable {
-		if applyErr := a.applyCurrentGearSetting(); applyErr != nil {
-			return applyErr
-		}
-	}
 
 	return err
 }
 
 // applyCurrentGearSetting 应用当前挡位设置
 func (a *CoreApp) applyCurrentGearSetting() error {
+	if !a.activeDeviceSupportsManualGears() {
+		return fmt.Errorf("当前设备不支持手动挡位")
+	}
+	if a.deviceManager == nil {
+		return fmt.Errorf("设备未连接")
+	}
 	fanData := a.deviceManager.GetCurrentFanData()
 	cfg := a.configManager.Get()
 	setGear := strings.TrimSpace(cfg.ManualGear)
@@ -277,7 +293,23 @@ func (a *CoreApp) applyCurrentGearSetting() error {
 
 // SetManualGear 设置手动挡位
 func (a *CoreApp) SetManualGear(gear, level string) bool {
+	a.mutex.Lock()
 	cfg := a.configManager.Get()
+	wasConnected := a.isConnected || (a.deviceManager != nil && a.deviceManager.IsConnected())
+	unit := a.activeDeviceSpeedUnit(&cfg)
+	types.NormalizeManualGearRPMForUnit(&cfg, unit)
+	rpm := cfg.ResolveGearRPM(gear, level)
+	manualGearSupported := a.activeDeviceSupportsManualGears()
+	a.mutex.Unlock()
+
+	if !manualGearSupported {
+		return false
+	}
+	if wasConnected && (a.deviceManager == nil || !a.deviceManager.SetManualGearRPM(gear, level, rpm)) {
+		return false
+	}
+
+	cfg = a.configManager.Get()
 	cfg.AutoControl = false
 	cfg.CustomSpeedEnabled = false
 	cfg.ManualGear = gear
@@ -286,17 +318,23 @@ func (a *CoreApp) SetManualGear(gear, level string) bool {
 		cfg.ManualGearLevels = map[string]string{}
 	}
 	cfg.ManualGearLevels[gear] = normalizeManualLevel(level)
-	unit := a.activeDeviceSpeedUnit(&cfg)
+	unit = a.activeDeviceSpeedUnit(&cfg)
 	types.NormalizeManualGearRPMForUnit(&cfg, unit)
-	rpm := cfg.ResolveGearRPM(gear, level)
-	a.configManager.Update(cfg)
+
+	if err := a.configManager.Update(cfg); err != nil {
+		a.logError("保存手动挡位配置失败: %v", err)
+		return false
+	}
 	a.rememberManualGearLevel(gear, level)
 
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 	}
 
-	return a.deviceManager.SetManualGearRPM(gear, level, rpm)
+	if !wasConnected {
+		return true
+	}
+	return true
 }
 
 // SetCustomSpeed 设置自定义转速

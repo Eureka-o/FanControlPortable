@@ -273,20 +273,21 @@ type FanCurveProfilesPayload struct {
 
 // FanData 风扇数据结构
 type FanData struct {
-	ReportID     uint8  `json:"reportId"`
-	MagicSync    uint16 `json:"magicSync"`
-	Command      uint8  `json:"command"`
-	Status       uint8  `json:"status"`
-	GearSettings uint8  `json:"gearSettings"`
-	CurrentMode  uint8  `json:"currentMode"`
-	Reserved1    uint8  `json:"reserved1"`
-	CurrentRPM   uint16 `json:"currentRpm"`
-	TargetRPM    uint16 `json:"targetRpm"`
-	MaxGear      string `json:"maxGear"`
-	SetGear      string `json:"setGear"`
-	WorkMode     string `json:"workMode"`
-	Transport    string `json:"transport,omitempty"`
-	SpeedUnit    string `json:"speedUnit,omitempty"`
+	ReportID          uint8                     `json:"reportId"`
+	MagicSync         uint16                    `json:"magicSync"`
+	Command           uint8                     `json:"command"`
+	Status            uint8                     `json:"status"`
+	GearSettings      uint8                     `json:"gearSettings"`
+	CurrentMode       uint8                     `json:"currentMode"`
+	Reserved1         uint8                     `json:"reserved1"`
+	CurrentRPM        uint16                    `json:"currentRpm"`
+	TargetRPM         uint16                    `json:"targetRpm"`
+	MaxGear           string                    `json:"maxGear"`
+	SetGear           string                    `json:"setGear"`
+	WorkMode          string                    `json:"workMode"`
+	Transport         string                    `json:"transport,omitempty"`
+	SpeedUnit         string                    `json:"speedUnit,omitempty"`
+	FlyDigiCapability *FlyDigiRuntimeCapability `json:"flyDigiCapability,omitempty"`
 }
 
 // DeviceDebugFrame is a captured low-level device protocol frame.
@@ -308,17 +309,18 @@ type DeviceDebugFrame struct {
 
 // DeviceSettings contains settings read back from the device firmware.
 type DeviceSettings struct {
-	Available    bool               `json:"available"`
-	Source       string             `json:"source"`
-	ReadAt       string             `json:"readAt"`
-	Model        string             `json:"model,omitempty"`
-	GearRPMTable []DeviceGearRPM    `json:"gearRpmTable,omitempty"`
-	WorkMode     string             `json:"workMode,omitempty"`
-	WorkModeName string             `json:"workModeName,omitempty"`
-	RGBState     string             `json:"rgbState,omitempty"`
-	RGBStateName string             `json:"rgbStateName,omitempty"`
-	Status       *DeviceStatusRead  `json:"status,omitempty"`
-	RawFrames    []DeviceDebugFrame `json:"rawFrames,omitempty"`
+	Available         bool                      `json:"available"`
+	Source            string                    `json:"source"`
+	ReadAt            string                    `json:"readAt"`
+	Model             string                    `json:"model,omitempty"`
+	GearRPMTable      []DeviceGearRPM           `json:"gearRpmTable,omitempty"`
+	WorkMode          string                    `json:"workMode,omitempty"`
+	WorkModeName      string                    `json:"workModeName,omitempty"`
+	RGBState          string                    `json:"rgbState,omitempty"`
+	RGBStateName      string                    `json:"rgbStateName,omitempty"`
+	Status            *DeviceStatusRead         `json:"status,omitempty"`
+	FlyDigiCapability *FlyDigiRuntimeCapability `json:"flyDigiCapability,omitempty"`
+	RawFrames         []DeviceDebugFrame        `json:"rawFrames,omitempty"`
 }
 
 type DeviceGearRPM struct {

@@ -18,13 +18,18 @@ import {
   Upload,
   Pencil,
   Radar,
+  Settings2,
+  GripVertical,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { apiService } from '../services/api';
 import { useTemperatureHistory } from '../hooks/useTemperatureHistory';
+import { useHistoryDisplayPreferences } from '../hooks/useHistoryDisplayPreferences';
 import { useLocale } from '../lib/i18n';
-import { getConfiguredFanSpeedUnit, getFanSpeedRange, getFanSpeedTicks, fanSpeedUnitLabel } from '../lib/fan-speed';
+import { getFanSpeedUnit, getFanSpeedRange, getFanSpeedTicks, fanSpeedUnitLabel } from '../lib/fan-speed';
 import { type HistorySeriesKey } from '../lib/temperature-history';
 import type { CurveFocusTarget } from '../store/app-store';
 import { types } from '../../../wailsjs/go/models';
@@ -50,9 +55,12 @@ import {
   getManualGearDefaultPresets,
   getManualGearValueRange,
   getEffectiveManualGearPresets,
+  getFlyDigiRuntimeCapability,
   normalizeManualGearRpmMap,
+  isManualGearAllowedForFlyDigi,
   getManualGearLabel,
   getManualLevelLabel,
+  supportsManualGearsFromCapabilities,
   type ManualGearRpmMap,
 } from '../lib/manualGearPresets';
 
@@ -139,6 +147,22 @@ const GPU_TEMP_STROKE = 'var(--chart-gpu-temperature)';
 const FAN_SPEED_STROKE = 'var(--chart-fan-speed)';
 const CPU_POWER_STROKE = 'var(--chart-cpu-power)';
 const GPU_POWER_STROKE = 'var(--chart-gpu-power)';
+
+const HISTORY_SERIES_DATA_KEY: Record<HistorySeriesKey, 'cpuTemp' | 'gpuTemp' | 'fanRpm' | 'cpuPowerWatts' | 'gpuPowerWatts'> = {
+  cpu: 'cpuTemp',
+  gpu: 'gpuTemp',
+  fan: 'fanRpm',
+  cpuPower: 'cpuPowerWatts',
+  gpuPower: 'gpuPowerWatts',
+};
+
+const HISTORY_SERIES_AXIS: Record<HistorySeriesKey, 'temp' | 'fan' | 'power'> = {
+  cpu: 'temp',
+  gpu: 'temp',
+  fan: 'fan',
+  cpuPower: 'power',
+  gpuPower: 'power',
+};
 
 function normalizeCurvePoint(point: types.FanCurvePoint, minSpeed: number, maxSpeed: number): types.FanCurvePoint {
   return { temperature: Math.round(point.temperature), rpm: normalizeSpeedValue(point.rpm, minSpeed, maxSpeed) };
@@ -256,6 +280,7 @@ interface FanCurveProps {
   fanData: types.FanData | null;
   temperature: types.TemperatureData | null;
   runtimeDeviceProfile?: types.DeviceProfile | null;
+  runtimeDeviceCapabilities?: types.DeviceCapabilities | null;
   deviceModel: string | null;
   focusTarget: CurveFocusTarget | null;
   onFocusHandled: () => void;
@@ -394,7 +419,7 @@ const DraggablePoint = memo(function DraggablePoint({
    ─── Main FanCurve Component ───
    ═══════════════════════════════════════════════════════════ */
 
-const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, temperature, runtimeDeviceProfile, focusTarget, onFocusHandled }: FanCurveProps) {
+const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, fanData, temperature, runtimeDeviceProfile, runtimeDeviceCapabilities, focusTarget, onFocusHandled }: FanCurveProps) {
   const { t } = useTranslation();
   const { locale } = useLocale();
   const [localCurve, setLocalCurve] = useState<types.FanCurvePoint[]>([]);
@@ -412,21 +437,42 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
   const [learningResetLoading, setLearningResetLoading] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [isInteracting, setIsInteracting] = useState(false);
-  const [historySeriesVisibility, setHistorySeriesVisibility] = useState<Record<HistorySeriesKey, boolean>>({
-    cpu: true,
-    gpu: true,
-    fan: true,
-    cpuPower: true,
-    gpuPower: true,
-  });
+  const [historyDisplayDialogOpen, setHistoryDisplayDialogOpen] = useState(false);
+  const [draggedHistorySeries, setDraggedHistorySeries] = useState<HistorySeriesKey | null>(null);
+  const {
+    orderedSeries,
+    seriesVisibility: historySeriesVisibility,
+    toggleSeriesVisible,
+    moveSeries,
+    reorderSeries,
+    resetPreferences: resetHistoryDisplayPreferences,
+  } = useHistoryDisplayPreferences();
   const chartRef = useRef<HTMLDivElement>(null);
   const curveEditorRef = useRef<HTMLDivElement>(null);
   const historyDetailsRef = useRef<HTMLElement>(null);
   const chartBoundsRef = useRef<{ top: number; bottom: number; left: number; right: number; yMin: number; yMax: number } | null>(null);
   const dragFrameRef = useRef<number | null>(null);
   const pendingDragYRef = useRef<number | null>(null);
-  const runtimeProfileForSpeed = isConnected ? runtimeDeviceProfile : null;
-  const speedUnit = useMemo(() => getConfiguredFanSpeedUnit(config as any, runtimeProfileForSpeed as any), [config, runtimeProfileForSpeed]);
+  const historySeriesItemRefs = useRef<Partial<Record<HistorySeriesKey, HTMLDivElement>>>({});
+  const historySeriesDragRef = useRef<{ key: HistorySeriesKey; target?: HistorySeriesKey; placement?: 'before' | 'after' } | null>(null);
+  const runtimeProfileForSpeed = useMemo(() => {
+    if (!isConnected) {
+      return null;
+    }
+    if (runtimeDeviceProfile) {
+      return runtimeDeviceProfile;
+    }
+    if (!runtimeDeviceCapabilities && !fanData?.transport && !fanData?.speedUnit) {
+      return null;
+    }
+    return {
+      transport: fanData?.transport || runtimeDeviceCapabilities?.transport,
+      speedUnit: fanData?.speedUnit || runtimeDeviceCapabilities?.speedUnit,
+      speedRange: runtimeDeviceCapabilities?.speedRange,
+      capabilities: runtimeDeviceCapabilities || undefined,
+    };
+  }, [fanData?.speedUnit, fanData?.transport, isConnected, runtimeDeviceCapabilities, runtimeDeviceProfile]);
+  const speedUnit = useMemo(() => getFanSpeedUnit(fanData as any, config as any, runtimeProfileForSpeed as any), [config, fanData, runtimeProfileForSpeed]);
   const speedUnitSuffix = fanSpeedUnitLabel(speedUnit);
   const configuredSpeedRange = useMemo(() => getFanSpeedRange(config as any, speedUnit, runtimeProfileForSpeed as any), [config, runtimeProfileForSpeed, speedUnit]);
   const speedRange = useMemo(() => ({
@@ -444,7 +490,12 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
 
   const activeProfile = useMemo(() => curveProfiles.find((p) => p.id === activeProfileId) ?? null, [curveProfiles, activeProfileId]);
   const externalActiveProfileId = ((config as any).activeFanCurveProfileId || '') as string;
-  const externalDeviceCurveKey = `${((config as any).deviceTransport || '') as string}:${((config as any).activeDeviceProfileId || '') as string}`;
+  const externalDeviceCurveKey = [
+    ((config as any).deviceTransport || '') as string,
+    ((config as any).activeDeviceProfileId || '') as string,
+    isConnected ? ((runtimeDeviceProfile as any)?.transport || fanData?.transport || '') as string : '',
+    isConnected ? ((runtimeDeviceProfile as any)?.id || (runtimeDeviceProfile as any)?.model || fanData?.speedUnit || '') as string : '',
+  ].join(':');
 
   const temperatureRange = useMemo(() => ({
     min: FAN_CURVE_MIN_TEMP,
@@ -623,8 +674,9 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
         gpuSum += point.gpuTemp;
         gpuCount += 1;
       }
-      const fan = normalizeSpeedValue(point.fanRpm, speedRange.min, speedRange.max);
-      if (fan > 0) {
+      const rawFan = Number(point.fanRpm || 0);
+      if (rawFan > 0) {
+        const fan = normalizeSpeedValue(rawFan, speedRange.min, speedRange.max);
         fanPeak = Math.max(fanPeak, fan);
         fanSum += fan;
         fanCount += 1;
@@ -677,10 +729,18 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
         minTemp = Math.min(minTemp, point.gpuTemp);
         maxTemp = Math.max(maxTemp, point.gpuTemp);
       }
-      maxPower = Math.max(maxPower, cpuPowerWatts, gpuPowerWatts);
+      if (historySeriesVisibility.cpuPower) {
+        maxPower = Math.max(maxPower, cpuPowerWatts);
+      }
+      if (historySeriesVisibility.gpuPower) {
+        maxPower = Math.max(maxPower, gpuPowerWatts);
+      }
+      const rawFanRpm = Number(point.fanRpm || 0);
       return {
         ...point,
-        fanRpm: normalizeSpeedValue(point.fanRpm, speedRange.min, speedRange.max),
+        cpuTemp: point.cpuTemp > 0 ? point.cpuTemp : undefined,
+        gpuTemp: point.gpuTemp > 0 ? point.gpuTemp : undefined,
+        fanRpm: rawFanRpm > 0 ? normalizeSpeedValue(rawFanRpm, speedRange.min, speedRange.max) : undefined,
         cpuPowerWatts: cpuPowerWatts > 0 ? Math.round(cpuPowerWatts * 10) / 10 : undefined,
         gpuPowerWatts: gpuPowerWatts > 0 ? Math.round(gpuPowerWatts * 10) / 10 : undefined,
       };
@@ -700,26 +760,83 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
       powerMax,
       hasPower: maxPower > 0,
     };
-  }, [detailHistoryPoints, speedRange.max, speedRange.min]);
+  }, [detailHistoryPoints, historySeriesVisibility.cpuPower, historySeriesVisibility.gpuPower, speedRange.max, speedRange.min]);
   const historyChartData = historyChartStats.data;
   const historyTempDomain = historyChartStats.tempDomain;
   const historyPowerMax = historyChartStats.powerMax;
   const historyHasPower = historyChartStats.hasPower;
 
-  const historySeriesMeta = useMemo(() => ([
-    { key: 'cpu' as const, label: t('fanCurve.history.series.cpu'), color: CPU_TEMP_STROKE },
-    { key: 'gpu' as const, label: t('fanCurve.history.series.gpu'), color: GPU_TEMP_STROKE },
-    { key: 'fan' as const, label: t('fanCurve.history.series.fan'), color: FAN_SPEED_STROKE },
-    { key: 'cpuPower' as const, label: t('fanCurve.history.series.cpuPower'), color: CPU_POWER_STROKE },
-    { key: 'gpuPower' as const, label: t('fanCurve.history.series.gpuPower'), color: GPU_POWER_STROKE },
-  ]), [t, locale]);
+  const historySeriesMeta = useMemo(() => {
+    const meta: Record<HistorySeriesKey, { key: HistorySeriesKey; label: string; color: string; dataKey: string; axisId: 'temp' | 'fan' | 'power' }> = {
+      cpu: { key: 'cpu', label: t('fanCurve.history.series.cpu'), color: CPU_TEMP_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.cpu, axisId: HISTORY_SERIES_AXIS.cpu },
+      gpu: { key: 'gpu', label: t('fanCurve.history.series.gpu'), color: GPU_TEMP_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.gpu, axisId: HISTORY_SERIES_AXIS.gpu },
+      fan: { key: 'fan', label: t('fanCurve.history.series.fan'), color: FAN_SPEED_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.fan, axisId: HISTORY_SERIES_AXIS.fan },
+      cpuPower: { key: 'cpuPower', label: t('fanCurve.history.series.cpuPower'), color: CPU_POWER_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.cpuPower, axisId: HISTORY_SERIES_AXIS.cpuPower },
+      gpuPower: { key: 'gpuPower', label: t('fanCurve.history.series.gpuPower'), color: GPU_POWER_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.gpuPower, axisId: HISTORY_SERIES_AXIS.gpuPower },
+    };
+    return orderedSeries.map((key) => meta[key]).filter(Boolean);
+  }, [orderedSeries, t, locale]);
 
-  const toggleHistorySeries = useCallback((series: HistorySeriesKey) => {
-    setHistorySeriesVisibility((prev) => ({
-      ...prev,
-      [series]: !prev[series],
-    }));
-  }, []);
+  const historySeriesByDataKey = useMemo(() => {
+    const entries = historySeriesMeta.map((series) => [series.dataKey, series] as const);
+    return new Map(entries);
+  }, [historySeriesMeta]);
+
+  const handleHistorySeriesPointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>, key: HistorySeriesKey) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    setDraggedHistorySeries(key);
+    historySeriesDragRef.current = { key };
+
+    // Avoid native HTML drag previews in WebView2; they repaint translucent shadows and feel jumpy.
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const dragState = historySeriesDragRef.current;
+      if (!dragState) {
+        return;
+      }
+
+      for (const series of historySeriesMeta) {
+        if (series.key === dragState.key) {
+          continue;
+        }
+
+        const element = historySeriesItemRefs.current[series.key];
+        if (!element) {
+          continue;
+        }
+
+        const rect = element.getBoundingClientRect();
+        if (moveEvent.clientY < rect.top || moveEvent.clientY > rect.bottom) {
+          continue;
+        }
+
+        const placement = moveEvent.clientY > rect.top + rect.height / 2 ? 'after' : 'before';
+        if (dragState.target === series.key && dragState.placement === placement) {
+          return;
+        }
+
+        historySeriesDragRef.current = { key: dragState.key, target: series.key, placement };
+        reorderSeries(dragState.key, series.key, placement);
+        return;
+      }
+    };
+
+    const handlePointerEnd = () => {
+      historySeriesDragRef.current = null;
+      setDraggedHistorySeries(null);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerEnd);
+      window.removeEventListener('pointercancel', handlePointerEnd);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerEnd);
+    window.addEventListener('pointercancel', handlePointerEnd);
+  }, [historySeriesMeta, reorderSeries]);
 
   /* ── Init ── */
 
@@ -1020,8 +1137,19 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
   /* ── Auto control / smart control handlers ── */
 
   const handleAutoControlChange = useCallback(async (enabled: boolean) => {
-    try { await apiService.setAutoControl(enabled); onConfigChange(types.AppConfig.createFrom({ ...config, autoControl: enabled })); } catch { /* noop */ }
-  }, [config, onConfigChange]);
+    try {
+      await apiService.setAutoControl(enabled);
+      const latest = await apiService.getConfig();
+      onConfigChange(types.AppConfig.createFrom({ ...latest, autoControl: enabled }));
+    } catch (err) {
+      toast.error(t('controlPanel.fan.autoControlApplyFailed', { error: getErrorMessage(err) }));
+      try {
+        onConfigChange(types.AppConfig.createFrom(await apiService.getConfig()));
+      } catch {
+        /* noop */
+      }
+    }
+  }, [onConfigChange, t]);
 
   const updateSmartControlConfig = useCallback(async (patch: Partial<types.SmartControlConfig> & { learningBias?: string }) => {
     setLearningConfigLoading(true);
@@ -1117,6 +1245,17 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
     return getManualGearValueRange(speedUnit);
   }, [speedUnit]);
 
+  const supportsManualGears = supportsManualGearsFromCapabilities(
+    isConnected && runtimeDeviceCapabilities ? runtimeDeviceCapabilities : runtimeDeviceProfile?.capabilities,
+  );
+  const flyDigiCapability = useMemo(() => getFlyDigiRuntimeCapability(fanData as any), [fanData]);
+  const isManualGearAllowed = useCallback((gear: string) => (
+    supportsManualGears && isManualGearAllowedForFlyDigi(gear, flyDigiCapability)
+  ), [flyDigiCapability, supportsManualGears]);
+  const manualGearLimitHint = flyDigiCapability?.available && flyDigiCapability.maxGearLabel && flyDigiCapability.maxRpm
+    ? t('fanCurve.manualGear.runtimeLimit', { gear: getManualGearLabel(flyDigiCapability.maxGearLabel), rpm: flyDigiCapability.maxRpm })
+    : '';
+
   const manualPoints = useMemo(() => {
     return manualGearPresets.flatMap((preset, gearIndex) => preset.levels.map((item, levelIndex) => ({
       key: `${preset.gear}-${item.level}`,
@@ -1141,6 +1280,14 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
   }, [config]);
 
   const applyManualGearPreset = useCallback(async (gear: string, level: string) => {
+    if (!supportsManualGears) {
+      toast.error(t('fanCurve.manualGear.unavailable'));
+      return;
+    }
+    if (!isManualGearAllowed(gear)) {
+      toast.error(t('fanCurve.manualGear.runtimeUnavailable', { gear: getManualGearLabel(gear), limit: manualGearLimitHint }));
+      return;
+    }
     try {
       const ok = await apiService.setManualGear(gear, level);
       if (!ok) {
@@ -1151,7 +1298,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
     } catch (err) {
       toast.error(t('fanCurve.manualGear.applyFailed', { error: getErrorMessage(err) }));
     }
-  }, [onConfigChange, t]);
+  }, [isManualGearAllowed, manualGearLimitHint, onConfigChange, supportsManualGears, t]);
 
   const handleManualPointSelect = useCallback(async (index: number) => {
     const selected = manualPoints[index];
@@ -1185,9 +1332,13 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
   }, [manualGearValueRange.max, manualGearValueRange.min, speedUnit]);
 
   const openGearEditor = useCallback(() => {
+    if (!supportsManualGears) {
+      toast.error(t('fanCurve.manualGear.unavailable'));
+      return;
+    }
     setDraftGearRpm(buildDraftFrom(customGearRpm));
     setGearEditOpen(true);
-  }, [buildDraftFrom, customGearRpm]);
+  }, [buildDraftFrom, customGearRpm, supportsManualGears, t]);
 
   const setDraftRpm = useCallback((gear: string, level: string, value: number) => {
     setDraftGearRpm((prev) => ({
@@ -1197,6 +1348,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
   }, []);
 
   const saveGearRpm = useCallback(async () => {
+    if (!supportsManualGears) {
+      toast.error(t('fanCurve.manualGear.unavailable'));
+      return;
+    }
     setGearRpmSaving(true);
     try {
       const normalized = normalizeManualGearRpmMap(draftGearRpm, manualGearValueRange.min, manualGearValueRange.max, speedUnit);
@@ -1215,7 +1370,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
     } finally {
       setGearRpmSaving(false);
     }
-  }, [config, draftGearRpm, manualGearValueRange.max, manualGearValueRange.min, onConfigChange, speedUnit, t]);
+  }, [config, draftGearRpm, manualGearValueRange.max, manualGearValueRange.min, onConfigChange, speedUnit, supportsManualGears, t]);
 
   const CustomDot = useCallback((props: any): React.ReactElement<SVGElement> => {
     const { cx, cy, index, payload } = props;
@@ -1261,7 +1416,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
         </motion.div>
 
         <AnimatePresence>
-          {!config.autoControl && isConnected && (
+          {!config.autoControl && isConnected && supportsManualGears && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
@@ -1272,7 +1427,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-sm font-medium">{t('fanCurve.manualGear.title')}</span>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs text-muted-foreground">{t('fanCurve.manualGear.defaultSliderHint')}</span>
+                    <span className="text-xs text-muted-foreground">{manualGearLimitHint || t('fanCurve.manualGear.defaultSliderHint')}</span>
                     <Button variant="secondary" size="sm" onClick={openGearEditor} icon={<Pencil className="h-3.5 w-3.5" />}>
                       {t('fanCurve.manualGear.customize')}
                     </Button>
@@ -1286,14 +1441,18 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                       ? (config.manualLevel || '中')
                       : rememberedManualGearLevels[preset.gear];
                     const activeLevel = preset.levels.find((l) => l.level === rememberedLevel) ?? preset.levels[0];
+                    const gearAllowed = isManualGearAllowed(preset.gear);
 
                     return (
                       <button
                         key={preset.gear}
                         type="button"
+                        disabled={!gearAllowed}
                         onClick={() => handleGearCardSelect(preset.gear)}
+                        title={!gearAllowed ? t('fanCurve.manualGear.runtimeUnavailable', { gear: getManualGearLabel(preset.gear), limit: manualGearLimitHint }) : undefined}
                         className={clsx(
-                          'cursor-pointer rounded-xl border px-3 py-2.5 text-left transition-colors',
+                          'rounded-xl border px-3 py-2.5 text-left transition-colors',
+                          gearAllowed ? 'cursor-pointer' : 'cursor-not-allowed opacity-45',
                           isActiveGear ? `${preset.borderClass} ${preset.bgClass}` : 'border-border/70 bg-background/40 hover:bg-muted/35',
                         )}
                       >
@@ -1315,14 +1474,18 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                       {manualPoints.map((point, index) => {
                         const isActivePoint = selectedManualPointIndex === index;
                         const isPassed = index < selectedManualPointIndex;
+                        const gearAllowed = isManualGearAllowed(point.gear);
 
                         return (
                           <button
                             key={point.key}
                             type="button"
+                            disabled={!gearAllowed}
                             onClick={() => handleManualPointSelect(index)}
-                            className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center"
-                            title={t('fanCurve.manualGear.pointTooltip', { gear: getManualGearLabel(point.gear), level: getManualLevelLabel(point.level), speed: `${formatSpeedValue(point.rpm)}${speedUnitSuffix}` })}
+                            className={clsx('flex h-6 w-6 shrink-0 items-center justify-center', gearAllowed ? 'cursor-pointer' : 'cursor-not-allowed opacity-45')}
+                            title={gearAllowed
+                              ? t('fanCurve.manualGear.pointTooltip', { gear: getManualGearLabel(point.gear), level: getManualLevelLabel(point.level), speed: `${formatSpeedValue(point.rpm)}${speedUnitSuffix}` })
+                              : t('fanCurve.manualGear.runtimeUnavailable', { gear: getManualGearLabel(point.gear), limit: manualGearLimitHint })}
                           >
                             <span
                               className={clsx(
@@ -1350,7 +1513,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
           )}
         </AnimatePresence>
 
-        <Dialog open={gearEditOpen} onOpenChange={setGearEditOpen}>
+        {supportsManualGears && <Dialog open={gearEditOpen} onOpenChange={setGearEditOpen}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>{t('fanCurve.manualGear.editTitle')}</DialogTitle>
@@ -1390,7 +1553,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
               </Button>
             </DialogFooter>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
 
         <div ref={curveEditorRef} data-theme-card="curve-editor">
           <div
@@ -1613,7 +1776,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                       <button
                         key={series.key}
                         type="button"
-                        onClick={() => toggleHistorySeries(series.key)}
+                        onClick={() => toggleSeriesVisible(series.key)}
                         className={clsx(
                           'inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-colors',
                           historySeriesVisibility[series.key]
@@ -1625,6 +1788,16 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                         {series.label}
                       </button>
                     ))}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      icon={<Settings2 className="h-3.5 w-3.5" />}
+                      className="h-8 rounded-full px-2.5 text-[11px]"
+                      onClick={() => setHistoryDisplayDialogOpen(true)}
+                    >
+                      {t('fanCurve.history.displaySettings')}
+                    </Button>
                   </div>
                 </div>
 
@@ -1669,28 +1842,128 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                           labelFormatter={(value) => formatHistoryDateTime(Number(value), locale)}
                           formatter={(value, name) => {
                             const numericValue = Number(value ?? 0);
-                            if (name === 'fanRpm') {
-                              return [`${formatSpeedValue(numericValue)}${speedUnitSuffix}`, t('fanCurve.history.series.fan')];
+                            const series = historySeriesByDataKey.get(String(name));
+                            if (!series || !Number.isFinite(numericValue) || numericValue <= 0) {
+                              return [null, null];
                             }
-                            if (name === 'cpuPowerWatts' || name === 'gpuPowerWatts') {
-                              return [`${formatPowerValue(numericValue)} W`, name === 'cpuPowerWatts' ? t('fanCurve.history.series.cpuPower') : t('fanCurve.history.series.gpuPower')];
+                            if (series.key === 'fan') {
+                              return [`${formatSpeedValue(numericValue)}${speedUnitSuffix}`, series.label];
                             }
-                            return [`${numericValue} °C`, name === 'cpuTemp' ? t('fanCurve.history.series.cpu') : t('fanCurve.history.series.gpu')];
+                            if (series.key === 'cpuPower' || series.key === 'gpuPower') {
+                              return [`${formatPowerValue(numericValue)} W`, series.label];
+                            }
+                            return [`${numericValue} °C`, series.label];
                           }}
                           contentStyle={{ backgroundColor: 'var(--chart-tooltip-bg)', border: '1px solid', borderColor: 'var(--chart-tooltip-border)', borderRadius: '8px', boxShadow: 'var(--chart-tooltip-shadow)', padding: '8px 12px', color: 'var(--chart-tooltip-text)' }}
                           labelStyle={{ color: 'var(--chart-tooltip-text)', fontWeight: 600 }}
                           itemStyle={{ color: 'var(--chart-tooltip-text)' }}
                         />
-                        {historySeriesVisibility.cpu && <Line yAxisId="temp" type="monotone" dataKey="cpuTemp" stroke={CPU_TEMP_STROKE} strokeWidth={2.3} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
-                        {historySeriesVisibility.gpu && <Line yAxisId="temp" type="monotone" dataKey="gpuTemp" stroke={GPU_TEMP_STROKE} strokeWidth={2.3} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
-                        {historySeriesVisibility.fan && <Line yAxisId="fan" type="monotone" dataKey="fanRpm" stroke={FAN_SPEED_STROKE} strokeWidth={2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
-                        {historyHasPower && historySeriesVisibility.cpuPower && <Line yAxisId="power" type="monotone" dataKey="cpuPowerWatts" stroke={CPU_POWER_STROKE} strokeWidth={2.2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
-                        {historyHasPower && historySeriesVisibility.gpuPower && <Line yAxisId="power" type="monotone" dataKey="gpuPowerWatts" stroke={GPU_POWER_STROKE} strokeWidth={2.2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
+                        {historySeriesMeta.map((series) => {
+                          if (!historySeriesVisibility[series.key]) {
+                            return null;
+                          }
+                          if ((series.key === 'cpuPower' || series.key === 'gpuPower') && !historyHasPower) {
+                            return null;
+                          }
+                          return (
+                            <Line
+                              key={series.key}
+                              yAxisId={series.axisId}
+                              type="monotone"
+                              dataKey={series.dataKey}
+                              name={series.dataKey}
+                              stroke={series.color}
+                              strokeWidth={series.key === 'fan' ? 2 : 2.3}
+                              dot={false}
+                              activeDot={false}
+                              isAnimationActive={false}
+                              connectNulls={false}
+                            />
+                          );
+                        })}
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
                 )}
               </div>
+              <Dialog open={historyDisplayDialogOpen} onOpenChange={setHistoryDisplayDialogOpen}>
+                <DialogContent data-theme-ui="history-display-dialog" className="max-w-md will-change-auto">
+                  <DialogHeader>
+                    <DialogTitle>{t('fanCurve.history.displaySettings')}</DialogTitle>
+                    <DialogDescription>{t('fanCurve.history.displaySettingsDescription')}</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-2">
+                    {historySeriesMeta.map((series, index) => (
+                      <div
+                        key={series.key}
+                        ref={(element) => {
+                          if (element) {
+                            historySeriesItemRefs.current[series.key] = element;
+                          } else {
+                            delete historySeriesItemRefs.current[series.key];
+                          }
+                        }}
+                        data-theme-ui="history-display-row"
+                        className={clsx(
+                          'flex select-none items-center gap-2 rounded-xl border border-border/70 bg-background/45 px-3 py-2 transition-[background-color,border-color] duration-150',
+                          draggedHistorySeries === series.key && 'border-primary/45 bg-primary/10',
+                        )}
+                      >
+                        <button
+                          type="button"
+                          className={clsx(
+                            'inline-flex h-7 w-6 shrink-0 touch-none items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25',
+                            draggedHistorySeries === series.key && 'cursor-grabbing bg-primary/10 text-primary',
+                          )}
+                          onPointerDown={(event) => handleHistorySeriesPointerDown(event, series.key)}
+                          aria-label={series.label}
+                        >
+                          <GripVertical className="h-4 w-4" />
+                        </button>
+                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: series.color }} />
+                        <div className="min-w-0 flex-1 text-sm font-medium text-foreground">{series.label}</div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            icon={<ArrowUp className="h-3.5 w-3.5" />}
+                            className="h-7 w-7 px-0"
+                            disabled={index === 0}
+                            aria-label={t('fanCurve.history.moveUp')}
+                            onClick={() => moveSeries(series.key, -1)}
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            icon={<ArrowDown className="h-3.5 w-3.5" />}
+                            className="h-7 w-7 px-0"
+                            disabled={index === historySeriesMeta.length - 1}
+                            aria-label={t('fanCurve.history.moveDown')}
+                            onClick={() => moveSeries(series.key, 1)}
+                          />
+                        </div>
+                        <ToggleSwitch
+                          enabled={historySeriesVisibility[series.key]}
+                          onChange={() => toggleSeriesVisible(series.key)}
+                          size="sm"
+                          color="blue"
+                          srLabel={series.label}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <DialogFooter>
+                    <Button type="button" variant="outline" onClick={resetHistoryDisplayPreferences}>
+                      {t('fanCurve.history.resetDisplaySettings')}
+                    </Button>
+                    <Button type="button" onClick={() => setHistoryDisplayDialogOpen(false)}>
+                      {t('common.actions.close')}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </>
           )}
         </section>

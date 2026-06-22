@@ -602,7 +602,9 @@
       "rpmSaved": "ギア速度を保存しました",
       "rpmSaveFailed": "ギア速度の保存に失敗: {{error}}",
       "applyFailed": "ギアの適用に失敗: {{error}}",
-      "unavailable": "デバイスが未接続、または手動ギアに対応していません"
+      "unavailable": "デバイスが未接続、または手動ギアに対応していません",
+      "runtimeLimit": "現在の上限: {{gear}} / {{rpm}} RPM",
+      "runtimeUnavailable": "現在の給電状態では {{gear}} ギアを使用できません。{{limit}}"
     },
     "learning": {
       "title": "適応学習",
@@ -651,9 +653,9 @@
       "recentTrend": "最近の推移",
       "waitingMoreSamples": "サンプルを 1 件記録しました。推移グラフを表示するにはさらなるデータが必要です。",
       "series": {
-        "cpu": "CPU",
-        "gpu": "GPU",
-        "fan": "%",
+        "cpu": "CPU 温度",
+        "gpu": "GPU 温度",
+        "fan": "ファン回転数",
         "cpuPower": "CPU 電力",
         "gpuPower": "GPU 電力"
       },
@@ -676,7 +678,12 @@
         "gpuPowerPeak": "GPU 電力最大値",
         "averagePower": "平均 {{value}} W",
         "noPowerData": "電力データなし"
-      }
+      },
+      "displaySettings": "表示設定",
+      "displaySettingsDescription": "表示する推移ラインを選び、ホバー時の表示順を調整します。",
+      "moveUp": "上へ",
+      "moveDown": "下へ",
+      "resetDisplaySettings": "初期設定に戻す"
     },
     "profiles": {
       "title": "カーブプロファイル",

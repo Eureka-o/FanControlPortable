@@ -1,0 +1,482 @@
+/* ==========================================================================
+ * Basic 基础主题模板
+ * ==========================================================================
+ *
+ * 这个模板的目标：
+ *   1. 尽量接近 FanControl 系统默认浅色效果。
+ *   2. 只使用 THRM/FanControl 都常见的组件：CSS 变量 + .glacier-* 选择器。
+ *   3. 不使用 FanControl 高级 data-theme-card / data-theme-ui 钩子。
+ *   4. 每一块都能单独删除，方便普通用户和 AI 二次修改。
+ *
+ * 改名步骤：
+ *   1. 把文件夹 basic 改成你的主题 ID，例如 soft-blue。
+ *   2. 把 theme.json 里的 id 改成同一个 ID。
+ *   3. 把本文件所有 html[data-theme="basic"] 改成同一个 ID。
+ *   4. 可选：把 --basic-* 变量前缀也改成你的主题 ID，方便以后查找。
+ *
+ * 资源选择：
+ *   - SVG：适合左侧徽标、小图标、线条装饰。优点是清晰、轻量、可缩放。
+ *   - WebP：适合插画、照片、复杂背景、纸纹、幕布。优点是压缩率高。
+ *   - 不想做图片：把对应图片变量保持为 none，只用渐变色。
+ *
+ * 透明度建议：
+ *   - 0.90 到 1.00：最清晰，适合正文很多的设置页。
+ *   - 0.65 到 0.85：能看到背景，仍然比较清楚。
+ *   - 0.30 到 0.60：视觉感强，但文字可读性容易下降，需要谨慎。
+ *
+ * 渐变怎么写：
+ *   linear-gradient(角度, 起始色, 结束色) 是线性渐变。
+ *   radial-gradient(circle at 位置, 高光色, transparent 半径) 是局部光斑。
+ *   多层 background 从上到下叠加，第一层在最上面。
+ * ======================================================================== */
+
+html[data-theme="basic"] {
+  color-scheme: light;
+
+  /* -----------------------------------------------------------------------
+   * 1. 系统默认浅色变量
+   * -----------------------------------------------------------------------
+   * 这些变量是主题的地基。只想换颜色时，优先改这里。
+   * 不要把变量留空；不确定怎么改就先保留默认值。
+   * --------------------------------------------------------------------- */
+
+  --background: #f6f8fc;              /* 整体背景 */
+  --foreground: #111827;              /* 主文字 */
+  --card: #ffffff;                    /* 卡片背景 */
+  --card-foreground: #111827;         /* 卡片文字 */
+  --muted: #edf2f9;                   /* 次级背景 */
+  --muted-foreground: #66758a;        /* 次级文字 */
+  --border: #e1e7f0;                  /* 边框 */
+  --input: #d3ddea;                   /* 输入框边框 */
+  --ring: #2f6df6;                    /* 焦点光圈 */
+  --primary: #2f6df6;                 /* 主色 */
+  --primary-foreground: #ffffff;      /* 主色上的文字 */
+  --destructive: #dc2626;             /* 危险/删除色 */
+
+  /* 滚动条。颜色太重会抢视觉，通常保持半透明。 */
+  --scrollbar-size: 10px;
+  --scrollbar-thumb: color-mix(in srgb, var(--foreground) 35%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--foreground) 52%, transparent);
+  --scrollbar-track: color-mix(in srgb, var(--background) 88%, transparent);
+  --overlay-scrollbar-thumb: color-mix(in srgb, var(--foreground) 24%, transparent);
+  --overlay-scrollbar-thumb-hover: color-mix(in srgb, var(--foreground) 34%, transparent);
+
+  /* 图表颜色。曲线颜色要彼此拉开，不然温度、转速、功耗会挤在一起。 */
+  --chart-grid: color-mix(in srgb, #e8edf5 82%, var(--background) 18%);
+  --chart-axis: color-mix(in srgb, #d8e0ec 80%, var(--background) 20%);
+  --chart-tick: #6b7280;
+  --chart-primary: #2f6df6;
+  --chart-primary-active: #1f57da;
+  --chart-primary-glow: rgba(47, 109, 246, 0.36);
+  --chart-point-shadow: rgba(0, 0, 0, 0.1);
+  --chart-cpu-temperature: #2f6df6;
+  --chart-gpu-temperature: #f97316;
+  --chart-fan-speed: #10b981;
+  --chart-cpu-power: color-mix(in srgb, #0891b2 88%, var(--foreground) 12%);
+  --chart-gpu-power: color-mix(in srgb, #a855f7 84%, var(--foreground) 16%);
+  --status-temperature-hot: #ef4444;
+  --status-temperature-warm: #f97316;
+  --chart-temperature-indicator: #ef4444;
+  --chart-tooltip-bg: rgba(255, 255, 255, 0.95);
+  --chart-tooltip-border: transparent;
+  --chart-tooltip-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+  --chart-tooltip-text: #111827;
+
+  /* 弹出层、次级按钮、强调区域。 */
+  --popover: #ffffff;
+  --popover-foreground: #111827;
+  --secondary: #edf2f9;
+  --secondary-foreground: #111827;
+  --accent: #edf2f9;
+  --accent-foreground: #111827;
+
+  /* 通用图表备用色。 */
+  --chart-1: oklch(0.809 0.105 251.813);
+  --chart-2: oklch(0.623 0.214 259.815);
+  --chart-3: oklch(0.546 0.245 262.881);
+  --chart-4: oklch(0.488 0.243 264.376);
+  --chart-5: oklch(0.424 0.199 265.638);
+
+  /* 圆角。想更圆润就增大；想更硬朗就减小。 */
+  --radius: 0.75rem;
+
+  /* 左侧菜单颜色。 */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #111827;
+  --sidebar-primary: #2f6df6;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #eef4ff;
+  --sidebar-accent-foreground: #111827;
+  --sidebar-border: #e5ebf4;
+  --sidebar-ring: #2f6df6;
+
+  /* 内容面板和卡片质感。基础版尽量不依赖重 blur。 */
+  --mica-content-surface: color-mix(in srgb, var(--background) 94%, var(--card) 6%);
+  --mica-content-border: color-mix(in srgb, var(--border) 92%, var(--background) 8%);
+  --surface-layer: color-mix(in srgb, var(--card) 96%, var(--background) 4%);
+  --surface-layer-strong: color-mix(in srgb, var(--card) 98%, var(--background) 2%);
+  --surface-soft-shadow:
+    0 12px 30px -24px rgba(15, 23, 42, 0.22),
+    0 1px 2px -1px rgba(15, 23, 42, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.68);
+  --surface-hairline: color-mix(in srgb, var(--border) 92%, var(--foreground) 8%);
+
+  /* 层级变量。通常不用改，避免弹窗被盖住。 */
+  --layer-scrollbar: 40;
+  --layer-titlebar: 60;
+  --layer-floating-popover: 80;
+  --layer-dialog-overlay: 90;
+  --layer-dialog-content: 100;
+
+  /* 弹窗和 toast。 */
+  --theme-dialog-overlay-background: color-mix(in srgb, black 55%, transparent);
+  --theme-dialog-overlay-backdrop-filter: none;
+  --theme-dialog-content-shadow: 0 24px 60px -30px rgba(15, 23, 42, 0.48);
+  --theme-dialog-close-hover-background: color-mix(in srgb, var(--primary) 9%, var(--muted) 91%);
+  --theme-dialog-close-hover-border: color-mix(in srgb, var(--primary) 24%, transparent);
+  --theme-dialog-close-hover-shadow: 0 8px 16px -14px color-mix(in srgb, var(--primary) 48%, transparent);
+  --theme-dialog-close-focus-ring: color-mix(in srgb, var(--primary) 30%, transparent);
+  --theme-toast-background: color-mix(in srgb, var(--popover) 96%, var(--background) 4%);
+  --theme-toast-shadow: 0 14px 34px -16px rgba(16, 24, 40, 0.45);
+  --theme-toast-backdrop-filter: blur(8px) saturate(118%);
+
+  /* 图标描边。数值越大越粗。 */
+  --theme-icon-stroke-width: 1.85;
+
+  /* 不同页面背景。旧版/THRM 如果不识别页面属性，会自动忽略后面的页面选择器。 */
+  --theme-page-home-background: transparent;
+  --theme-page-settings-background: transparent;
+  --theme-page-curve-background: transparent;
+
+  /* 大卡片、小卡片、图表画布。 */
+  --theme-card-background: var(--surface-layer-strong);
+  --theme-card-border: var(--surface-hairline);
+  --theme-card-shadow: var(--surface-soft-shadow);
+  --theme-card-hover-border: color-mix(in srgb, var(--primary) 28%, var(--theme-card-border));
+  --theme-card-hover-shadow:
+    0 14px 32px -24px color-mix(in srgb, var(--primary) 30%, rgba(15, 23, 42, 0.18)),
+    0 1px 2px -1px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  --theme-card-hover-transform: translateY(-1px);
+  --theme-card-backdrop-filter: none;
+  --theme-card-radius: calc(var(--radius) * 1.8);
+
+  --theme-preview-card-background: color-mix(in srgb, var(--card) 97%, var(--background) 3%);
+  --theme-preview-card-border: color-mix(in srgb, var(--theme-card-border) 92%, transparent);
+  --theme-preview-card-shadow:
+    0 10px 24px -24px rgba(15, 23, 42, 0.2),
+    0 1px 2px -1px rgba(15, 23, 42, 0.09),
+    inset 0 1px 0 rgba(255, 255, 255, 0.68);
+  --theme-preview-card-hover-border: color-mix(in srgb, var(--primary) 20%, var(--theme-preview-card-border));
+  --theme-preview-card-hover-shadow:
+    0 12px 26px -25px color-mix(in srgb, var(--primary) 22%, rgba(15, 23, 42, 0.14)),
+    0 1px 2px -1px rgba(15, 23, 42, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+
+  --theme-tile-background: color-mix(in srgb, var(--card) 90%, var(--background) 10%);
+  --theme-tile-border: color-mix(in srgb, var(--theme-card-border) 86%, transparent);
+  --theme-tile-shadow:
+    0 10px 22px -22px rgba(15, 23, 42, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  --theme-tile-hover-shadow:
+    0 12px 24px -22px color-mix(in srgb, var(--primary) 24%, rgba(15, 23, 42, 0.16)),
+    inset 0 1px 0 rgba(255, 255, 255, 0.68);
+
+  --theme-chart-canvas-background: color-mix(in srgb, var(--background) 58%, var(--card) 42%);
+  --theme-chart-canvas-border: color-mix(in srgb, var(--theme-card-border) 64%, transparent);
+  --theme-chart-canvas-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.58);
+
+  /* 控件 hover/focus。 */
+  --theme-control-hover-border: color-mix(in srgb, var(--primary) 32%, transparent);
+  --theme-control-hover-background: color-mix(in srgb, var(--primary) 7%, var(--background) 93%);
+  --theme-control-hover-shadow: 0 14px 28px -22px color-mix(in srgb, var(--primary) 54%, transparent);
+  --theme-control-focus-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+
+  /* 开关。基础版用 button[role="switch"] 去兼容，而不依赖 data-theme-ui。 */
+  --theme-switch-border: color-mix(in srgb, var(--border) 68%, transparent);
+  --theme-switch-hover-border: color-mix(in srgb, var(--primary) 44%, transparent);
+  --theme-switch-hover-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 12%, transparent);
+  --theme-switch-checked-border: color-mix(in srgb, var(--primary) 52%, transparent);
+  --theme-switch-checked-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+  --theme-switch-checked-hover-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+  --theme-switch-unchecked-background: color-mix(in srgb, var(--muted) 78%, var(--card) 22%);
+  --theme-switch-checked-background: var(--primary);
+  --theme-switch-thumb-background: var(--card);
+  --theme-switch-surface-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.48);
+  --theme-switch-thumb-shadow: 0 2px 8px -3px rgba(15, 23, 42, 0.34);
+
+  /* -----------------------------------------------------------------------
+   * 2. 可选资源变量
+   * -----------------------------------------------------------------------
+   * SVG 示例：--basic-sidebar-logo-image: url("logo.svg");
+   * WebP 示例：--basic-background-image: url("background.webp");
+   * 上面只是示例。模板默认不附带 logo.svg/background.webp；
+   * 如果你启用这些变量，请把对应文件放进主题文件夹。
+   *
+   * 不想画背景图：保持 none 即可，下面的渐变背景会继续工作。
+   * 左侧徽标想用文字：改 --basic-sidebar-logo-text。
+   * 左侧徽标想用图片：把 --basic-sidebar-logo-image 改成 url("logo.svg")，
+   * 然后在 .glacier-sidebar::after 那块把 color 设为 transparent。
+   * --------------------------------------------------------------------- */
+  --basic-background-image: none;
+  --basic-sidebar-logo-image: none;
+  --basic-sidebar-logo-text: "Basic";
+}
+
+/* -------------------------------------------------------------------------
+ * 3. 应用整体背景
+ * -------------------------------------------------------------------------
+ * 第一层是可选 WebP 背景，默认 none。
+ * 后面两层径向渐变是柔光，最后一层是主渐变。
+ * 如果不想要渐变，只保留 background: var(--background); 即可。
+ * ----------------------------------------------------------------------- */
+html[data-theme="basic"] .glacier-shell {
+  background:
+    var(--basic-background-image) center / cover no-repeat,
+    radial-gradient(circle at 78% 10%, rgba(47, 109, 246, 0.08), transparent 26rem),
+    radial-gradient(circle at 12% 90%, rgba(16, 185, 129, 0.06), transparent 22rem),
+    linear-gradient(135deg, #f6f8fc 0%, #f9fbff 52%, #eef4ff 100%);
+  isolation: isolate;
+}
+
+/* 页面分区：软件支持 data-theme-page 时生效，不支持时自动忽略。 */
+html[data-theme="basic"] .glacier-shell[data-theme-page="status"] .glacier-content-panel {
+  background: var(--theme-page-home-background, transparent);
+}
+
+html[data-theme="basic"] .glacier-shell[data-theme-page="control"] .glacier-content-panel {
+  background: var(--theme-page-settings-background, transparent);
+}
+
+html[data-theme="basic"] .glacier-shell[data-theme-page="curve"] .glacier-content-panel {
+  background: var(--theme-page-curve-background, transparent);
+}
+
+/* -------------------------------------------------------------------------
+ * 4. 顶部栏、侧栏、内容区
+ * ----------------------------------------------------------------------- */
+html[data-theme="basic"] .glacier-titlebar {
+  background: color-mix(in srgb, var(--background) 94%, var(--card) 6%);
+  border-bottom: 1px solid var(--mica-content-border);
+}
+
+html[data-theme="basic"] .glacier-sidebar {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--sidebar) 96%, white 4%), color-mix(in srgb, var(--sidebar-accent) 70%, var(--sidebar) 30%));
+  border-right-color: var(--sidebar-border);
+}
+
+html[data-theme="basic"] .glacier-content,
+html[data-theme="basic"] .glacier-content-panel {
+  background: var(--mica-content-surface);
+  border-color: var(--mica-content-border);
+}
+
+/* -------------------------------------------------------------------------
+ * 5. 左侧徽标演示
+ * -------------------------------------------------------------------------
+ * 文字徽标：
+ *   默认用 content: var(--basic-sidebar-logo-text)。
+ *
+ * 图片/SVG 徽标：
+ *   1. 放入 logo.svg 或 logo.webp。
+ *   2. 设置 --basic-sidebar-logo-image: url("logo.svg");
+ *   3. 如果不想显示文字，把 --basic-sidebar-logo-text 改成 ""。
+ *
+ * SVG 与 WebP 区别：
+ *   SVG 适合线条图标、品牌字样、简单形状，缩放不会糊。
+ *   WebP 适合彩色图、角色头像、复杂纹理。
+ * ----------------------------------------------------------------------- */
+html[data-theme="basic"] .glacier-sidebar::after {
+  content: var(--basic-sidebar-logo-text);
+  position: absolute;
+  left: 50%;
+  bottom: 4.8rem;
+  width: 3.25rem;
+  min-height: 3.25rem;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  padding: 0.35rem;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in srgb, var(--sidebar-border) 70%, transparent);
+  background:
+    var(--basic-sidebar-logo-image) center / 70% 70% no-repeat,
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 92%, transparent), color-mix(in srgb, var(--sidebar-accent) 78%, transparent));
+  color: color-mix(in srgb, var(--sidebar-primary) 78%, var(--sidebar-foreground) 22%);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-align: center;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.68), 0 12px 24px -22px rgba(15, 23, 42, 0.25);
+  pointer-events: none;
+}
+
+/* 应用自带左上角标记。只改质感，不替换应用图标本身。 */
+html[data-theme="basic"] .glacier-sidebar [role="img"] {
+  border-color: color-mix(in srgb, var(--sidebar-primary) 30%, var(--sidebar-border));
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.75), transparent 1.2rem),
+    linear-gradient(145deg, var(--card), var(--sidebar-accent));
+  color: var(--sidebar-primary);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 12px 24px -22px rgba(15, 23, 42, 0.26);
+}
+
+/* 侧栏按钮。基础版不改图标形状，只加轻微 hover/选中反馈。 */
+html[data-theme="basic"] .glacier-sidebar button {
+  border-radius: 1rem;
+  transition:
+    transform 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+html[data-theme="basic"] .glacier-sidebar button:hover {
+  background: color-mix(in srgb, var(--sidebar-primary) 8%, var(--sidebar-accent) 92%);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px -20px rgba(15, 23, 42, 0.22);
+}
+
+html[data-theme="basic"] .glacier-sidebar button[aria-selected="true"] {
+  background: color-mix(in srgb, var(--sidebar-primary) 13%, var(--sidebar-accent) 87%);
+  color: var(--sidebar-primary);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sidebar-primary) 22%, transparent);
+}
+
+/* -------------------------------------------------------------------------
+ * 6. 卡片和图表
+ * ----------------------------------------------------------------------- */
+html[data-theme="basic"] .glacier-hero-card,
+html[data-theme="basic"] .glacier-metric-card,
+html[data-theme="basic"] .glacier-control-card,
+html[data-theme="basic"] .glacier-chart-card {
+  background: var(--theme-card-background);
+  border-color: var(--theme-card-border);
+  border-radius: var(--theme-card-radius);
+  box-shadow: var(--theme-card-shadow);
+  backdrop-filter: var(--theme-card-backdrop-filter);
+}
+
+html[data-theme="basic"] .glacier-hero-card {
+  background:
+    radial-gradient(circle at 90% 12%, color-mix(in srgb, var(--primary) 9%, transparent), transparent 14rem),
+    var(--theme-card-background);
+}
+
+html[data-theme="basic"] .glacier-metric-card,
+html[data-theme="basic"] .glacier-chart-card {
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+html[data-theme="basic"] .glacier-metric-card:hover,
+html[data-theme="basic"] .glacier-chart-card:hover {
+  transform: var(--theme-card-hover-transform);
+  border-color: var(--theme-card-hover-border);
+  box-shadow: var(--theme-card-hover-shadow);
+}
+
+html[data-theme="basic"] .glacier-stat-tile {
+  background: var(--theme-tile-background);
+  border-color: var(--theme-tile-border);
+  box-shadow: var(--theme-tile-shadow);
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+html[data-theme="basic"] .glacier-stat-tile:hover {
+  transform: var(--theme-card-hover-transform);
+  border-color: var(--theme-card-hover-border);
+  box-shadow: var(--theme-tile-hover-shadow);
+}
+
+html[data-theme="basic"] .glacier-chart-canvas {
+  border: 1px solid var(--theme-chart-canvas-border);
+  border-radius: calc(var(--theme-card-radius) - 0.5rem);
+  background: var(--theme-chart-canvas-background);
+  box-shadow: var(--theme-chart-canvas-shadow);
+}
+
+/* 环形/半环仪表。只调颜色和光效，不改变结构。 */
+html[data-theme="basic"] .metric-header-icon {
+  color: var(--primary);
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--primary) 18%, transparent));
+}
+
+html[data-theme="basic"] .semi-gauge-svg path:first-child {
+  stroke: color-mix(in srgb, var(--primary) 9%, transparent);
+}
+
+html[data-theme="basic"] .semi-gauge-svg path:last-child {
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--primary) 20%, transparent));
+}
+
+/* -------------------------------------------------------------------------
+ * 7. 控件
+ * ----------------------------------------------------------------------- */
+html[data-theme="basic"] button,
+html[data-theme="basic"] input,
+html[data-theme="basic"] [role="tab"] {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}
+
+html[data-theme="basic"] button:not(:disabled):hover,
+html[data-theme="basic"] [role="tab"]:hover {
+  border-color: var(--theme-control-hover-border);
+  background-color: var(--theme-control-hover-background);
+}
+
+/* 开关兼容写法：不用 data-theme-ui，只抓 role="switch"。 */
+html[data-theme="basic"] button[role="switch"] {
+  background: var(--theme-switch-unchecked-background);
+  border-color: var(--theme-switch-border);
+  box-shadow: var(--theme-switch-surface-shadow);
+}
+
+html[data-theme="basic"] button[role="switch"]:not(:disabled):hover {
+  border-color: var(--theme-switch-hover-border);
+  box-shadow: var(--theme-switch-hover-shadow);
+}
+
+html[data-theme="basic"] button[role="switch"][data-state="checked"],
+html[data-theme="basic"] button[role="switch"][aria-checked="true"] {
+  background: var(--theme-switch-checked-background);
+  border-color: var(--theme-switch-checked-border);
+  box-shadow: var(--theme-switch-checked-shadow);
+}
+
+html[data-theme="basic"] button[role="switch"] > span {
+  background: var(--theme-switch-thumb-background);
+  box-shadow: var(--theme-switch-thumb-shadow);
+}
+
+/* -------------------------------------------------------------------------
+ * 8. 移动/窄窗口保护
+ * ----------------------------------------------------------------------- */
+@media (max-width: 1023px) {
+  html[data-theme="basic"] .glacier-hero-content {
+    padding-right: 0;
+  }
+
+  html[data-theme="basic"] .glacier-hero-art,
+  html[data-theme="basic"] .glacier-hero-art-label {
+    display: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="basic"] .glacier-sidebar button,
+  html[data-theme="basic"] .glacier-metric-card,
+  html[data-theme="basic"] .glacier-chart-card,
+  html[data-theme="basic"] .glacier-stat-tile {
+    transition: none !important;
+    transform: none !important;
+  }
+}

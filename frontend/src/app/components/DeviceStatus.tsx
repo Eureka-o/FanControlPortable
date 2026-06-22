@@ -20,7 +20,8 @@ import {
 import { types } from '../../../wailsjs/go/models';
 import { apiService } from '../services/api';
 import { useTemperatureHistory } from '../hooks/useTemperatureHistory';
-import { type TemperatureHistoryPoint } from '../lib/temperature-history';
+import { useHistoryDisplayPreferences } from '../hooks/useHistoryDisplayPreferences';
+import { type HistorySeriesKey, type TemperatureHistoryPoint } from '../lib/temperature-history';
 import {
   clampFanSpeedToRange,
   fanSpeedUnitLabel,
@@ -32,6 +33,7 @@ import {
   readCurrentFanSpeed,
   readTargetFanSpeed,
 } from '../lib/fan-speed';
+import { getFlyDigiRuntimeCapability } from '../lib/manualGearPresets';
 import { translateWorkModeLabel } from '../lib/work-mode';
 import type { DeviceSettings } from '../types/app';
 import { useTranslation } from 'react-i18next';
@@ -136,6 +138,8 @@ const formatGpuPowerWatts = (watts: number | undefined | null, readState?: strin
 const CPU_POWER_STROKE = 'var(--chart-cpu-power)';
 const GPU_POWER_STROKE = 'var(--chart-gpu-power)';
 const FAN_TREND_STROKE = 'color-mix(in srgb, var(--chart-3) 70%, var(--foreground) 30%)';
+
+type HistoryPathMap = Partial<Record<HistorySeriesKey, string>>;
 
 const AnimatedTemperatureValue = memo(function AnimatedTemperatureValue({ temp, colorClass }: { temp: number | undefined; colorClass: string }) {
   return <span className={clsx('text-[28px] font-bold leading-none tabular-nums tracking-tight', colorClass)}>{temp ?? '--'}</span>;
@@ -468,6 +472,8 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
   source,
   minSpeed,
   maxSpeed,
+  visibleSeries,
+  orderedSeries,
   onOpen,
 }: {
   points: TemperatureHistoryPoint[];
@@ -475,6 +481,8 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
   source: 'core' | 'session';
   minSpeed: number;
   maxSpeed: number;
+  visibleSeries: Record<HistorySeriesKey, boolean>;
+  orderedSeries: HistorySeriesKey[];
   onOpen?: () => void;
 }) {
   const { t } = useTranslation();
@@ -500,7 +508,12 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
         minTemp = Math.min(minTemp, point.gpuTemp);
         maxTemp = Math.max(maxTemp, point.gpuTemp);
       }
-      maxPower = Math.max(maxPower, Number(point.cpuPowerWatts || 0), Number(point.gpuPowerWatts || 0));
+      if (visibleSeries.cpuPower) {
+        maxPower = Math.max(maxPower, Number(point.cpuPowerWatts || 0));
+      }
+      if (visibleSeries.gpuPower) {
+        maxPower = Math.max(maxPower, Number(point.gpuPowerWatts || 0));
+      }
     }
 
     const hasPower = maxPower > 0;
@@ -534,6 +547,14 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
       return path.trim();
     };
 
+    const paths: HistoryPathMap = {
+      cpu: buildPath((point) => point.cpuTemp, yForTemp),
+      gpu: buildPath((point) => point.gpuTemp, yForTemp),
+      fan: buildPath((point) => Number(point.fanRpm || 0), yForFan),
+      cpuPower: buildPath((point) => Number(point.cpuPowerWatts || 0), yForPower),
+      gpuPower: buildPath((point) => Number(point.gpuPowerWatts || 0), yForPower),
+    };
+
     return {
       width,
       height,
@@ -542,15 +563,11 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
       plotTop,
       plotHeight,
       hasPower,
-      cpuPath: buildPath((point) => point.cpuTemp, yForTemp),
-      gpuPath: buildPath((point) => point.gpuTemp, yForTemp),
-      fanPath: buildPath((point) => point.fanRpm, yForFan),
-      cpuPowerPath: buildPath((point) => Number(point.cpuPowerWatts || 0), yForPower),
-      gpuPowerPath: buildPath((point) => Number(point.gpuPowerWatts || 0), yForPower),
+      paths,
       gridLines: [0.2, 0.5, 0.8],
     };
-  }, [maxSpeed, minSpeed, points]);
-  const { width, height, pad, plotWidth, plotTop, plotHeight, hasPower, cpuPath, gpuPath, fanPath, cpuPowerPath, gpuPowerPath, gridLines } = chart;
+  }, [maxSpeed, minSpeed, points, visibleSeries.cpuPower, visibleSeries.gpuPower]);
+  const { width, height, pad, plotWidth, plotTop, plotHeight, hasPower, paths, gridLines } = chart;
   const handlePanelKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (!onOpen) return;
     if (event.key === 'Enter' || event.key === ' ') {
@@ -604,15 +621,43 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
                   </g>
                 );
               })}
-              {hasPower && (
-                <>
-                  {cpuPowerPath && <path d={cpuPowerPath} fill="none" stroke={CPU_POWER_STROKE} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.9" />}
-                  {gpuPowerPath && <path d={gpuPowerPath} fill="none" stroke={GPU_POWER_STROKE} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.9" />}
-                </>
-              )}
-              {cpuPath && <path d={cpuPath} fill="none" stroke="var(--chart-primary)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />}
-              {gpuPath && <path d={gpuPath} fill="none" stroke="var(--chart-temperature-indicator)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />}
-              {fanPath && <path d={fanPath} fill="none" stroke={FAN_TREND_STROKE} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" opacity="0.45" />}
+              {orderedSeries.map((series) => {
+                if (!visibleSeries[series]) {
+                  return null;
+                }
+                if ((series === 'cpuPower' || series === 'gpuPower') && !hasPower) {
+                  return null;
+                }
+
+                const path = paths[series];
+                if (!path) {
+                  return null;
+                }
+
+                const stroke = series === 'cpu'
+                  ? 'var(--chart-primary)'
+                  : series === 'gpu'
+                    ? 'var(--chart-temperature-indicator)'
+                    : series === 'fan'
+                      ? FAN_TREND_STROKE
+                      : series === 'cpuPower'
+                        ? CPU_POWER_STROKE
+                        : GPU_POWER_STROKE;
+                const strokeWidth = series === 'fan' ? '1.8' : series === 'cpuPower' || series === 'gpuPower' ? '2' : '2.4';
+                const opacity = series === 'fan' ? '0.45' : series === 'cpuPower' || series === 'gpuPower' ? '0.9' : undefined;
+                return (
+                  <path
+                    key={series}
+                    d={path}
+                    fill="none"
+                    stroke={stroke}
+                    strokeWidth={strokeWidth}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    opacity={opacity}
+                  />
+                );
+              })}
             </svg>
           </div>
         )}
@@ -626,6 +671,7 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
 export default function DeviceStatus({
   isConnected,
   deviceModel,
+  deviceSettings,
   fanData,
   temperature,
   runtimeDeviceProfile,
@@ -649,6 +695,10 @@ export default function DeviceStatus({
     enabled: temperatureHistoryEnabled,
     source: temperatureHistorySource,
   } = useTemperatureHistory();
+  const {
+    orderedSeries: historySeriesOrder,
+    seriesVisibility: historySeriesVisibility,
+  } = useHistoryDisplayPreferences();
   const hasBridgeWarning = isConnected && temperature?.bridgeOk === false;
   const configuredDeviceProfile = useMemo(() => (getActiveDeviceProfile(config as any) as types.DeviceProfile | undefined) || null, [config]);
   const activeDeviceProfile = runtimeDeviceProfile || configuredDeviceProfile;
@@ -755,16 +805,24 @@ export default function DeviceStatus({
   const fanSpeedUnit = getFanSpeedUnit(fanData as any, config as any, runtimeDeviceProfile as any);
   const fanSpeedLabel = fanSpeedUnitLabel(fanSpeedUnit);
   const fanSpeedRange = useMemo(() => getFanSpeedRange(config as any, fanSpeedUnit, runtimeDeviceProfile as any), [config, fanSpeedUnit, runtimeDeviceProfile]);
-  const currentFanSpeed = clampFanSpeedToRange(readCurrentFanSpeed(fanData, fanSpeedUnit, config as any, runtimeDeviceProfile as any), fanSpeedRange);
-  const targetFanSpeed = clampFanSpeedToRange(readTargetFanSpeed(fanData, fanSpeedUnit, config as any, runtimeDeviceProfile as any), fanSpeedRange);
-  const fixedModeSpeed = clampFanSpeedToRange(config.customSpeedRPM, fanSpeedRange, currentFanSpeed);
+  const flyDigiCapability = useMemo(() => getFlyDigiRuntimeCapability(fanData as any, deviceSettings), [deviceSettings, fanData]);
+  const displayFanSpeedRange = useMemo(() => {
+    const runtimeMax = Number(flyDigiCapability?.maxRpm || 0);
+    if (fanSpeedUnit === 'rpm' && Number.isFinite(runtimeMax) && runtimeMax > fanSpeedRange.min) {
+      return { ...fanSpeedRange, max: Math.min(fanSpeedRange.max, runtimeMax) };
+    }
+    return fanSpeedRange;
+  }, [fanSpeedRange, fanSpeedUnit, flyDigiCapability]);
+  const currentFanSpeed = clampFanSpeedToRange(readCurrentFanSpeed(fanData, fanSpeedUnit, config as any, runtimeDeviceProfile as any), displayFanSpeedRange);
+  const targetFanSpeed = clampFanSpeedToRange(readTargetFanSpeed(fanData, fanSpeedUnit, config as any, runtimeDeviceProfile as any), displayFanSpeedRange);
+  const fixedModeSpeed = clampFanSpeedToRange(config.customSpeedRPM, displayFanSpeedRange, currentFanSpeed);
   const modeDesc = config.autoControl
     ? t('deviceStatus.mode.smartDescription')
     : config.customSpeedEnabled
       ? t('deviceStatus.mode.fixedDescription', { speed: fixedModeSpeed ?? '--', unit: fanSpeedLabel })
       : t('deviceStatus.mode.manualDescription');
   const modeDisplayTitle = activeCurveProfileName ? t('deviceStatus.mode.withProfile', { mode: modeTitle, profile: activeCurveProfileName }) : modeTitle;
-  const fanSpinDuration = getFanSpinDuration(currentFanSpeed, fanSpeedRange.min, fanSpeedRange.max);
+  const fanSpinDuration = getFanSpinDuration(currentFanSpeed, displayFanSpeedRange.min, displayFanSpeedRange.max);
   // 温度就绪判定：后端首次推送（updateTime > 0）且该路传感器读到非零值。
   // 单独按通路判 — 只有 GPU 没装独显时仍会保持 0，但 CPU 已就绪则只显示 GPU 占位。
   const tempPushed = (temperature?.updateTime ?? 0) > 0;
@@ -925,8 +983,8 @@ export default function DeviceStatus({
               currentSpeed={currentFanSpeed}
               targetSpeed={targetFanSpeed}
               unit={fanSpeedLabel}
-              minSpeed={fanSpeedRange.min}
-              maxSpeed={fanSpeedRange.max}
+              minSpeed={displayFanSpeedRange.min}
+              maxSpeed={displayFanSpeedRange.max}
             />
           </div>
         </motion.div>
@@ -1103,6 +1161,8 @@ export default function DeviceStatus({
             source={temperatureHistorySource}
             minSpeed={fanSpeedRange.min}
             maxSpeed={fanSpeedRange.max}
+            visibleSeries={historySeriesVisibility}
+            orderedSeries={historySeriesOrder}
             onOpen={onOpenHistoryDetails}
           />
         </motion.div>

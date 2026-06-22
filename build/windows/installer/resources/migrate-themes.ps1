@@ -1,6 +1,7 @@
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$InstallThemesDir
+    [string]$InstallThemesDir = "",
+
+    [string]$BundledThemesDir = ""
 )
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -69,6 +70,102 @@ function Read-ThemeManifest {
     }
 }
 
+function Get-ThemeCandidate {
+    param(
+        [string]$ThemeDir,
+        [string]$Root
+    )
+
+    $manifestPath = Join-Path $ThemeDir "theme.json"
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+        return $null
+    }
+
+    $manifest = Read-ThemeManifest $manifestPath
+    if ($null -eq $manifest) {
+        return $null
+    }
+
+    $themeId = [string]$manifest.id
+    if ([string]::IsNullOrWhiteSpace($themeId)) {
+        $themeId = Split-Path -Leaf $ThemeDir
+    }
+    if (-not (Test-ThemeId $themeId)) {
+        return $null
+    }
+
+    $item = Get-Item -LiteralPath $manifestPath -ErrorAction SilentlyContinue
+    return [pscustomobject]@{
+        Id       = $themeId
+        Dir      = $ThemeDir
+        Root     = $Root
+        Version  = [string]$manifest.version
+        Modified = if ($item) { $item.LastWriteTimeUtc } else { [datetime]::MinValue }
+    }
+}
+
+function Copy-ThemeDirectory {
+    param(
+        [string]$SourceDir,
+        [string]$DestinationDir,
+        [string]$TempSuffix
+    )
+
+    if ([string]::IsNullOrWhiteSpace($SourceDir) -or [string]::IsNullOrWhiteSpace($DestinationDir)) {
+        return
+    }
+
+    $parent = Split-Path -Parent $DestinationDir
+    $name = Split-Path -Leaf $DestinationDir
+    if ([string]::IsNullOrWhiteSpace($parent) -or [string]::IsNullOrWhiteSpace($name)) {
+        return
+    }
+
+    New-Item -ItemType Directory -Path $parent -Force | Out-Null
+    $tempDestination = Join-Path $parent ".$name.$TempSuffix"
+    Remove-Item -LiteralPath $tempDestination -Recurse -Force -ErrorAction SilentlyContinue
+    Copy-Item -LiteralPath $SourceDir -Destination $tempDestination -Recurse -Force -ErrorAction Stop
+    Remove-Item -LiteralPath $DestinationDir -Recurse -Force -ErrorAction SilentlyContinue
+    Rename-Item -LiteralPath $tempDestination -NewName $name -Force -ErrorAction Stop
+}
+
+function Sync-BundledThemes {
+    param(
+        [string]$InstallDir,
+        [string]$BundleDir
+    )
+
+    if ([string]::IsNullOrWhiteSpace($InstallDir) -or [string]::IsNullOrWhiteSpace($BundleDir)) {
+        return
+    }
+    if (-not (Test-Path -LiteralPath $BundleDir -PathType Container)) {
+        return
+    }
+
+    Get-ChildItem -LiteralPath $BundleDir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        $bundled = Get-ThemeCandidate $_.FullName $BundleDir
+        if ($null -eq $bundled) {
+            return
+        }
+
+        $destination = Join-Path $InstallDir $bundled.Id
+        $destinationManifest = Join-Path $destination "theme.json"
+        if (Test-Path -LiteralPath $destinationManifest -PathType Leaf) {
+            $installedManifest = Read-ThemeManifest $destinationManifest
+            $installedVersion = if ($null -ne $installedManifest) { [string]$installedManifest.version } else { "" }
+            if ((Compare-ThemeVersion $bundled.Version $installedVersion) -le 0) {
+                return
+            }
+        }
+
+        try {
+            Copy-ThemeDirectory $bundled.Dir $destination "bundled"
+        } catch {
+            return
+        }
+    }
+}
+
 function Get-LegacyThemeCandidates {
     param([string[]]$LegacyDirs)
 
@@ -79,31 +176,9 @@ function Get-LegacyThemeCandidates {
         }
 
         Get-ChildItem -LiteralPath $legacyDir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-            $manifestPath = Join-Path $_.FullName "theme.json"
-            if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
-                return
-            }
-
-            $manifest = Read-ThemeManifest $manifestPath
-            if ($null -eq $manifest) {
-                return
-            }
-
-            $themeId = [string]$manifest.id
-            if ([string]::IsNullOrWhiteSpace($themeId)) {
-                $themeId = $_.Name
-            }
-            if (-not (Test-ThemeId $themeId)) {
-                return
-            }
-
-            $item = Get-Item -LiteralPath $manifestPath -ErrorAction SilentlyContinue
-            $candidates += [pscustomobject]@{
-                Id       = $themeId
-                Dir      = $_.FullName
-                Root     = $legacyDir
-                Version  = [string]$manifest.version
-                Modified = if ($item) { $item.LastWriteTimeUtc } else { [datetime]::MinValue }
+            $candidate = Get-ThemeCandidate $_.FullName $legacyDir
+            if ($null -ne $candidate) {
+                $candidates += $candidate
             }
         }
     }
@@ -144,6 +219,7 @@ try {
     }
 
     New-Item -ItemType Directory -Path $InstallThemesDir -Force | Out-Null
+    Sync-BundledThemes $InstallThemesDir $BundledThemesDir
 
     $userProfile = $env:USERPROFILE
     if ([string]::IsNullOrWhiteSpace($userProfile)) {
@@ -174,12 +250,8 @@ try {
 
         $best = Select-NewestTheme @($group.Group)
         $destination = Join-Path $InstallThemesDir $themeId
-        $tempDestination = Join-Path $InstallThemesDir ".$themeId.migration"
 
-        Remove-Item -LiteralPath $tempDestination -Recurse -Force -ErrorAction SilentlyContinue
-        Copy-Item -LiteralPath $best.Dir -Destination $tempDestination -Recurse -Force -ErrorAction Stop
-        Remove-Item -LiteralPath $destination -Recurse -Force -ErrorAction SilentlyContinue
-        Rename-Item -LiteralPath $tempDestination -NewName $themeId -Force -ErrorAction Stop
+        Copy-ThemeDirectory $best.Dir $destination "migration"
 
         foreach ($candidate in $group.Group) {
             Remove-Item -LiteralPath $candidate.Dir -Recurse -Force -ErrorAction SilentlyContinue

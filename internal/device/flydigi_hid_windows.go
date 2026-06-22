@@ -322,8 +322,14 @@ func (m *Manager) setFlyDigiHIDTargetSpeedLocked(speed types.FanSpeedValue) bool
 		return false
 	}
 	rpm := types.ClampRPM(speed.Value)
-	if rpm > 4000 {
-		rpm = 4000
+	if rpm > types.DefaultMaxFanRPM {
+		rpm = types.DefaultMaxFanRPM
+	}
+	requestedRPM := rpm
+	capability := m.flyDigiHIDRuntimeCapabilityLocked()
+	if cappedRPM, limited := types.FlyDigiClampRPMForCapability(rpm, capability); limited {
+		rpm = cappedRPM
+		m.logWarn("飞智 HID 当前供电/挡位上限为 %s %d RPM，自动目标从 %d RPM 限制为 %d RPM", capability.MaxGearLabel, capability.MaxRPM, requestedRPM, rpm)
 	}
 	if err := m.writeFlyDigiHIDFrameLocked(deviceproto.CmdEnterRealtimeRPM, nil, hidControlReportLen); err != nil {
 		m.logError("进入实时转速模式失败: %v", err)
@@ -341,6 +347,17 @@ func (m *Manager) setFlyDigiHIDTargetSpeedLocked(speed types.FanSpeedValue) bool
 	return true
 }
 
+func (m *Manager) flyDigiHIDRuntimeCapabilityLocked() types.FlyDigiRuntimeCapability {
+	fanData := m.currentFanData.Load()
+	if fanData == nil || fanData.Transport != types.DeviceTransportHID {
+		return types.FlyDigiRuntimeCapability{Reason: "missingFanData"}
+	}
+	if fanData.FlyDigiCapability != nil {
+		return *fanData.FlyDigiCapability
+	}
+	return types.DecodeFlyDigiRuntimeCapability(fanData, nil)
+}
+
 func (m *Manager) setFlyDigiHIDManualGearRPM(gear, level string, rpm int) bool {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
@@ -353,6 +370,16 @@ func (m *Manager) setFlyDigiHIDManualGearRPM(gear, level string, rpm int) bool {
 		return false
 	}
 	rpm = types.ClampRPM(rpm)
+	capability := m.flyDigiHIDRuntimeCapabilityLocked()
+	if !types.FlyDigiIsGearAllowed(gear, capability) {
+		m.logWarn("飞智 HID 当前供电/挡位上限为 %s，未解锁 %s 档", capability.MaxGearLabel, gear)
+		return false
+	}
+	requestedRPM := rpm
+	if cappedRPM, limited := types.FlyDigiClampRPMForCapability(rpm, capability); limited {
+		rpm = cappedRPM
+		m.logWarn("飞智 HID 手动挡位 %s %s 请求 %d RPM 超过当前上限 %d RPM，已限制为 %d RPM", gear, level, requestedRPM, capability.MaxRPM, rpm)
+	}
 	cmd := types.BuildGearRPMCommand(idx, rpm)
 	report := deviceproto.BuildReport(cmd, hidControlReportLen)
 	if err := retryDeviceSend("FlyDigi HID manual gear", func() error {
@@ -454,20 +481,21 @@ func (m *Manager) storeFlyDigiHIDFanDataLocked(rpm int, workMode string) {
 	}
 	if previous := m.currentFanData.Load(); previous != nil && previous.Transport == types.DeviceTransportHID {
 		fanData = &types.FanData{
-			ReportID:     previous.ReportID,
-			MagicSync:    previous.MagicSync,
-			Command:      deviceproto.CmdSetRealtimeRPM,
-			Status:       previous.Status,
-			GearSettings: previous.GearSettings,
-			CurrentMode:  previous.CurrentMode,
-			Reserved1:    previous.Reserved1,
-			CurrentRPM:   previous.CurrentRPM,
-			TargetRPM:    uint16(rpm),
-			MaxGear:      previous.MaxGear,
-			SetGear:      previous.SetGear,
-			WorkMode:     workMode,
-			Transport:    types.DeviceTransportHID,
-			SpeedUnit:    types.FanSpeedUnitRPM,
+			ReportID:          previous.ReportID,
+			MagicSync:         previous.MagicSync,
+			Command:           deviceproto.CmdSetRealtimeRPM,
+			Status:            previous.Status,
+			GearSettings:      previous.GearSettings,
+			CurrentMode:       previous.CurrentMode,
+			Reserved1:         previous.Reserved1,
+			CurrentRPM:        previous.CurrentRPM,
+			TargetRPM:         uint16(rpm),
+			MaxGear:           previous.MaxGear,
+			SetGear:           previous.SetGear,
+			WorkMode:          workMode,
+			Transport:         types.DeviceTransportHID,
+			SpeedUnit:         types.FanSpeedUnitRPM,
+			FlyDigiCapability: previous.FlyDigiCapability,
 		}
 		if fanData.ReportID == 0 {
 			fanData.ReportID = deviceproto.ReportID
@@ -475,6 +503,10 @@ func (m *Manager) storeFlyDigiHIDFanDataLocked(rpm int, workMode string) {
 		if fanData.MagicSync == 0 {
 			fanData.MagicSync = 0x5AA5
 		}
+	}
+	if fanData.FlyDigiCapability == nil {
+		capability := types.DecodeFlyDigiRuntimeCapability(fanData, nil)
+		fanData.FlyDigiCapability = &capability
 	}
 	m.currentFanData.Store(fanData)
 	if m.onFanDataUpdate != nil {

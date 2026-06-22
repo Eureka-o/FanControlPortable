@@ -12,6 +12,19 @@ export interface FanCurveProfile {
   curve: FanCurvePoint[];
 }
 
+export interface FlyDigiRuntimeCapability {
+  available: boolean;
+  gearSettings: number;
+  maxGearCode?: number;
+  maxGearLabel?: string;
+  maxGearIndex?: number;
+  maxRpm?: number;
+  selectedGearCode?: number;
+  selectedGear?: string;
+  source?: string;
+  reason?: string;
+}
+
 // 风扇数据结构
 export interface FanData {
   reportId: number;
@@ -28,6 +41,7 @@ export interface FanData {
   workMode: string;
   transport?: string;
   speedUnit?: string;
+  flyDigiCapability?: FlyDigiRuntimeCapability;
 }
 
 export type GPUReadState = 'active' | 'notPolled' | 'unavailable' | 'error' | 'unknown';
@@ -229,6 +243,7 @@ export interface DeviceSettings {
   rgbState?: string;
   rgbStateName?: string;
   status?: DeviceStatusRead;
+  flyDigiCapability?: FlyDigiRuntimeCapability;
   rawFrames?: DeviceDebugFrame[];
 }
 

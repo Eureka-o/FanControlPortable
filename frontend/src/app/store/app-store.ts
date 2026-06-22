@@ -295,7 +295,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           deviceSettings: settings,
           runtimeDeviceProfile: info.deviceProfile || null,
           runtimeDeviceCapabilities: info.deviceCapabilities || info.deviceProfile?.capabilities || null,
-          fanData: info.currentData || get().fanData || null,
+          fanData: info.currentData || null,
           coreServiceError: null,
           error: null,
         });
