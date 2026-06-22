@@ -30,6 +30,7 @@ temp/LibreHardwareMonitor/
 # Local Codex/project memory
 MEMORY_INDEX.md
 SKILL_ROUTER_MEMORY.md
+.codegraph/
 
 # IDE/user files
 .vs/

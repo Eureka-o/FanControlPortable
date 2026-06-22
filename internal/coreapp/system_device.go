@@ -429,6 +429,11 @@ func (a *CoreApp) ConnectDevice() bool {
 	types.NormalizeDeviceProfileConfig(&cfg)
 
 	a.configureDeviceManager(cfg)
+	if success, deviceInfo := a.deviceManager.AutoConnectNativeProfiles(cfg.DeviceProfiles); success {
+		a.finishSuccessfulDeviceConnection(deviceInfo, "ConnectDevice")
+		return true
+	}
+
 	if compatibilityConnectionEnabled(cfg) {
 		a.lastConnectionWasNative.Store(false)
 		if shouldTryDynamicWiFiCompatibility(cfg) {
@@ -447,10 +452,6 @@ func (a *CoreApp) ConnectDevice() bool {
 		return success
 	}
 
-	if success, deviceInfo := a.deviceManager.AutoConnectNativeProfiles(cfg.DeviceProfiles); success {
-		a.finishSuccessfulDeviceConnection(deviceInfo, "ConnectDevice")
-		return true
-	}
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "未发现可自动识别的 BLE/HID 设备，且未启用兼容设备")
 	}

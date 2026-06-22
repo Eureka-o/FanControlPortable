@@ -1173,6 +1173,36 @@ export namespace types {
 		    return a;
 		}
 	}
+	export class FlyDigiRuntimeCapability {
+	    available: boolean;
+	    gearSettings: number;
+	    maxGearCode?: number;
+	    maxGearLabel?: string;
+	    maxGearIndex?: number;
+	    maxRpm?: number;
+	    selectedGearCode?: number;
+	    selectedGear?: string;
+	    source?: string;
+	    reason?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new FlyDigiRuntimeCapability(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.available = source["available"];
+	        this.gearSettings = source["gearSettings"];
+	        this.maxGearCode = source["maxGearCode"];
+	        this.maxGearLabel = source["maxGearLabel"];
+	        this.maxGearIndex = source["maxGearIndex"];
+	        this.maxRpm = source["maxRpm"];
+	        this.selectedGearCode = source["selectedGearCode"];
+	        this.selectedGear = source["selectedGear"];
+	        this.source = source["source"];
+	        this.reason = source["reason"];
+	    }
+	}
 	export class FanData {
 	    reportId: number;
 	    magicSync: number;
@@ -1188,6 +1218,7 @@ export namespace types {
 	    workMode: string;
 	    transport?: string;
 	    speedUnit?: string;
+	    flyDigiCapability?: FlyDigiRuntimeCapability;
 
 	    static createFrom(source: any = {}) {
 	        return new FanData(source);
@@ -1209,7 +1240,26 @@ export namespace types {
 	        this.workMode = source["workMode"];
 	        this.transport = source["transport"];
 	        this.speedUnit = source["speedUnit"];
+	        this.flyDigiCapability = this.convertValues(source["flyDigiCapability"], FlyDigiRuntimeCapability);
 	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class DeviceProfileTestResult {
 	    action: string;
@@ -1333,6 +1383,7 @@ export namespace types {
 	    rgbState?: string;
 	    rgbStateName?: string;
 	    status?: DeviceStatusRead;
+	    flyDigiCapability?: FlyDigiRuntimeCapability;
 	    rawFrames?: DeviceDebugFrame[];
 
 	    static createFrom(source: any = {}) {
@@ -1351,6 +1402,7 @@ export namespace types {
 	        this.rgbState = source["rgbState"];
 	        this.rgbStateName = source["rgbStateName"];
 	        this.status = this.convertValues(source["status"], DeviceStatusRead);
+	        this.flyDigiCapability = this.convertValues(source["flyDigiCapability"], FlyDigiRuntimeCapability);
 	        this.rawFrames = this.convertValues(source["rawFrames"], DeviceDebugFrame);
 	    }
 
@@ -1409,6 +1461,7 @@ export namespace types {
 		    return a;
 		}
 	}
+
 
 
 

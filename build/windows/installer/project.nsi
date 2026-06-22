@@ -499,20 +499,22 @@ Section "$(THRM_STR_SECTION_MAIN)" SEC_MAIN
     SetOutPath $INSTDIR\bridge
     File /r "..\..\bin\bridge\*.*"
 
-    # Copy built-in themes so they are visible/editable in the install directory.
+    # Stage built-in themes first; the migration script copies only new or upgraded theme versions.
     DetailPrint "$(THRM_STR_INSTALLING_THEMES)"
-    SetOutPath $INSTDIR\themes
+    RMDir /r "$INSTDIR\.bundled-themes"
+    SetOutPath $INSTDIR\.bundled-themes
     File /r "..\..\bin\themes\*.*"
     SetOutPath $INSTDIR\tools
     File /nonfatal "resources\migrate-themes.ps1"
     ${If} ${FileExists} "$INSTDIR\tools\migrate-themes.ps1"
         DetailPrint "$(THRM_STR_MIGRATING_THEMES)"
-        nsExec::ExecToStack /TIMEOUT=30000 '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\tools\migrate-themes.ps1" -InstallThemesDir "$INSTDIR\themes"'
+        nsExec::ExecToStack /TIMEOUT=30000 '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\tools\migrate-themes.ps1" -InstallThemesDir "$INSTDIR\themes" -BundledThemesDir "$INSTDIR\.bundled-themes"'
         Pop $0
         Pop $1
         Delete "$INSTDIR\tools\migrate-themes.ps1"
         RMDir "$INSTDIR\tools"
     ${EndIf}
+    RMDir /r "$INSTDIR\.bundled-themes"
 
     # Return to main install directory
     SetOutPath $INSTDIR

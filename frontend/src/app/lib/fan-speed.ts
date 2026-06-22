@@ -187,7 +187,16 @@ export function getFanSpeedRange(
   runtimeProfile?: DeviceProfileCarrier | null,
 ): Required<DeviceSpeedRange> {
   const activeProfile = getRuntimeDeviceProfile(runtimeProfile) || getActiveDeviceProfile(config);
-  const range = activeProfile?.speedRange || activeProfile?.capabilities?.speedRange;
+  const activeProfileUnit = activeProfile?.speedUnit
+    ? normalizeFanSpeedUnit(activeProfile.speedUnit)
+    : activeProfile?.capabilities?.speedUnit
+      ? normalizeFanSpeedUnit(activeProfile.capabilities.speedUnit)
+      : isNativeDeviceTransport(activeProfile?.transport)
+        ? FAN_SPEED_UNIT_RPM
+        : undefined;
+  const range = !activeProfileUnit || activeProfileUnit === unit
+    ? activeProfile?.speedRange || activeProfile?.capabilities?.speedRange
+    : undefined;
   const fallback = unit === FAN_SPEED_UNIT_RPM
     ? { min: 0, max: DEFAULT_RPM_SPEED_MAX, step: 1, tickScale: 1 }
     : { min: 0, max: 100, step: 1, tickScale: 10 };

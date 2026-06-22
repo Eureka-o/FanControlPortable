@@ -221,3 +221,32 @@ func TestShouldSendTargetSpeedIgnoresSmallStableDrift(t *testing.T) {
 		t.Fatal("shouldSendTargetSpeed() should not resend for small stable RPM drift")
 	}
 }
+
+func TestApplyFlyDigiRuntimeCapabilityToTargetClampsHIDRPM(t *testing.T) {
+	capability := types.DecodeFlyDigiRuntimeCapabilityFromGearSettings(0x4A, nil)
+	fanData := &types.FanData{
+		Transport:         types.DeviceTransportHID,
+		SpeedUnit:         types.FanSpeedUnitRPM,
+		GearSettings:      0x4A,
+		FlyDigiCapability: &capability,
+	}
+
+	got, limited := applyFlyDigiRuntimeCapabilityToTarget(4000, fanData, types.FanSpeedUnitRPM)
+	if got != 3300 || !limited {
+		t.Fatalf("applyFlyDigiRuntimeCapabilityToTarget() = (%d, %v), want (3300, true)", got, limited)
+	}
+}
+
+func TestApplyFlyDigiRuntimeCapabilityToTargetLeavesNonFlyDigiPathsAlone(t *testing.T) {
+	fanData := &types.FanData{Transport: types.DeviceTransportWiFi, SpeedUnit: types.FanSpeedUnitRPM}
+	got, limited := applyFlyDigiRuntimeCapabilityToTarget(4000, fanData, types.FanSpeedUnitRPM)
+	if got != 4000 || limited {
+		t.Fatalf("WiFi target should not be limited: (%d, %v)", got, limited)
+	}
+
+	hidPercent := &types.FanData{Transport: types.DeviceTransportHID, SpeedUnit: types.FanSpeedUnitPercent, GearSettings: 0x2A}
+	got, limited = applyFlyDigiRuntimeCapabilityToTarget(500, hidPercent, types.FanSpeedUnitPercent)
+	if got != 500 || limited {
+		t.Fatalf("percent target should not be limited: (%d, %v)", got, limited)
+	}
+}

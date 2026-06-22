@@ -115,7 +115,7 @@ func parseFlyDigiFanData(data []byte) *types.FanData {
 	currentRPM := binary.LittleEndian.Uint16(frame.Payload[3:5])
 	targetRPM := binary.LittleEndian.Uint16(frame.Payload[5:7])
 	maxGear, setGear := parseFlyDigiGearSettings(frame.Payload[0])
-	return &types.FanData{
+	fanData := &types.FanData{
 		ReportID:     frame.ReportID,
 		MagicSync:    0x5AA5,
 		Command:      frame.Command,
@@ -130,6 +130,9 @@ func parseFlyDigiFanData(data []byte) *types.FanData {
 		Transport:    types.DeviceTransportHID,
 		SpeedUnit:    types.FanSpeedUnitRPM,
 	}
+	capability := types.DecodeFlyDigiRuntimeCapability(fanData, nil)
+	fanData.FlyDigiCapability = &capability
+	return fanData
 }
 
 func parseFlyDigiFanDataFixedOffsets(data []byte) *types.FanData {
@@ -167,6 +170,8 @@ func parseFlyDigiFanDataFixedOffsets(data []byte) *types.FanData {
 		fanData.TargetRPM = binary.LittleEndian.Uint16(data[offset+9 : offset+11])
 	}
 	fanData.MaxGear, fanData.SetGear = parseFlyDigiGearSettings(gear)
+	capability := types.DecodeFlyDigiRuntimeCapability(fanData, nil)
+	fanData.FlyDigiCapability = &capability
 	return fanData
 }
 
@@ -251,6 +256,9 @@ func applyFlyDigiCurrentStatus(settings *types.DeviceSettings, fanData *types.Fa
 	if fanData == nil {
 		return
 	}
+	capability := types.DecodeFlyDigiRuntimeCapability(fanData, settings.GearRPMTable)
+	fanData.FlyDigiCapability = &capability
+	settings.FlyDigiCapability = &capability
 	if settings.WorkMode == "" {
 		settings.WorkMode = fmt.Sprintf("0x%02X", fanData.CurrentMode)
 		settings.WorkModeName = deviceproto.ModeName(fanData.CurrentMode)

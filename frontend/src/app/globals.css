@@ -480,6 +480,23 @@ body:has(.glacier-native-backdrop) {
   box-shadow: var(--theme-dialog-content-shadow);
 }
 
+[data-slot="dialog-content"][data-theme-ui="history-display-dialog"] {
+  animation-duration: 120ms;
+  box-shadow: var(--theme-dialog-content-shadow);
+  transition: opacity 120ms ease, border-color 120ms ease, background-color 120ms ease;
+  will-change: opacity;
+}
+
+[data-slot="dialog-content"][data-theme-ui="history-display-dialog"][data-state="open"],
+[data-slot="dialog-content"][data-theme-ui="history-display-dialog"][data-state="closed"] {
+  translate: -50% -50% !important;
+  transform: none !important;
+}
+
+[data-theme-ui="history-display-row"] {
+  box-shadow: none;
+}
+
 [data-slot="dialog-close"] {
   background: transparent;
   border: 1px solid transparent;

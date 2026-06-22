@@ -1,0 +1,17 @@
+{
+  "$comment": "FanControl 高级主题模板。复制 advanced 文件夹后，请把文件夹名、id 和 theme.css 里的 html[data-theme=\"advanced\"] 一起改成你的主题 ID。",
+  "$help": {
+    "id": "主题唯一 ID，必须和文件夹名一致。只使用小写字母、数字、短横线 -、下划线 _。",
+    "name": "显示在 FanControl 设置页中的主题名，可以使用中文。",
+    "base": "基础明暗模式：light 或 dark。这个模板基于小八 Plus 的浅色高级主题。",
+    "author": "作者名。",
+    "version": "主题版本，建议从 1.0.0 开始。",
+    "description": "主题简介。高级版可使用 FanControl 新增 data-theme-* 钩子、相对资源、字体子集、贴纸和页面级背景。"
+  },
+  "id": "advanced",
+  "name": "高级主题模板",
+  "base": "light",
+  "author": "FanControl User",
+  "version": "1.0.0",
+  "description": "基于小八 Plus 技术路线的高级主题模板，包含插画、贴纸、字体、页面背景、卡片透明、hover 动效和 FanControl 专属主题钩子。"
+}

@@ -602,7 +602,9 @@
       "rpmSaved": "挡位速度已保存",
       "rpmSaveFailed": "保存挡位速度失败: {{error}}",
       "applyFailed": "应用挡位失败: {{error}}",
-      "unavailable": "设备未连接或当前设备不支持手动档位"
+      "unavailable": "设备未连接或当前设备不支持手动档位",
+      "runtimeLimit": "当前上限 {{gear}} / {{rpm}} RPM",
+      "runtimeUnavailable": "当前供电未解锁 {{gear}} 档。{{limit}}"
     },
     "learning": {
       "title": "自适应学习",
@@ -651,9 +653,9 @@
       "recentTrend": "最近趋势",
       "waitingMoreSamples": "已记录 1 条样本，等待更多数据后展示趋势图。",
       "series": {
-        "cpu": "CPU",
-        "gpu": "GPU",
-        "fan": "风扇速度",
+        "cpu": "CPU 温度",
+        "gpu": "GPU 温度",
+        "fan": "风扇转速",
         "cpuPower": "CPU 功耗",
         "gpuPower": "GPU 功耗"
       },
@@ -676,7 +678,12 @@
         "gpuPowerPeak": "GPU 功耗峰值",
         "averagePower": "平均 {{value}} W",
         "noPowerData": "暂无功耗数据"
-      }
+      },
+      "displaySettings": "展示设定",
+      "displaySettingsDescription": "选择趋势曲线展示的信息，并调整鼠标悬停时的显示顺序。",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "resetDisplaySettings": "恢复默认"
     },
     "profiles": {
       "title": "曲线方案",

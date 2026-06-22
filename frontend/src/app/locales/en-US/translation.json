@@ -602,7 +602,9 @@
       "rpmSaved": "Gear speed saved",
       "rpmSaveFailed": "Failed to save gear speed: {{error}}",
       "applyFailed": "Failed to apply gear: {{error}}",
-      "unavailable": "The device is disconnected or does not support manual gears"
+      "unavailable": "The device is disconnected or does not support manual gears",
+      "runtimeLimit": "Current limit: {{gear}} / {{rpm}} RPM",
+      "runtimeUnavailable": "{{gear}} gear is not unlocked with the current power input. {{limit}}"
     },
     "learning": {
       "title": "Adaptive learning",
@@ -651,9 +653,9 @@
       "recentTrend": "Recent trend",
       "waitingMoreSamples": "1 sample recorded. Waiting for more data before drawing the trend chart.",
       "series": {
-        "cpu": "CPU",
-        "gpu": "GPU",
-        "fan": "Fan %",
+        "cpu": "CPU temp",
+        "gpu": "GPU temp",
+        "fan": "Fan speed",
         "cpuPower": "CPU power",
         "gpuPower": "GPU power"
       },
@@ -676,7 +678,12 @@
         "gpuPowerPeak": "GPU power peak",
         "averagePower": "Avg {{value}} W",
         "noPowerData": "No power data yet"
-      }
+      },
+      "displaySettings": "Display",
+      "displaySettingsDescription": "Choose which trend lines to show and adjust the hover tooltip order.",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "resetDisplaySettings": "Reset default"
     },
     "profiles": {
       "title": "Curve profiles",

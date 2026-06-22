@@ -129,6 +129,7 @@ export default function Home() {
           fanData={view.fanData}
           temperature={view.temperature}
           runtimeDeviceProfile={view.runtimeDeviceProfile}
+          runtimeDeviceCapabilities={view.runtimeDeviceCapabilities}
           deviceModel={view.deviceModel}
           focusTarget={view.curveFocusTarget}
           onFocusHandled={clearCurveFocusTarget}

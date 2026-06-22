@@ -1,5 +1,12 @@
 import { i18n } from './i18n';
 import { FAN_SPEED_UNIT_PERCENT, FAN_SPEED_UNIT_RPM, type FanSpeedUnit } from './fan-speed';
+import type { FlyDigiRuntimeCapability } from '../types/app';
+
+interface ManualGearCapabilityCarrier {
+  supportsManualGears?: boolean;
+  supportsSetSpeed?: boolean;
+  supportsCustomSpeed?: boolean;
+}
 
 export interface ManualGearPresetLevel {
   level: string;
@@ -242,41 +249,123 @@ export const getManualLevelLabel = (level?: string | null): string => {
   return i18n.t(MANUAL_LEVEL_LABEL_KEYS[level] || level);
 };
 
-const MAX_GEAR_CODE_TO_RPM: Record<number, number> = {
-  // Legacy max-gear codes observed in HID reports. 
-  0x2: 65,
-  0x3: 65,
-  0x4: 85,
-  0x6: 100,
-  // Compatibility for firmware variants that use full gear codes.
-  0xA: 65,
-  0xC: 85,
-  0xE: 100,
+export const supportsManualGearsFromCapabilities = (
+  capabilities?: ManualGearCapabilityCarrier | null,
+): boolean => {
+  if (!capabilities) {
+    return true;
+  }
+  // Older saved profiles only had set-speed/custom-speed flags. Treat those as
+  // manual-gear compatible so legacy WiFi/serial compatibility profiles keep working.
+  return Boolean(
+    capabilities.supportsManualGears
+    || capabilities.supportsSetSpeed
+    || capabilities.supportsCustomSpeed,
+  );
+};
+
+const FLYDIGI_MAX_GEAR_CODE_TO_INDEX: Record<number, number> = {
+  0x2: 1,
+  0x4: 2,
+  0x6: 3,
+};
+
+const FLYDIGI_FULL_GEAR_CODE_TO_INDEX: Record<number, number> = {
+  0x8: 0,
+  0xA: 1,
+  0xC: 2,
+  0xE: 3,
+};
+
+const FLYDIGI_GEAR_INDEX_TO_RPM = [1900, 2700, 3300, 4000];
+const FLYDIGI_GEAR_INDEX_TO_LABEL = ['静音', '标准', '强劲', '超频'];
+
+const capabilityMaxRpm = (capability?: FlyDigiRuntimeCapability | null) => {
+  const value = Number(capability?.maxRpm || 0);
+  return Number.isFinite(value) && value > 0 ? value : undefined;
 };
 
 export interface ReportedMaxRpmInfo {
   rpm?: number;
+  maxGearIndex?: number;
+  maxGearLabel?: string;
   codeHex?: string;
-  source: 'gearSettings' | 'maxGearText' | 'unknown';
+  source: 'runtimeCapability' | 'gearSettings' | 'maxGearText' | 'unknown';
 }
 
 export const getReportedMaxRpm = (
   gearSettings?: number | null,
   maxGearText?: string | null,
+  runtimeCapability?: FlyDigiRuntimeCapability | null,
 ): ReportedMaxRpmInfo => {
+  const capRpm = capabilityMaxRpm(runtimeCapability);
+  if (capRpm) {
+    return {
+      rpm: capRpm,
+      maxGearIndex: runtimeCapability?.maxGearIndex,
+      maxGearLabel: runtimeCapability?.maxGearLabel,
+      source: 'runtimeCapability',
+    };
+  }
+
   if (typeof gearSettings === 'number') {
     const maxGearCode = (gearSettings >> 4) & 0x0f;
-    const mapped = MAX_GEAR_CODE_TO_RPM[maxGearCode];
-    if (mapped) {
-      return { rpm: mapped, source: 'gearSettings' };
+    const mappedIndex = FLYDIGI_MAX_GEAR_CODE_TO_INDEX[maxGearCode] ?? FLYDIGI_FULL_GEAR_CODE_TO_INDEX[maxGearCode];
+    if (typeof mappedIndex === 'number') {
+      return {
+        rpm: FLYDIGI_GEAR_INDEX_TO_RPM[mappedIndex],
+        maxGearIndex: mappedIndex,
+        maxGearLabel: FLYDIGI_GEAR_INDEX_TO_LABEL[mappedIndex],
+        source: 'gearSettings',
+      };
     }
     return { codeHex: `0x${maxGearCode.toString(16).toUpperCase()}`, source: 'gearSettings' };
   }
 
-  const textMapped = getManualGearHighLevelRpm(maxGearText);
-  if (textMapped) {
-    return { rpm: textMapped, source: 'maxGearText' };
+  const textIndex = FLYDIGI_GEAR_INDEX_TO_LABEL.indexOf(maxGearText || '');
+  if (textIndex >= 0) {
+    return {
+      rpm: FLYDIGI_GEAR_INDEX_TO_RPM[textIndex],
+      maxGearIndex: textIndex,
+      maxGearLabel: FLYDIGI_GEAR_INDEX_TO_LABEL[textIndex],
+      source: 'maxGearText',
+    };
   }
 
   return { source: 'unknown' };
+};
+
+export const getFlyDigiRuntimeCapability = (
+  fanData?: { gearSettings?: number | null; maxGear?: string | null; flyDigiCapability?: FlyDigiRuntimeCapability | null } | null,
+  deviceSettings?: { flyDigiCapability?: FlyDigiRuntimeCapability | null } | null,
+): FlyDigiRuntimeCapability | null => {
+  if (fanData?.flyDigiCapability?.available) {
+    return fanData.flyDigiCapability;
+  }
+  if (deviceSettings?.flyDigiCapability?.available) {
+    return deviceSettings.flyDigiCapability;
+  }
+  const reported = getReportedMaxRpm(fanData?.gearSettings, fanData?.maxGear, fanData?.flyDigiCapability || deviceSettings?.flyDigiCapability);
+  if (!reported.rpm || typeof reported.maxGearIndex !== 'number') {
+    return null;
+  }
+  return {
+    available: true,
+    gearSettings: typeof fanData?.gearSettings === 'number' ? fanData.gearSettings : 0,
+    maxGearIndex: reported.maxGearIndex,
+    maxGearLabel: reported.maxGearLabel,
+    maxRpm: reported.rpm,
+    source: reported.source,
+  };
+};
+
+export const isManualGearAllowedForFlyDigi = (
+  gear: string,
+  capability?: FlyDigiRuntimeCapability | null,
+) => {
+  if (!capability?.available || typeof capability.maxGearIndex !== 'number') {
+    return true;
+  }
+  const gearIndex = FLYDIGI_GEAR_INDEX_TO_LABEL.indexOf(gear);
+  return gearIndex >= 0 && gearIndex <= capability.maxGearIndex;
 };

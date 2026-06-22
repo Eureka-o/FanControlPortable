@@ -1,0 +1,17 @@
+{
+  "$comment": "FanControl/THRM 基础主题模板。复制 basic 文件夹后，请把文件夹名、id 和 theme.css 里的 html[data-theme=\"basic\"] 一起改成你的主题 ID。",
+  "$help": {
+    "id": "主题唯一 ID，必须和文件夹名一致。只使用小写字母、数字、短横线 -、下划线 _。",
+    "name": "显示在设置页中的主题名，可以使用中文。",
+    "base": "基础明暗模式：light 或 dark。这个模板是默认浅色基底。",
+    "author": "作者名。",
+    "version": "主题版本，建议从 1.0.0 开始。",
+    "description": "主题简介。基础版只使用变量和 THRM/FanControl 都常见的 glacier-* 组件钩子。"
+  },
+  "id": "basic",
+  "name": "基础主题模板",
+  "base": "light",
+  "author": "FanControl User",
+  "version": "1.0.0",
+  "description": "基于系统默认浅色效果的完整基础模板，适合只改颜色、背景、卡片、图表和左侧徽标。"
+}

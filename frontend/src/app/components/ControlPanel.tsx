@@ -18,6 +18,7 @@ import {
   getFanSpeedUnit,
   readCurrentFanSpeed,
 } from '../lib/fan-speed';
+import { supportsManualGearsFromCapabilities } from '../lib/manualGearPresets';
 import DeviceDebugPanel from './DeviceDebugPanel';
 import { normalizeTransport } from './devices/profile-utils';
 import {
@@ -125,6 +126,7 @@ export default function ControlPanel({
   const currentDeviceSupportsCustomSpeed = currentDeviceCapabilities
     ? currentDeviceCapabilities.supportsCustomSpeed || currentDeviceCapabilities.supportsSetSpeed
     : true;
+  const currentDeviceSupportsManualGears = supportsManualGearsFromCapabilities(currentDeviceCapabilities);
   const currentDeviceSupportsLighting = !!currentDeviceCapabilities?.supportsLighting;
   const currentDeviceSupportsGearLight = !!((currentDeviceCapabilities as any)?.supportsGearLight || currentDeviceSupportsLighting);
   const currentDeviceSupportsBrightness = !!((currentDeviceCapabilities as any)?.supportsBrightness || currentDeviceSupportsLighting);
@@ -379,6 +381,7 @@ export default function ControlPanel({
           temperature={temperature}
           runtimeDeviceProfile={effectiveDeviceProfile || null}
           supportsCustomSpeed={currentDeviceSupportsCustomSpeed}
+          supportsManualGears={currentDeviceSupportsManualGears}
           configuredDeviceCurveKey={configuredDeviceCurveKey}
         />
 
