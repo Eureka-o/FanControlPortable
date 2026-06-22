@@ -782,6 +782,11 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     return new Map(entries);
   }, [historySeriesMeta]);
 
+  const historySeriesOrderByDataKey = useMemo(() => {
+    const entries = historySeriesMeta.map((series, index) => [series.dataKey, index] as const);
+    return new Map(entries);
+  }, [historySeriesMeta]);
+
   const handleHistorySeriesPointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>, key: HistorySeriesKey) => {
     if (event.pointerType === 'mouse' && event.button !== 0) {
       return;
@@ -1839,24 +1844,63 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                         />
                         <YAxis yAxisId="power" type="number" domain={[0, historyPowerMax]} hide />
                         <RechartsTooltip
-                          labelFormatter={(value) => formatHistoryDateTime(Number(value), locale)}
-                          formatter={(value, name) => {
-                            const numericValue = Number(value ?? 0);
-                            const series = historySeriesByDataKey.get(String(name));
-                            if (!series || !Number.isFinite(numericValue) || numericValue <= 0) {
-                              return [null, null];
+                          content={({ active, label, payload }) => {
+                            if (!active || !Array.isArray(payload) || payload.length === 0) {
+                              return null;
                             }
-                            if (series.key === 'fan') {
-                              return [`${formatSpeedValue(numericValue)}${speedUnitSuffix}`, series.label];
+
+                            const rows = payload
+                              .map((item) => {
+                                const dataKey = String(item.name ?? item.dataKey ?? '');
+                                const series = historySeriesByDataKey.get(dataKey);
+                                const numericValue = Number(item.value ?? 0);
+                                if (!series || !Number.isFinite(numericValue) || numericValue <= 0) {
+                                  return null;
+                                }
+
+                                const value = series.key === 'fan'
+                                  ? `${formatSpeedValue(numericValue)}${speedUnitSuffix}`
+                                  : series.key === 'cpuPower' || series.key === 'gpuPower'
+                                    ? `${formatPowerValue(numericValue)} W`
+                                    : `${numericValue} °C`;
+
+                                return {
+                                  key: series.key,
+                                  label: series.label,
+                                  value,
+                                  color: series.color,
+                                  order: historySeriesOrderByDataKey.get(series.dataKey) ?? Number.MAX_SAFE_INTEGER,
+                                };
+                              })
+                              .filter((row): row is { key: HistorySeriesKey; label: string; value: string; color: string; order: number } => row !== null)
+                              .sort((left, right) => left.order - right.order);
+
+                            if (rows.length === 0) {
+                              return null;
                             }
-                            if (series.key === 'cpuPower' || series.key === 'gpuPower') {
-                              return [`${formatPowerValue(numericValue)} W`, series.label];
-                            }
-                            return [`${numericValue} °C`, series.label];
+
+                            return (
+                              <div
+                                className="rounded-lg border px-3 py-2 text-sm shadow-lg"
+                                style={{
+                                  backgroundColor: 'var(--chart-tooltip-bg)',
+                                  borderColor: 'var(--chart-tooltip-border)',
+                                  boxShadow: 'var(--chart-tooltip-shadow)',
+                                  color: 'var(--chart-tooltip-text)',
+                                }}
+                              >
+                                <div className="mb-2 font-semibold">{formatHistoryDateTime(Number(label), locale)}</div>
+                                <div className="space-y-1.5">
+                                  {rows.map((row) => (
+                                    <div key={row.key} className="flex items-center gap-2">
+                                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: row.color }} />
+                                      <span>{row.label}：{row.value}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
                           }}
-                          contentStyle={{ backgroundColor: 'var(--chart-tooltip-bg)', border: '1px solid', borderColor: 'var(--chart-tooltip-border)', borderRadius: '8px', boxShadow: 'var(--chart-tooltip-shadow)', padding: '8px 12px', color: 'var(--chart-tooltip-text)' }}
-                          labelStyle={{ color: 'var(--chart-tooltip-text)', fontWeight: 600 }}
-                          itemStyle={{ color: 'var(--chart-tooltip-text)' }}
                         />
                         {historySeriesMeta.map((series) => {
                           if (!historySeriesVisibility[series.key]) {
