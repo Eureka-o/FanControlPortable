@@ -655,6 +655,7 @@ namespace FanControl.TempBridge
                 return;
             }
 
+            var stopwatch = Stopwatch.StartNew();
             try
             {
                 computer?.Close();
@@ -663,6 +664,10 @@ namespace FanControl.TempBridge
             computer = null;
             Thread.Sleep(120);
             InitializeHardwareMonitor(includeGpu);
+            if (stopwatch.ElapsedMilliseconds >= 250)
+            {
+                LogInitProgress(string.Format("LibreHardwareMonitor GPU mode changed to {0} in {1} ms", includeGpu ? "on" : "off", stopwatch.ElapsedMilliseconds));
+            }
         }
 
         static bool ShouldPollGpu(TemperatureSelection selection, out string gpuReadState)

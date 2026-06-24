@@ -1658,7 +1658,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
               />
             </div>
 
-            <div className="flex flex-col gap-3 rounded-xl border border-border/70 bg-card/55 p-3">
+            <div data-theme-ui="learning-target-temp" className="flex flex-col gap-3 rounded-xl border border-border/70 bg-card/55 p-3">
               <div className="min-w-0">
                 <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.learning.targetTitle')}</div>
                 <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{t('fanCurve.learning.targetDescription')}</div>
@@ -1666,6 +1666,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
               <div className="flex flex-col gap-3 md:flex-row md:items-center">
                 <div className="min-w-0 flex-1">
                   <Slider
+                    className="learning-target-temp-slider"
                     min={SMART_CONTROL_TARGET_TEMP_MIN}
                     max={SMART_CONTROL_TARGET_TEMP_MAX}
                     step={1}
@@ -1678,6 +1679,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                 </div>
                 <div className="w-full md:w-28">
                   <NumberInput
+                    className="learning-target-temp-input"
                     value={targetTempDraft}
                     onChange={handleTargetTempInputChange}
                     onBlur={handleTargetTempInputBlur}

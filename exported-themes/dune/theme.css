@@ -1,0 +1,1258 @@
+/* Dune theme. Stable layout follows Xiaoba Plus; only color, backdrop, and controls are themed here. */
+
+html[data-theme="dune"] {
+  --background: #040302;
+  --foreground: #f6ead8;
+  --card: #100c08;
+  --card-foreground: #f6ead8;
+  --muted: #1b130d;
+  --muted-foreground: #c9b08f;
+  --border: #4c3420;
+  --input: #63482f;
+  --ring: #c8924a;
+  --primary: #c89445;
+  --primary-foreground: #140d07;
+  --destructive: #ef4444;
+  --popover: #130f0b;
+  --popover-foreground: #f6ead8;
+  --secondary: #1a120c;
+  --secondary-foreground: #f1dfc3;
+  --accent: #231910;
+  --accent-foreground: #f6ead8;
+  --sidebar: #0b0806;
+  --sidebar-foreground: #e8d2b2;
+  --sidebar-primary: #c89445;
+  --sidebar-primary-foreground: #140d07;
+  --sidebar-accent: #1b130d;
+  --sidebar-accent-foreground: #f6ead8;
+  --sidebar-border: rgba(188, 132, 61, 0.22);
+  --sidebar-ring: #c8924a;
+  --scrollbar-thumb: rgba(188, 132, 61, 0.32);
+  --scrollbar-thumb-hover: rgba(214, 159, 80, 0.48);
+  --scrollbar-track: rgba(8, 5, 3, 0.72);
+  --overlay-scrollbar-thumb: linear-gradient(180deg, rgba(206, 151, 72, 0.52), rgba(116, 72, 34, 0.42));
+  --overlay-scrollbar-thumb-hover: linear-gradient(180deg, rgba(226, 173, 87, 0.66), rgba(149, 91, 42, 0.54));
+  --chart-grid: rgba(154, 101, 45, 0.16);
+  --chart-axis: rgba(190, 136, 66, 0.22);
+  --chart-tick: #d6bd96;
+  --chart-primary: #d6a153;
+  --chart-primary-active: #edbd72;
+  --chart-primary-glow: rgba(207, 148, 66, 0.26);
+  --chart-point-shadow: rgba(0, 0, 0, 0.48);
+  --chart-cpu-temperature: #f0b35f;
+  --chart-gpu-temperature: #d86e46;
+  --chart-fan-speed: #8cc8bb;
+  --chart-cpu-power: #f2d278;
+  --chart-gpu-power: #c785ff;
+  --status-temperature-hot: #ef4444;
+  --status-temperature-warm: #f59e0b;
+  --chart-temperature-indicator: #f97316;
+  --chart-tooltip-bg: rgba(14, 10, 7, 0.96);
+  --chart-tooltip-border: rgba(226, 170, 84, 0.42);
+  --chart-tooltip-shadow: 0 18px 36px -18px rgba(0, 0, 0, 0.72);
+  --chart-tooltip-text: #f6ead8;
+  --mica-content-surface: rgba(11, 7, 4, 0.78);
+  --mica-content-border: rgba(204, 150, 78, 0.2);
+  --theme-page-home-background: transparent;
+  --theme-page-settings-background: transparent;
+  --theme-page-curve-background: transparent;
+  --theme-card-radius: 1.35rem;
+  --theme-card-background:
+    radial-gradient(ellipse at 18% 0%, rgba(207, 148, 66, 0.1), transparent 38%),
+    radial-gradient(ellipse at 88% 100%, rgba(116, 68, 32, 0.12), transparent 46%),
+    linear-gradient(135deg, rgba(22, 15, 9, 0.6) 0%, rgba(9, 6, 4, 0.46) 58%, rgba(4, 2, 1, 0.36) 100%);
+  --theme-card-border: rgba(195, 139, 65, 0.28);
+  --theme-card-shadow:
+    0 18px 38px -32px rgba(0, 0, 0, 0.8),
+    inset 0 1px 0 rgba(255, 229, 178, 0.12);
+  --theme-card-hover-border: rgba(222, 171, 88, 0.46);
+  --theme-card-hover-shadow:
+    0 20px 42px -32px rgba(0, 0, 0, 0.84),
+    0 0 0 1px rgba(237, 181, 91, 0.08),
+    inset 0 1px 0 rgba(255, 229, 178, 0.16);
+  --theme-card-hover-transform: translateY(-1px);
+  --theme-card-backdrop-filter: blur(5px) saturate(108%);
+  --dune-background-filter: blur(0.85px) brightness(0.92) saturate(98%) contrast(1.02);
+  --dune-gold-thread:
+    linear-gradient(90deg, transparent 0.38rem, rgba(238, 202, 136, 0.26) 0.72rem, rgba(161, 96, 42, 0.14) 50%, rgba(238, 202, 136, 0.22) calc(100% - 0.72rem), transparent calc(100% - 0.38rem)) top / 100% 1px no-repeat,
+    linear-gradient(90deg, transparent 0.38rem, rgba(126, 74, 34, 0.13) 0.72rem, rgba(220, 158, 74, 0.18) 52%, rgba(238, 202, 136, 0.13) calc(100% - 0.72rem), transparent calc(100% - 0.38rem)) bottom / 100% 1px no-repeat,
+    linear-gradient(180deg, transparent 0.38rem, rgba(238, 202, 136, 0.18) 0.72rem, rgba(150, 87, 38, 0.1) 50%, rgba(238, 202, 136, 0.14) calc(100% - 0.72rem), transparent calc(100% - 0.38rem)) left / 1px 100% no-repeat,
+    linear-gradient(180deg, transparent 0.38rem, rgba(238, 202, 136, 0.17) 0.72rem, rgba(126, 74, 34, 0.1) 52%, rgba(238, 202, 136, 0.15) calc(100% - 0.72rem), transparent calc(100% - 0.38rem)) right / 1px 100% no-repeat;
+  --theme-preview-card-background:
+    linear-gradient(180deg, rgba(24, 17, 11, 0.36), rgba(7, 5, 3, 0.22));
+  --theme-preview-card-border: rgba(216, 160, 79, 0.24);
+  --theme-preview-card-shadow:
+    0 14px 32px -31px rgba(0, 0, 0, 0.68),
+    inset 0 1px 0 rgba(255, 229, 178, 0.08);
+  --theme-tile-background:
+    linear-gradient(180deg, rgba(34, 24, 16, 0.42), rgba(10, 7, 4, 0.24));
+  --theme-tile-border: rgba(211, 153, 76, 0.25);
+  --theme-tile-shadow:
+    0 10px 22px -24px rgba(0, 0, 0, 0.68),
+    inset 0 1px 0 rgba(255, 229, 178, 0.09);
+  --theme-chart-canvas-background:
+    radial-gradient(ellipse at 18% 0%, rgba(214, 158, 78, 0.08), transparent 42%),
+    linear-gradient(180deg, rgba(10, 7, 5, 0.16), rgba(5, 3, 2, 0.04));
+  --theme-chart-canvas-border: transparent;
+  --theme-chart-canvas-shadow: none;
+  --theme-control-hover-border: rgba(230, 176, 92, 0.42);
+  --theme-control-hover-background: rgba(216, 158, 78, 0.12);
+  --theme-control-hover-shadow: 0 14px 30px -24px rgba(230, 176, 92, 0.32);
+  --theme-control-focus-shadow: 0 0 0 3px rgba(230, 176, 92, 0.18);
+  --theme-switch-border: rgba(210, 151, 78, 0.28);
+  --theme-switch-hover-border: rgba(230, 176, 92, 0.54);
+  --theme-switch-hover-shadow: 0 0 0 2px rgba(230, 176, 92, 0.12);
+  --theme-switch-checked-border: rgba(245, 196, 107, 0.58);
+  --theme-switch-checked-shadow:
+    0 0 0 3px rgba(230, 176, 92, 0.15),
+    inset 0 1px 0 rgba(255, 238, 201, 0.18);
+  --theme-switch-unchecked-background:
+    linear-gradient(180deg, rgba(38, 27, 18, 0.84), rgba(12, 8, 5, 0.88));
+  --theme-switch-checked-background:
+    linear-gradient(120deg, #a95e2b, #e8b65f 54%, #8d4d29);
+  --theme-switch-thumb-background: #f7e5c4;
+  --theme-dialog-overlay-background: rgba(4, 3, 2, 0.68);
+  --theme-dialog-overlay-backdrop-filter: none;
+  --theme-toast-background:
+    linear-gradient(180deg, rgba(22, 16, 11, 0.98), rgba(10, 7, 5, 0.96));
+  --theme-toast-shadow: 0 18px 40px -22px rgba(0, 0, 0, 0.78);
+  --theme-toast-backdrop-filter: none;
+  --dune-poster-image: url("assets/poster.webp");
+  --dune-flowing-sand: url("assets/flowing-sand.webp");
+  --dune-filigree-corner: url("assets/patterns/filigree-corner.svg");
+  --dune-geometry: url("assets/patterns/geometry.svg");
+  --dune-topography-lines: url("assets/patterns/dune-topography-lines.svg");
+  --dune-card-contours: var(--dune-topography-lines);
+  --dune-sidebar-pattern: var(--dune-topography-lines);
+  --dune-motif-control-mode: url("assets/card-motifs/polar-star.svg");
+  --dune-motif-temperature-state: url("assets/card-motifs/sun.svg");
+  --dune-motif-work-mode: url("assets/card-motifs/tribal-shield.svg");
+  --dune-motif-cpu-power: url("assets/card-motifs/heraldic-sun.svg");
+  --dune-motif-gpu-power: url("assets/card-motifs/rosa-shield.svg");
+  --dune-latin-font: "Trajan Pro", "Palatino Linotype", "Book Antiqua", "Constantia", "Georgia";
+  --dune-cjk-font: "STKaiti", "KaiTi", "Microsoft YaHei UI", "Microsoft YaHei";
+  --dune-ui-font: var(--dune-latin-font), var(--dune-cjk-font), serif;
+  --dune-title-font: var(--dune-latin-font), var(--dune-cjk-font), serif;
+  --dune-number-font: "Cambria", "Constantia", "Georgia", "Palatino Linotype", "Book Antiqua", serif;
+  --dune-page-opacity: 0.77;
+}
+
+html[data-theme="dune"] .glacier-shell {
+  isolation: isolate;
+  font-family: var(--dune-ui-font);
+  background:
+    radial-gradient(ellipse at 84% 8%, rgba(188, 132, 61, 0.1), transparent 16rem),
+    radial-gradient(ellipse at 18% 88%, rgba(112, 64, 32, 0.14), transparent 22rem),
+    linear-gradient(135deg, #040302 0%, #0e0905 48%, #030201 100%);
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+html[data-theme="dune"] .glacier-shell :is(button, input, textarea, select, [role="button"]) {
+  font-family: var(--dune-ui-font);
+}
+
+html[data-theme="dune"] .glacier-shell :is(h1, h2, h3, [data-theme-card="device-hero"] .text-base.font-semibold, .glacier-stat-tile .text-sm.font-semibold) {
+  font-family: var(--dune-title-font);
+  letter-spacing: 0;
+}
+
+html[data-theme="dune"] .glacier-shell :is(.font-sans, .font-serif) {
+  font-family: var(--dune-ui-font) !important;
+}
+
+html[data-theme="dune"] .glacier-shell .tabular-nums {
+  font-family: var(--dune-number-font) !important;
+  font-variant-numeric: lining-nums tabular-nums;
+  font-feature-settings: "lnum" 1, "tnum" 1;
+  font-style: normal;
+  font-weight: 700;
+}
+
+html[data-theme="dune"] .glacier-titlebar,
+html[data-theme="dune"] .glacier-content,
+html[data-theme="dune"] .glacier-content-panel,
+html[data-theme="dune"] .glacier-shell > section {
+  border-top-left-radius: 0 !important;
+}
+
+html[data-theme="dune"] .glacier-titlebar {
+  overflow: hidden;
+  border-bottom: 1px solid rgba(218, 162, 80, 0.22);
+  background:
+    linear-gradient(90deg, rgba(7, 5, 3, 0.96), rgba(20, 13, 7, 0.88)),
+    var(--background);
+  box-shadow:
+    inset 0 -1px 0 rgba(255, 223, 172, 0.06),
+    0 14px 34px -34px rgba(230, 176, 92, 0.34);
+}
+
+html[data-theme="dune"] .glacier-content {
+  background: transparent !important;
+}
+
+html[data-theme="dune"] .glacier-content-panel {
+  position: relative;
+  overflow: hidden;
+  background: #040302 !important;
+  border-top-color: rgba(188, 132, 61, 0.16) !important;
+  border-left-color: rgba(188, 132, 61, 0.14) !important;
+}
+
+html[data-theme="dune"] .glacier-content-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(2, 1, 1, 0.86), rgba(2, 1, 1, 0.24) 40%, rgba(2, 1, 1, 0.72)),
+    linear-gradient(180deg, rgba(2, 1, 1, 0.62), rgba(2, 1, 1, 0.2) 42%, rgba(2, 1, 1, 0.78)),
+    radial-gradient(ellipse at 58% 44%, rgba(2, 1, 1, 0.12) 0%, rgba(2, 1, 1, 0.06) 38%, transparent 66%),
+    var(--dune-poster-image) center / cover no-repeat,
+    linear-gradient(135deg, #040302 0%, #100a06 50%, #030201 100%);
+  opacity: var(--dune-page-opacity);
+  filter: var(--dune-background-filter);
+  transform: scale(1.006);
+}
+
+html[data-theme="dune"] .glacier-content-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 76% 16%, rgba(218, 158, 74, 0.1), transparent 18rem),
+    linear-gradient(180deg, transparent 0%, rgba(4, 2, 1, 0.1) 72%, rgba(4, 2, 1, 0.44) 100%);
+  opacity: 0.48;
+}
+
+html[data-theme="dune"] .glacier-content-panel > .app-scroll-root,
+html[data-theme="dune"] .glacier-sidebar,
+html[data-theme="dune"] .glacier-shell > section {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] {
+  --dune-page-opacity: 0.81;
+  --dune-background-filter: blur(0.95px) brightness(0.9) saturate(97%) contrast(1.02);
+  --theme-card-background:
+    radial-gradient(ellipse at 18% 0%, rgba(207, 148, 66, 0.08), transparent 38%),
+    radial-gradient(ellipse at 88% 100%, rgba(112, 64, 32, 0.08), transparent 46%),
+    linear-gradient(135deg, rgba(22, 15, 9, 0.3) 0%, rgba(9, 6, 4, 0.22) 58%, rgba(4, 2, 1, 0.18) 100%);
+  --theme-preview-card-background:
+    linear-gradient(180deg, rgba(24, 17, 11, 0.24), rgba(7, 5, 3, 0.12));
+  --theme-tile-background:
+    linear-gradient(180deg, rgba(34, 24, 16, 0.28), rgba(10, 7, 4, 0.14));
+  --theme-card-backdrop-filter: none;
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="curve"] {
+  --dune-page-opacity: 0.74;
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="control"],
+html[data-theme="dune"] .glacier-shell[data-theme-page="devices"],
+html[data-theme="dune"] .glacier-shell[data-theme-page="about"] {
+  --dune-page-opacity: 0.7;
+}
+
+html[data-theme="dune"] .glacier-sidebar {
+  position: relative;
+  overflow: hidden;
+  border-right-color: rgba(218, 162, 80, 0.2) !important;
+  background:
+    radial-gradient(ellipse at 50% 8%, rgba(229, 173, 87, 0.14), transparent 4rem),
+    linear-gradient(180deg, rgba(9, 6, 4, 0.98), rgba(14, 9, 6, 0.94));
+  box-shadow:
+    inset -1px 0 0 rgba(255, 222, 169, 0.06),
+    12px 0 28px -34px rgba(0, 0, 0, 0.78) !important;
+}
+
+html[data-theme="dune"] .glacier-sidebar::before {
+  content: "";
+  position: absolute;
+  inset: 0.5rem 0.34rem;
+  pointer-events: none;
+  border: 1px solid rgba(218, 162, 80, 0.12);
+  border-radius: 1.15rem;
+  background:
+    linear-gradient(180deg, rgba(255, 224, 172, 0.06), transparent 40%),
+    var(--dune-sidebar-pattern) center / 420px 420px repeat;
+  opacity: 0.58;
+}
+
+html[data-theme="dune"] .glacier-sidebar > * {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme="dune"] .glacier-sidebar [data-theme-ui="brand-mark"] {
+  border-radius: 0.9rem !important;
+  border-color: rgba(230, 176, 92, 0.34) !important;
+  background:
+    radial-gradient(circle at 32% 24%, rgba(255, 236, 197, 0.18), transparent 44%),
+    linear-gradient(145deg, rgba(42, 29, 18, 0.86), rgba(10, 7, 5, 0.86)) !important;
+  color: #e8b868 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 229, 178, 0.13),
+    0 12px 22px -23px rgba(232, 184, 104, 0.38) !important;
+}
+
+html[data-theme="dune"] .glacier-sidebar button[data-theme-ui="sidebar-item"] {
+  border: 1px solid transparent;
+  border-radius: 0.95rem !important;
+  background: rgba(16, 11, 7, 0.22);
+  box-shadow: none;
+  transition:
+    transform 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease,
+    box-shadow 150ms ease,
+    color 150ms ease !important;
+}
+
+html[data-theme="dune"] .glacier-sidebar button[data-theme-ui="sidebar-item"] > span {
+  border-radius: 0.95rem !important;
+  background:
+    linear-gradient(135deg, rgba(226, 170, 84, 0.16), rgba(88, 49, 21, 0.08)) !important;
+  border-color: rgba(226, 170, 84, 0.2) !important;
+}
+
+html[data-theme="dune"] .glacier-sidebar button[data-theme-ui="sidebar-item"]:hover {
+  border-color: rgba(230, 176, 92, 0.32);
+  background:
+    radial-gradient(circle at 34% 20%, rgba(245, 196, 107, 0.15), transparent 44%),
+    rgba(30, 20, 12, 0.38) !important;
+  color: #f0c77e !important;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px -19px rgba(230, 176, 92, 0.36);
+}
+
+html[data-theme="dune"] .glacier-sidebar button[data-theme-ui="sidebar-item"][aria-selected="true"] {
+  color: #f2c87d !important;
+  border-color: rgba(236, 181, 91, 0.48);
+  background:
+    radial-gradient(circle at 24% 18%, rgba(255, 238, 201, 0.2), transparent 44%),
+    linear-gradient(145deg, rgba(169, 94, 43, 0.34), rgba(35, 23, 13, 0.52)) !important;
+  box-shadow:
+    0 0 0 1px rgba(236, 181, 91, 0.08),
+    0 16px 24px -22px rgba(236, 181, 91, 0.48),
+    inset 0 1px 0 rgba(255, 229, 178, 0.16);
+}
+
+html[data-theme="dune"] .glacier-sidebar button[data-theme-ui="sidebar-item"][aria-selected="true"] > span {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dune"] .glacier-shell .bg-card {
+  background: rgba(21, 15, 10, 0.68);
+}
+
+html[data-theme="dune"] .glacier-shell .border-border,
+html[data-theme="dune"] .glacier-shell .border-border\/70,
+html[data-theme="dune"] .glacier-shell .border-border\/80 {
+  border-color: rgba(218, 162, 80, 0.28);
+}
+
+html[data-theme="dune"] .glacier-shell .shadow-sm {
+  box-shadow: var(--theme-card-shadow);
+}
+
+html[data-theme="dune"] .glacier-shell :is(
+  [data-theme-card]:not([data-theme-card="curve-header"]):not([data-theme-card="curve-editor"]),
+  [data-theme-ui="setting-card"],
+  [data-theme-ui="setting-section"],
+  [data-theme-ui="connection-panel"],
+  [data-theme-ui="compatibility-submenu"],
+  .glacier-hero-card,
+  .glacier-metric-card,
+  .glacier-control-card,
+  .glacier-chart-card
+) {
+  position: relative;
+  overflow: hidden;
+  background-color: transparent !important;
+  background-image: var(--theme-card-background) !important;
+  border-color: var(--theme-card-border) !important;
+  box-shadow: var(--theme-card-shadow) !important;
+  -webkit-backdrop-filter: var(--theme-card-backdrop-filter) !important;
+  backdrop-filter: var(--theme-card-backdrop-filter) !important;
+}
+
+html[data-theme="dune"] .glacier-shell :is(
+  [data-theme-card]:not([data-theme-card="curve-header"]):not([data-theme-card="curve-editor"]),
+  [data-theme-ui="setting-card"],
+  [data-theme-ui="setting-section"],
+  [data-theme-ui="connection-panel"],
+  [data-theme-ui="compatibility-submenu"],
+  .glacier-hero-card,
+  .glacier-metric-card,
+  .glacier-control-card,
+  .glacier-chart-card
+)::before {
+  content: "";
+  position: absolute;
+  inset: 0.07rem;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: calc(var(--theme-card-radius) - 0.06rem);
+  background:
+    var(--dune-gold-thread),
+    linear-gradient(90deg, rgba(12, 8, 5, 0.08), rgba(226, 170, 84, 0.055) 70%, rgba(255, 220, 150, 0.035)),
+    var(--dune-card-contours) right center / 620px 620px repeat,
+    linear-gradient(135deg, rgba(255, 226, 166, 0.03), transparent 30%, transparent 76%, rgba(226, 170, 84, 0.025));
+  opacity: 0.28;
+  mix-blend-mode: screen;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.34) 46%, rgba(0, 0, 0, 0.68) 100%);
+  mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.34) 46%, rgba(0, 0, 0, 0.68) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 226, 166, 0.028),
+    0 0 8px rgba(224, 160, 73, 0.024);
+}
+
+html[data-theme="dune"] .glacier-shell :is(
+  [data-theme-card],
+  [data-theme-ui="setting-card"],
+  [data-theme-ui="setting-section"],
+  [data-theme-ui="connection-panel"],
+  [data-theme-ui="compatibility-submenu"],
+  .glacier-metric-card,
+  .glacier-control-card,
+  .glacier-chart-card,
+  .glacier-stat-tile
+) > * {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme="dune"] .glacier-hero-card {
+  min-height: 86px;
+  border-width: 1px;
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-card="device-hero"] {
+  min-height: 86px;
+  padding-top: 0.9rem !important;
+  padding-bottom: 0.9rem !important;
+}
+
+html[data-theme="dune"] .glacier-hero-card::after,
+html[data-theme="dune"] .glacier-sidebar::after,
+html[data-theme="dune"] .theme-thrm-only {
+  display: none !important;
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-card="device-hero"]::after {
+  content: "";
+  display: block !important;
+  position: absolute;
+  inset: 0.35rem;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: calc(var(--theme-card-radius) - 0.35rem);
+  background:
+    linear-gradient(90deg, rgba(12, 8, 5, 0.1), rgba(236, 181, 91, 0.12) 72%, rgba(255, 220, 150, 0.1)),
+    var(--dune-topography-lines) right center / 620px 620px repeat;
+  opacity: 0.26;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.55) 38%, #000 100%);
+  mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.55) 38%, #000 100%);
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-card="device-hero"]:hover::after {
+  opacity: 0.34;
+  filter: drop-shadow(0 0 14px rgba(230, 176, 92, 0.18));
+}
+
+html[data-theme="dune"] .glacier-metric-card .metric-header-icon {
+  color: #e6b15d;
+  filter: drop-shadow(0 0 8px rgba(230, 177, 93, 0.22));
+}
+
+html[data-theme="dune"] .glacier-metric-card .semi-gauge-svg path:first-child {
+  stroke: rgba(219, 162, 80, 0.16);
+}
+
+html[data-theme="dune"] .glacier-metric-card .semi-gauge-svg path:last-child {
+  filter: drop-shadow(0 0 10px rgba(230, 177, 93, 0.28));
+}
+
+html[data-theme="dune"] .glacier-control-card {
+  padding: 0.85rem;
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-section="control-protection"] {
+  transform: none !important;
+}
+
+html[data-theme="dune"] .glacier-stat-tile,
+html[data-theme="dune"] .glacier-shell :is(
+  [data-theme-card="curve-history-summary"],
+  [data-theme-card="curve-history-chart"],
+  [data-theme-card="settings-overview-temperature"],
+  [data-theme-card="settings-overview-speed"],
+  [data-theme-card="settings-overview-device"]
+) {
+  background-color: transparent !important;
+  background-image: var(--theme-tile-background) !important;
+  border-color: var(--theme-tile-border) !important;
+  box-shadow: var(--theme-tile-shadow) !important;
+}
+
+html[data-theme="dune"] .glacier-stat-tile::before,
+html[data-theme="dune"] .glacier-stat-tile::after {
+  content: none !important;
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-section="control-protection"] .glacier-stat-tile::before {
+  content: "" !important;
+  display: block !important;
+  position: absolute;
+  inset: 0.14rem;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: calc(var(--theme-card-radius) - 0.24rem);
+  background:
+    var(--dune-gold-thread),
+    linear-gradient(135deg, rgba(255, 226, 166, 0.05), transparent 34%, rgba(224, 160, 73, 0.05));
+  opacity: 0.34;
+  mix-blend-mode: screen;
+  -webkit-mask-image: none;
+  mask-image: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 226, 166, 0.03);
+}
+
+html[data-theme="dune"] .glacier-stat-tile:hover {
+  background-image:
+    radial-gradient(circle at 20% 0%, rgba(245, 196, 107, 0.14), transparent 42%),
+    var(--theme-tile-background) !important;
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-section="control-protection"] .glacier-stat-tile {
+  overflow: hidden;
+  background-image:
+    radial-gradient(ellipse at 82% 48%, rgba(230, 176, 92, 0.08), transparent 44%),
+    linear-gradient(135deg, rgba(31, 21, 13, 0.82), rgba(7, 5, 3, 0.78)) !important;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease;
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-section="control-protection"] .glacier-stat-tile > * {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-card="control-mode"] {
+  --dune-card-motif: var(--dune-motif-control-mode);
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-card="control-mode"]:has(.text-primary) {
+  border-color: rgba(123, 214, 187, 0.34) !important;
+  background-image:
+    radial-gradient(ellipse at 82% 48%, rgba(123, 214, 187, 0.13), transparent 44%),
+    linear-gradient(135deg, rgba(26, 37, 30, 0.42), rgba(9, 6, 4, 0.28)) !important;
+  box-shadow:
+    0 14px 28px -25px rgba(0, 0, 0, 0.82),
+    0 0 0 1px rgba(123, 214, 187, 0.08),
+    inset 0 1px 0 rgba(232, 255, 243, 0.1) !important;
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-card="control-mode"]:has(.text-amber-600),
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-card="control-mode"]:has(.dark\:text-amber-400) {
+  border-color: rgba(245, 158, 11, 0.36) !important;
+  background-image:
+    radial-gradient(ellipse at 82% 48%, rgba(245, 158, 11, 0.16), transparent 44%),
+    linear-gradient(135deg, rgba(42, 25, 10, 0.44), rgba(9, 6, 4, 0.28)) !important;
+  box-shadow:
+    0 14px 28px -25px rgba(0, 0, 0, 0.82),
+    0 0 0 1px rgba(245, 158, 11, 0.08),
+    inset 0 1px 0 rgba(255, 224, 169, 0.1) !important;
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-card="temperature-state"] {
+  --dune-card-motif: var(--dune-motif-temperature-state);
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-card="work-mode"] {
+  --dune-card-motif: var(--dune-motif-work-mode);
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-card="cpu-power"] {
+  --dune-card-motif: var(--dune-motif-cpu-power);
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-card="gpu-power"] {
+  --dune-card-motif: var(--dune-motif-gpu-power);
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-section="control-protection"] .glacier-stat-tile::after {
+  content: "" !important;
+  display: block !important;
+  position: absolute;
+  top: 50%;
+  right: 0.15rem;
+  z-index: 0;
+  width: 5.2rem;
+  height: 5.2rem;
+  pointer-events: none;
+  background: var(--dune-card-motif) center / contain no-repeat;
+  opacity: 0.07;
+  transform: translateY(-50%);
+  filter: drop-shadow(0 0 0 rgba(230, 176, 92, 0));
+  transition:
+    opacity 180ms ease,
+    filter 180ms ease;
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-section="control-protection"] .glacier-stat-tile:hover {
+  border-color: rgba(236, 181, 91, 0.44) !important;
+  background-image:
+    radial-gradient(ellipse at 82% 48%, rgba(245, 196, 107, 0.12), transparent 46%),
+    linear-gradient(135deg, rgba(38, 27, 18, 0.86), rgba(8, 5, 3, 0.78)) !important;
+  box-shadow:
+    0 14px 28px -25px rgba(0, 0, 0, 0.82),
+    0 0 0 1px rgba(236, 181, 91, 0.06),
+    inset 0 1px 0 rgba(255, 229, 178, 0.1) !important;
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-section="control-protection"] .glacier-stat-tile:hover::before {
+  opacity: 0.52;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 226, 166, 0.05),
+    0 0 10px rgba(230, 176, 92, 0.06);
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-section="control-protection"] .glacier-stat-tile:hover::after {
+  opacity: 0.12;
+  filter: drop-shadow(0 0 9px rgba(230, 176, 92, 0.18));
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-card="control-mode"]:has(.text-primary) {
+  border-color: rgba(112, 198, 176, 0.38) !important;
+  background-image:
+    radial-gradient(ellipse at 82% 48%, rgba(112, 198, 176, 0.14), transparent 44%),
+    linear-gradient(135deg, rgba(21, 34, 28, 0.5), rgba(7, 5, 3, 0.32)) !important;
+  box-shadow:
+    0 14px 28px -25px rgba(0, 0, 0, 0.84),
+    0 0 0 1px rgba(112, 198, 176, 0.1),
+    inset 0 1px 0 rgba(220, 255, 240, 0.1) !important;
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-card="control-mode"]:has(.text-primary):hover {
+  border-color: rgba(141, 226, 201, 0.52) !important;
+  background-image:
+    radial-gradient(ellipse at 82% 48%, rgba(141, 226, 201, 0.2), transparent 46%),
+    linear-gradient(135deg, rgba(25, 42, 34, 0.56), rgba(8, 5, 3, 0.34)) !important;
+  box-shadow:
+    0 14px 28px -25px rgba(0, 0, 0, 0.84),
+    0 0 0 1px rgba(141, 226, 201, 0.13),
+    inset 0 1px 0 rgba(232, 255, 243, 0.12) !important;
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-card="control-mode"]:has(.text-amber-600),
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-card="control-mode"]:has(.dark\:text-amber-400) {
+  border-color: rgba(216, 137, 42, 0.4) !important;
+  background-image:
+    radial-gradient(ellipse at 82% 48%, rgba(216, 137, 42, 0.17), transparent 44%),
+    linear-gradient(135deg, rgba(38, 22, 8, 0.52), rgba(7, 5, 3, 0.32)) !important;
+  box-shadow:
+    0 14px 28px -25px rgba(0, 0, 0, 0.84),
+    0 0 0 1px rgba(216, 137, 42, 0.1),
+    inset 0 1px 0 rgba(255, 224, 169, 0.1) !important;
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-card="control-mode"]:has(.text-amber-600):hover,
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-card="control-mode"]:has(.dark\:text-amber-400):hover {
+  border-color: rgba(237, 170, 76, 0.54) !important;
+  background-image:
+    radial-gradient(ellipse at 82% 48%, rgba(237, 170, 76, 0.22), transparent 46%),
+    linear-gradient(135deg, rgba(44, 26, 10, 0.58), rgba(8, 5, 3, 0.34)) !important;
+  box-shadow:
+    0 14px 28px -25px rgba(0, 0, 0, 0.84),
+    0 0 0 1px rgba(237, 170, 76, 0.13),
+    inset 0 1px 0 rgba(255, 224, 169, 0.12) !important;
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] .glacier-stat-tile :is(.font-semibold, .tabular-nums) {
+  color: #f8e7c5;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.72),
+    0 0 12px rgba(232, 181, 91, 0.18);
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-card="control-mode"] .text-primary {
+  color: #8ee6c8 !important;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.72),
+    0 0 13px rgba(123, 214, 187, 0.32);
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-card="control-mode"] .text-amber-600,
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-card="control-mode"] .dark\:text-amber-400 {
+  color: #f3a63f !important;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.72),
+    0 0 13px rgba(245, 158, 11, 0.32);
+}
+
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] .glacier-stat-tile .tabular-nums,
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] .glacier-metric-card .tabular-nums {
+  font-family: var(--dune-number-font);
+  font-variant-numeric: lining-nums tabular-nums;
+  font-feature-settings: "lnum" 1, "tnum" 1;
+  font-style: normal;
+  font-weight: 700;
+  color: #f8e7c5;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.74),
+    0 0 14px rgba(232, 181, 91, 0.18);
+}
+
+html[data-theme="dune"] .glacier-chart-canvas {
+  position: relative;
+  border: 0 !important;
+  border-radius: calc(var(--theme-card-radius) - 0.58rem);
+  background: var(--theme-chart-canvas-background) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-card="fan-curve-preview"],
+html[data-theme="dune"] .glacier-shell [data-theme-card="temperature-history"] {
+  background-image: var(--theme-preview-card-background) !important;
+  border-color: var(--theme-preview-card-border) !important;
+  box-shadow: var(--theme-preview-card-shadow) !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-card="fan-curve-preview"] .glacier-chart-canvas,
+html[data-theme="dune"] .glacier-shell [data-theme-card="temperature-history"] .glacier-chart-canvas {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-header"],
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-editor"] {
+  background: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-editor"]::before,
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-editor"]::after {
+  content: none !important;
+  display: none !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-editor"] > .relative.rounded-3xl {
+  border-radius: var(--theme-curve-editor-radius, var(--theme-card-radius, 1.35rem)) !important;
+  overflow: hidden !important;
+  isolation: isolate !important;
+  background-clip: padding-box !important;
+  clip-path: inset(0 round var(--theme-curve-editor-radius, var(--theme-card-radius, 1.35rem))) !important;
+  padding: 1rem !important;
+  background-color: transparent !important;
+  background-image: var(--theme-card-background) !important;
+  border-color: var(--theme-card-border) !important;
+  box-shadow: var(--theme-card-shadow) !important;
+  -webkit-backdrop-filter: var(--theme-card-backdrop-filter) !important;
+  backdrop-filter: var(--theme-card-backdrop-filter) !important;
+}
+
+html[data-theme="dune"] .glacier-shell :where(
+  [data-theme-ui="setting-row"],
+  [data-theme-ui="compatibility-submenu-row"],
+  [data-theme-ui="history-display-row"]
+) {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(218, 162, 80, 0.12);
+  background: rgba(9, 6, 4, 0.1);
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="setting-row"]:has([data-theme-ui="switch"])::before {
+  content: "";
+  position: absolute;
+  inset: 0.08rem;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    linear-gradient(180deg, rgba(255, 232, 178, 0.022), transparent 44%, rgba(129, 77, 35, 0.018)),
+    var(--dune-card-contours) center / 560px 560px repeat;
+  opacity: 0.12;
+  mix-blend-mode: screen;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="setting-row"]:has([data-theme-ui="switch"]) > * {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme="dune"] .glacier-shell :where(
+  [data-theme-ui="setting-row"],
+  [data-theme-ui="compatibility-submenu-row"],
+  [data-theme-ui="history-display-row"]
+):hover {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(230, 176, 92, 0.1), transparent 34%),
+    rgba(23, 15, 9, 0.2);
+  border-color: rgba(230, 176, 92, 0.22);
+  box-shadow: inset 2px 0 0 rgba(230, 176, 92, 0.32);
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="setting-row"]:has([data-theme-ui="switch"]):hover::before {
+  opacity: 0.16;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="setting-row"] > .flex.min-w-0 {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="setting-row-icon"] {
+  border-color: rgba(230, 176, 92, 0.24);
+  background:
+    radial-gradient(circle at 32% 22%, rgba(255, 236, 197, 0.18), transparent 46%),
+    linear-gradient(145deg, rgba(42, 29, 18, 0.68), rgba(12, 8, 5, 0.5));
+  color: #e6b15d;
+  box-shadow: inset 0 1px 0 rgba(255, 229, 178, 0.1);
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="select-trigger"] {
+  background: rgba(12, 8, 5, 0.48);
+  border-color: rgba(218, 162, 80, 0.24);
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="switch"] {
+  overflow: hidden;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="switch"]:not(:disabled):hover {
+  transform: translateY(-0.5px);
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="switch"][data-state="checked"] {
+  background:
+    linear-gradient(120deg, rgba(148, 82, 39, 0.96), rgba(236, 181, 91, 0.96) 54%, rgba(111, 59, 31, 0.94)),
+    var(--dune-flowing-sand) center / 140% 100%;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="slider-root"] {
+  min-height: 1.35rem;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="slider-track"] {
+  height: 0.5rem !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(230, 176, 92, 0.28) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 238, 194, 0.2), rgba(255, 210, 137, 0.06) 42%, rgba(31, 16, 8, 0.4) 100%),
+    var(--dune-flowing-sand),
+    linear-gradient(90deg, #9a5428 0%, #f0bd6a 42%, #f8d690 58%, #a65d2c 100%) !important;
+  background-size: 100% 100%, 260px 100%, 100% 100%;
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.68),
+    inset 0 -1px 0 rgba(255, 229, 178, 0.08),
+    0 0 0 1px rgba(88, 54, 24, 0.44) !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="slider-range"] {
+  border-radius: inherit !important;
+  background: transparent !important;
+  opacity: 0 !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="slider-thumb"] {
+  width: 1.24rem !important;
+  height: 1.24rem !important;
+  border: 2px solid rgba(247, 205, 134, 0.84) !important;
+  background:
+    radial-gradient(circle at 36% 28%, rgba(255, 246, 220, 0.98), rgba(246, 188, 91, 0.92) 42%, rgba(104, 57, 25, 0.98) 100%) !important;
+  box-shadow:
+    0 0 0 4px rgba(230, 176, 92, 0.13),
+    0 8px 18px -12px rgba(0, 0, 0, 0.78),
+    inset 0 1px 0 rgba(255, 248, 224, 0.78) !important;
+}
+
+html[data-theme="dune"] .glacier-shell :where(.h-1, .h-1\.5, .h-2, .h-2\.5).overflow-hidden.rounded-full {
+  background:
+    linear-gradient(180deg, rgba(5, 3, 2, 0.68), rgba(58, 36, 18, 0.42)) !important;
+  border: 1px solid rgba(230, 176, 92, 0.14);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.54),
+    inset 0 -1px 0 rgba(255, 229, 178, 0.04);
+}
+
+html[data-theme="dune"] .glacier-shell :where(.h-1, .h-1\.5, .h-2, .h-2\.5).overflow-hidden.rounded-full > :where(div, span):first-child,
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-manual-gears"] .h-1.rounded-full.bg-muted {
+  background-color: #d9a653 !important;
+  background-image:
+    linear-gradient(180deg, rgba(255, 236, 193, 0.5), rgba(255, 236, 193, 0.08) 38%, rgba(94, 49, 21, 0.18) 100%),
+    var(--dune-flowing-sand),
+    linear-gradient(90deg, #8f4f24, #f0bc69 48%, #a65e2e) !important;
+  background-size: 100% 100%, 260px 100%, 100% 100%;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 245, 220, 0.54),
+    inset 0 -1px 0 rgba(76, 38, 16, 0.28),
+    0 5px 14px -11px rgba(238, 184, 93, 0.7);
+}
+
+html[data-theme="dune"] .glacier-shell [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow,
+html[data-theme="dune"] .glacier-shell [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2\.w-full.grow {
+  height: 0.5rem !important;
+  overflow: hidden !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(230, 176, 92, 0.28) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 238, 194, 0.2), rgba(255, 210, 137, 0.06) 42%, rgba(31, 16, 8, 0.4) 100%),
+    var(--dune-flowing-sand),
+    linear-gradient(90deg, #9a5428 0%, #f0bd6a 42%, #f8d690 58%, #a65d2c 100%) !important;
+  background-size: 100% 100%, 260px 100%, 100% 100% !important;
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.68),
+    inset 0 -1px 0 rgba(255, 229, 178, 0.08),
+    0 0 0 1px rgba(88, 54, 24, 0.44) !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow > .absolute.h-full,
+html[data-theme="dune"] .glacier-shell [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2\.w-full.grow > .absolute.h-full {
+  background: transparent !important;
+  opacity: 0 !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-manual-gears"] .block.h-4.w-4.rounded-full {
+  background:
+    radial-gradient(circle at 34% 26%, rgba(255, 246, 220, 0.86), transparent 38%),
+    linear-gradient(145deg, #f0bc69, #8e4e25) !important;
+  border-color: rgba(248, 213, 151, 0.58) !important;
+  box-shadow:
+    0 0 0 3px rgba(226, 170, 84, 0.12),
+    0 6px 14px -10px rgba(0, 0, 0, 0.72) !important;
+}
+
+html[data-theme="dune"] .glacier-shell [role="slider"] {
+  width: 1.08rem !important;
+  height: 1.08rem !important;
+  border: 2px solid rgba(247, 205, 134, 0.82) !important;
+  background:
+    radial-gradient(circle at 36% 28%, rgba(255, 242, 205, 0.96), rgba(246, 188, 91, 0.92) 42%, rgba(105, 58, 27, 0.96) 100%) !important;
+  box-shadow:
+    0 0 0 3px rgba(230, 176, 92, 0.12),
+    0 8px 18px -12px rgba(0, 0, 0, 0.78),
+    inset 0 1px 0 rgba(255, 246, 220, 0.74) !important;
+}
+
+html[data-theme="dune"] .glacier-shell [role="slider"]:focus-visible {
+  box-shadow:
+    0 0 0 4px rgba(230, 176, 92, 0.2),
+    0 8px 18px -12px rgba(0, 0, 0, 0.78),
+    inset 0 1px 0 rgba(255, 246, 220, 0.74) !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-orientation="horizontal"].relative.flex.w-full.touch-none {
+  min-height: 1.45rem;
+}
+
+html[data-theme="dune"] .glacier-shell [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow {
+  height: 0.44rem !important;
+  overflow: hidden;
+  border: 1px solid rgba(224, 160, 73, 0.22);
+}
+
+html[data-theme="dune"] .glacier-shell [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow > .absolute.h-full {
+  background: transparent !important;
+  opacity: 0 !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dune"] .glacier-content-panel > .app-overlay-scrollbar {
+  position: absolute !important;
+  top: 0 !important;
+  right: 0.32rem !important;
+  bottom: 0 !important;
+  z-index: 30;
+  width: 0.78rem;
+  padding: 0.12rem;
+  opacity: 0.9;
+  pointer-events: auto;
+  background:
+    linear-gradient(180deg, rgba(52, 32, 15, 0.66), rgba(16, 10, 5, 0.62));
+  border: 1px solid rgba(167, 109, 45, 0.42);
+  border-radius: 999px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 221, 153, 0.13),
+    0 10px 22px -18px rgba(0, 0, 0, 0.72);
+}
+
+html[data-theme="dune"] .glacier-content-panel > .app-overlay-scrollbar.is-visible {
+  opacity: 1;
+}
+
+html[data-theme="dune"] .app-overlay-scrollbar-thumb {
+  width: 100%;
+  margin-inline: auto;
+  border: 1px solid rgba(255, 220, 150, 0.28);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(215, 160, 72, 0.88), rgba(111, 67, 29, 0.78)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 236, 184, 0.36),
+    0 8px 16px -13px rgba(0, 0, 0, 0.82);
+}
+
+html[data-theme="dune"] .app-overlay-scrollbar-thumb:hover {
+  background:
+    linear-gradient(180deg, rgba(238, 183, 88, 0.98), rgba(142, 87, 38, 0.86)) !important;
+}
+
+html[data-theme="dune"] *::-webkit-scrollbar-track {
+  background: rgba(8, 5, 3, 0.52);
+  border-radius: 999px;
+}
+
+html[data-theme="dune"] *::-webkit-scrollbar-thumb {
+  border: 2px solid rgba(8, 5, 3, 0.6);
+  border-radius: 999px;
+  background: var(--overlay-scrollbar-thumb) !important;
+}
+
+html[data-theme="dune"] *::-webkit-scrollbar-thumb:hover {
+  background: var(--overlay-scrollbar-thumb-hover) !important;
+}
+
+html[data-theme="dune"] [data-slot="dialog-content"] {
+  border-color: rgba(218, 162, 80, 0.28);
+  background:
+    radial-gradient(ellipse at 12% 0%, rgba(230, 176, 92, 0.12), transparent 36%),
+    linear-gradient(180deg, rgba(22, 16, 11, 0.98), rgba(10, 7, 5, 0.98));
+}
+
+html[data-theme="dune"] [data-slot="dialog-close"]:not(:disabled):hover {
+  background: rgba(230, 176, 92, 0.14);
+  border-color: rgba(230, 176, 92, 0.34);
+}
+
+/* Learning target temperature: keep the sand track and numeric input aligned. */
+html[data-theme="dune"] .glacier-shell [data-theme-ui="learning-target-temp"] {
+  background:
+    radial-gradient(ellipse at 22% 30%, rgba(225, 165, 77, 0.08), transparent 38%),
+    linear-gradient(180deg, rgba(18, 13, 9, 0.5), rgba(7, 5, 3, 0.28)) !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="learning-target-temp"]::before {
+  inset: 0.08rem;
+  opacity: 0.26;
+  border-radius: calc(var(--theme-card-radius) - 0.1rem);
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="learning-target-temp"] .learning-target-temp-slider {
+  padding-top: 0.12rem;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="learning-target-temp"] .learning-target-temp-slider [data-orientation="horizontal"].relative.flex.w-full.touch-none {
+  min-height: 1.35rem;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="learning-target-temp"] .learning-target-temp-slider [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow {
+  height: 0.52rem !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(230, 176, 92, 0.28) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 238, 194, 0.2), rgba(255, 210, 137, 0.06) 42%, rgba(31, 16, 8, 0.4) 100%),
+    var(--dune-flowing-sand),
+    linear-gradient(90deg, #9a5428 0%, #f0bd6a 42%, #f8d690 58%, #a65d2c 100%) !important;
+  background-size: 100% 100%, 260px 100%, 100% 100%;
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.68),
+    inset 0 -1px 0 rgba(255, 229, 178, 0.08),
+    0 0 0 1px rgba(88, 54, 24, 0.44) !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="learning-target-temp"] .learning-target-temp-slider [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow > .absolute.h-full {
+  border-radius: inherit !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  opacity: 0 !important;
+  mix-blend-mode: normal !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="learning-target-temp"] .learning-target-temp-slider [role="slider"] {
+  width: 1.28rem !important;
+  height: 1.28rem !important;
+  border: 2px solid rgba(247, 205, 134, 0.84) !important;
+  background:
+    radial-gradient(circle at 36% 28%, rgba(255, 246, 220, 0.98), rgba(246, 188, 91, 0.92) 42%, rgba(104, 57, 25, 0.98) 100%) !important;
+  box-shadow:
+    0 0 0 4px rgba(230, 176, 92, 0.13),
+    0 8px 18px -12px rgba(0, 0, 0, 0.78),
+    inset 0 1px 0 rgba(255, 248, 224, 0.78) !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="learning-target-temp"] .learning-target-temp-input input {
+  border-color: rgba(218, 162, 80, 0.38) !important;
+  background:
+    linear-gradient(180deg, rgba(9, 6, 4, 0.78), rgba(3, 2, 1, 0.6)) !important;
+  color: #f6ead8 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 229, 178, 0.08),
+    0 8px 22px -18px rgba(0, 0, 0, 0.72) !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="learning-target-temp"] .learning-target-temp-input span {
+  color: rgba(246, 234, 216, 0.82) !important;
+}
+
+/* Fallback for installed builds that do not yet expose the learning-target-temp hook. */
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-learning"] > .mt-3 > div:nth-child(2) {
+  background:
+    radial-gradient(ellipse at 22% 30%, rgba(225, 165, 77, 0.08), transparent 38%),
+    linear-gradient(180deg, rgba(18, 13, 9, 0.5), rgba(7, 5, 3, 0.28)) !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-learning"] > .mt-3 > div:nth-child(2) [data-orientation="horizontal"].relative.flex.w-full.touch-none {
+  min-height: 1.35rem;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-learning"] > .mt-3 > div:nth-child(2) [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow {
+  height: 0.52rem !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(230, 176, 92, 0.28) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 238, 194, 0.2), rgba(255, 210, 137, 0.06) 42%, rgba(31, 16, 8, 0.4) 100%),
+    var(--dune-flowing-sand),
+    linear-gradient(90deg, #9a5428 0%, #f0bd6a 42%, #f8d690 58%, #a65d2c 100%) !important;
+  background-size: 100% 100%, 260px 100%, 100% 100%;
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.68),
+    inset 0 -1px 0 rgba(255, 229, 178, 0.08),
+    0 0 0 1px rgba(88, 54, 24, 0.44) !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-learning"] > .mt-3 > div:nth-child(2) [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow > .absolute.h-full {
+  border-radius: inherit !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  opacity: 0 !important;
+  mix-blend-mode: normal !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-learning"] > .mt-3 > div:nth-child(2) [role="slider"] {
+  width: 1.28rem !important;
+  height: 1.28rem !important;
+  border: 2px solid rgba(247, 205, 134, 0.84) !important;
+  background:
+    radial-gradient(circle at 36% 28%, rgba(255, 246, 220, 0.98), rgba(246, 188, 91, 0.92) 42%, rgba(104, 57, 25, 0.98) 100%) !important;
+  box-shadow:
+    0 0 0 4px rgba(230, 176, 92, 0.13),
+    0 8px 18px -12px rgba(0, 0, 0, 0.78),
+    inset 0 1px 0 rgba(255, 248, 224, 0.78) !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-learning"] > .mt-3 > div:nth-child(2) input[type="number"] {
+  border-color: rgba(218, 162, 80, 0.38) !important;
+  background:
+    linear-gradient(180deg, rgba(9, 6, 4, 0.78), rgba(3, 2, 1, 0.6)) !important;
+  color: #f6ead8 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 229, 178, 0.08),
+    0 8px 22px -18px rgba(0, 0, 0, 0.72) !important;
+}
+
+/* Final curve-editor fix for advanced themes: the outer hook is only a layout anchor. */
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-editor"] {
+  display: block !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-editor"]::before,
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-editor"]::after {
+  content: none !important;
+  display: none !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-editor"] > .relative.rounded-3xl {
+  border-radius: var(--theme-curve-editor-radius, var(--theme-card-radius, 1.35rem)) !important;
+  overflow: hidden !important;
+  isolation: isolate !important;
+  background-clip: padding-box !important;
+  clip-path: inset(0 round var(--theme-curve-editor-radius, var(--theme-card-radius, 1.35rem))) !important;
+  padding: 1rem !important;
+  background-color: transparent !important;
+  background-image: var(--theme-card-background) !important;
+  border-color: var(--theme-card-border) !important;
+  box-shadow: var(--theme-card-shadow) !important;
+  -webkit-backdrop-filter: var(--theme-card-backdrop-filter) !important;
+  backdrop-filter: var(--theme-card-backdrop-filter) !important;
+}
+
+/* Final guards: keep every current FanControl slider as one continuous sand track. */
+html[data-theme="dune"] .glacier-shell [data-theme-ui="slider-track"] {
+  height: 0.5rem !important;
+  overflow: hidden !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(230, 176, 92, 0.28) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 238, 194, 0.2), rgba(255, 210, 137, 0.06) 42%, rgba(31, 16, 8, 0.4) 100%),
+    var(--dune-flowing-sand),
+    linear-gradient(90deg, #9a5428 0%, #f0bd6a 42%, #f8d690 58%, #a65d2c 100%) !important;
+  background-color: #a85f2d !important;
+  background-size: 100% 100%, 260px 100%, 100% 100% !important;
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.68),
+    inset 0 -1px 0 rgba(255, 229, 178, 0.08),
+    0 0 0 1px rgba(88, 54, 24, 0.44) !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="slider-range"] {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  opacity: 0 !important;
+  box-shadow: none !important;
+  filter: none !important;
+  mix-blend-mode: normal !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="slider-thumb"] {
+  width: 1.12rem !important;
+  height: 1.12rem !important;
+  border: 2px solid rgba(247, 205, 134, 0.84) !important;
+  background:
+    radial-gradient(circle at 36% 28%, rgba(255, 246, 220, 0.98), rgba(246, 188, 91, 0.92) 42%, rgba(104, 57, 25, 0.98) 100%) !important;
+  box-shadow:
+    0 0 0 3px rgba(230, 176, 92, 0.12),
+    0 8px 18px -12px rgba(0, 0, 0, 0.78),
+    inset 0 1px 0 rgba(255, 248, 224, 0.78) !important;
+}
+
+html[data-theme="dune"] .glacier-content-panel > .app-overlay-scrollbar,
+html[data-theme="dune"] .app-overlay-scrollbar {
+  top: 0 !important;
+  bottom: 0 !important;
+}
