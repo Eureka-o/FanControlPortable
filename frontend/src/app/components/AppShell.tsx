@@ -39,8 +39,6 @@ const MAIN_TAB_ITEMS = [
 ] as const;
 
 const ABOUT_TAB = { id: 'about', titleKey: 'appShell.tabs.about', icon: Info } as const;
-const WINDOWS_TITLEBAR_HEIGHT = 40;
-const WINDOWS_SCROLLBAR_TOP_OFFSET = WINDOWS_TITLEBAR_HEIGHT + 8;
 
 type ActiveTab = (typeof MAIN_TAB_ITEMS)[number]['id'] | typeof ABOUT_TAB.id;
 
@@ -289,10 +287,8 @@ function StatusBadges({
 
 function OverlayScrollbar({
   scrollRef,
-  topOffset = 6,
 }: {
   scrollRef: React.RefObject<HTMLDivElement | null>;
-  topOffset?: number;
 }) {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const thumbRef = useRef<HTMLDivElement | null>(null);
@@ -429,7 +425,6 @@ function OverlayScrollbar({
     <div
       ref={trackRef}
       className={clsx('app-overlay-scrollbar', visible && 'is-visible')}
-      style={{ top: topOffset }}
       onMouseEnter={() => setVisible(true)}
       onMouseLeave={flashVisible}
     >
@@ -766,7 +761,7 @@ export default function AppShell({
         </div>
 
         {/* Floating overlay scrollbar — never reserves width */}
-        <OverlayScrollbar scrollRef={scrollRef} topOffset={isWindowsChrome ? WINDOWS_SCROLLBAR_TOP_OFFSET : 6} />
+        <OverlayScrollbar scrollRef={scrollRef} />
         </div>
       </section>
     </div>

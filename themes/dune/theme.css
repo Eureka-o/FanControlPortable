@@ -1256,3 +1256,33 @@ html[data-theme="dune"] .app-overlay-scrollbar {
   top: 0 !important;
   bottom: 0 !important;
 }
+
+/* Slider fill hotfix: keep the track continuous, but make the filled side visible. */
+html[data-theme="dune"] .glacier-shell [data-theme-ui="slider-track"],
+html[data-theme="dune"] .glacier-shell [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow,
+html[data-theme="dune"] .glacier-shell [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2\.w-full.grow,
+html[data-theme="dune"] .glacier-shell [data-theme-ui="learning-target-temp"] .learning-target-temp-slider [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow,
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-learning"] > .mt-3 > div:nth-child(2) [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow {
+  background:
+    linear-gradient(180deg, rgba(255, 232, 174, 0.12), rgba(35, 18, 9, 0.42) 56%, rgba(5, 3, 2, 0.62)),
+    linear-gradient(90deg, rgba(86, 45, 21, 0.82), rgba(143, 80, 36, 0.72), rgba(73, 35, 17, 0.86)) !important;
+  background-size: 100% 100%, 100% 100% !important;
+  background-repeat: no-repeat !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="slider-range"],
+html[data-theme="dune"] .glacier-shell [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow > .absolute.h-full,
+html[data-theme="dune"] .glacier-shell [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2\.w-full.grow > .absolute.h-full,
+html[data-theme="dune"] .glacier-shell [data-theme-ui="learning-target-temp"] .learning-target-temp-slider [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow > .absolute.h-full,
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-learning"] > .mt-3 > div:nth-child(2) [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow > .absolute.h-full {
+  background:
+    linear-gradient(180deg, rgba(255, 246, 214, 0.34), rgba(255, 214, 139, 0.08) 48%, rgba(93, 48, 19, 0.18)),
+    linear-gradient(90deg, #a15a28 0%, #d99544 38%, #f5cb78 68%, #bf6f32 100%) !important;
+  background-size: 100% 100%, 100% 100% !important;
+  background-repeat: no-repeat !important;
+  opacity: 1 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 246, 214, 0.45),
+    inset 0 -1px 0 rgba(92, 45, 18, 0.3),
+    0 0 12px -8px rgba(241, 183, 86, 0.7) !important;
+}
