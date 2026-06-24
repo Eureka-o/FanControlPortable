@@ -45,7 +45,7 @@ export function SettingRow({
 }) {
   return (
     <div data-theme-ui="setting-row" className={clsx('flex flex-col gap-4 px-5 py-4 transition-colors duration-200 hover:bg-muted/18 sm:flex-row sm:items-center sm:justify-between', disabled && 'opacity-50')}>
-      <div className="flex items-center gap-3 min-w-0">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         {icon && (
           <div data-theme-ui="setting-row-icon" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-muted-foreground shadow-inner shadow-white/20">
             {icon}
@@ -57,7 +57,7 @@ export function SettingRow({
           {tip && <div className="mt-0.5 text-xs text-primary/80">{tip}</div>}
         </div>
       </div>
-      {children && <div data-theme-ui="setting-row-control" className="w-full sm:w-auto sm:shrink-0">{children}</div>}
+      {children && <div data-theme-ui="setting-row-control" className="flex w-full min-w-0 justify-start sm:ml-auto sm:w-auto sm:max-w-[36rem] sm:shrink-0 sm:justify-end">{children}</div>}
     </div>
   );
 }
@@ -102,7 +102,7 @@ export function HotkeyField({
             readOnly
             placeholder={placeholder}
             className={clsx(
-              'w-full rounded-lg border bg-background px-3 py-2.5 pr-9 text-center font-mono text-sm text-foreground outline-none transition',
+              'w-full rounded-lg border bg-background px-3 py-2.5 pr-9 text-center font-sans text-sm text-foreground outline-none transition',
               recording
                 ? 'border-primary shadow-[0_0_0_1px_var(--color-primary)] ring-2 ring-primary/20'
                 : 'border-border/70 hover:border-border',

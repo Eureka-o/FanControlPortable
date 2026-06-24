@@ -1,5 +1,7 @@
 using System;
+using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 
 namespace FanControl.TempBridge
 {
@@ -8,47 +10,86 @@ namespace FanControl.TempBridge
         private const int ProbeIntervalSeconds = 10;
         private const int ActiveSamplesToWake = 1;
         private const int IdleSamplesToSleep = 3;
+        private const long SlowProbeLogThresholdMs = 200;
 
+        private readonly object stateLock = new object();
         private DateTime lastProbeUtc = DateTime.MinValue;
         private int activeSamples;
         private int idleSamples;
         private bool gpuPollingActive;
         private bool lastHasDiscreteGpu;
         private string lastDetail = string.Empty;
+        private bool probeRunning;
+        private int probeGeneration;
 
         public bool ShouldPollGpu(HardwareProfile profile, Action<string> log)
         {
             bool integratedOnlyProfile = IsKnownIntegratedOnlyProfile(profile);
             if (integratedOnlyProfile)
             {
-                lastHasDiscreteGpu = false;
-                gpuPollingActive = true;
+                lock (stateLock)
+                {
+                    probeGeneration++;
+                    probeRunning = false;
+                    lastHasDiscreteGpu = false;
+                    lastDetail = "integrated GPU profile";
+                    gpuPollingActive = true;
+                    activeSamples = 0;
+                    idleSamples = 0;
+                }
                 return true;
             }
 
-            lastHasDiscreteGpu = true;
-            if ((DateTime.UtcNow - lastProbeUtc).TotalSeconds >= ProbeIntervalSeconds)
+            bool shouldQueueProbe = false;
+            bool cachedGpuPollingActive;
+            int generation = 0;
+            DateTime now = DateTime.UtcNow;
+            lock (stateLock)
             {
-                ProbeGpuActivity(log, true);
+                lastHasDiscreteGpu = true;
+                if (!probeRunning && (now - lastProbeUtc).TotalSeconds >= ProbeIntervalSeconds)
+                {
+                    lastProbeUtc = now;
+                    probeRunning = true;
+                    generation = probeGeneration;
+                    shouldQueueProbe = true;
+                }
+                cachedGpuPollingActive = gpuPollingActive;
             }
 
-            return gpuPollingActive;
+            if (shouldQueueProbe)
+            {
+                ThreadPool.QueueUserWorkItem(_ => ProbeGpuActivity(log, true, generation));
+            }
+
+            return cachedGpuPollingActive;
         }
 
         public bool LastHasDiscreteGpu
         {
-            get { return lastHasDiscreteGpu; }
+            get
+            {
+                lock (stateLock)
+                {
+                    return lastHasDiscreteGpu;
+                }
+            }
         }
 
         public string LastDetail
         {
-            get { return lastDetail; }
+            get
+            {
+                lock (stateLock)
+                {
+                    return lastDetail;
+                }
+            }
         }
 
-        private void ProbeGpuActivity(Action<string> log, bool expectDiscreteGpu)
+        private void ProbeGpuActivity(Action<string> log, bool expectDiscreteGpu, int generation)
         {
-            lastProbeUtc = DateTime.UtcNow;
-
+            var stopwatch = Stopwatch.StartNew();
             GpuActivityStatus status;
             try
             {
@@ -64,51 +105,75 @@ namespace FanControl.TempBridge
                 };
             }
 
-            lastHasDiscreteGpu = status.HasDiscreteGpu || expectDiscreteGpu;
-            lastDetail = status.Detail ?? string.Empty;
-
-            if (!status.HasDiscreteGpu)
+            bool changed = false;
+            bool pollingActive = false;
+            string detail = status.Detail ?? string.Empty;
+            lock (stateLock)
             {
-                if (expectDiscreteGpu)
+                if (generation != probeGeneration)
                 {
-                    RecordIdleSample();
+                    return;
+                }
+
+                probeRunning = false;
+                lastHasDiscreteGpu = status.HasDiscreteGpu || expectDiscreteGpu;
+                lastDetail = detail;
+
+                if (!status.HasDiscreteGpu)
+                {
+                    bool wasActiveWithoutDiscrete = gpuPollingActive;
+                    if (expectDiscreteGpu)
+                    {
+                        RecordIdleSampleLocked();
+                    }
+                    else
+                    {
+                        gpuPollingActive = true;
+                        activeSamples = 0;
+                        idleSamples = 0;
+                    }
+                    changed = wasActiveWithoutDiscrete != gpuPollingActive;
+                    pollingActive = gpuPollingActive;
                 }
                 else
                 {
-                    gpuPollingActive = true;
-                    activeSamples = 0;
-                    idleSamples = 0;
-                }
-                return;
-            }
+                    bool wasActive = gpuPollingActive;
+                    if (status.IsActive)
+                    {
+                        activeSamples++;
+                        idleSamples = 0;
+                        if (activeSamples >= ActiveSamplesToWake)
+                        {
+                            gpuPollingActive = true;
+                        }
+                    }
+                    else
+                    {
+                        idleSamples++;
+                        activeSamples = 0;
+                        if (idleSamples >= IdleSamplesToSleep)
+                        {
+                            gpuPollingActive = false;
+                        }
+                    }
 
-            bool wasActive = gpuPollingActive;
-            if (status.IsActive)
-            {
-                activeSamples++;
-                idleSamples = 0;
-                if (activeSamples >= ActiveSamplesToWake)
-                {
-                    gpuPollingActive = true;
-                }
-            }
-            else
-            {
-                idleSamples++;
-                activeSamples = 0;
-                if (idleSamples >= IdleSamplesToSleep)
-                {
-                    gpuPollingActive = false;
+                    changed = wasActive != gpuPollingActive;
+                    pollingActive = gpuPollingActive;
                 }
             }
 
-            if (wasActive != gpuPollingActive && log != null)
+            if (changed && log != null)
             {
-                log("GPU auto read " + (gpuPollingActive ? "enabled" : "paused") + ": " + lastDetail);
+                log("GPU auto read " + (pollingActive ? "enabled" : "paused") + ": " + detail);
+            }
+
+            if (stopwatch.ElapsedMilliseconds >= SlowProbeLogThresholdMs && log != null)
+            {
+                log("GPU activity probe completed in " + stopwatch.ElapsedMilliseconds + " ms: " + detail);
             }
         }
 
-        private void RecordIdleSample()
+        private void RecordIdleSampleLocked()
         {
             idleSamples++;
             activeSamples = 0;

@@ -631,3 +631,34 @@ html[data-theme="maodie"] .glacier-shell,
 html[data-theme="maodie"] .glacier-shell > section {
   background-color: var(--background) !important;
 }
+
+/* Curve editor corner guard: this page uses an outer hook plus an inner chart card. */
+html[data-theme="maodie"] .glacier-shell [data-theme-card="curve-editor"] {
+  border-radius: var(--theme-card-radius, 1.4rem) !important;
+  background: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+html[data-theme="maodie"] .glacier-shell [data-theme-card="curve-editor"]::before,
+html[data-theme="maodie"] .glacier-shell [data-theme-card="curve-editor"]::after {
+  content: none !important;
+  display: none !important;
+}
+
+html[data-theme="maodie"] .glacier-shell [data-theme-card="curve-editor"] > .relative.rounded-3xl {
+  border-radius: var(--theme-curve-editor-radius, var(--theme-card-radius, 1.4rem)) !important;
+  overflow: hidden !important;
+  isolation: isolate !important;
+  background-clip: padding-box !important;
+  clip-path: inset(0 round var(--theme-curve-editor-radius, var(--theme-card-radius, 1.4rem))) !important;
+  background-color: transparent !important;
+  background-image: var(--theme-card-background) !important;
+  border-color: var(--theme-card-border) !important;
+  box-shadow: var(--theme-card-shadow) !important;
+  -webkit-backdrop-filter: var(--theme-card-backdrop-filter) !important;
+  backdrop-filter: var(--theme-card-backdrop-filter) !important;
+}

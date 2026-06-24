@@ -205,6 +205,7 @@ interface SliderProps {
   step?: number;
   disabled?: boolean;
   label?: string;
+  className?: string;
   showValue?: boolean;
   valueFormatter?: (value: number) => string;
   onChangeStart?: () => void;
@@ -220,13 +221,14 @@ export const Slider = forwardRef<React.ElementRef<typeof ShadcnSlider>, SliderPr
     step = 1,
     disabled = false,
     label,
+    className,
     showValue = true,
     valueFormatter = (v) => String(v),
     onChangeStart,
     onChangeEnd,
   }, ref) => {
     return (
-      <div className="w-full">
+      <div data-theme-ui="slider" className={clsx('w-full', className)}>
         {(label || showValue) && (
           <div className="mb-2 flex items-center justify-between">
             {label && <span className="text-sm font-medium text-muted-foreground">{label}</span>}
@@ -274,13 +276,14 @@ interface NumberInputProps {
   step?: number;
   disabled?: boolean;
   label?: string;
+  className?: string;
   suffix?: string;
   onFocus?: () => void;
   onBlur?: () => void;
 }
 
 export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
-  ({ value, onChange, min, max, step = 1, disabled = false, label, suffix, onFocus, onBlur }, ref) => {
+  ({ value, onChange, min, max, step = 1, disabled = false, label, className, suffix, onFocus, onBlur }, ref) => {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       let nextValue = Number(e.target.value);
       if (Number.isNaN(nextValue)) nextValue = min ?? 0;
@@ -290,7 +293,7 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
     };
 
     return (
-      <div className="w-full">
+      <div className={clsx('w-full', className)}>
         {label && <Label className="mb-1 block">{label}</Label>}
         <div className="relative flex items-center">
           <Input

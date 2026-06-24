@@ -466,9 +466,18 @@ body:has(.glacier-native-backdrop) {
 }
 
 .glacier-shell [data-theme-card="curve-editor"] {
+  border-radius: var(--theme-card-radius);
   background: transparent;
   box-shadow: none;
   backdrop-filter: none;
+}
+
+.glacier-shell [data-theme-card="curve-editor"] > .relative.rounded-3xl {
+  border-radius: var(--theme-curve-editor-radius, var(--theme-card-radius));
+  overflow: hidden;
+  isolation: isolate;
+  background-clip: padding-box;
+  clip-path: inset(0 round var(--theme-curve-editor-radius, var(--theme-card-radius)));
 }
 
 [data-slot="dialog-overlay"] {

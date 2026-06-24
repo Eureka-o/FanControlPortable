@@ -1061,7 +1061,7 @@ html[data-theme="shinchan"] .glacier-shell[data-theme-page="status"] .glacier-st
 }
 
 html[data-theme="shinchan"] .glacier-shell :is(
-  [data-theme-card]:not([data-theme-card="curve-header"]),
+  [data-theme-card]:not([data-theme-card="curve-header"]):not([data-theme-card="curve-editor"]),
   [data-theme-ui="setting-card"],
   [data-theme-ui="setting-section"],
   [data-theme-ui="connection-panel"],
@@ -1159,7 +1159,7 @@ html[data-theme="shinchan"] {
 }
 
 html[data-theme="shinchan"] .glacier-shell :is(
-  [data-theme-card]:not([data-theme-card="curve-header"]),
+  [data-theme-card]:not([data-theme-card="curve-header"]):not([data-theme-card="curve-editor"]),
   [data-theme-ui="setting-card"],
   [data-theme-ui="setting-section"],
   [data-theme-ui="connection-panel"],
@@ -1306,7 +1306,7 @@ html[data-theme="shinchan"] {
 }
 
 html[data-theme="shinchan"] .glacier-shell :is(
-  [data-theme-card]:not([data-theme-card="curve-header"]),
+  [data-theme-card]:not([data-theme-card="curve-header"]):not([data-theme-card="curve-editor"]),
   [data-theme-ui="setting-card"],
   [data-theme-ui="setting-section"],
   [data-theme-ui="connection-panel"],
@@ -1614,7 +1614,7 @@ html[data-theme="shinchan"] .glacier-hero-card::after {
 }
 
 html[data-theme="shinchan"] .glacier-shell :is(
-  [data-theme-card]:not([data-theme-card="curve-header"]),
+  [data-theme-card]:not([data-theme-card="curve-header"]):not([data-theme-card="curve-editor"]),
   [data-theme-ui="setting-card"],
   [data-theme-ui="setting-section"],
   [data-theme-ui="connection-panel"],
@@ -1783,7 +1783,46 @@ html[data-theme="shinchan"] .glacier-shell [data-theme-card="curve-editor"] {
 }
 
 html[data-theme="shinchan"] .glacier-shell [data-theme-card="curve-editor"] > .relative.rounded-3xl {
+  border-radius: var(--theme-curve-editor-radius, var(--theme-card-radius, 1.4rem)) !important;
   overflow: hidden !important;
+  isolation: isolate !important;
+  background-clip: padding-box !important;
+  clip-path: inset(0 round var(--theme-curve-editor-radius, var(--theme-card-radius, 1.4rem))) !important;
+  background-color: transparent !important;
+  background-image: var(--theme-card-background) !important;
+  border-color: var(--theme-card-border) !important;
+  box-shadow: var(--theme-card-shadow) !important;
+  -webkit-backdrop-filter: var(--theme-card-backdrop-filter) !important;
+  backdrop-filter: var(--theme-card-backdrop-filter) !important;
+}
+
+/* Final curve-editor fix for advanced themes: the outer hook is only a layout anchor. */
+html[data-theme="shinchan"] .glacier-shell [data-theme-card="curve-editor"] {
+  display: block !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+html[data-theme="shinchan"] .glacier-shell [data-theme-card="curve-editor"]::before,
+html[data-theme="shinchan"] .glacier-shell [data-theme-card="curve-editor"]::after {
+  content: none !important;
+  display: none !important;
+}
+
+html[data-theme="shinchan"] .glacier-shell [data-theme-card="curve-editor"] > .relative.rounded-3xl {
+  border-radius: var(--theme-curve-editor-radius, var(--theme-card-radius, 1.4rem)) !important;
+  overflow: hidden !important;
+  isolation: isolate !important;
+  background-clip: padding-box !important;
+  clip-path: inset(0 round var(--theme-curve-editor-radius, var(--theme-card-radius, 1.4rem))) !important;
+  padding: 1rem !important;
   background-color: transparent !important;
   background-image: var(--theme-card-background) !important;
   border-color: var(--theme-card-border) !important;
@@ -2517,7 +2556,7 @@ html[data-theme="shinchan"] .glacier-hero-card::after {
 }
 
 html[data-theme="shinchan"] .glacier-shell :is(
-  [data-theme-card]:not([data-theme-card="curve-header"]),
+  [data-theme-card]:not([data-theme-card="curve-header"]):not([data-theme-card="curve-editor"]),
   [data-theme-ui="setting-card"],
   [data-theme-ui="setting-section"],
   [data-theme-ui="connection-panel"],
@@ -2710,7 +2749,7 @@ html[data-theme="shinchan"] .glacier-hero-art::before {
 }
 
 html[data-theme="shinchan"] .glacier-shell :is(
-  [data-theme-card]:not([data-theme-card="curve-header"]),
+  [data-theme-card]:not([data-theme-card="curve-header"]):not([data-theme-card="curve-editor"]),
   [data-theme-ui="setting-card"],
   [data-theme-ui="setting-section"],
   [data-theme-ui="connection-panel"],
@@ -3018,4 +3057,36 @@ html[data-theme="shinchan"] .glacier-sidebar::after {
   text-shadow:
     0 1px 0 rgba(255, 255, 255, 0.82),
     0 0 10px rgba(255, 222, 158, 0.34) !important;
+}
+
+/* Final curve editor corner guard. Keep this near the end because older blocks may repeat. */
+html[data-theme="shinchan"] .glacier-shell [data-theme-card="curve-editor"] {
+  border-radius: var(--theme-card-radius, 1.4rem) !important;
+  background: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+html[data-theme="shinchan"] .glacier-shell [data-theme-card="curve-editor"]::before,
+html[data-theme="shinchan"] .glacier-shell [data-theme-card="curve-editor"]::after {
+  content: none !important;
+  display: none !important;
+}
+
+html[data-theme="shinchan"] .glacier-shell [data-theme-card="curve-editor"] > .relative.rounded-3xl {
+  border-radius: var(--theme-curve-editor-radius, var(--theme-card-radius, 1.4rem)) !important;
+  overflow: hidden !important;
+  isolation: isolate !important;
+  background-clip: padding-box !important;
+  clip-path: inset(0 round var(--theme-curve-editor-radius, var(--theme-card-radius, 1.4rem))) !important;
+  padding: 1rem !important;
+  background-color: transparent !important;
+  background-image: var(--theme-card-background) !important;
+  border-color: var(--theme-card-border) !important;
+  box-shadow: var(--theme-card-shadow) !important;
+  -webkit-backdrop-filter: var(--theme-card-backdrop-filter) !important;
+  backdrop-filter: var(--theme-card-backdrop-filter) !important;
 }
