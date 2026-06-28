@@ -269,6 +269,9 @@ func (m *Manager) readWiFiStateLocked() (*types.FanData, error) {
 	if err != nil {
 		return nil, err
 	}
+	if !looksLikeWiFiDiscoveryState(body) {
+		return nil, fmt.Errorf("response does not look like a fan controller state")
+	}
 
 	var data wifiDataResponse
 	if err := json.Unmarshal(body, &data); err != nil {

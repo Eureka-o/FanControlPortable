@@ -15,6 +15,17 @@ import (
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
+const (
+	// trayAutoStartSettleDelay 是自启动首次注册托盘前，要求任务栏通知区域持续稳定的时长。
+	trayAutoStartSettleDelay = 3 * time.Second
+	// trayAutoStartSettleTimeout 是等待通知区域稳定的最长时间，超时后仍会尝试注册。
+	trayAutoStartSettleTimeout = 25 * time.Second
+	// trayShellRestartSettleDelay 是 Explorer/通知区域重建后补注册托盘前的稳定等待时间。
+	trayShellRestartSettleDelay = 2 * time.Second
+	// trayShellRestartSettleTimeout 是补注册托盘前等待通知区域恢复的最长时间。
+	trayShellRestartSettleTimeout = 12 * time.Second
+)
+
 // Manager 系统托盘管理器
 type Manager struct {
 	logger          types.Logger
@@ -45,6 +56,13 @@ type Manager struct {
 	showWindowInFlight int32
 	toggleAutoInFlight int32
 	quitInFlight       int32
+
+	// 开机自启动相关：自启动时延时注册，等待任务栏通知区域稳定后再注册托盘。
+	autoStartLaunch int32 // atomic: 1=本次进程由开机自启动触发
+	instanceCount   int32 // atomic: systray 实例运行计数，用于识别首次注册
+
+	// Explorer 重启时系统通知区会删除所有图标；防止补注册动作重复堆积。
+	shellReannounceInFlight int32
 }
 
 // MenuItems 托盘菜单项结构
@@ -109,6 +127,22 @@ func (m *Manager) SetCallbacks(
 	m.onSetCurve = onSetCurve
 	m.getCurveOptions = getCurveOptions
 	m.getStatus = getStatus
+}
+
+// SetAutoStartLaunch 标记本次进程是否由开机自启动触发。
+//
+// 自启动场景下，托盘会在首次注册前等待任务栏通知区域稳定，避免开机快速启动时
+// 因通知区域尚未就绪导致图标被静默丢弃。应在 Init 之前调用。
+func (m *Manager) SetAutoStartLaunch(v bool) {
+	if v {
+		atomic.StoreInt32(&m.autoStartLaunch, 1)
+	} else {
+		atomic.StoreInt32(&m.autoStartLaunch, 0)
+	}
+}
+
+func (m *Manager) isAutoStartLaunch() bool {
+	return atomic.LoadInt32(&m.autoStartLaunch) == 1
 }
 
 // Init 初始化系统托盘
@@ -203,6 +237,20 @@ func (m *Manager) runSystrayInstance() (ran time.Duration) {
 		return 0
 	}
 
+	// 开机自启动时外壳窗口可能创建很早，但通知区域尚未稳定，过早注册会导致图标被
+	// 静默丢弃。仅对首次注册追加稳定等待；后续因 Explorer 重启等触发的重建无需再延时。
+	if atomic.AddInt32(&m.instanceCount, 1) == 1 && m.isAutoStartLaunch() {
+		m.logInfo("自启动模式：等待任务栏通知区域稳定后再注册系统托盘")
+		waitForTraySettle(m.done, trayAutoStartSettleDelay, trayAutoStartSettleTimeout)
+		select {
+		case <-m.done:
+			close(instanceDone)
+			return 0
+		default:
+		}
+		m.logInfo("任务栏通知区域已就绪，开始注册系统托盘")
+	}
+
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -282,6 +330,9 @@ func (m *Manager) onTrayReady() {
 
 	// 启动托盘健康监控（定期刷新图标以应对 Explorer 重启等）
 	go m.startIconHealthMonitor(instanceDone)
+
+	// 监控 Explorer/通知区域重建；必要时补发 TaskbarCreated，让 systray 执行 NIM_ADD。
+	go m.startShellRestartMonitor(instanceDone)
 }
 
 // setupIcon 设置托盘图标
@@ -632,6 +683,101 @@ func (m *Manager) startIconHealthMonitor(instanceDone <-chan struct{}) {
 			return
 		}
 	}
+}
+
+func (m *Manager) startShellRestartMonitor(instanceDone <-chan struct{}) {
+	defer func() {
+		if r := recover(); r != nil {
+			m.logError("托盘外壳重建监控发生panic: %v", r)
+		}
+	}()
+
+	lastTray, lastPID := trayNotifyState()
+	shellWasMissing := lastTray == 0
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if atomic.LoadInt32(&m.readyState) == 0 || atomic.LoadInt32(&m.initialized) == 0 {
+				continue
+			}
+
+			currentTray, currentPID := trayNotifyState()
+			if currentTray == 0 {
+				if !shellWasMissing {
+					m.logInfo("检测到 Windows 通知区域暂时不可用，等待恢复")
+				}
+				shellWasMissing = true
+				continue
+			}
+
+			if lastTray == 0 {
+				lastTray = currentTray
+				lastPID = currentPID
+				if shellWasMissing {
+					shellWasMissing = false
+					m.reannounceTrayIconAfterShellRestart(instanceDone, 0, 0, currentTray, currentPID)
+				}
+				continue
+			}
+
+			if shellWasMissing || currentTray != lastTray || (currentPID != 0 && currentPID != lastPID) {
+				previousTray := lastTray
+				previousPID := lastPID
+				lastTray = currentTray
+				lastPID = currentPID
+				shellWasMissing = false
+				m.reannounceTrayIconAfterShellRestart(instanceDone, previousTray, previousPID, currentTray, currentPID)
+			}
+		case <-instanceDone:
+			return
+		case <-m.done:
+			return
+		}
+	}
+}
+
+func (m *Manager) reannounceTrayIconAfterShellRestart(instanceDone <-chan struct{}, previousTray uintptr, previousPID uint32, currentTray uintptr, currentPID uint32) {
+	if !atomic.CompareAndSwapInt32(&m.shellReannounceInFlight, 0, 1) {
+		return
+	}
+
+	go func() {
+		defer atomic.StoreInt32(&m.shellReannounceInFlight, 0)
+		defer func() {
+			if r := recover(); r != nil {
+				m.logError("重新注册托盘图标时发生panic: %v", r)
+			}
+		}()
+
+		m.logInfo("检测到 Windows 通知区域重建（hwnd 0x%x/%d -> 0x%x/%d），等待稳定后恢复托盘图标", previousTray, previousPID, currentTray, currentPID)
+
+		waitForTraySettle(m.done, trayShellRestartSettleDelay, trayShellRestartSettleTimeout)
+
+		select {
+		case <-instanceDone:
+			return
+		case <-m.done:
+			return
+		default:
+		}
+
+		if !postTaskbarCreated() {
+			m.logError("补发 TaskbarCreated 消息失败，尝试仅刷新托盘图标")
+		}
+		m.refreshTrayIcon()
+
+		select {
+		case <-instanceDone:
+			return
+		case <-m.done:
+			return
+		case <-time.After(time.Second):
+			m.refreshTrayIcon()
+		}
+	}()
 }
 
 // refreshTrayIcon 刷新托盘图标

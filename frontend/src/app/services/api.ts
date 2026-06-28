@@ -101,6 +101,33 @@ export interface WiFiDiscoveryResult {
   error?: string;
 }
 
+export interface DeviceCandidate {
+  id: string;
+  transport: 'wifi' | 'ble' | 'hid' | 'serial' | string;
+  name: string;
+  profileId?: string;
+  endpoint?: string;
+  source?: string;
+  network?: string;
+  speed?: number;
+  targetSpeed?: number;
+  temperature?: number;
+  latencyMs?: number;
+  connected?: boolean;
+  connectable?: boolean;
+  error?: string;
+}
+
+export interface DeviceScanResult {
+  mode?: 'normal' | 'deep' | string;
+  connected?: boolean;
+  devices?: DeviceCandidate[];
+  wifiEnabled?: boolean;
+  serialEnabled?: boolean;
+  showDeepScan?: boolean;
+  error?: string;
+}
+
 class ApiService {
   // 设备连接
   async connectDevice(): Promise<boolean> {
@@ -114,6 +141,20 @@ class ApiService {
 
   async connectNativeDevice(profileID = ''): Promise<boolean> {
     return !!(await (window as any).go?.main?.App?.ConnectNativeDevice?.(profileID));
+  }
+
+  async scanDeviceCandidates(mode: 'normal' | 'deep' = 'normal'): Promise<DeviceScanResult> {
+    const result = await (window as any).go?.main?.App?.ScanDeviceCandidates?.(mode);
+    return result && typeof result === 'object' ? result as DeviceScanResult : { mode, devices: [] };
+  }
+
+  async connectDeviceCandidate(candidate: DeviceCandidate): Promise<boolean> {
+    return !!(await (window as any).go?.main?.App?.ConnectDeviceCandidate?.({
+      id: candidate.id,
+      transport: candidate.transport,
+      profileId: candidate.profileId || '',
+      endpoint: candidate.endpoint || '',
+    }));
   }
 
   async scanWiFiDevices(mode: 'normal' | 'deep' = 'normal'): Promise<WiFiDiscoveryResult> {

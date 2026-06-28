@@ -313,6 +313,8 @@ func (a *CoreApp) initSystemTray() {
 			}
 		},
 	)
+	// 自启动场景下延时注册托盘：等待任务栏通知区域稳定后再注册，避免开机快速启动时图标丢失。
+	a.trayManager.SetAutoStartLaunch(a.isAutoStartLaunch)
 	a.trayManager.Init()
 }
 

@@ -466,7 +466,10 @@ func applyMissingDeviceDefaults(cfg *types.AppConfig, rawConfig map[string]json.
 		cfg.FanControlDeviceIp = defaults.FanControlDeviceIp
 	}
 	if _, ok := rawConfig["wifiCompatibilityEnabled"]; !ok {
-		cfg.WiFiCompatibilityEnabled = cfg.DeviceTransport == types.DeviceTransportWiFi || strings.TrimSpace(cfg.FanControlDeviceIp) != ""
+		cfg.WiFiCompatibilityEnabled = true
+	}
+	if _, ok := rawConfig["wifiDynamicIpCompatibilityEnabled"]; !ok {
+		cfg.WiFiDynamicIPCompatibilityEnabled = true
 	}
 	if _, ok := rawConfig["wifiSmartStartStopStandbySpeed"]; !ok {
 		cfg.WiFiSmartStartStopStandbySpeed = types.WiFiSmartStartStopStandbyMinPercent

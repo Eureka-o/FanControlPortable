@@ -14,6 +14,10 @@ export function ConnectDevice() {
   return window['go']['main']['App']['ConnectDevice']();
 }
 
+export function ConnectDeviceCandidate(arg1) {
+  return window['go']['main']['App']['ConnectDeviceCandidate'](arg1);
+}
+
 export function ConnectNativeDevice(arg1) {
   return window['go']['main']['App']['ConnectNativeDevice'](arg1);
 }
@@ -200,6 +204,10 @@ export function SaveFanCurveProfile(arg1, arg2, arg3, arg4) {
 
 export function ScanBLEDevices(arg1) {
   return window['go']['main']['App']['ScanBLEDevices'](arg1);
+}
+
+export function ScanDeviceCandidates(arg1) {
+  return window['go']['main']['App']['ScanDeviceCandidates'](arg1);
 }
 
 export function ScanWiFiDevices(arg1) {

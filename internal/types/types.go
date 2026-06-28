@@ -992,7 +992,7 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		DeviceTransport:                   DeviceTransportWiFi,
 		FanControlDeviceIp:                DefaultFanDeviceIP,
 		WiFiCompatibilityEnabled:          true,
-		WiFiDynamicIPCompatibilityEnabled: false,
+		WiFiDynamicIPCompatibilityEnabled: true,
 		WiFiSmartStartStopEnabled:         false,
 		WiFiSmartStartStopStandbySpeed:    WiFiSmartStartStopStandbyMinPercent,
 		SerialCompatibilityEnabled:        false,

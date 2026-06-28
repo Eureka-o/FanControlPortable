@@ -10,6 +10,8 @@ export function CheckWindowsAutoStart():Promise<boolean>;
 
 export function ConnectDevice():Promise<boolean>;
 
+export function ConnectDeviceCandidate(arg1:types.DeviceConnectRequest):Promise<boolean>;
+
 export function ConnectNativeDevice(arg1:string):Promise<boolean>;
 
 export function ControlWiFiScan(arg1:string):Promise<boolean>;
@@ -103,6 +105,8 @@ export function SaveDeviceProfile(arg1:types.DeviceProfile,arg2:boolean):Promise
 export function SaveFanCurveProfile(arg1:string,arg2:string,arg3:Array<types.FanCurvePoint>,arg4:boolean):Promise<types.FanCurveProfile>;
 
 export function ScanBLEDevices(arg1:types.BLEScanParams):Promise<Array<types.BLEDeviceInfo>>;
+
+export function ScanDeviceCandidates(arg1:string):Promise<types.DeviceScanResult>;
 
 export function ScanWiFiDevices(arg1:string):Promise<types.WiFiDiscoveryResult>;
 

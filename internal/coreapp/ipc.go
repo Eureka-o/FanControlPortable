@@ -23,6 +23,23 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 	case ipc.ReqAutoScanDevices:
 		return a.dataResponse(a.AutoScanDevices())
 
+	case ipc.ReqScanDeviceCandidates:
+		var params ipc.ScanDeviceCandidatesParams
+		if len(req.Data) > 0 {
+			if err := json.Unmarshal(req.Data, &params); err != nil {
+				return a.errorResponse("解析设备扫描参数失败: " + err.Error())
+			}
+		}
+		return a.dataResponse(a.ScanDeviceCandidates(params.Mode))
+
+	case ipc.ReqConnectDeviceCandidate:
+		var params ipc.ConnectDeviceCandidateParams
+		if err := json.Unmarshal(req.Data, &params); err != nil {
+			return a.errorResponse("解析设备连接参数失败: " + err.Error())
+		}
+		success := a.ConnectDeviceCandidate(params.Candidate)
+		return a.successResponse(success)
+
 	case ipc.ReqConnectNativeDevice:
 		var params ipc.ConnectNativeDeviceParams
 		if len(req.Data) > 0 {

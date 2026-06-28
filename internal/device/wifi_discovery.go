@@ -601,18 +601,70 @@ func looksLikeWiFiDiscoveryState(body []byte) bool {
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return false
 	}
-	for _, key := range []string{
-		"speed",
-		"fanSpeed",
-		"targetSpeed",
-		"wifiTargetSpeed",
-		"wifiControl",
-		"controlMode",
-		"mode",
-		"temperature",
-		"power",
-	} {
-		if _, ok := raw[key]; ok {
+	hasCurrent := hasNumericJSONField(raw, "fanSpeed", "currentSpeed", "currentRpm")
+	hasGenericSpeed := hasNumericJSONField(raw, "speed")
+	hasTarget := hasNumericJSONField(raw, "targetSpeed", "targetRpm", "wifiTargetSpeed")
+	if !hasCurrent && !hasGenericSpeed && !hasTarget {
+		return false
+	}
+	if hasCurrent || hasTarget {
+		return true
+	}
+	if hasBoolJSONField(raw, "wifiControl") {
+		return true
+	}
+	if hasNumericJSONField(raw, "temperature", "power") || hasBoolJSONField(raw, "power") {
+		return true
+	}
+	return hasModeLikeJSONField(raw, "controlMode", "mode")
+}
+
+func hasNumericJSONField(raw map[string]json.RawMessage, keys ...string) bool {
+	for _, key := range keys {
+		value, ok := raw[key]
+		if !ok {
+			continue
+		}
+		var decoded any
+		if err := json.Unmarshal(value, &decoded); err != nil {
+			continue
+		}
+		if _, ok := intFromAny(decoded); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func hasBoolJSONField(raw map[string]json.RawMessage, keys ...string) bool {
+	for _, key := range keys {
+		value, ok := raw[key]
+		if !ok {
+			continue
+		}
+		var decoded any
+		if err := json.Unmarshal(value, &decoded); err != nil {
+			continue
+		}
+		if _, ok := boolFromAny(decoded); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func hasModeLikeJSONField(raw map[string]json.RawMessage, keys ...string) bool {
+	for _, key := range keys {
+		value, ok := raw[key]
+		if !ok {
+			continue
+		}
+		var decoded any
+		if err := json.Unmarshal(value, &decoded); err != nil {
+			continue
+		}
+		mode := strings.ToLower(strings.TrimSpace(stringFromAny(decoded)))
+		if mode == "manual" || mode == "wifi" || mode == "software" || strings.Contains(mode, "auto") {
 			return true
 		}
 	}
