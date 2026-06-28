@@ -2,6 +2,7 @@ package coreapp
 
 import (
 	"reflect"
+	"runtime/debug"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -13,6 +14,13 @@ import (
 )
 
 const staleBridgeUpdateThreshold = 3
+
+// idleTemperatureMonitorInterval 是后台空闲（无 GUI 连接且未开启智能控温）时的温度采样间隔下限。
+// 此时温度读取仅用于托盘提示与历史记录，放慢采样可降低桥接传感器扫描带来的后台 CPU 占用。
+const idleTemperatureMonitorInterval = 5 * time.Second
+
+// idleMemoryReleaseCooldown 限制 GUI 断开后归还内存的最小间隔，避免频繁开关 GUI 时反复触发 GC。
+const idleMemoryReleaseCooldown = 30 * time.Second
 
 const (
 	consecutiveBridgeFailureRestartThreshold = 2
@@ -195,6 +203,9 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	defer timer.Stop()
 	defer wifiOverviewTimer.Stop()
 
+	prevHasClients := a.ipcServer != nil && a.ipcServer.HasClients()
+	var lastMemRelease time.Time
+
 	for a.monitoringTemp.Load() {
 		select {
 		case <-a.stopMonitoring:
@@ -218,6 +229,19 @@ func (a *CoreApp) startTemperatureMonitoring() {
 
 			cfg, cfgRevision = a.configManager.GetWithRevision()
 			updateInterval = temperatureMonitorInterval(cfg.TempUpdateRate)
+
+			// 后台空闲（无 GUI 连接且未开启智能控温）时放慢采样；智能控温或前台打开时保持原频率。
+			hasClients := a.ipcServer != nil && a.ipcServer.HasClients()
+			if !hasClients && !cfg.AutoControl && idleTemperatureMonitorInterval > updateInterval {
+				updateInterval = idleTemperatureMonitorInterval
+			}
+			// GUI 断开瞬间把会话期间膨胀的堆内存归还操作系统，降低核心常驻后台时的 RSS。
+			if prevHasClients && !hasClients && now.Sub(lastMemRelease) > idleMemoryReleaseCooldown {
+				lastMemRelease = now
+				a.safeGo("release-idle-memory", func() { debug.FreeOSMemory() })
+			}
+			prevHasClients = hasClients
+
 			selection := types.TemperatureSelection{
 				TempSource:            cfg.TempSource,
 				GpuDevice:             cfg.GpuDevice,
@@ -262,12 +286,11 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			a.currentTemp = temp
 			a.mutex.Unlock()
 
-			eventTemp := compactTemperatureEventPayload(temp, previousTemp)
-
 			historyPoint, recorded := a.tempHistory.Add(temp, a.deviceManager.GetCurrentFanData())
 
-			// 广播温度更新
-			if a.ipcServer != nil {
+			// 广播温度更新（无 GUI 客户端时跳过差分与序列化，降低后台每 tick 开销）
+			if hasClients {
+				eventTemp := compactTemperatureEventPayload(temp, previousTemp)
 				a.ipcServer.BroadcastEvent(ipc.EventTemperatureUpdate, eventTemp)
 				if recorded {
 					a.ipcServer.BroadcastEvent(ipc.EventTemperatureHistoryUpdate, historyPoint)

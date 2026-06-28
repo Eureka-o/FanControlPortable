@@ -42,6 +42,42 @@ func (a *App) AutoScanDevices() map[string]any {
 	return result
 }
 
+func (a *App) ScanDeviceCandidates(mode string) types.DeviceScanResult {
+	timeout := 15 * time.Second
+	if mode == types.DeviceScanModeDeep {
+		timeout = 90 * time.Second
+	}
+	resp, err := a.sendRequestWithTimeout(ipc.ReqScanDeviceCandidates, ipc.ScanDeviceCandidatesParams{Mode: mode}, timeout)
+	if err != nil {
+		guiLogger.Errorf("设备扫描请求失败: %v", err)
+		return types.DeviceScanResult{Mode: mode, Error: err.Error()}
+	}
+	if !resp.Success {
+		guiLogger.Errorf("设备扫描失败: %s", resp.Error)
+		return types.DeviceScanResult{Mode: mode, Error: resp.Error}
+	}
+	var result types.DeviceScanResult
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return types.DeviceScanResult{Mode: mode, Error: err.Error()}
+	}
+	return result
+}
+
+func (a *App) ConnectDeviceCandidate(candidate types.DeviceConnectRequest) bool {
+	resp, err := a.sendRequest(ipc.ReqConnectDeviceCandidate, ipc.ConnectDeviceCandidateParams{Candidate: candidate})
+	if err != nil {
+		guiLogger.Errorf("设备候选连接请求失败: %v", err)
+		return false
+	}
+	if !resp.Success {
+		guiLogger.Errorf("设备候选连接失败: %s", resp.Error)
+		return false
+	}
+	var success bool
+	json.Unmarshal(resp.Data, &success)
+	return success
+}
+
 // DisconnectDevice 断开设备连接
 func (a *App) ConnectNativeDevice(profileID string) bool {
 	resp, err := a.sendRequest(ipc.ReqConnectNativeDevice, ipc.ConnectNativeDeviceParams{ProfileID: profileID})

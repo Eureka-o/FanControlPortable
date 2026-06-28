@@ -113,12 +113,14 @@ export default function ControlPanel({
     if (!isConnected) return null;
     return effectiveDeviceProfile || activeDeviceProfile || null;
   }, [activeDeviceProfile, effectiveDeviceProfile, isConnected]);
-  const connectedDeviceTransport = normalizeTransport(
-    connectedDeviceProfile?.transport
-      || ((fanData as any)?.transport as string)
-      || ((config as any).deviceTransport as string)
-      || '',
-  );
+  const connectedDeviceTransport = isConnected
+    ? normalizeTransport(
+      connectedDeviceProfile?.transport
+        || ((fanData as any)?.transport as string)
+        || ((config as any).deviceTransport as string)
+        || '',
+    )
+    : '';
   const connectedDeviceConnection = profileConnection(connectedDeviceProfile);
   const currentDeviceCapabilities = (isConnected && runtimeDeviceCapabilities)
     ? runtimeDeviceCapabilities
@@ -136,7 +138,7 @@ export default function ControlPanel({
   const currentDeviceSupportsWiFiSmartStartStopBeta = !!(currentDeviceCapabilities as any)?.supportsSoftwareSmartStartStop;
   const overviewConnectionName = isConnected
     ? (connectedDeviceProfile ? profileLabel(connectedDeviceProfile) : connectedDeviceTransport.toUpperCase() || '--')
-    : (activeDeviceProfile ? profileLabel(activeDeviceProfile) : '--');
+    : t('controlPanel.system.deviceConnection.connectedDevicesEmpty');
   const overviewConnectionDetail = isConnected
     ? [
       connectedDeviceTransport.toUpperCase(),

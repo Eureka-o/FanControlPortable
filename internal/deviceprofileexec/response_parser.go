@@ -147,6 +147,9 @@ func parseDefaultWiFiState(body []byte) (ParsedState, bool) {
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return ParsedState{}, false
 	}
+	if !looksLikeDefaultWiFiState(raw) {
+		return ParsedState{}, false
+	}
 
 	state := ParsedState{}
 	if speed, ok := numberFromKeys(raw, "currentSpeed", "currentRpm", "fanSpeed", "speed"); ok {
@@ -166,7 +169,71 @@ func parseDefaultWiFiState(body []byte) (ParsedState, bool) {
 	} else if mode, ok := stringFromAny(raw["mode"]); ok {
 		state.WorkMode = mode
 	}
-	return state, state.HasCurrent || state.HasTarget || state.WorkMode != ""
+	return state, state.HasCurrent || state.HasTarget
+}
+
+func looksLikeDefaultWiFiState(raw map[string]any) bool {
+	hasCurrent := hasNumberKey(raw, "fanSpeed", "currentSpeed", "currentRpm")
+	hasGenericSpeed := hasNumberKey(raw, "speed")
+	hasTarget := hasNumberKey(raw, "wifiTargetSpeed", "targetSpeed", "targetRpm")
+	if !hasCurrent && !hasGenericSpeed && !hasTarget {
+		return false
+	}
+	if hasCurrent || hasTarget {
+		return true
+	}
+	if _, ok := boolFromAny(raw["wifiControl"]); ok {
+		return true
+	}
+	if hasNumberKey(raw, "temperature", "power") {
+		return true
+	}
+	if _, ok := boolFromAny(raw["power"]); ok {
+		return true
+	}
+	return hasModeLikeKey(raw, "controlMode", "mode")
+}
+
+func hasNumberKey(raw map[string]any, keys ...string) bool {
+	for _, key := range keys {
+		if _, ok := numberFromAny(raw[key]); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func hasModeLikeKey(raw map[string]any, keys ...string) bool {
+	for _, key := range keys {
+		mode, ok := stringFromAny(raw[key])
+		if !ok {
+			continue
+		}
+		mode = strings.ToLower(strings.TrimSpace(mode))
+		if mode == "manual" || mode == "wifi" || mode == "software" || strings.Contains(mode, "auto") {
+			return true
+		}
+	}
+	return false
+}
+
+func boolFromAny(value any) (bool, bool) {
+	switch v := value.(type) {
+	case nil:
+		return false, false
+	case bool:
+		return v, true
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "true", "1", "on", "yes", "auto", "wifi", "software":
+			return true, true
+		case "false", "0", "off", "no", "manual":
+			return false, true
+		}
+	case float64:
+		return v != 0, true
+	}
+	return false, false
 }
 
 func numberFromKeys(raw map[string]any, keys ...string) (int, bool) {

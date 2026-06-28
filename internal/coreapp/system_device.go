@@ -293,25 +293,39 @@ func (a *CoreApp) onSystemSuspend() {
 	if !a.systemSuspended.CompareAndSwap(false, true) {
 		return
 	}
+	start := time.Now()
 	a.logInfo("收到系统挂起通知：提前停止监控并断开设备/桥接，避免唤醒后失效句柄导致崩溃")
 
 	a.autoReconnectSuppressed.Store(true)
 	a.stopTemperatureMonitoring()
-	a.applyWiFiSmartStartStopStandbySpeed("system-suspend")
 
-	a.safeRun("suspend-device-disconnect", func() {
-		a.deviceManager.DisconnectSilently()
+	done := make(chan struct{})
+	a.safeGo("suspend-cleanup", func() {
+		defer close(done)
+
+		a.applyWiFiSmartStartStopStandbySpeed("system-suspend")
+
+		a.safeRun("suspend-device-disconnect", func() {
+			a.deviceManager.DisconnectSilently()
+		})
+		a.mutex.Lock()
+		a.isConnected = false
+		a.mutex.Unlock()
+
+		a.safeRun("suspend-bridge-stop", func() {
+			a.bridgeManager.Stop()
+		})
+
+		if a.ipcServer != nil {
+			a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
+		}
+		a.logInfo("挂起前清理完成，耗时 %s", time.Since(start).Round(time.Millisecond))
 	})
-	a.mutex.Lock()
-	a.isConnected = false
-	a.mutex.Unlock()
 
-	a.safeRun("suspend-bridge-stop", func() {
-		a.bridgeManager.Stop()
-	})
-
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
+	select {
+	case <-done:
+	case <-time.After(suspendCleanupGrace):
+		a.logError("挂起前清理超过 %s 仍未完成，转入后台继续执行，避免阻塞系统电源回调", suspendCleanupGrace)
 	}
 }
 
@@ -343,6 +357,11 @@ func (a *CoreApp) triggerResumeRecovery(source string, gap time.Duration, forceR
 }
 
 func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReconnect bool) {
+	start := time.Now()
+	defer func() {
+		a.logInfo("系统唤醒恢复流程结束（来源=%s，耗时=%s）", source, time.Since(start).Round(time.Millisecond))
+	}()
+
 	// 若之前收到过挂起通知（主动断开），唤醒后必须强制重连，且需要重启已停止的温度监控。
 	proactivelySuspended := a.systemSuspended.Swap(false)
 	forceReconnect = forceReconnect || proactivelySuspended
@@ -424,38 +443,7 @@ func (a *CoreApp) safeRun(name string, fn func()) {
 
 // ConnectDevice 连接设备
 func (a *CoreApp) ConnectDevice() bool {
-	a.autoReconnectSuppressed.Store(false)
-	cfg := a.configManager.Get()
-	types.NormalizeDeviceProfileConfig(&cfg)
-
-	a.configureDeviceManager(cfg)
-	if success, deviceInfo := a.deviceManager.AutoConnectNativeProfiles(cfg.DeviceProfiles); success {
-		a.finishSuccessfulDeviceConnection(deviceInfo, "ConnectDevice")
-		return true
-	}
-
-	if compatibilityConnectionEnabled(cfg) {
-		a.lastConnectionWasNative.Store(false)
-		if shouldTryDynamicWiFiCompatibility(cfg) {
-			_ = a.recoverDynamicWiFiEndpoint(&cfg)
-		}
-		a.configureDeviceManager(cfg)
-		success, deviceInfo := a.deviceManager.Connect()
-		if !success && a.recoverDynamicWiFiEndpoint(&cfg) {
-			success, deviceInfo = a.deviceManager.Connect()
-		}
-		if success {
-			a.finishSuccessfulDeviceConnection(deviceInfo, "ConnectDevice")
-		} else if a.ipcServer != nil {
-			a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "连接失败")
-		}
-		return success
-	}
-
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "未发现可自动识别的 BLE/HID 设备，且未启用兼容设备")
-	}
-	return false
+	return a.ConnectBestScannedDevice()
 }
 
 func (a *CoreApp) AutoScanDevices() map[string]any {
@@ -617,8 +605,20 @@ func (a *CoreApp) reapplyConfigAfterReconnect() {
 // GetDeviceStatus 获取设备状态
 func (a *CoreApp) GetDeviceStatus() map[string]any {
 	a.mutex.RLock()
+	connected := a.isConnected && a.deviceManager.IsConnected()
 	settings := a.deviceSettings
+	currentTemp := a.currentTemp
+	monitoring := a.monitoringTemp.Load()
 	defer a.mutex.RUnlock()
+
+	if !connected {
+		return map[string]any{
+			"connected":   false,
+			"monitoring":  monitoring,
+			"currentData": nil,
+			"temperature": currentTemp,
+		}
+	}
 
 	productID := a.deviceManager.GetProductID()
 	productIDHex := ""
@@ -630,10 +630,10 @@ func (a *CoreApp) GetDeviceStatus() map[string]any {
 	profile := a.deviceManager.ActiveProfile()
 
 	return map[string]any{
-		"connected":          a.isConnected,
-		"monitoring":         a.monitoringTemp.Load(),
+		"connected":          true,
+		"monitoring":         monitoring,
 		"currentData":        a.deviceManager.GetCurrentFanData(),
-		"temperature":        a.currentTemp,
+		"temperature":        currentTemp,
 		"productId":          productIDHex,
 		"model":              model,
 		"deviceName":         connectedDeviceDisplayName(profile, model, settings, ""),

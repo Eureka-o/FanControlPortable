@@ -177,6 +177,26 @@ func TestWiFiExecutorDefaultParserUsesFanSpeedAsCurrentWhenSpeedIsSetpoint(t *te
 	}
 }
 
+func TestWiFiExecutorDefaultParserRejectsGenericJSONState(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"temperature": 42,
+			"power":       18,
+			"mode":        "online",
+		})
+	}))
+	defer server.Close()
+
+	profile := types.DefaultWiFiPercentProfile(server.URL)
+	executor, err := NewWiFiExecutor(profile, "", nil)
+	if err != nil {
+		t.Fatalf("new executor: %v", err)
+	}
+	if _, err := executor.ReadState(nil); err == nil {
+		t.Fatal("expected generic JSON state to be rejected")
+	}
+}
+
 func TestWiFiExecutorUsesDefaultProtocolForPlainPercentWiFiProfile(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"fanSpeed": 35, "speed": 80})

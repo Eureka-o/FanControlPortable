@@ -212,6 +212,33 @@ func TestWiFiStateUsesFanSpeedAsCurrentWhenSpeedIsSetpoint(t *testing.T) {
 	}
 }
 
+func TestWiFiConnectRejectsGenericJSONState(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/data":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"temperature": 42,
+				"power":       18,
+				"mode":        "online",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	m := NewManager(nil)
+	m.Configure(types.DeviceTransportWiFi, server.URL)
+
+	connected, _ := m.Connect()
+	if connected {
+		t.Fatal("generic JSON endpoint should not connect as a WiFi fan controller")
+	}
+	if m.IsConnected() {
+		t.Fatal("manager should stay disconnected after rejected WiFi state")
+	}
+}
+
 func TestWiFiManagerRejectsNonSpeedFeatureCommandsByDefault(t *testing.T) {
 	m := NewManager(nil)
 	m.Configure(types.DeviceTransportWiFi, "192.168.1.50")

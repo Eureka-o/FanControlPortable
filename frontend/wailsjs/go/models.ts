@@ -1039,8 +1039,64 @@ export namespace types {
 		    return a;
 		}
 	}
+	export class DeviceCandidate {
+	    id: string;
+	    transport: string;
+	    name: string;
+	    profileId?: string;
+	    endpoint?: string;
+	    source?: string;
+	    network?: string;
+	    speed?: number;
+	    targetSpeed?: number;
+	    temperature?: number;
+	    latencyMs?: number;
+	    connected?: boolean;
+	    connectable: boolean;
+	    error?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new DeviceCandidate(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.transport = source["transport"];
+	        this.name = source["name"];
+	        this.profileId = source["profileId"];
+	        this.endpoint = source["endpoint"];
+	        this.source = source["source"];
+	        this.network = source["network"];
+	        this.speed = source["speed"];
+	        this.targetSpeed = source["targetSpeed"];
+	        this.temperature = source["temperature"];
+	        this.latencyMs = source["latencyMs"];
+	        this.connected = source["connected"];
+	        this.connectable = source["connectable"];
+	        this.error = source["error"];
+	    }
+	}
 
 
+	export class DeviceConnectRequest {
+	    id?: string;
+	    transport?: string;
+	    profileId?: string;
+	    endpoint?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new DeviceConnectRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.transport = source["transport"];
+	        this.profileId = source["profileId"];
+	        this.endpoint = source["endpoint"];
+	    }
+	}
 
 	export class DeviceDebugFrame {
 	    id: number;
@@ -1344,6 +1400,48 @@ export namespace types {
 		}
 	}
 
+	export class DeviceScanResult {
+	    mode: string;
+	    connected: boolean;
+	    devices: DeviceCandidate[];
+	    wifiEnabled: boolean;
+	    serialEnabled: boolean;
+	    showDeepScan?: boolean;
+	    error?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new DeviceScanResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.mode = source["mode"];
+	        this.connected = source["connected"];
+	        this.devices = this.convertValues(source["devices"], DeviceCandidate);
+	        this.wifiEnabled = source["wifiEnabled"];
+	        this.serialEnabled = source["serialEnabled"];
+	        this.showDeepScan = source["showDeepScan"];
+	        this.error = source["error"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class DeviceStatusRead {
 	    gearSetting?: string;
 	    maxGear?: string;

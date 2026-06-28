@@ -134,6 +134,21 @@ html[data-theme="dune"] {
   --dune-ui-font: var(--dune-latin-font), var(--dune-cjk-font), serif;
   --dune-title-font: var(--dune-latin-font), var(--dune-cjk-font), serif;
   --dune-number-font: "Cambria", "Constantia", "Georgia", "Palatino Linotype", "Book Antiqua", serif;
+  --dune-progress-track-background:
+    linear-gradient(180deg, rgba(255, 232, 174, 0.13), rgba(37, 20, 10, 0.46) 56%, rgba(6, 4, 2, 0.62)),
+    linear-gradient(90deg, rgba(72, 38, 19, 0.88) 0%, rgba(118, 68, 34, 0.82) 44%, rgba(66, 33, 17, 0.9) 100%);
+  --dune-progress-fill-background:
+    linear-gradient(180deg, rgba(255, 246, 214, 0.42), rgba(255, 219, 146, 0.12) 48%, rgba(93, 48, 19, 0.2)),
+    linear-gradient(90deg, #9d5627 0%, #cf863d 34%, #f1bd67 52%, #e0a04c 68%, #ad632e 100%);
+  --dune-progress-track-border: rgba(230, 176, 92, 0.28);
+  --dune-progress-track-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.68),
+    inset 0 -1px 0 rgba(255, 229, 178, 0.08),
+    0 0 0 1px rgba(88, 54, 24, 0.44);
+  --dune-progress-fill-shadow:
+    inset 0 1px 0 rgba(255, 246, 214, 0.45),
+    inset 0 -1px 0 rgba(92, 45, 18, 0.3),
+    0 0 12px -8px rgba(241, 183, 86, 0.7);
   --dune-page-opacity: 0.77;
 }
 
@@ -821,6 +836,51 @@ html[data-theme="dune"] .glacier-shell [data-theme-ui="setting-row"] > .flex.min
   min-width: 0;
 }
 
+/* Settings rows: let descriptions use the available line length instead of crowding left. */
+html[data-theme="dune"] .glacier-shell [data-theme-ui="setting-row"] > .flex.min-w-0 > .min-w-0,
+html[data-theme="dune"] .glacier-shell [data-theme-ui="compatibility-submenu-row"] .flex.min-w-0 > .min-w-0 {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="setting-row"] .line-clamp-2 {
+  display: block !important;
+  overflow: visible !important;
+  -webkit-line-clamp: unset !important;
+  line-clamp: unset !important;
+  -webkit-box-orient: initial !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="setting-row"] :where(.text-sm.text-muted-foreground, .text-xs.text-muted-foreground),
+html[data-theme="dune"] .glacier-shell [data-theme-ui="compatibility-submenu-row"] :where(.text-sm.text-muted-foreground, .text-xs.text-muted-foreground) {
+  line-height: 1.58;
+}
+
+@media (min-width: 640px) {
+  html[data-theme="dune"] .glacier-shell [data-theme-ui="setting-row"]:has(> [data-theme-ui="setting-row-control"]) {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    align-items: center !important;
+    column-gap: clamp(1.75rem, 3.6vw, 4.5rem) !important;
+  }
+
+  html[data-theme="dune"] .glacier-shell [data-theme-ui="setting-row"] > .flex.min-w-0 {
+    width: 100%;
+  }
+
+  html[data-theme="dune"] .glacier-shell [data-theme-ui="setting-row"] > [data-theme-ui="setting-row-control"] {
+    width: auto !important;
+    max-width: min(36rem, 42vw) !important;
+    margin-left: 0 !important;
+    justify-self: end;
+  }
+
+  html[data-theme="dune"] .glacier-shell [data-theme-ui="setting-row"] > [data-theme-ui="setting-row-control"]:has([data-theme-ui="switch"]) {
+    max-width: max-content !important;
+  }
+}
+
 html[data-theme="dune"] .glacier-shell [data-theme-ui="setting-row-icon"] {
   border-color: rgba(230, 176, 92, 0.24);
   background:
@@ -856,16 +916,12 @@ html[data-theme="dune"] .glacier-shell [data-theme-ui="slider-root"] {
 html[data-theme="dune"] .glacier-shell [data-theme-ui="slider-track"] {
   height: 0.5rem !important;
   border-radius: 999px !important;
-  border: 1px solid rgba(230, 176, 92, 0.28) !important;
-  background:
-    linear-gradient(180deg, rgba(255, 238, 194, 0.2), rgba(255, 210, 137, 0.06) 42%, rgba(31, 16, 8, 0.4) 100%),
-    var(--dune-flowing-sand),
-    linear-gradient(90deg, #9a5428 0%, #f0bd6a 42%, #f8d690 58%, #a65d2c 100%) !important;
-  background-size: 100% 100%, 260px 100%, 100% 100%;
-  box-shadow:
-    inset 0 1px 3px rgba(0, 0, 0, 0.68),
-    inset 0 -1px 0 rgba(255, 229, 178, 0.08),
-    0 0 0 1px rgba(88, 54, 24, 0.44) !important;
+  border: 1px solid var(--dune-progress-track-border) !important;
+  background: var(--dune-progress-track-background) !important;
+  background-size: 100% 100%, 100% 100% !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  box-shadow: var(--dune-progress-track-shadow) !important;
 }
 
 html[data-theme="dune"] .glacier-shell [data-theme-ui="slider-range"] {
@@ -888,26 +944,22 @@ html[data-theme="dune"] .glacier-shell [data-theme-ui="slider-thumb"] {
 }
 
 html[data-theme="dune"] .glacier-shell :where(.h-1, .h-1\.5, .h-2, .h-2\.5).overflow-hidden.rounded-full {
-  background:
-    linear-gradient(180deg, rgba(5, 3, 2, 0.68), rgba(58, 36, 18, 0.42)) !important;
-  border: 1px solid rgba(230, 176, 92, 0.14);
-  box-shadow:
-    inset 0 1px 2px rgba(0, 0, 0, 0.54),
-    inset 0 -1px 0 rgba(255, 229, 178, 0.04);
+  background: var(--dune-progress-track-background) !important;
+  background-size: 100% 100%, 100% 100% !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  border: 1px solid var(--dune-progress-track-border);
+  box-shadow: var(--dune-progress-track-shadow);
 }
 
 html[data-theme="dune"] .glacier-shell :where(.h-1, .h-1\.5, .h-2, .h-2\.5).overflow-hidden.rounded-full > :where(div, span):first-child,
 html[data-theme="dune"] .glacier-shell [data-theme-card="curve-manual-gears"] .h-1.rounded-full.bg-muted {
   background-color: #d9a653 !important;
-  background-image:
-    linear-gradient(180deg, rgba(255, 236, 193, 0.5), rgba(255, 236, 193, 0.08) 38%, rgba(94, 49, 21, 0.18) 100%),
-    var(--dune-flowing-sand),
-    linear-gradient(90deg, #8f4f24, #f0bc69 48%, #a65e2e) !important;
-  background-size: 100% 100%, 260px 100%, 100% 100%;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 245, 220, 0.54),
-    inset 0 -1px 0 rgba(76, 38, 16, 0.28),
-    0 5px 14px -11px rgba(238, 184, 93, 0.7);
+  background-image: var(--dune-progress-fill-background) !important;
+  background-size: 100% 100%, 100% 100% !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  box-shadow: var(--dune-progress-fill-shadow);
 }
 
 html[data-theme="dune"] .glacier-shell [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow,
@@ -915,16 +967,12 @@ html[data-theme="dune"] .glacier-shell [data-orientation="horizontal"].relative.
   height: 0.5rem !important;
   overflow: hidden !important;
   border-radius: 999px !important;
-  border: 1px solid rgba(230, 176, 92, 0.28) !important;
-  background:
-    linear-gradient(180deg, rgba(255, 238, 194, 0.2), rgba(255, 210, 137, 0.06) 42%, rgba(31, 16, 8, 0.4) 100%),
-    var(--dune-flowing-sand),
-    linear-gradient(90deg, #9a5428 0%, #f0bd6a 42%, #f8d690 58%, #a65d2c 100%) !important;
-  background-size: 100% 100%, 260px 100%, 100% 100% !important;
-  box-shadow:
-    inset 0 1px 3px rgba(0, 0, 0, 0.68),
-    inset 0 -1px 0 rgba(255, 229, 178, 0.08),
-    0 0 0 1px rgba(88, 54, 24, 0.44) !important;
+  border: 1px solid var(--dune-progress-track-border) !important;
+  background: var(--dune-progress-track-background) !important;
+  background-size: 100% 100%, 100% 100% !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  box-shadow: var(--dune-progress-track-shadow) !important;
 }
 
 html[data-theme="dune"] .glacier-shell [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow > .absolute.h-full,
@@ -1070,16 +1118,12 @@ html[data-theme="dune"] .glacier-shell [data-theme-ui="learning-target-temp"] .l
 html[data-theme="dune"] .glacier-shell [data-theme-ui="learning-target-temp"] .learning-target-temp-slider [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow {
   height: 0.52rem !important;
   border-radius: 999px !important;
-  border: 1px solid rgba(230, 176, 92, 0.28) !important;
-  background:
-    linear-gradient(180deg, rgba(255, 238, 194, 0.2), rgba(255, 210, 137, 0.06) 42%, rgba(31, 16, 8, 0.4) 100%),
-    var(--dune-flowing-sand),
-    linear-gradient(90deg, #9a5428 0%, #f0bd6a 42%, #f8d690 58%, #a65d2c 100%) !important;
-  background-size: 100% 100%, 260px 100%, 100% 100%;
-  box-shadow:
-    inset 0 1px 3px rgba(0, 0, 0, 0.68),
-    inset 0 -1px 0 rgba(255, 229, 178, 0.08),
-    0 0 0 1px rgba(88, 54, 24, 0.44) !important;
+  border: 1px solid var(--dune-progress-track-border) !important;
+  background: var(--dune-progress-track-background) !important;
+  background-size: 100% 100%, 100% 100% !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  box-shadow: var(--dune-progress-track-shadow) !important;
 }
 
 html[data-theme="dune"] .glacier-shell [data-theme-ui="learning-target-temp"] .learning-target-temp-slider [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow > .absolute.h-full {
@@ -1132,16 +1176,12 @@ html[data-theme="dune"] .glacier-shell [data-theme-card="curve-learning"] > .mt-
 html[data-theme="dune"] .glacier-shell [data-theme-card="curve-learning"] > .mt-3 > div:nth-child(2) [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow {
   height: 0.52rem !important;
   border-radius: 999px !important;
-  border: 1px solid rgba(230, 176, 92, 0.28) !important;
-  background:
-    linear-gradient(180deg, rgba(255, 238, 194, 0.2), rgba(255, 210, 137, 0.06) 42%, rgba(31, 16, 8, 0.4) 100%),
-    var(--dune-flowing-sand),
-    linear-gradient(90deg, #9a5428 0%, #f0bd6a 42%, #f8d690 58%, #a65d2c 100%) !important;
-  background-size: 100% 100%, 260px 100%, 100% 100%;
-  box-shadow:
-    inset 0 1px 3px rgba(0, 0, 0, 0.68),
-    inset 0 -1px 0 rgba(255, 229, 178, 0.08),
-    0 0 0 1px rgba(88, 54, 24, 0.44) !important;
+  border: 1px solid var(--dune-progress-track-border) !important;
+  background: var(--dune-progress-track-background) !important;
+  background-size: 100% 100%, 100% 100% !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  box-shadow: var(--dune-progress-track-shadow) !important;
 }
 
 html[data-theme="dune"] .glacier-shell [data-theme-card="curve-learning"] > .mt-3 > div:nth-child(2) [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow > .absolute.h-full {
@@ -1285,4 +1325,78 @@ html[data-theme="dune"] .glacier-shell [data-theme-card="curve-learning"] > .mt-
     inset 0 1px 0 rgba(255, 246, 214, 0.45),
     inset 0 -1px 0 rgba(92, 45, 18, 0.3),
     0 0 12px -8px rgba(241, 183, 86, 0.7) !important;
+}
+
+/* Unified progress/slider guard: long bars must never inherit tiled sand assets. */
+html[data-theme="dune"] .glacier-shell [data-theme-ui="slider-track"],
+html[data-theme="dune"] .glacier-shell [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow,
+html[data-theme="dune"] .glacier-shell [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2\.w-full.grow,
+html[data-theme="dune"] .glacier-shell :where(.h-1, .h-1\.5, .h-2, .h-2\.5).overflow-hidden.rounded-full {
+  overflow: hidden !important;
+  border-radius: 999px !important;
+  border: 1px solid var(--dune-progress-track-border) !important;
+  background: var(--dune-progress-track-background) !important;
+  background-size: 100% 100%, 100% 100% !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  box-shadow: var(--dune-progress-track-shadow) !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-ui="slider-track"],
+html[data-theme="dune"] .glacier-shell [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow,
+html[data-theme="dune"] .glacier-shell [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2\.w-full.grow {
+  height: 0.5rem !important;
+}
+
+html[data-theme="dune"] .glacier-shell :where(.h-1, .h-1\.5, .h-2, .h-2\.5).overflow-hidden.rounded-full > :where(div, span):first-child,
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-manual-gears"] .h-1.rounded-full.bg-muted,
+html[data-theme="dune"] .glacier-shell [data-theme-ui="slider-range"],
+html[data-theme="dune"] .glacier-shell [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2.w-full.grow > .absolute.h-full,
+html[data-theme="dune"] .glacier-shell [data-orientation="horizontal"].relative.flex.w-full.touch-none > .relative.h-2\.w-full.grow > .absolute.h-full {
+  border-radius: inherit !important;
+  background: var(--dune-progress-fill-background) !important;
+  background-size: 100% 100%, 100% 100% !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  opacity: 1 !important;
+  box-shadow: var(--dune-progress-fill-shadow) !important;
+  filter: none !important;
+  mix-blend-mode: normal !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-manual-gears"] .relative.mb-3.px-2 {
+  isolation: isolate;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-manual-gears"] .relative.mb-3.px-2::before {
+  content: "";
+  position: absolute;
+  left: 0.5rem;
+  right: 0.5rem;
+  top: 50%;
+  z-index: 0;
+  height: 0.5rem;
+  pointer-events: none;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  border: 1px solid var(--dune-progress-track-border);
+  background: var(--dune-progress-fill-background);
+  background-size: 100% 100%, 100% 100%;
+  background-repeat: no-repeat;
+  background-position: center;
+  box-shadow:
+    var(--dune-progress-track-shadow),
+    var(--dune-progress-fill-shadow);
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-manual-gears"] .relative.mb-3.px-2 > .absolute.left-2.right-2.top-1\/2.h-1.-translate-y-1\/2.rounded-full.bg-muted {
+  z-index: 0;
+  height: 0.5rem !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dune"] .glacier-shell [data-theme-card="curve-manual-gears"] .relative.mb-3.px-2 > .relative.flex {
+  z-index: 1;
 }

@@ -68,6 +68,26 @@ func TestDiscoverWiFiDevicesReportsElapsedMs(t *testing.T) {
 	}
 }
 
+func TestDiscoverWiFiDevicesRejectsGenericJSONState(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"temperature": 42,
+			"power":       18,
+			"mode":        "online",
+		})
+	}))
+	defer server.Close()
+
+	result := DiscoverWiFiDevices(context.Background(), types.WiFiDiscoveryParams{
+		Mode:      types.WiFiDiscoveryModeNormal,
+		Endpoint:  server.URL,
+		TimeoutMs: 120,
+	})
+	if result.Found || len(result.Devices) != 0 {
+		t.Fatalf("generic JSON should not be detected as WiFi device: %#v", result)
+	}
+}
+
 func TestPausedWiFiDiscoveryCanBeCanceled(t *testing.T) {
 	control := types.NewWiFiDiscoveryControl()
 	control.Pause()
