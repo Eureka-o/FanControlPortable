@@ -1493,10 +1493,11 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                               : t('fanCurve.manualGear.runtimeUnavailable', { gear: getManualGearLabel(point.gear), limit: manualGearLimitHint })}
                           >
                             <span
+                              data-theme-ui="manual-gear-dot"
                               className={clsx(
-                                'block h-4 w-4 rounded-full border border-border/80 bg-card transition-transform duration-150',
-                                isActivePoint ? `scale-125 ${point.borderClass} ${point.bgClass}` : '',
-                                isPassed && !isActivePoint ? point.bgClass : '',
+                                'block h-4 w-4 rounded-full border border-border/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.32)] transition-transform duration-150',
+                                point.bgClass,
+                                isActivePoint ? `scale-125 ${point.borderClass}` : '',
                               )}
                             />
                           </button>

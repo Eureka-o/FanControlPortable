@@ -16,7 +16,6 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/windows"
 )
 
 //go:embed all:frontend/dist
@@ -29,6 +28,8 @@ func main() {
 
 	themeManager := newThemeManager()
 	app := NewAppWithThemeManager(themeManager)
+	windowOptions := guiapp.ResolveWindowsOptions()
+	bgR, bgG, bgB, bgA := guiapp.WindowBackgroundColour()
 
 	windowStartState := options.Normal
 	for _, arg := range os.Args {
@@ -59,12 +60,8 @@ func main() {
 			UniqueId:               appmeta.GUISingleInstanceID,
 			OnSecondInstanceLaunch: guiapp.OnSecondInstanceLaunch,
 		},
-		BackgroundColour: &options.RGBA{R: 0, G: 0, B: 0, A: 0},
-		Windows: &windows.Options{
-			WebviewIsTransparent: true,
-			WindowIsTranslucent:  true,
-			BackdropType:         windows.Mica,
-		},
+		BackgroundColour: &options.RGBA{R: bgR, G: bgG, B: bgB, A: bgA},
+		Windows:          windowOptions,
 		Bind: []any{
 			app,
 		},

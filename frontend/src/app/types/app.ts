@@ -97,6 +97,7 @@ export interface AppConfig {
   windowsAutoStart: boolean;   // Windows开机自启动
   // 主题模式：system/light/dark 为内置基础主题；其它字符串为自定义主题 id（如 'thrm'）
   themeMode?: string;
+  windowBlur?: 'on' | 'off' | 'auto';
   smartStartStop: string;      // 智能启停
   brightness: number;          // 亮度
   tempUpdateRate: number;      // 温度更新频率(秒)

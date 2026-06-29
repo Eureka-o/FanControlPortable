@@ -86,6 +86,7 @@ export function getThemeBootstrapScript(): string {
   const STYLE_ID = ${JSON.stringify(CUSTOM_STYLE_ID)};
   const BUILTIN_MODES = new Set(${JSON.stringify([...BUILTIN_THEME_MODES])});
   const root = document.documentElement;
+  root.dataset.windowBlur = 'on';
 
   const applyBaseTheme = (isDark) => {
     const styleEl = document.getElementById(STYLE_ID);
@@ -118,11 +119,12 @@ export function getThemeBootstrapScript(): string {
     snapshot = null;
   }
 
+  const prefersDark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
   if (!snapshot || snapshot.version !== ${JSON.stringify(THEME_BOOTSTRAP_VERSION)} || typeof snapshot.mode !== 'string' || !snapshot.mode) {
+    applyBaseTheme(prefersDark);
     return;
   }
 
-  const prefersDark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
   if (BUILTIN_MODES.has(snapshot.mode)) {
     applyBaseTheme(snapshot.mode === 'dark' || (snapshot.mode === 'system' && prefersDark));
     return;
@@ -135,6 +137,7 @@ export function getThemeBootstrapScript(): string {
     return;
   }
 
+  delete root.dataset.windowBlur;
   let styleEl = document.getElementById(STYLE_ID);
   if (!styleEl) {
     styleEl = document.createElement('style');

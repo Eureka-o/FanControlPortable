@@ -867,6 +867,9 @@
       "themeTitle": "界面主题",
       "themeDescription": "默认跟随系统，也可固定浅色/深色，或选择安装目录 themes 文件夹中的自定义主题",
       "themeOpenFolder": "打开主题文件夹",
+      "windowBlurTitle": "毛玻璃窗口",
+      "windowBlurDescription": "内置浅色/深色主题使用 Acrylic 窗口材质，自定义主题不受影响。",
+      "windowBlurTip": "此设置需要重启应用后生效。",
       "languageTitle": "界面语言",
       "languageDescription": "切换应用显示语言，立即生效并自动记住。",
       "hotkeys": {

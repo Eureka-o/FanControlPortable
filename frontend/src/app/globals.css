@@ -138,6 +138,18 @@
   --theme-switch-thumb-background: var(--card);
   --theme-switch-surface-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.48);
   --theme-switch-thumb-shadow: 0 2px 8px -3px rgba(15, 23, 42, 0.34);
+  --window-glass-shell-bg: rgba(245, 248, 252, 0.34);
+  --window-glass-sidebar-bg: rgba(248, 250, 253, 0.48);
+  --window-glass-titlebar-bg: rgba(248, 250, 253, 0.38);
+  --window-glass-panel-bg: rgba(247, 250, 253, 0.52);
+  --window-glass-card-bg: rgba(255, 255, 255, 0.68);
+  --window-glass-card-strong-bg: rgba(255, 255, 255, 0.76);
+  --window-glass-row-bg: rgba(255, 255, 255, 0.36);
+  --window-glass-border: rgba(255, 255, 255, 0.56);
+  --window-glass-border-muted: rgba(116, 134, 158, 0.22);
+  --window-glass-shadow: 0 18px 46px -32px rgba(24, 34, 54, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  --window-glass-row-shadow: 0 10px 28px -24px rgba(24, 34, 54, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.42);
+  --window-glass-blur: blur(26px) saturate(150%);
 }
 
 @theme inline {
@@ -318,18 +330,46 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
     inset 0 -1px 0 rgba(0, 0, 0, 0.32);
   --theme-switch-thumb-shadow: 0 2px 8px -3px rgba(0, 0, 0, 0.72);
+  --window-glass-shell-bg: rgba(8, 10, 14, 0.38);
+  --window-glass-sidebar-bg: rgba(11, 14, 19, 0.54);
+  --window-glass-titlebar-bg: rgba(10, 13, 18, 0.48);
+  --window-glass-panel-bg: rgba(12, 15, 21, 0.58);
+  --window-glass-card-bg: rgba(18, 23, 31, 0.66);
+  --window-glass-card-strong-bg: rgba(20, 26, 35, 0.74);
+  --window-glass-row-bg: rgba(24, 30, 40, 0.36);
+  --window-glass-border: rgba(255, 255, 255, 0.14);
+  --window-glass-border-muted: rgba(255, 255, 255, 0.09);
+  --window-glass-shadow: 0 20px 52px -32px rgba(0, 0, 0, 0.76), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --window-glass-row-shadow: 0 12px 30px -24px rgba(0, 0, 0, 0.58), inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  --window-glass-blur: blur(28px) saturate(145%);
 }
 
 .theme-thrm-only {
   display: none !important;
 }
 
+html[data-theme-transition="off"] *,
+html[data-theme-transition="off"] *::before,
+html[data-theme-transition="off"] *::after {
+  transition: none !important;
+}
+
 body:has(.glacier-native-backdrop) {
   background: var(--background);
 }
 
+html[data-window-blur="on"]:not([data-theme]) body:has(.glacier-native-backdrop) {
+  background: transparent;
+}
+
 .glacier-native-backdrop {
   background: var(--background) !important;
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-native-backdrop {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--window-glass-shell-bg) 82%, transparent), transparent 72%),
+    var(--window-glass-shell-bg) !important;
 }
 
 .glacier-native-backdrop .glacier-sidebar {
@@ -337,12 +377,35 @@ body:has(.glacier-native-backdrop) {
   border-right-color: var(--sidebar-border);
 }
 
+html[data-window-blur="on"]:not([data-theme]) .glacier-native-backdrop .glacier-sidebar {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 38%),
+    var(--window-glass-sidebar-bg);
+  border-right-color: var(--window-glass-border-muted);
+  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.08), 18px 0 40px -34px rgba(0, 0, 0, 0.36);
+  backdrop-filter: var(--window-glass-blur);
+  -webkit-backdrop-filter: var(--window-glass-blur);
+}
+
 .glacier-native-backdrop .glacier-titlebar {
   background: color-mix(in srgb, var(--background) 94%, var(--card) 6%);
 }
 
+html[data-window-blur="on"]:not([data-theme]) .glacier-native-backdrop .glacier-titlebar {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 78%),
+    var(--window-glass-titlebar-bg);
+  border-bottom: 1px solid var(--window-glass-border-muted);
+  backdrop-filter: var(--window-glass-blur);
+  -webkit-backdrop-filter: var(--window-glass-blur);
+}
+
 .glacier-native-backdrop .glacier-content {
   background: var(--background);
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-native-backdrop .glacier-content {
+  background: transparent;
 }
 
 .glacier-native-backdrop .glacier-content-panel {
@@ -354,8 +417,45 @@ body:has(.glacier-native-backdrop) {
   box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.04) inset;
 }
 
+html[data-window-blur="on"]:not([data-theme]) .glacier-native-backdrop .glacier-content-panel {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 72%),
+    var(--window-glass-panel-bg);
+  border-top-color: transparent;
+  border-left-color: var(--window-glass-border-muted);
+  border-top-left-radius: 0;
+  box-shadow: var(--window-glass-shadow);
+  backdrop-filter: var(--window-glass-blur);
+  -webkit-backdrop-filter: var(--window-glass-blur);
+}
+
 .dark .glacier-native-backdrop .glacier-content-panel {
   box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+
+html[data-window-blur="on"]:not([data-theme]) {
+  --window-glass-card-soft-bg: color-mix(in srgb, var(--window-glass-row-bg) 82%, transparent);
+  --window-glass-card-mid-bg: color-mix(in srgb, var(--window-glass-card-bg) 90%, transparent);
+  --window-glass-card-deep-bg: color-mix(in srgb, var(--window-glass-card-strong-bg) 96%, transparent);
+  --window-glass-card-highlight: linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 72%);
+  --surface-layer: var(--window-glass-card-mid-bg);
+  --surface-layer-strong: var(--window-glass-card-deep-bg);
+  --surface-hairline: var(--window-glass-border-muted);
+  --theme-card-background: var(--window-glass-card-mid-bg);
+  --theme-card-border: var(--window-glass-border-muted);
+  --theme-card-shadow: var(--window-glass-shadow);
+  --theme-card-backdrop-filter: blur(18px) saturate(136%);
+  --theme-preview-card-background: var(--window-glass-card-soft-bg);
+  --theme-preview-card-border: var(--window-glass-border-muted);
+  --theme-preview-card-shadow: var(--window-glass-row-shadow);
+  --theme-tile-background: var(--window-glass-card-soft-bg);
+  --theme-tile-border: var(--window-glass-border-muted);
+  --theme-tile-shadow: var(--window-glass-row-shadow);
+  --theme-tile-hover-shadow: var(--window-glass-row-shadow), 0 0 0 1px color-mix(in srgb, var(--primary) 22%, transparent);
+  --theme-chart-canvas-background: color-mix(in srgb, var(--window-glass-card-soft-bg) 84%, transparent);
+  --theme-chart-canvas-border: var(--window-glass-border-muted);
+  --popover: var(--window-glass-card-deep-bg);
+  --chart-tooltip-bg: color-mix(in srgb, var(--window-glass-card-deep-bg) 94%, transparent);
 }
 
 .glacier-shell svg {
@@ -372,6 +472,12 @@ body:has(.glacier-native-backdrop) {
 
 .glacier-shell[data-theme-page="curve"] [data-theme-section="content-panel"] {
   background: var(--theme-page-curve-background, var(--mica-content-surface));
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell[data-theme-page] [data-theme-section="content-panel"] {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 72%),
+    var(--window-glass-panel-bg);
 }
 
 .glacier-shell [data-theme-ui="setting-section"],
@@ -458,6 +564,137 @@ body:has(.glacier-native-backdrop) {
   overflow: hidden;
 }
 
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="setting-section"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card][class*="rounded"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell .glacier-hero-card,
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell .glacier-metric-card,
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell .glacier-control-card,
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell .glacier-chart-card {
+  background:
+    var(--window-glass-card-highlight),
+    var(--window-glass-card-mid-bg);
+  border-color: var(--window-glass-border-muted);
+  box-shadow: var(--window-glass-shadow);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  background-clip: padding-box;
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell .glacier-hero-card,
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell .glacier-control-card,
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="curve-manual-gears"] {
+  background:
+    var(--window-glass-card-highlight),
+    var(--window-glass-card-deep-bg);
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell .glacier-stat-tile,
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="curve-history-summary"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="curve-history-chart"] {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 72%),
+    var(--window-glass-card-soft-bg);
+  border-color: color-mix(in srgb, var(--window-glass-border-muted) 82%, transparent);
+  box-shadow: var(--window-glass-row-shadow);
+  backdrop-filter: blur(12px) saturate(122%);
+  -webkit-backdrop-filter: blur(12px) saturate(122%);
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="setting-row-icon"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="brand-mark"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell .glacier-hero-card .h-14.w-14 {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 70%),
+    var(--window-glass-card-soft-bg);
+  border: 1px solid color-mix(in srgb, var(--window-glass-border-muted) 88%, transparent);
+  box-shadow: var(--window-glass-row-shadow);
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="setting-section-header"] {
+  background: color-mix(in srgb, var(--window-glass-row-bg) 70%, transparent);
+  border-bottom-color: var(--window-glass-border-muted);
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="setting-section"] > .divide-y {
+  border-color: transparent;
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="setting-section"] > .divide-y > :not([hidden]) ~ :not([hidden]) {
+  border-top-color: transparent;
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="setting-row"] {
+  margin: 0.45rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--window-glass-border-muted) 70%, transparent);
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent 72%),
+    var(--window-glass-card-soft-bg);
+  box-shadow: var(--window-glass-row-shadow);
+  backdrop-filter: blur(12px) saturate(122%);
+  -webkit-backdrop-filter: blur(12px) saturate(122%);
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="setting-row"]:has(> [data-theme-ui="setting-row-control"] [data-theme-ui="switch"]) {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 76%),
+    color-mix(in srgb, var(--window-glass-card-soft-bg) 88%, var(--window-glass-card-mid-bg) 12%);
+  border-color: color-mix(in srgb, var(--window-glass-border-muted) 58%, transparent);
+  box-shadow: var(--window-glass-row-shadow);
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="compatibility-submenu"] {
+  background: color-mix(in srgb, var(--window-glass-card-soft-bg) 54%, transparent);
+  border-top-color: color-mix(in srgb, var(--window-glass-border-muted) 68%, transparent);
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="compatibility-submenu-row"] {
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.065), transparent 72%),
+    var(--window-glass-card-soft-bg);
+  border: 1px solid color-mix(in srgb, var(--window-glass-border-muted) 66%, transparent);
+  box-shadow: var(--window-glass-row-shadow);
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="compatibility-nested-row"] {
+  border-color: color-mix(in srgb, var(--window-glass-border-muted) 62%, transparent);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), transparent 74%),
+    color-mix(in srgb, var(--window-glass-card-soft-bg) 72%, var(--window-glass-card-mid-bg) 28%);
+  box-shadow: var(--window-glass-row-shadow);
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="compatibility-nested-panel"] {
+  border-color: color-mix(in srgb, var(--window-glass-border-muted) 62%, transparent);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent 78%),
+    color-mix(in srgb, var(--window-glass-card-soft-bg) 80%, var(--window-glass-card-mid-bg) 20%);
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="curve-manual-gears"] > .grid > button.rounded-xl {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent 72%),
+    var(--window-glass-card-soft-bg);
+  border-color: color-mix(in srgb, var(--window-glass-border-muted) 82%, transparent);
+  box-shadow: var(--window-glass-row-shadow);
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="curve-manual-gears"] > .grid > button.rounded-xl:not(:disabled):hover {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.09), transparent 72%),
+    color-mix(in srgb, var(--window-glass-card-soft-bg) 76%, var(--window-glass-card-mid-bg) 24%);
+  border-color: var(--theme-control-hover-border);
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="curve-manual-gears"] > .grid > button.rounded-xl:not([class*="border-border"]) {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--primary) 13%, rgba(255, 255, 255, 0.08)), transparent 72%),
+    color-mix(in srgb, var(--window-glass-card-soft-bg) 70%, var(--window-glass-card-mid-bg) 30%);
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--window-glass-border-muted));
+  box-shadow: var(--window-glass-row-shadow), 0 0 0 1px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+
 .glacier-shell [data-theme-card="curve-header"] {
   background: transparent;
   border-color: transparent;
@@ -540,6 +777,15 @@ body:has(.glacier-native-backdrop) {
 .glacier-shell [data-theme-ui="setting-row"]:hover,
 .glacier-shell [data-theme-ui="compatibility-submenu-row"]:hover {
   box-shadow: inset 2px 0 0 var(--theme-control-hover-border);
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="setting-row"]:hover,
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="compatibility-submenu-row"]:hover {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.075), transparent 76%),
+    color-mix(in srgb, var(--window-glass-card-soft-bg) 84%, var(--window-glass-card-mid-bg) 16%);
+  border-color: color-mix(in srgb, var(--window-glass-border-muted) 66%, transparent);
+  box-shadow: var(--window-glass-row-shadow), inset 1px 0 0 color-mix(in srgb, var(--theme-control-hover-border) 72%, transparent);
 }
 
 .glacier-shell [data-theme-ui="select-trigger"] {
@@ -727,6 +973,56 @@ textarea,
 
 *::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+@keyframes app-card-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.app-tab-surface :where(
+  .glacier-hero-card,
+  .glacier-metric-card,
+  .glacier-control-card,
+  .glacier-chart-card,
+  .glacier-stat-tile,
+  [data-theme-ui="setting-section"],
+  [data-theme-card="curve-header"],
+  [data-theme-card="curve-editor"],
+  [data-theme-card="curve-manual-gears"],
+  [data-theme-card="curve-history-summary"],
+  [data-theme-card="curve-history-chart"],
+  [data-theme-card="fan-curve-preview"],
+  [data-theme-card="temperature-history"]
+) {
+  animation: app-card-rise 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--app-card-rise-delay, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-tab-surface :where(
+    .glacier-hero-card,
+    .glacier-metric-card,
+    .glacier-control-card,
+    .glacier-chart-card,
+    .glacier-stat-tile,
+    [data-theme-ui="setting-section"],
+    [data-theme-card="curve-header"],
+    [data-theme-card="curve-editor"],
+    [data-theme-card="curve-manual-gears"],
+    [data-theme-card="curve-history-summary"],
+    [data-theme-card="curve-history-chart"],
+    [data-theme-card="fan-curve-preview"],
+    [data-theme-card="temperature-history"]
+  ) {
+    animation: none;
+  }
 }
 
 /* Smooth animations */

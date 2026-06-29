@@ -867,6 +867,9 @@
       "themeTitle": "テーマ",
       "themeDescription": "システム設定に従う、ライト/ダーク固定のほか、themes フォルダーからカスタムテーマも選択できます。",
       "themeOpenFolder": "themes フォルダー",
+      "windowBlurTitle": "ガラス風ウィンドウ",
+      "windowBlurDescription": "内蔵ライト/ダークテーマで Acrylic ウィンドウ素材を使用します。カスタムテーマには影響しません。",
+      "windowBlurTip": "この設定はアプリ再起動後に反映されます。",
       "languageTitle": "言語",
       "languageDescription": "アプリの表示言語を切り替え、選択した言語は自動で保存されます。",
       "hotkeys": {
