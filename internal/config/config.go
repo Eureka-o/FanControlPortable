@@ -148,6 +148,7 @@ func (m *Manager) tryLoadFromPathLocked(configPath string) bool {
 	applyMissingSmartControlDefaults(&config, rawConfig)
 	applyMissingLegionFnQDefaults(&config, rawConfig)
 	applyMissingThemeDefaults(&config, rawConfig)
+	applyMissingWindowBlurDefaults(&config, rawConfig)
 	applyMissingTemperatureDefaults(&config, rawConfig)
 	normalizeSpeedConfig(&config)
 
@@ -397,6 +398,17 @@ func applyMissingThemeDefaults(cfg *types.AppConfig, rawConfig map[string]json.R
 	}
 
 	cfg.ThemeMode = types.NormalizeThemeMode(cfg.ThemeMode)
+}
+
+func applyMissingWindowBlurDefaults(cfg *types.AppConfig, rawConfig map[string]json.RawMessage) {
+	if cfg == nil {
+		return
+	}
+	if _, ok := rawConfig["windowBlur"]; !ok {
+		cfg.WindowBlur = types.WindowBlurOn
+		return
+	}
+	cfg.WindowBlur = types.NormalizeWindowBlur(cfg.WindowBlur)
 }
 
 func applyMissingTemperatureDefaults(cfg *types.AppConfig, rawConfig map[string]json.RawMessage) {

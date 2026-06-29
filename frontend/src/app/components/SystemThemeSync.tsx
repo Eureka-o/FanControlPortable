@@ -15,6 +15,8 @@ import {
   type ThemeBootstrapSnapshot,
 } from '../lib/theme-bootstrap';
 
+let themeTransitionToken = 0;
+
 function readThemeBootstrapSnapshot(): ThemeBootstrapSnapshot | null {
   if (typeof window === 'undefined') {
     return null;
@@ -35,16 +37,32 @@ function writeThemeBootstrapSnapshot(snapshot: ThemeBootstrapSnapshot) {
   }
 }
 
-function syncWindowsDarkMode(isDark: boolean) {
+function syncWindowsTheme(mode: string, isDark: boolean) {
   void import('../../../wailsjs/runtime/runtime')
-    .then(({ WindowSetDarkTheme, WindowSetLightTheme }) => {
-      if (isDark) {
+    .then(({ WindowSetDarkTheme, WindowSetLightTheme, WindowSetSystemDefaultTheme }) => {
+      if (mode === 'system') {
+        WindowSetSystemDefaultTheme();
+      } else if (isDark) {
         WindowSetDarkTheme();
       } else {
         WindowSetLightTheme();
       }
     })
     .catch(() => {});
+}
+
+function applyWithoutThemeTransition(apply: () => void) {
+  const root = document.documentElement;
+  const token = ++themeTransitionToken;
+  root.dataset.themeTransition = 'off';
+  apply();
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      if (token === themeTransitionToken) {
+        delete root.dataset.themeTransition;
+      }
+    });
+  });
 }
 
 function ensureCustomThemeStyle(css: string) {
@@ -66,10 +84,12 @@ function clearCustomTheme() {
 
 // 应用内置基础主题：仅切换 .dark，并清掉任何自定义主题残留。
 function applyBuiltinMode(mode: string, prefersDark: boolean) {
-  clearCustomTheme();
   const isDark = mode === 'dark' || (mode === 'system' && prefersDark);
-  document.documentElement.classList.toggle('dark', isDark);
-  syncWindowsDarkMode(isDark);
+  applyWithoutThemeTransition(() => {
+    clearCustomTheme();
+    document.documentElement.classList.toggle('dark', isDark);
+  });
+  syncWindowsTheme(mode, isDark);
   if (isBuiltinMode(mode)) {
     writeThemeBootstrapSnapshot(createBuiltinThemeSnapshot(mode));
   }
@@ -82,16 +102,21 @@ function applyCachedCustomTheme(snapshot: ThemeBootstrapSnapshot) {
 
   const base = snapshot.base === 'dark' ? 'dark' : 'light';
   if (!snapshot.css) {
-    clearCustomTheme();
-    document.documentElement.classList.toggle('dark', base === 'dark');
-    syncWindowsDarkMode(base === 'dark');
+    applyWithoutThemeTransition(() => {
+      clearCustomTheme();
+      document.documentElement.classList.toggle('dark', base === 'dark');
+    });
+    syncWindowsTheme(base, base === 'dark');
     return;
   }
 
-  ensureCustomThemeStyle(snapshot.css);
-  document.documentElement.classList.toggle('dark', base === 'dark');
-  syncWindowsDarkMode(base === 'dark');
-  document.documentElement.dataset.theme = snapshot.mode;
+  const css = snapshot.css;
+  applyWithoutThemeTransition(() => {
+    ensureCustomThemeStyle(css);
+    document.documentElement.classList.toggle('dark', base === 'dark');
+    document.documentElement.dataset.theme = snapshot.mode;
+  });
+  syncWindowsTheme(base, base === 'dark');
 }
 
 /**
@@ -128,17 +153,20 @@ async function applyCustomTheme(id: string, isCancelled?: () => boolean): Promis
 
   if (!css) {
     // 自定义主题不可用：清理并回退到基础主题（按 base 决定浅/深）。
-    clearCustomTheme();
-    document.documentElement.classList.toggle('dark', base === 'dark');
+    applyWithoutThemeTransition(() => {
+      clearCustomTheme();
+      document.documentElement.classList.toggle('dark', base === 'dark');
+    });
     writeThemeBootstrapSnapshot(createBuiltinThemeSnapshot(base));
     return;
   }
 
-  ensureCustomThemeStyle(css);
-
   // 先设基底明暗，再打 data-theme，避免基础变量覆盖主题变量。
-  document.documentElement.classList.toggle('dark', base === 'dark');
-  document.documentElement.dataset.theme = id;
+  applyWithoutThemeTransition(() => {
+    ensureCustomThemeStyle(css);
+    document.documentElement.classList.toggle('dark', base === 'dark');
+    document.documentElement.dataset.theme = id;
+  });
   writeThemeBootstrapSnapshot(createCustomThemeSnapshot(id, base, css));
 }
 
@@ -163,6 +191,7 @@ export default function SystemThemeSync() {
     const rawMode = (state.config as any)?.themeMode;
     return typeof rawMode === 'string' && rawMode.trim() ? rawMode.trim() : null;
   });
+  const windowBlurMode = useAppStore((state) => (state.config as any)?.windowBlur || 'on');
 
   useLayoutEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
@@ -200,6 +229,39 @@ export default function SystemThemeSync() {
   useEffect(() => {
     document.documentElement.dataset.os = detectOs();
   }, []);
+
+  useLayoutEffect(() => {
+    let cancelled = false;
+    const effectiveThemeMode = themeMode || readThemeBootstrapSnapshot()?.mode || 'system';
+    if (!isBuiltinMode(effectiveThemeMode)) {
+      delete document.documentElement.dataset.windowBlur;
+      return;
+    }
+
+    if (windowBlurMode !== 'off') {
+      document.documentElement.dataset.windowBlur = 'on';
+    } else {
+      delete document.documentElement.dataset.windowBlur;
+    }
+
+    void import('../../../wailsjs/go/main/App')
+      .then(({ WindowBlurEnabled }) => WindowBlurEnabled())
+      .then((enabled) => {
+        if (cancelled) return;
+        if (enabled || windowBlurMode === 'on') {
+          document.documentElement.dataset.windowBlur = 'on';
+        } else {
+          delete document.documentElement.dataset.windowBlur;
+        }
+      })
+      .catch(() => {
+        if (!cancelled) delete document.documentElement.dataset.windowBlur;
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [themeMode, windowBlurMode]);
 
   return null;
 }

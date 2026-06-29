@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronDown, ChevronRight, CheckCircle2, MapPin, Pause, Play, RadioTower, RotateCw, Search, Usb, Wifi, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, CheckCircle2, Pause, Play, RadioTower, RotateCw, Search, Usb, Wifi, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { toast } from 'sonner';
@@ -551,6 +551,88 @@ export default function DeviceConnectionSection({
                   icon={<Wifi className={clsx('h-4 w-4', wifiCompatibilityEnabled ? 'text-emerald-500' : 'text-muted-foreground')} />}
                   title={t('controlPanel.system.deviceConnection.wifiCompatibilityTitle')}
                   description={t('controlPanel.system.deviceConnection.wifiCompatibilityDescription')}
+                  below={(
+                    <AnimatePresence initial={false}>
+                      {wifiCompatibilityEnabled && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="overflow-hidden"
+                        >
+                          <div data-theme-ui="compatibility-nested" className="mt-3 space-y-2">
+                            <div data-theme-ui="compatibility-nested-row" className="rounded-xl border border-border/55 bg-background/35 px-4 py-3">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-medium text-foreground">{t('controlPanel.system.deviceConnection.wifiManualAddTitle')}</div>
+                                  <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{t('controlPanel.system.deviceConnection.wifiManualAddHint')}</div>
+                                </div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  icon={<ChevronRight className={clsx('h-4 w-4 transition-transform', manualAddOpen && 'rotate-90')} />}
+                                  onClick={() => setManualAddOpen((value) => !value)}
+                                  className="shrink-0"
+                                >
+                                  {t('controlPanel.system.deviceConnection.wifiManualAddAction')}
+                                </Button>
+                              </div>
+
+                              <AnimatePresence initial={false}>
+                                {manualAddOpen && (
+                                  <motion.div
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: 'auto' }}
+                                    exit={{ opacity: 0, height: 0 }}
+                                    className="overflow-hidden"
+                                  >
+                                    <div data-theme-ui="compatibility-nested-panel" className="mt-3 flex w-full flex-col gap-2 rounded-lg border border-border/50 bg-background/45 p-3 sm:flex-row sm:items-center">
+                                      <CheckCircle2 className="hidden h-4 w-4 shrink-0 text-primary sm:block" />
+                                      <input
+                                        value={deviceIpInput}
+                                        onChange={(event) => setDeviceIpInput(event.target.value)}
+                                        onKeyDown={(event) => {
+                                          if (event.key === 'Enter') void handleManualAdd();
+                                        }}
+                                        placeholder={t('controlPanel.system.deviceConnection.addressPlaceholder')}
+                                        aria-label={t('controlPanel.system.deviceConnection.addressPlaceholder')}
+                                        className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none ring-offset-background transition-colors focus-visible:ring-2 focus-visible:ring-ring"
+                                      />
+                                      <Button
+                                        variant="primary"
+                                        size="sm"
+                                        onClick={() => void handleManualAdd()}
+                                        loading={loadingKey === 'manualAdd'}
+                                        className="shrink-0"
+                                      >
+                                        {t('controlPanel.system.deviceConnection.wifiManualSaveAction')}
+                                      </Button>
+                                    </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+
+                            <div data-theme-ui="compatibility-nested-row" className="rounded-xl border border-border/55 bg-background/35 px-4 py-3">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-medium text-foreground">{t('controlPanel.system.deviceConnection.wifiDynamicIPTitle')}</div>
+                                  <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{t('controlPanel.system.deviceConnection.wifiDynamicIPDescription')}</div>
+                                </div>
+                                <ToggleSwitch
+                                  enabled={wifiDynamicIPCompatibilityEnabled}
+                                  onChange={(enabled) => void handleWiFiDynamicIPCompatibilityChange(enabled)}
+                                  loading={loadingKey === 'wifiDynamicIPCompatibility'}
+                                  size="sm"
+                                  color="green"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  )}
                 >
                   <ToggleSwitch
                     enabled={wifiCompatibilityEnabled}
@@ -560,84 +642,6 @@ export default function DeviceConnectionSection({
                     color="green"
                   />
                 </CompatibilitySubmenuRow>
-
-                <AnimatePresence initial={false}>
-                  {wifiCompatibilityEnabled && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="overflow-hidden"
-                    >
-                      <CompatibilitySubmenuRow
-                        icon={<MapPin className="h-4 w-4 text-primary" />}
-                        title={t('controlPanel.system.deviceConnection.wifiManualAddTitle')}
-                        description={t('controlPanel.system.deviceConnection.wifiManualAddHint')}
-                      >
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          icon={<ChevronRight className={clsx('h-4 w-4 transition-transform', manualAddOpen && 'rotate-90')} />}
-                          onClick={() => setManualAddOpen((value) => !value)}
-                        >
-                          {t('controlPanel.system.deviceConnection.wifiManualAddAction')}
-                        </Button>
-                      </CompatibilitySubmenuRow>
-
-                      <AnimatePresence initial={false}>
-                        {manualAddOpen && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="overflow-hidden"
-                          >
-                            <CompatibilitySubmenuRow
-                              icon={<CheckCircle2 className="h-4 w-4 text-primary" />}
-                              title={t('controlPanel.system.deviceConnection.addressLabel')}
-                            >
-                              <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center md:w-[560px]">
-                                <input
-                                  value={deviceIpInput}
-                                  onChange={(event) => setDeviceIpInput(event.target.value)}
-                                  onKeyDown={(event) => {
-                                    if (event.key === 'Enter') void handleManualAdd();
-                                  }}
-                                  placeholder={t('controlPanel.system.deviceConnection.addressPlaceholder')}
-                                  aria-label={t('controlPanel.system.deviceConnection.addressPlaceholder')}
-                                  className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none ring-offset-background transition-colors focus-visible:ring-2 focus-visible:ring-ring"
-                                />
-                                <Button
-                                  variant="primary"
-                                  size="sm"
-                                  onClick={() => void handleManualAdd()}
-                                  loading={loadingKey === 'manualAdd'}
-                                  className="shrink-0"
-                                >
-                                  {t('controlPanel.system.deviceConnection.wifiManualSaveAction')}
-                                </Button>
-                              </div>
-                            </CompatibilitySubmenuRow>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-
-                      <CompatibilitySubmenuRow
-                        icon={<RotateCw className="h-4 w-4 text-primary" />}
-                        title={t('controlPanel.system.deviceConnection.wifiDynamicIPTitle')}
-                        description={t('controlPanel.system.deviceConnection.wifiDynamicIPDescription')}
-                      >
-                        <ToggleSwitch
-                          enabled={wifiDynamicIPCompatibilityEnabled}
-                          onChange={(enabled) => void handleWiFiDynamicIPCompatibilityChange(enabled)}
-                          loading={loadingKey === 'wifiDynamicIPCompatibility'}
-                          size="sm"
-                          color="green"
-                        />
-                      </CompatibilitySubmenuRow>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
 
                 <CompatibilitySubmenuRow
                   icon={<Usb className={clsx('h-4 w-4', serialCompatibilityEnabled ? 'text-emerald-500' : 'text-muted-foreground')} />}

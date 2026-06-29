@@ -867,6 +867,9 @@
       "themeTitle": "Theme",
       "themeDescription": "Follow the system by default, lock to light/dark, or pick a custom theme from the install themes folder.",
       "themeOpenFolder": "Open themes folder",
+      "windowBlurTitle": "Glass window",
+      "windowBlurDescription": "Use Acrylic window material for built-in light/dark themes. Custom themes are not changed.",
+      "windowBlurTip": "Restart the app for this setting to take effect.",
       "languageTitle": "Language",
       "languageDescription": "Change the app language instantly and remember the choice automatically.",
       "hotkeys": {

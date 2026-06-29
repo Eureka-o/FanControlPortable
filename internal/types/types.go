@@ -19,6 +19,9 @@ const (
 	ThemeModeLight                      = "light"
 	ThemeModeDark                       = "dark"
 	ThemeModeTHRM                       = "thrm"
+	WindowBlurAuto                      = "auto"
+	WindowBlurOn                        = "on"
+	WindowBlurOff                       = "off"
 	TempSourceMax                       = "max"
 	TempSourceCPU                       = "cpu"
 	TempSourceGPU                       = "gpu"
@@ -112,6 +115,18 @@ func NormalizeThemeMode(mode string) string {
 		return mode
 	}
 	return ThemeModeSystem
+}
+
+// NormalizeWindowBlur 归一化窗口毛玻璃设置，非法值回退为 on。
+func NormalizeWindowBlur(mode string) string {
+	switch mode {
+	case WindowBlurAuto:
+		return WindowBlurAuto
+	case WindowBlurOff:
+		return WindowBlurOff
+	default:
+		return WindowBlurOn
+	}
 }
 
 // isValidThemeID 校验自定义主题 id：仅允许小写字母、数字、连字符、下划线。
@@ -530,6 +545,7 @@ type AppConfig struct {
 	PowerOnStart                      bool                                   `json:"powerOnStart"`            // 通电自启动
 	WindowsAutoStart                  bool                                   `json:"windowsAutoStart"`        // Windows开机自启动
 	ThemeMode                         string                                 `json:"themeMode"`               // 主题模式: system/light/dark/thrm
+	WindowBlur                        string                                 `json:"windowBlur"`              // 窗口毛玻璃: on/off/auto
 	SmartStartStop                    string                                 `json:"smartStartStop"`          // 智能启停
 	Brightness                        int                                    `json:"brightness"`              // 亮度
 	TempUpdateRate                    int                                    `json:"tempUpdateRate"`          // 温度更新频率(秒)
@@ -1021,6 +1037,7 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		PowerOnStart:            false,
 		WindowsAutoStart:        false,
 		ThemeMode:               ThemeModeSystem,
+		WindowBlur:              WindowBlurOn,
 		SmartStartStop:          "off",
 		Brightness:              100,
 		TempUpdateRate:          2,

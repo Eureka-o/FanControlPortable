@@ -87,6 +87,7 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	cfg.ManualGearLevels = cloneManualGearLevels(oldCfg.ManualGearLevels)
 	cfg.LightStrip, _ = normalizeLightStripConfig(cfg.LightStrip)
 	cfg.ThemeMode = types.NormalizeThemeMode(cfg.ThemeMode)
+	cfg.WindowBlur = types.NormalizeWindowBlur(cfg.WindowBlur)
 	if cfg.DeviceTransport == "" {
 		cfg.DeviceTransport = oldCfg.DeviceTransport
 	}

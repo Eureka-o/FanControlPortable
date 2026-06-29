@@ -552,6 +552,7 @@ export namespace types {
 	    powerOnStart: boolean;
 	    windowsAutoStart: boolean;
 	    themeMode: string;
+	    windowBlur: string;
 	    smartStartStop: string;
 	    brightness: number;
 	    tempUpdateRate: number;
@@ -607,6 +608,7 @@ export namespace types {
 	        this.powerOnStart = source["powerOnStart"];
 	        this.windowsAutoStart = source["windowsAutoStart"];
 	        this.themeMode = source["themeMode"];
+	        this.windowBlur = source["windowBlur"];
 	        this.smartStartStop = source["smartStartStop"];
 	        this.brightness = source["brightness"];
 	        this.tempUpdateRate = source["tempUpdateRate"];
