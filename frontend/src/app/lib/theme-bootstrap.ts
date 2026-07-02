@@ -3,17 +3,26 @@ export const THEME_BOOTSTRAP_STORAGE_KEY = 'thrm.theme-bootstrap';
 
 // Bump this when custom theme CSS resource semantics change, so stale cached
 // CSS cannot point at assets unavailable to the current executable.
-const THEME_BOOTSTRAP_VERSION = 3;
+const THEME_BOOTSTRAP_VERSION = 5;
+
+// 缓存的 CSS 最大体积（字节），超过此值截断并添加注释标记。
+// 防止 localStorage QuotaExceededError，以及重型 advanced 主题导致的前端内存压力。
+const MAX_CACHED_CSS_BYTES = 512 * 1024;
 const BUILTIN_THEME_MODES = ['system', 'light', 'dark'] as const;
+const CUSTOM_THEME_LAYERS = ['basic', 'advanced'] as const;
 
 export type BuiltinThemeMode = (typeof BUILTIN_THEME_MODES)[number];
 export type CustomThemeBase = 'light' | 'dark';
+export type CustomThemeLayer = (typeof CUSTOM_THEME_LAYERS)[number];
 
 export type ThemeBootstrapSnapshot = {
   version: typeof THEME_BOOTSTRAP_VERSION;
   mode: string;
   base?: CustomThemeBase;
+  layer?: CustomThemeLayer;
   css?: string;
+  /** CSS 被截断时标记，避免重放超长旧缓存 */
+  cssTruncated?: boolean;
 };
 
 export function isBuiltinMode(mode: string): mode is BuiltinThemeMode {
@@ -27,6 +36,10 @@ function normalizeMode(value: unknown): string | null {
 
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+export function normalizeCustomThemeLayer(value: unknown): CustomThemeLayer {
+  return value === 'advanced' ? 'advanced' : 'basic';
 }
 
 export function parseThemeBootstrapSnapshot(raw: string | null | undefined): ThemeBootstrapSnapshot | null {
@@ -52,7 +65,9 @@ export function parseThemeBootstrapSnapshot(raw: string | null | undefined): The
       version: THEME_BOOTSTRAP_VERSION,
       mode,
       base: parsed.base === 'dark' ? 'dark' : 'light',
+      layer: normalizeCustomThemeLayer(parsed.layer),
       css: typeof parsed.css === 'string' ? parsed.css : '',
+      cssTruncated: Boolean(parsed.cssTruncated),
     };
   } catch {
     return null;
@@ -70,12 +85,15 @@ export function createBuiltinThemeSnapshot(mode: BuiltinThemeMode): ThemeBootstr
   };
 }
 
-export function createCustomThemeSnapshot(mode: string, base: CustomThemeBase, css: string): ThemeBootstrapSnapshot {
+export function createCustomThemeSnapshot(mode: string, base: CustomThemeBase, css: string, layer: CustomThemeLayer = 'basic'): ThemeBootstrapSnapshot {
+  const cssTruncated = css.length > MAX_CACHED_CSS_BYTES;
   return {
     version: THEME_BOOTSTRAP_VERSION,
     mode,
     base,
-    css,
+    layer,
+    css: cssTruncated ? css.slice(0, MAX_CACHED_CSS_BYTES) : css,
+    cssTruncated,
   };
 }
 
@@ -92,6 +110,7 @@ export function getThemeBootstrapScript(): string {
     const styleEl = document.getElementById(STYLE_ID);
     if (styleEl) styleEl.remove();
     delete root.dataset.theme;
+    delete root.dataset.themeLayer;
     root.classList.toggle('dark', !!isDark);
   };
 
@@ -138,6 +157,7 @@ export function getThemeBootstrapScript(): string {
   }
 
   delete root.dataset.windowBlur;
+  root.dataset.themeLayer = snapshot.layer === 'advanced' ? 'advanced' : 'basic';
   let styleEl = document.getElementById(STYLE_ID);
   if (!styleEl) {
     styleEl = document.createElement('style');

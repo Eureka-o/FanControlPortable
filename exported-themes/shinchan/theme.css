@@ -2929,6 +2929,7 @@ html[data-theme="shinchan"] .glacier-shell [data-theme-card="curve-editor"] > .r
 /* Final UI typography and settings polish: use a readable rounded UI font for main pages. */
 html[data-theme="shinchan"] {
   --shinchan-ui-font:
+    "FanControl Advanced Glyph Patch",
     "Shinchan Chill Round UI",
     "Microsoft YaHei UI",
     "Microsoft YaHei",
@@ -2936,6 +2937,7 @@ html[data-theme="shinchan"] {
     "Segoe UI",
     sans-serif;
   --shinchan-readable-font:
+    "FanControl Advanced Glyph Patch",
     "Shinchan Chill Round UI",
     "Segoe UI Variable",
     "Segoe UI",
@@ -2943,12 +2945,14 @@ html[data-theme="shinchan"] {
     "Microsoft YaHei",
     sans-serif;
   --shinchan-title-font:
+    "FanControl Advanced Glyph Patch",
     "Shinchan Chill Round UI",
     "Microsoft YaHei UI",
     "Microsoft YaHei",
     "Segoe UI",
     sans-serif;
   --shinchan-decor-font:
+    "FanControl Advanced Glyph Patch",
     "Shinchan Chill Reunion",
     "Shin-chan Round",
     "Shinchan Chill Round UI",

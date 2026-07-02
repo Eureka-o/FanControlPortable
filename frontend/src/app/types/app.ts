@@ -284,6 +284,7 @@ export interface ThemeMeta {
   author?: string;
   version?: string;
   description?: string;
+  layer?: 'basic' | 'advanced' | string; // basic | advanced
   source: string;      // user | install | builtin
 }
 

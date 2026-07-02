@@ -2,12 +2,10 @@
 package theme
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
-	"mime"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -26,6 +24,9 @@ const (
 	SourceInstall = "install"
 	SourceBuiltin = "builtin"
 
+	LayerBasic    = "basic"
+	LayerAdvanced = "advanced"
+
 	AssetURLPrefix = "/theme-assets/"
 )
 
@@ -39,7 +40,8 @@ type Meta struct {
 	Author      string `json:"author,omitempty"`
 	Version     string `json:"version,omitempty"`
 	Description string `json:"description,omitempty"`
-	Source      string `json:"source"` // user | install | builtin
+	Layer       string `json:"layer,omitempty"` // basic | advanced
+	Source      string `json:"source"`          // user | install | builtin
 }
 
 // Manager keeps install-root themes authoritative.
@@ -123,6 +125,15 @@ func normalizeBase(base string) string {
 		return "dark"
 	}
 	return "light"
+}
+
+func normalizeLayer(layer string) string {
+	switch strings.ToLower(strings.TrimSpace(layer)) {
+	case LayerAdvanced:
+		return LayerAdvanced
+	default:
+		return LayerBasic
+	}
 }
 
 // EnsureSeeded copies built-in themes to the install-root themes folder and
@@ -522,10 +533,14 @@ func (m *Manager) readBuiltinMeta(id string) (Meta, bool) {
 }
 
 func parseMeta(data []byte, folderName string) (Meta, bool) {
-	var meta Meta
-	if err := json.Unmarshal(data, &meta); err != nil {
+	var manifest struct {
+		Meta
+		Interface string `json:"interface,omitempty"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
 		return Meta{}, false
 	}
+	meta := manifest.Meta
 	if meta.ID == "" {
 		meta.ID = folderName
 	}
@@ -536,6 +551,10 @@ func parseMeta(data []byte, folderName string) (Meta, bool) {
 		meta.Name = meta.ID
 	}
 	meta.Base = normalizeBase(meta.Base)
+	if meta.Layer == "" {
+		meta.Layer = manifest.Interface
+	}
+	meta.Layer = normalizeLayer(meta.Layer)
 	return meta, true
 }
 
@@ -650,10 +669,14 @@ func (m *Manager) rewriteCSSAssetURLs(css, id string) string {
 		if !ok {
 			return match
 		}
-		if asset, err := m.ReadAsset(id, assetPath); err == nil {
-			return `url("` + assetDataURL(asset) + `")`
+		// 使用 URL 路由而非 base64 inline，让浏览器按需请求并缓存资产。
+		// 字体等大文件 inline 会使 CSS 体积膨胀至数 MB，加重 IPC 传输与
+		// localStorage 压力；/theme-assets/ handler 已在 main.go 注册。
+		url := ThemeAssetURL(id, assetPath)
+		if url == "" {
+			return match
 		}
-		return `url("` + ThemeAssetURL(id, assetPath) + `")`
+		return `url("` + url + `")`
 	})
 }
 
@@ -677,20 +700,6 @@ func themeAssetPathFromCSSRef(raw, id string) (string, bool) {
 	return cleanThemeAssetPath(raw)
 }
 
-func assetDataURL(asset Asset) string {
-	contentType := mime.TypeByExtension(filepath.Ext(asset.Name))
-	if contentType == "" {
-		switch strings.ToLower(filepath.Ext(asset.Name)) {
-		case ".webp":
-			contentType = "image/webp"
-		case ".svg":
-			contentType = "image/svg+xml"
-		default:
-			contentType = "application/octet-stream"
-		}
-	}
-	return "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(asset.Data)
-}
 
 func shouldRewriteAssetURL(raw string) bool {
 	raw = strings.TrimSpace(raw)

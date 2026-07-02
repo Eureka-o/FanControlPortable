@@ -60,7 +60,8 @@ func NewHistoryRecorder(filePath string, capacity int, sampleInterval time.Durat
 		capacity:       capacity,
 		sampleInterval: sampleInterval,
 		enabled:        true,
-		points:         make([]types.TemperatureHistoryPoint, capacity),
+		// 惰性分配：起始 len=0，随实际数据增长至 capacity，避免启动即占满 173KB。
+		points: make([]types.TemperatureHistoryPoint, 0, capacity),
 	}
 	recorder.load()
 	return recorder
@@ -145,12 +146,20 @@ func (r *HistoryRecorder) Add(temp types.TemperatureData, fanData *types.FanData
 		return types.TemperatureHistoryPoint{}, false
 	}
 
-	r.points[r.next] = point
-	r.lastSampleAt = timestamp
-	r.next = (r.next + 1) % r.capacity
-	if r.next == 0 {
-		r.filled = true
+	// 未填满前用 append 惰性扩展切片；填满后覆写最旧的槽位（环形语义不变）。
+	if !r.filled {
+		r.points = append(r.points, point)
+		if len(r.points) == r.capacity {
+			r.filled = true
+			r.next = 0
+		} else {
+			r.next = len(r.points)
+		}
+	} else {
+		r.points[r.next] = point
+		r.next = (r.next + 1) % r.capacity
 	}
+	r.lastSampleAt = timestamp
 
 	r.dirtyCount++
 	now := time.Now()
@@ -306,19 +315,18 @@ func (r *HistoryRecorder) applyLoadedPointsLocked(points []types.TemperatureHist
 	if len(points) > r.capacity {
 		points = points[len(points)-r.capacity:]
 	}
-	for i := range r.points {
-		r.points[i] = types.TemperatureHistoryPoint{}
-	}
-	copy(r.points, points)
-	r.next = len(points)
-	if r.next >= r.capacity {
-		r.next = 0
+	// 直接复用底层数组：reset 长度后 append，不做全槽清零。
+	r.points = r.points[:0]
+	r.points = append(r.points, points...)
+	if len(r.points) >= r.capacity {
 		r.filled = true
+		r.next = 0
 	} else {
-		r.filled = len(points) == r.capacity
+		r.filled = false
+		r.next = len(r.points)
 	}
-	if len(points) > 0 {
-		r.lastSampleAt = points[len(points)-1].Timestamp
+	if len(r.points) > 0 {
+		r.lastSampleAt = r.points[len(r.points)-1].Timestamp
 	} else {
 		r.lastSampleAt = 0
 	}
@@ -413,9 +421,7 @@ func (r *HistoryRecorder) writeFile(payload []byte) error {
 }
 
 func (r *HistoryRecorder) clearLocked() {
-	for i := range r.points {
-		r.points[i] = types.TemperatureHistoryPoint{}
-	}
+	r.points = r.points[:0]
 	r.next = 0
 	r.filled = false
 	r.lastSampleAt = 0

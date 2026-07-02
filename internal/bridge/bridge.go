@@ -178,7 +178,10 @@ func (m *Manager) forwardBridgeStderr(stderr io.Reader) {
 		if strings.HasPrefix(line, "[init]") {
 			m.logger.Info("桥接程序: %s", line)
 		} else {
-			m.logger.Error("桥接程序 stderr: %s", line)
+			// 桥接程序 stderr 中的非初始化行（如 LHM 调试信息）降为 Debug，
+			// 避免高频错误输出污染主日志文件。真正需要关注的错误通过
+			// failBridgeUnsafe / bridgeState=Degraded 路径上报。
+			m.logger.Debug("桥接程序 stderr: %s", line)
 		}
 	}
 	if err := scanner.Err(); err != nil {

@@ -3,6 +3,7 @@
   "id": "doro",
   "name": "Doro",
   "base": "light",
+  "layer": "advanced",
   "author": "FanControl",
   "version": "1.0.0",
   "description": "Doro pearl bridal theme with ivory surfaces, champagne accents, and soft lavender details."

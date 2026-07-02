@@ -78,6 +78,20 @@ func TestCompactTemperatureEventPayload(t *testing.T) {
 	if len(compactCleared.CpuSensors) != 0 {
 		t.Fatalf("compactTemperatureEventPayload() kept unexpected cpuSensors length: %d", len(compactCleared.CpuSensors))
 	}
+
+	valueOnlyChanged := current
+	valueOnlyChanged.CpuSensors = []types.TemperatureSensor{{Key: "cpu-package", Name: "CPU Package", Value: 73}}
+	compactValueOnlyChanged := compactTemperatureEventPayload(valueOnlyChanged, previous)
+	if compactValueOnlyChanged.CpuSensors != nil {
+		t.Fatal("compactTemperatureEventPayload() should strip value-only sensor changes")
+	}
+
+	explicitEmptyPrevious := types.TemperatureData{CpuSensors: nil}
+	explicitEmptyCurrent := types.TemperatureData{CpuSensors: []types.TemperatureSensor{}}
+	compactExplicitEmpty := compactTemperatureEventPayload(explicitEmptyCurrent, explicitEmptyPrevious)
+	if compactExplicitEmpty.CpuSensors == nil {
+		t.Fatal("compactTemperatureEventPayload() should keep empty cpuSensors when previous was nil")
+	}
 }
 
 func TestMergeTemperatureHardwareMetadataKeepsProfileWhenGpuNotPolled(t *testing.T) {

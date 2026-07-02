@@ -1,9 +1,7 @@
 package coreapp
 
 import (
-	"reflect"
 	"runtime/debug"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -25,52 +23,7 @@ const idleMemoryReleaseCooldown = 30 * time.Second
 const (
 	consecutiveBridgeFailureRestartThreshold = 2
 	temperatureBridgeRestartCooldown         = 10 * time.Second
-	wifiOverviewStateRefreshInterval         = 2 * time.Second
 )
-
-func trackBridgeTemperatureStaleness(temp types.TemperatureData, lastUpdate int64, staleCount int) (int64, int, bool) {
-	if !temp.BridgeOk || temp.UpdateTime <= 0 {
-		return 0, 0, false
-	}
-	if temp.UpdateTime != lastUpdate {
-		return temp.UpdateTime, 0, false
-	}
-	staleCount++
-	return lastUpdate, staleCount, staleCount >= staleBridgeUpdateThreshold
-}
-
-func shouldRestartTemperatureBridge(temp types.TemperatureData) bool {
-	if temp.BridgeOk {
-		return false
-	}
-
-	msg := strings.ToLower(strings.TrimSpace(temp.BridgeMsg))
-	if msg == "" {
-		return true
-	}
-
-	restartHints := []string{
-		"启动桥接程序失败",
-		"桥接程序通信失败",
-		"桥接程序未连接",
-		"连接管道失败",
-		"发送命令失败",
-		"读取响应失败",
-		"等待桥接程序启动超时",
-		"未能获取管道名称",
-		"pipe",
-		"broken",
-		"closed",
-	}
-	for _, hint := range restartHints {
-		if strings.Contains(msg, strings.ToLower(hint)) {
-			return true
-		}
-	}
-
-	// 休眠恢复后硬件监控库偶尔会返回全 0 但进程仍能响应，重启桥接可重新初始化底层传感器。
-	return temp.CPUTemp == 0 && temp.GPUTemp == 0
-}
 
 func (a *CoreApp) recoverTemperatureBridge(reason string) {
 	a.safeRun("temperature-bridge-recover@"+reason, func() {
@@ -81,51 +34,6 @@ func (a *CoreApp) recoverTemperatureBridge(reason string) {
 		}
 		a.logInfo("温度桥接已完成自愈重启: %s", reason)
 	})
-}
-
-func compactTemperatureEventPayload(current, previous types.TemperatureData) types.TemperatureData {
-	compact := current
-	if reflect.DeepEqual(current.CpuSensors, previous.CpuSensors) {
-		compact.CpuSensors = nil
-	}
-	if reflect.DeepEqual(current.GpuSensors, previous.GpuSensors) {
-		compact.GpuSensors = nil
-	}
-	if reflect.DeepEqual(current.CpuPowerSensors, previous.CpuPowerSensors) {
-		compact.CpuPowerSensors = nil
-	}
-	if reflect.DeepEqual(current.GpuPowerSensors, previous.GpuPowerSensors) {
-		compact.GpuPowerSensors = nil
-	}
-	if reflect.DeepEqual(current.GpuDevices, previous.GpuDevices) {
-		compact.GpuDevices = nil
-	}
-	return compact
-}
-
-func mergeTemperatureHardwareMetadata(previous, incoming types.TemperatureData) types.TemperatureData {
-	if incoming.CpuModel == "" {
-		incoming.CpuModel = previous.CpuModel
-	}
-	if incoming.GpuModel == "" {
-		incoming.GpuModel = previous.GpuModel
-	}
-	if incoming.CpuSensors == nil {
-		incoming.CpuSensors = previous.CpuSensors
-	}
-	if incoming.GpuSensors == nil || (incoming.GPUReadState == types.GPUReadStateNotPolled && len(incoming.GpuSensors) == 0) {
-		incoming.GpuSensors = previous.GpuSensors
-	}
-	if incoming.CpuPowerSensors == nil {
-		incoming.CpuPowerSensors = previous.CpuPowerSensors
-	}
-	if incoming.GpuPowerSensors == nil || (incoming.GPUReadState == types.GPUReadStateNotPolled && len(incoming.GpuPowerSensors) == 0) {
-		incoming.GpuPowerSensors = previous.GpuPowerSensors
-	}
-	if incoming.GpuDevices == nil || (incoming.GPUReadState == types.GPUReadStateNotPolled && len(incoming.GpuDevices) == 0) {
-		incoming.GpuDevices = previous.GpuDevices
-	}
-	return incoming
 }
 
 func (a *CoreApp) stopTemperatureMonitoring() {
@@ -168,7 +76,9 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	recentAvgTemps := make([]int, 0, 24)
 	recentControlTemps := make([]int, 0, 24)
 	risePredictionSamples := make([]smartcontrol.RisePredictionSample, 0, 12)
-	initialSelection := types.TemperatureSelection{
+	// selectionRevision 跟踪上次构建 TemperatureSelection 时的 cfg 版本，
+	// revision 未变时复用 cachedSelection，避免每 tick 重建结构体。
+	cachedSelection := types.TemperatureSelection{
 		TempSource:            cfg.TempSource,
 		GpuDevice:             cfg.GpuDevice,
 		CpuSensor:             cfg.CpuSensor,
@@ -178,6 +88,8 @@ func (a *CoreApp) startTemperatureMonitoring() {
 		GpuReadMode:           cfg.GpuReadMode,
 		GpuLowPowerProtection: cfg.GpuLowPowerProtection,
 	}
+	selectionRevision := cfgRevision
+	initialSelection := cachedSelection
 	initialTemp := a.tempReader.Read(initialSelection)
 	if initialTemp.ControlTemp > 0 {
 		rawTempHistory = append(rawTempHistory, initialTemp.ControlTemp)
@@ -199,7 +111,8 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	speedUnit := a.activeDeviceSpeedUnit(&cfg)
 	steadyObserver := newStableObserverForActiveUnit(len(cfg.FanCurve), speedUnit)
 	timer := time.NewTimer(updateInterval)
-	wifiOverviewTimer := time.NewTimer(wifiOverviewStateRefreshInterval)
+	wifiOverviewInterval := wifiOverviewRefreshInterval(false, cfg.AutoControl)
+	wifiOverviewTimer := time.NewTimer(wifiOverviewInterval)
 	defer timer.Stop()
 	defer wifiOverviewTimer.Stop()
 
@@ -213,11 +126,23 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			return
 		case <-wifiOverviewTimer.C:
 			now := time.Now()
-			if shouldRefreshWiFiOverviewState(a.deviceManager.GetDeviceType(), now, lastWiFiOverviewRefresh, false) {
+			// revision 门控：与主 tick 保持一致，未变时复用已缓存的 cfg。
+			// selection 重建由主 tick 的独立检查统一处理，此处只更新 cfg。
+			if newRev := a.configManager.Revision(); newRev != cfgRevision {
+				cfg, cfgRevision = a.configManager.GetWithRevision()
+			}
+			hasClientsForOverview := a.ipcServer != nil && a.ipcServer.HasClients()
+			deviceType := a.deviceManager.GetDeviceType()
+			wifiOverviewInterval = wifiOverviewRefreshInterval(hasClientsForOverview, cfg.AutoControl)
+			if deviceType != types.DeviceTransportWiFi {
+				wifiOverviewTimer.Reset(wifiOverviewBackgroundRefreshInterval)
+				continue
+			}
+			if shouldRefreshWiFiOverviewState(deviceType, now, lastWiFiOverviewRefresh, false, wifiOverviewInterval) {
 				lastWiFiOverviewRefresh = now
 				a.refreshWiFiOverviewState(&wifiOverviewRefreshRunning)
 			}
-			wifiOverviewTimer.Reset(wifiOverviewStateRefreshInterval)
+			wifiOverviewTimer.Reset(wifiOverviewInterval)
 		case <-timer.C:
 			now := time.Now()
 			gap := now.Sub(lastMonitorTick)
@@ -227,8 +152,28 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				continue
 			}
 
-			cfg, cfgRevision = a.configManager.GetWithRevision()
-			updateInterval = temperatureMonitorInterval(cfg.TempUpdateRate)
+			// revision 未变时跳过全量 AppConfig 拷贝（含 DeviceProfiles/FanCurveProfilesByDevice 等大字段），
+			// 减少每 tick 产生的短命对象，降低 GC 压力。
+			if newRev := a.configManager.Revision(); newRev != cfgRevision {
+				cfg, cfgRevision = a.configManager.GetWithRevision()
+				updateInterval = temperatureMonitorInterval(cfg.TempUpdateRate)
+			}
+			// TemperatureSelection 与 cfg 同步，独立于 cfg 读取检查。
+			// wifiOverviewTimer 分支可能已更新 cfgRevision，此处统一重建，
+			// 避免因分支顺序不同导致 selection 滞后一个 tick。
+			if cfgRevision != selectionRevision {
+				cachedSelection = types.TemperatureSelection{
+					TempSource:            cfg.TempSource,
+					GpuDevice:             cfg.GpuDevice,
+					CpuSensor:             cfg.CpuSensor,
+					GpuSensor:             cfg.GpuSensor,
+					CpuPowerSensor:        cfg.CpuPowerSensor,
+					GpuPowerSensor:        cfg.GpuPowerSensor,
+					GpuReadMode:           cfg.GpuReadMode,
+					GpuLowPowerProtection: cfg.GpuLowPowerProtection,
+				}
+				selectionRevision = cfgRevision
+			}
 
 			// 后台空闲（无 GUI 连接且未开启智能控温）时放慢采样；智能控温或前台打开时保持原频率。
 			hasClients := a.ipcServer != nil && a.ipcServer.HasClients()
@@ -242,17 +187,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			}
 			prevHasClients = hasClients
 
-			selection := types.TemperatureSelection{
-				TempSource:            cfg.TempSource,
-				GpuDevice:             cfg.GpuDevice,
-				CpuSensor:             cfg.CpuSensor,
-				GpuSensor:             cfg.GpuSensor,
-				CpuPowerSensor:        cfg.CpuPowerSensor,
-				GpuPowerSensor:        cfg.GpuPowerSensor,
-				GpuReadMode:           cfg.GpuReadMode,
-				GpuLowPowerProtection: cfg.GpuLowPowerProtection,
-			}
-			temp := a.tempReader.Read(selection)
+			temp := a.tempReader.Read(cachedSelection)
 			if temp.BridgeOk {
 				bridgeFailureCount = 0
 				staleBridge := false
@@ -492,26 +427,6 @@ func temperatureMonitorInterval(updateRateSeconds int) time.Duration {
 	return time.Duration(updateRateSeconds) * time.Second
 }
 
-func shouldRefreshWiFiOverviewState(deviceType string, now, lastRefresh time.Time, readThisTick bool) bool {
-	if deviceType != types.DeviceTransportWiFi || readThisTick {
-		return false
-	}
-	return lastRefresh.IsZero() || now.Sub(lastRefresh) >= wifiOverviewStateRefreshInterval
-}
-
-func (a *CoreApp) refreshWiFiOverviewState(refreshRunning *atomic.Bool) {
-	if !refreshRunning.CompareAndSwap(false, true) {
-		return
-	}
-
-	a.safeGo("refreshWiFiOverviewState", func() {
-		defer refreshRunning.Store(false)
-		if !a.deviceManager.RefreshWiFiState() {
-			a.logDebug("实时概览刷新 WiFi 控制器状态失败，等待健康检查处理连接状态")
-		}
-	})
-}
-
 func fanDataSpeedForControlUnit(speed int, unit string) int {
 	if types.IsPercentSpeedUnit(unit) {
 		return types.PercentToTicks(speed)
@@ -593,104 +508,4 @@ func absRPMDelta(a, b int) int {
 		return -delta
 	}
 	return delta
-}
-
-// startHealthMonitoring 启动健康监控
-func (a *CoreApp) startHealthMonitoring() {
-	a.logInfo("启动健康监控系统")
-
-	a.healthCheckTicker = time.NewTicker(30 * time.Second)
-
-	a.safeGo("healthMonitoringLoop", func() {
-		defer a.healthCheckTicker.Stop()
-		lastHealthCheck := time.Now()
-
-		for {
-			select {
-			case <-a.healthCheckTicker.C:
-				now := time.Now()
-				gap := now.Sub(lastHealthCheck)
-				lastHealthCheck = now
-				if a.maybeRecoverFromSystemResume("health-monitor", gap, 30*time.Second) {
-					continue
-				}
-
-				a.performHealthCheck()
-			case <-a.cleanupChan:
-				a.logInfo("健康监控系统已停止")
-				return
-			}
-		}
-	})
-
-	if a.logger != nil {
-		a.safeGo("cleanOldLogs", func() {
-			a.logger.CleanOldLogs()
-		})
-	}
-}
-
-// performHealthCheck 执行健康检查
-func (a *CoreApp) performHealthCheck() {
-	defer func() {
-		if r := recover(); r != nil {
-			a.logError("健康检查中发生panic: %v", r)
-		}
-	}()
-
-	a.trayManager.CheckHealth()
-	a.ensureTemperatureMonitoringHealthy()
-	a.checkDeviceHealth()
-
-	a.logDebug("健康检查完成 - 托盘:%v 设备连接:%v",
-		a.trayManager.IsInitialized(), a.isConnected)
-}
-
-func (a *CoreApp) ensureTemperatureMonitoringHealthy() {
-	if a.systemSuspended.Load() || a.monitoringTemp.Load() {
-		return
-	}
-
-	a.logError("健康检查: 温度监控未运行，尝试重新启动")
-	a.safeGo("restartTemperatureMonitoring@health-check", func() {
-		a.startTemperatureMonitoring()
-	})
-}
-
-// checkDeviceHealth 检查设备健康状态
-func (a *CoreApp) checkDeviceHealth() {
-	a.mutex.RLock()
-	connected := a.isConnected
-	a.mutex.RUnlock()
-
-	if !connected {
-		a.logInfo("健康检查: 设备未连接，尝试重新连接")
-		a.requestReconnect("health-check", []time.Duration{0})
-	} else {
-		switch a.deviceManager.GetDeviceType() {
-		case types.DeviceTransportWiFi:
-			if !a.deviceManager.RefreshWiFiState() {
-				a.logError("健康检查: WiFi 控制器状态刷新失败，触发断开回调")
-				a.onDeviceDisconnect()
-				return
-			}
-		case types.DeviceTransportBLE:
-			if !a.deviceManager.RefreshBLEState() {
-				a.logError("BLE controller state refresh failed during health check")
-				a.onDeviceDisconnect()
-				return
-			}
-		case types.DeviceTransportSerial:
-			if !a.deviceManager.RefreshSerialState() {
-				a.logError("健康检查: 串口控制器状态刷新失败，触发断开回调")
-				a.onDeviceDisconnect()
-				return
-			}
-		}
-		// 验证设备实际连接状态
-		if !a.deviceManager.IsConnected() {
-			a.logError("健康检查: 检测到设备状态不一致，触发断开回调")
-			a.onDeviceDisconnect()
-		}
-	}
 }

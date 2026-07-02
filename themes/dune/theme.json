@@ -3,6 +3,7 @@
   "id": "dune",
   "name": "\u6c99\u4e18",
   "base": "dark",
+  "layer": "advanced",
   "author": "FanControl",
   "version": "1.0.3",
   "description": "A dark premium Dune-inspired theme with a continuous desert curtain, transparent glass surfaces, bronze edges, and flowing-sand progress bars."

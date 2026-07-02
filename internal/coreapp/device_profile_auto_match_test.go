@@ -74,3 +74,14 @@ func TestSyncConnectedBuiltInDeviceProfileLeavesUnknownDeviceUnchanged(t *testin
 		t.Fatalf("config changed unexpectedly: %#v", got)
 	}
 }
+
+func TestNativeConnectProfileByIDFindsBuiltInBLEProfile(t *testing.T) {
+	cfg := types.GetDefaultConfig(false)
+	profile, ok := nativeConnectProfileByID(cfg, types.FlyDigiBS1ProfileID)
+	if !ok {
+		t.Fatal("expected built-in BLE profile to be connectable by ID")
+	}
+	if profile.ID != types.FlyDigiBS1ProfileID || profile.Transport != types.DeviceTransportBLE {
+		t.Fatalf("profile = %q/%q, want FlyDigi BS1 BLE", profile.ID, profile.Transport)
+	}
+}

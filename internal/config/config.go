@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/TIANLI0/THRM/internal/appmeta"
+	"github.com/TIANLI0/THRM/internal/deviceprofiles"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -300,11 +302,9 @@ func parseLegacyFanCurve(raw string, minSpeed int) []types.FanCurvePoint {
 	points = append(points, types.FanCurvePoint{Temperature: 20, RPM: types.ClampFanPercent(max(minSpeed, 20))})
 	points = append(points, types.FanCurvePoint{Temperature: types.FanCurveMaxTemperature, RPM: types.FanSpeedMaxPercent})
 
-	for i := 1; i < len(points); i++ {
-		for j := i; j > 0 && points[j].Temperature < points[j-1].Temperature; j-- {
-			points[j], points[j-1] = points[j-1], points[j]
-		}
-	}
+	sort.Slice(points, func(i, j int) bool {
+		return points[i].Temperature < points[j].Temperature
+	})
 
 	merged := make([]types.FanCurvePoint, 0, len(points))
 	for _, point := range points {
@@ -545,8 +545,9 @@ func rawNativeActiveProfile(cfg *types.AppConfig) (types.DeviceProfile, bool) {
 				return profile, types.IsNativeDeviceTransport(profile.Transport)
 			}
 		}
-		if profile, ok := types.FlyDigiProfileByID(id); ok {
-			return types.NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp), true
+		if profile, ok := deviceprofiles.BuiltInProfileByID(id); ok {
+			profile = types.NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp)
+			return profile, types.IsNativeDeviceTransport(profile.Transport)
 		}
 		return types.DeviceProfile{}, false
 	}
@@ -686,14 +687,14 @@ func normalizeSpeedConfig(cfg *types.AppConfig) {
 	defaultCurve := defaultFanCurveForUnit(unit)
 	speedSanitized := false
 	for i := range cfg.FanCurve {
-		fallback := defaultFanCurveSpeedAt(defaultCurve, i, cfg.FanCurve[i].Temperature)
+		fallback := defaultFanCurveSpeedAt(defaultCurve, i, cfg.FanCurve[i].Temperature, unit)
 		next, changed := normalizeFanSpeedSettingForUnit(cfg.FanCurve[i].RPM, fallback, unit)
 		cfg.FanCurve[i].RPM = next
 		speedSanitized = speedSanitized || changed
 	}
 	for i := range cfg.FanCurveProfiles {
 		for j := range cfg.FanCurveProfiles[i].Curve {
-			fallback := defaultFanCurveSpeedAt(defaultCurve, j, cfg.FanCurveProfiles[i].Curve[j].Temperature)
+			fallback := defaultFanCurveSpeedAt(defaultCurve, j, cfg.FanCurveProfiles[i].Curve[j].Temperature, unit)
 			next, changed := normalizeFanSpeedSettingForUnit(cfg.FanCurveProfiles[i].Curve[j].RPM, fallback, unit)
 			cfg.FanCurveProfiles[i].Curve[j].RPM = next
 			speedSanitized = speedSanitized || changed
@@ -715,11 +716,14 @@ func normalizeFanSpeedSettingForUnit(speed, fallback int, unit string) (int, boo
 	if types.IsRPMSpeedUnit(unit) {
 		minSpeed, maxSpeed := types.SpeedRangeForUnit(unit)
 		if speed < minSpeed || speed > maxSpeed {
+			// 越界时 fallback 必须是该单位的默认值，而不是其他单位的值。
 			return clampSpeedToUnit(fallback, unit), true
 		}
 		return speed, false
 	}
 	if speed < types.FanSpeedMinPercent || speed > types.FanSpeedMaxPercent {
+		// percent 单位越界时 fallback 也用 percent 默认值，避免 RPM 默认值(如 2000)
+		// 被当作 percent 值错误的 clamp 后落到极小值区间。
 		return types.ClampFanPercent(fallback), true
 	}
 	return speed, false
@@ -785,12 +789,12 @@ func cloneScopedLearningOffsets(input map[string][]int) map[string][]int {
 	return out
 }
 
-func defaultFanCurveSpeedAt(defaultCurve []types.FanCurvePoint, index int, temperature int) int {
+func defaultFanCurveSpeedAt(defaultCurve []types.FanCurvePoint, index int, temperature int, unit string) int {
+	if len(defaultCurve) == 0 {
+		return defaultCustomSpeedForUnit(unit)
+	}
 	if index >= 0 && index < len(defaultCurve) {
 		return defaultCurve[index].RPM
-	}
-	if len(defaultCurve) == 0 {
-		return 45
 	}
 	best := defaultCurve[0]
 	bestDistance := absInt(temperature - best.Temperature)
@@ -906,6 +910,14 @@ func (m *Manager) GetWithRevision() (types.AppConfig, uint64) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.config, m.revision
+}
+
+// Revision 返回当前配置版本号，不拷贝配置内容。
+// 供监控循环在 revision 未变时跳过全量 AppConfig 拷贝，降低 GC 压力。
+func (m *Manager) Revision() uint64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.revision
 }
 
 // Set 设置配置（线程安全）

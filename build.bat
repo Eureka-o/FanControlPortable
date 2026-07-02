@@ -81,7 +81,7 @@ REM Build core service first
 echo Building core service...
 go-winres make --in cmd/core/winres/winres.json --out cmd/core/rsrc
 if errorlevel 1 exit /b 1
-go build -trimpath -ldflags "!LDFLAGS!" -o "build/bin/FanControl Core.exe" ./cmd/core/
+go build -buildvcs=false -trimpath -ldflags "!LDFLAGS!" -o "build/bin/FanControl Core.exe" ./cmd/core/
 if errorlevel 1 exit /b 1
 
 REM Installer icon is still file-based; system notification icon is embedded in FanControl Core.exe
@@ -97,7 +97,9 @@ if errorlevel 1 exit /b 1
 
 REM Build main application with wails
 echo Building main application...
+set "GOFLAGS=-buildvcs=false"
 wails build -nsis -ldflags "!LDFLAGS!"
+set "GOFLAGS="
 if errorlevel 1 exit /b 1
 
 REM Wails may regenerate models.ts with tab-only blank lines; normalize it to avoid noisy git diffs.

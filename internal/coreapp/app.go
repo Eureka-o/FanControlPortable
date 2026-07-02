@@ -61,6 +61,8 @@ type CoreApp struct {
 	wifiStandbyApplied      atomic.Bool
 	forceNextAutoTarget     atomic.Bool
 	lastResumeRecoveryUnix  int64
+	lastHealthReconnectUnix     int64
+	healthConsecutiveFailureCount int32
 
 	powerNotifyStop func()
 
