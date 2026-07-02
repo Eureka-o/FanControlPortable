@@ -2,17 +2,21 @@
 
 FanControl 是面向 Windows 的多设备散热控制工具，用于连接和控制外置散热器、风扇控制器和 DIY 主控。它支持 WiFi、HID、BLE 与虚拟串口/COM 等连接方式，可以读取 CPU/GPU 温度与功耗，按风扇曲线或手动挡位调节转速，并提供设备扫描、设备档案、托盘后台运行、主题系统和配置继承等能力。
 
+FanControl is a Windows fan-control tool for external coolers, fan controllers and DIY controller boards. It supports WiFi, HID, BLE and virtual serial/COM transports, with device profiles, fan curves, manual gears, tray mode, themes and configuration migration.
+
 当前版本已内置 **Slim压风散热器Pro** 与多款飞智（FlyDigi）BS 系列设备档案；WiFi 与虚拟串口/COM 设备也可以通过兼容模式手动添加或扫描发现。
+
+The current version includes built-in profiles for **Slim压风散热器Pro** and multiple FlyDigi BS-series devices. WiFi and virtual serial/COM devices can also be added manually or discovered through compatibility mode.
 
 [下载最新版](https://github.com/Eureka-o/FanControlPortable/releases/latest)
 
 ## 适用范围
 
-- 系统：Windows 10 / Windows 11 64 位。
-- 内置设备：Slim压风散热器Pro、飞智（FlyDigi）BS1、BS2、BS2PRO、BS3、BS3PRO。
-- 连接方式：WiFi、HID、BLE、虚拟串口/COM；飞智 BLE/HID 设备走原生自动识别通道。
-- 兼容模式：面向 DIY 主控、WiFi 设备和虚拟串口/COM 设备，支持手动添加地址、动态 IP 兼容和扫描发现。
-- 主题系统：内置基础主题和高级主题，也支持导入/编辑第三方主题资源。
+- 系统 / System：Windows 10 / Windows 11 64 位。
+- 内置设备 / Built-in devices：Slim压风散热器Pro、飞智（FlyDigi）BS1、BS2、BS2PRO、BS3、BS3PRO。
+- 连接方式 / Transports：WiFi、HID、BLE、虚拟串口/COM；飞智 BLE/HID 设备走原生自动识别通道。
+- 兼容模式 / Compatibility mode：面向 DIY 主控、WiFi 设备和虚拟串口/COM 设备，支持手动添加地址、动态 IP 兼容和扫描发现。
+- 主题系统 / Theme system：内置基础主题和高级主题，也支持导入/编辑第三方主题资源。
 
 ## 已适配设备
 
@@ -50,14 +54,14 @@ FanControl 现在以内置设备档案的方式支持多种设备。不同设备
 
 ## 主要功能
 
-- 实时查看 CPU/GPU 温度、功耗和散热器风速。
-- 自动模式下按风扇曲线调节速度，也可以手动设定固定速度。
-- 曲线方案和学习结果按设备独立保存，切换设备后会自动加载对应曲线。
-- 百分比控制和学习机制支持 `0.1%` 内部精度，并在发包时按设备能力取整。
-- 统一的设备扫描与连接入口，支持 HID/BLE、WiFi 和虚拟串口/COM 按兼容模式一起发现和连接。
-- 支持 WiFi 查找 IP、动态 IP 兼容、温升预判 Beta 和 WiFi 智能启停 Beta。
-- 最小化到系统托盘后后台运行，托盘中可查看温度、功耗和风扇状态。
-- 安装版和便携版都会尽量保留已有配置。
+- 实时查看 CPU/GPU 温度、功耗和散热器风速 / Real-time CPU/GPU temperature, power and fan status.
+- 自动模式下按风扇曲线调节速度，也可以手动设定固定速度 / Curve-based auto control with manual fixed-speed control.
+- 曲线方案和学习结果按设备独立保存，切换设备后会自动加载对应曲线 / Device-scoped curves and learning data.
+- 百分比控制和学习机制支持 `0.1%` 内部精度，并在发包时按设备能力取整 / Internal `0.1%` precision for percent control and learning.
+- 统一的设备扫描与连接入口，支持 HID/BLE、WiFi 和虚拟串口/COM 按兼容模式一起发现和连接 / Unified device discovery for HID/BLE, WiFi and virtual serial/COM devices.
+- 支持 WiFi 查找 IP、动态 IP 兼容、温升预判 Beta 和 WiFi 智能启停 Beta / WiFi IP discovery, dynamic IP compatibility, temperature-rise prediction Beta and WiFi smart start/stop Beta.
+- 最小化到系统托盘后后台运行，托盘中可查看温度、功耗和风扇状态 / Background tray mode with temperature, power and fan status.
+- 安装版和便携版都会尽量保留已有配置 / Installer and portable builds both preserve existing configuration where possible.
 
 ## 最新版本
 
