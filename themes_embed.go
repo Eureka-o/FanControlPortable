@@ -10,12 +10,15 @@ import (
 	"github.com/TIANLI0/THRM/internal/theme"
 )
 
-// embeddedThemes 内置默认主题（含官方 THRM 参考主题）。
+// embeddedThemes 仅内嵌不含自定义字体的基础主题，作为无 themes/ 目录时的安全兜底。
 //
-// 作用：1) 首次运行时把这些主题播种到安装目录，方便用户直接编辑；
-//  2. 当磁盘上的主题文件缺失时作为安全兜底，保证 THRM 始终可选。
+// 带字体或大图的高级主题（shinchan、xiaoba-deluxe、dune、cyberpunk2077）由安装包/
+// 便携包随 themes/ 目录发布，不内嵌以减少约 2MB 常驻 RSS。
+// 字体资产通过 /theme-assets/ URL 路由由磁盘 themes/ 目录直接服务（见 main.go）。
 //
-//go:embed all:themes
+// 如需新增高级主题，请将其放入源码 themes/ 目录（发布时随包发布），不必修改此处。
+//
+//go:embed themes/thrm themes/xiaoba themes/maodie themes/doro
 var embeddedThemes embed.FS
 
 // newThemeManager 基于当前可执行文件位置构造主题管理器。
