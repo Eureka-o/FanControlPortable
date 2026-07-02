@@ -8,10 +8,12 @@ import {
   createCustomThemeSnapshot,
   CUSTOM_STYLE_ID,
   isBuiltinMode,
+  normalizeCustomThemeLayer,
   parseThemeBootstrapSnapshot,
   serializeThemeBootstrapSnapshot,
   THEME_BOOTSTRAP_STORAGE_KEY,
   type CustomThemeBase,
+  type CustomThemeLayer,
   type ThemeBootstrapSnapshot,
 } from '../lib/theme-bootstrap';
 
@@ -22,7 +24,12 @@ function readThemeBootstrapSnapshot(): ThemeBootstrapSnapshot | null {
     return null;
   }
 
-  return parseThemeBootstrapSnapshot(window.localStorage.getItem(THEME_BOOTSTRAP_STORAGE_KEY));
+  const snapshot = parseThemeBootstrapSnapshot(window.localStorage.getItem(THEME_BOOTSTRAP_STORAGE_KEY));
+  // cssTruncated=true 说明上次写入时被截断，缓存不完整，必须重取。
+  if (snapshot && !isBuiltinMode(snapshot.mode) && snapshot.cssTruncated) {
+    return null;
+  }
+  return snapshot;
 }
 
 function writeThemeBootstrapSnapshot(snapshot: ThemeBootstrapSnapshot) {
@@ -32,8 +39,16 @@ function writeThemeBootstrapSnapshot(snapshot: ThemeBootstrapSnapshot) {
 
   try {
     window.localStorage.setItem(THEME_BOOTSTRAP_STORAGE_KEY, serializeThemeBootstrapSnapshot(snapshot));
-  } catch {
-    /* noop */
+  } catch (err) {
+    // QuotaExceededError：localStorage 已满。清除旧缓存后重试一次。
+    if (err instanceof DOMException && err.name === 'QuotaExceededError') {
+      try {
+        window.localStorage.removeItem(THEME_BOOTSTRAP_STORAGE_KEY);
+        window.localStorage.setItem(THEME_BOOTSTRAP_STORAGE_KEY, serializeThemeBootstrapSnapshot(snapshot));
+      } catch {
+        // 仍失败则放弃，主题仍通过后端正常加载。
+      }
+    }
   }
 }
 
@@ -80,6 +95,7 @@ function clearCustomTheme() {
   const el = document.getElementById(CUSTOM_STYLE_ID);
   if (el) el.remove();
   delete document.documentElement.dataset.theme;
+  delete document.documentElement.dataset.themeLayer;
 }
 
 // 应用内置基础主题：仅切换 .dark，并清掉任何自定义主题残留。
@@ -111,10 +127,12 @@ function applyCachedCustomTheme(snapshot: ThemeBootstrapSnapshot) {
   }
 
   const css = snapshot.css;
+  const layer = normalizeCustomThemeLayer(snapshot.layer);
   applyWithoutThemeTransition(() => {
     ensureCustomThemeStyle(css);
     document.documentElement.classList.toggle('dark', base === 'dark');
     document.documentElement.dataset.theme = snapshot.mode;
+    document.documentElement.dataset.themeLayer = layer;
   });
   syncWindowsTheme(base, base === 'dark');
 }
@@ -128,10 +146,12 @@ function applyCachedCustomTheme(snapshot: ThemeBootstrapSnapshot) {
  */
 async function applyCustomTheme(id: string, isCancelled?: () => boolean): Promise<void> {
   let base: CustomThemeBase = 'light';
+  let layer: CustomThemeLayer = 'basic';
   try {
     const themes = await apiService.listThemes();
     const meta = themes.find((t) => t.id === id);
     if (meta?.base === 'dark') base = 'dark';
+    layer = normalizeCustomThemeLayer(meta?.layer);
   } catch {
     /* 列表获取失败时按浅色基底处理 */
   }
@@ -166,8 +186,9 @@ async function applyCustomTheme(id: string, isCancelled?: () => boolean): Promis
     ensureCustomThemeStyle(css);
     document.documentElement.classList.toggle('dark', base === 'dark');
     document.documentElement.dataset.theme = id;
+    document.documentElement.dataset.themeLayer = layer;
   });
-  writeThemeBootstrapSnapshot(createCustomThemeSnapshot(id, base, css));
+  writeThemeBootstrapSnapshot(createCustomThemeSnapshot(id, base, css, layer));
 }
 
 /**

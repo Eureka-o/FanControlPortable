@@ -3,6 +3,7 @@
   "id": "maodie",
   "name": "耄耋",
   "base": "light",
+  "layer": "advanced",
   "author": "FanControl",
   "version": "1.0.0",
   "description": "奶油棕色的耄耋主题，沿用小八主题结构，使用透明猫图与低对比撕裂痕浮动元素。"

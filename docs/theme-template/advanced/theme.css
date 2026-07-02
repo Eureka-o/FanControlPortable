@@ -929,9 +929,73 @@ html[data-theme="advanced"] .glacier-stat-tile:active {
   font-display: swap;
 }
 
+@font-face {
+  font-family: "FanControl Advanced Glyph Patch";
+  src: url("assets/fonts/advanced-glyph-patch-6750.woff") format("woff");
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+6750;
+}
+
+@font-face {
+  font-family: "FanControl Advanced Glyph Patch";
+  src: url("assets/fonts/advanced-glyph-patch-6bdb.woff") format("woff");
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+6BDB;
+}
+
+@font-face {
+  font-family: "FanControl Advanced Glyph Patch";
+  src: url("assets/fonts/advanced-glyph-patch-73bb.woff") format("woff");
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+73BB;
+}
+
+@font-face {
+  font-family: "FanControl Advanced Glyph Patch";
+  src: url("assets/fonts/advanced-glyph-patch-7483.woff") format("woff");
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+7483;
+}
+
+@font-face {
+  font-family: "FanControl Advanced Glyph Patch";
+  src: url("assets/fonts/advanced-glyph-patch-7a97.woff") format("woff");
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+7A97;
+}
+
+@font-face {
+  font-family: "FanControl Advanced Glyph Patch";
+  src: url("assets/fonts/advanced-glyph-patch-8a9e.woff") format("woff");
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+8A9E;
+}
+
+@font-face {
+  font-family: "FanControl Advanced Glyph Patch";
+  src: url("assets/fonts/advanced-glyph-patch-8d28.woff") format("woff");
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+8D28;
+}
+
 /* 字体子集：使用较小的 woff2 子集，避免完整字体让主题包过大。 */
 html[data-theme="advanced"] {
   --advanced-cjk-font:
+    "FanControl Advanced Glyph Patch",
     "Xiaoba Round",
     "Microsoft YaHei UI",
     "Microsoft YaHei",
@@ -953,6 +1017,7 @@ html[data-theme="advanced"] {
 
 html[data-theme="advanced"] {
   --advanced-soft-title-font:
+    "FanControl Advanced Glyph Patch",
     "Xiaoba Round",
     "Microsoft YaHei UI",
     "Microsoft YaHei",
@@ -965,6 +1030,7 @@ html[data-theme="advanced"] {
 html[data-theme="advanced"] {
   --advanced-readable-font:
     "Comic Sans MS",
+    "FanControl Advanced Glyph Patch",
     "Xiaoba Round",
     "Microsoft YaHei UI",
     "Microsoft YaHei",

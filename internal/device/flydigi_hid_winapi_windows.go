@@ -72,7 +72,7 @@ func openFlyDigiHIDDevice(productIDs []uint16) (*flyDigiHIDDevice, error) {
 	for _, candidate := range scanFlyDigiHIDDevices(productIDs) {
 		dev, err := openHIDPath(candidate.path)
 		if err != nil {
-			lastErr = err
+			lastErr = fmt.Errorf("winapi 尝试打开 %s (PID 0x%04X) 失败: %w", candidate.path, candidate.productID, err)
 			continue
 		}
 		dev.productID = candidate.productID

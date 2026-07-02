@@ -90,6 +90,46 @@ func TestListPrioritizesInstallOverLegacyAndBuiltin(t *testing.T) {
 	}
 }
 
+func TestParseMetaDefaultsMissingLayerToBasic(t *testing.T) {
+	meta, ok := parseMeta([]byte(`{"id":"plain","name":"Plain","base":"light"}`), "plain")
+	if !ok {
+		t.Fatal("parseMeta failed")
+	}
+	if meta.Layer != LayerBasic {
+		t.Fatalf("Layer = %q, want %q", meta.Layer, LayerBasic)
+	}
+}
+
+func TestParseMetaKeepsAdvancedLayer(t *testing.T) {
+	meta, ok := parseMeta([]byte(`{"id":"deluxe","name":"Deluxe","base":"dark","layer":"advanced"}`), "deluxe")
+	if !ok {
+		t.Fatal("parseMeta failed")
+	}
+	if meta.Layer != LayerAdvanced {
+		t.Fatalf("Layer = %q, want %q", meta.Layer, LayerAdvanced)
+	}
+}
+
+func TestParseMetaAcceptsLegacyInterfaceAlias(t *testing.T) {
+	meta, ok := parseMeta([]byte(`{"id":"compat","name":"Compat","base":"light","interface":"advanced"}`), "compat")
+	if !ok {
+		t.Fatal("parseMeta failed")
+	}
+	if meta.Layer != LayerAdvanced {
+		t.Fatalf("Layer = %q, want %q", meta.Layer, LayerAdvanced)
+	}
+}
+
+func TestParseMetaNormalizesInvalidLayerToBasic(t *testing.T) {
+	meta, ok := parseMeta([]byte(`{"id":"odd","name":"Odd","base":"light","layer":"full"}`), "odd")
+	if !ok {
+		t.Fatal("parseMeta failed")
+	}
+	if meta.Layer != LayerBasic {
+		t.Fatalf("Layer = %q, want %q", meta.Layer, LayerBasic)
+	}
+}
+
 func TestResolveDirReturnsInstallDirAndDoesNotCreateLegacyDir(t *testing.T) {
 	root := t.TempDir()
 	installDir := filepath.Join(root, "install", "themes")
@@ -118,15 +158,17 @@ func TestReadCSSRewritesRelativeThemeAssets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCSS failed: %v", err)
 	}
-	if !strings.Contains(css, `url("data:image/webp;base64,d2VicA==")`) {
-		t.Fatalf("expected relative asset URL to be inlined, got %q", css)
+	// 相对资产路径改写为 /theme-assets/ 路由 URL，不再内联为 data: URL。
+	if !strings.Contains(css, `url("/theme-assets/xiaoba/hero.webp")`) {
+		t.Fatalf("expected relative asset URL to be rewritten to route URL, got %q", css)
 	}
+	// data: 和绝对路径 URL 保持不变。
 	if !strings.Contains(css, "data:image/png") || !strings.Contains(css, `url("/absolute.webp")`) {
 		t.Fatalf("absolute/data URLs should stay unchanged, got %q", css)
 	}
 }
 
-func TestReadCSSInlinesThemeAssetRouteURLs(t *testing.T) {
+func TestReadCSSRewritesThemeAssetRouteURLs(t *testing.T) {
 	root := t.TempDir()
 	installDir := filepath.Join(root, "install", "themes")
 	writeTheme(t, installDir, "xiaoba", "Xiaoba", "1.0.0", `a{background:url("/theme-assets/xiaoba/decorations/star.svg")} b{background:url("/theme-assets/other/star.svg")}`)
@@ -137,9 +179,11 @@ func TestReadCSSInlinesThemeAssetRouteURLs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCSS failed: %v", err)
 	}
-	if !strings.Contains(css, `url("data:image/svg+xml;base64,PHN2Zy8+")`) {
-		t.Fatalf("expected theme asset route URL to be inlined, got %q", css)
+	// 同主题的 /theme-assets/ URL 重新生成后应与原 URL 等效（不内联为 data:）。
+	if !strings.Contains(css, `url("/theme-assets/xiaoba/decorations/star.svg")`) {
+		t.Fatalf("same-theme asset route URL should remain as route URL, got %q", css)
 	}
+	// 其他主题的 URL 不处理，保持原样。
 	if !strings.Contains(css, `url("/theme-assets/other/star.svg")`) {
 		t.Fatalf("other theme asset route should stay unchanged, got %q", css)
 	}

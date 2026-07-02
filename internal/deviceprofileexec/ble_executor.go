@@ -140,6 +140,14 @@ func (e *BLEExecutor) ReadState(ctx context.Context) (*types.FanData, error) {
 	if err := e.ensureOpenLocked(ctx); err != nil {
 		return nil, err
 	}
+	if e.profile.ID == types.FlyDigiBS1ProfileID && !e.hasReadCommand {
+		if e.lastState != nil {
+			return cloneFanData(e.lastState), nil
+		}
+		state := e.syntheticStateLocked(types.NewRPMSpeed(0))
+		e.lastState = cloneFanData(state)
+		return state, nil
+	}
 	if e.hasReadCommand || e.canReadDirectly() {
 		return e.readStateLocked(ctx)
 	}

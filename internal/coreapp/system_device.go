@@ -464,34 +464,7 @@ func (a *CoreApp) AutoScanDevices() map[string]any {
 }
 
 func (a *CoreApp) ConnectNativeDevice(profileID string) bool {
-	_ = profileID
-	a.autoReconnectSuppressed.Store(false)
-	cfg := a.configManager.Get()
-
-	if a.deviceManager.IsConnected() {
-		a.deviceManager.DisconnectSilently()
-		a.mutex.Lock()
-		a.isConnected = false
-		a.deviceSettings = nil
-		a.mutex.Unlock()
-		if a.ipcServer != nil {
-			a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
-		}
-	}
-
-	// Native FlyDigi BLE/HID devices are auto-managed. Even if an older UI passes
-	// a concrete built-in profile ID, keep the reference behavior: try all HID
-	// product IDs first, then scan BS1 over BLE.
-	a.configureDeviceManager(cfg)
-	success, deviceInfo := a.deviceManager.AutoConnectNativeProfiles(cfg.DeviceProfiles)
-	if success {
-		a.finishSuccessfulDeviceConnection(deviceInfo, "ConnectNativeDevice")
-		return true
-	}
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "未发现可自动识别的原生设备")
-	}
-	return false
+	return newDeviceConnectionFlow(a).connectNativeDevice(profileID)
 }
 
 func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string, caller string) *types.DeviceSettings {
@@ -500,6 +473,7 @@ func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string,
 	a.mutex.Lock()
 	a.isConnected = true
 	a.mutex.Unlock()
+	atomic.StoreInt64(&a.lastHealthReconnectUnix, 0)
 	a.lastConnectionWasNative.Store(types.IsNativeDeviceTransport(a.deviceManager.GetDeviceType()))
 
 	if cfg, changed, err := a.applyConnectedRuntimeCurveState(); err != nil {

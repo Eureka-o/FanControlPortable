@@ -40,6 +40,107 @@ const isCoreServiceFailureDetail = (detail?: string) => {
     normalized.includes('服务');
 };
 
+const optionalNumber = (value?: number) => value ?? 0;
+
+const sensorListEquals = (
+  left?: Array<{ key?: string; name?: string; value?: number }>,
+  right?: Array<{ key?: string; name?: string; value?: number }>,
+) => {
+  if (left === right) return true;
+  if (!Array.isArray(left) || !Array.isArray(right)) return !left && !right;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const leftItem = left[index];
+    const rightItem = right[index];
+    if (
+      leftItem.key !== rightItem.key ||
+      leftItem.name !== rightItem.name ||
+      optionalNumber(leftItem.value) !== optionalNumber(rightItem.value)
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const gpuDeviceListEquals = (left?: types.TemperatureGPUDevice[], right?: types.TemperatureGPUDevice[]) => {
+  if (left === right) return true;
+  if (!Array.isArray(left) || !Array.isArray(right)) return !left && !right;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const leftItem = left[index];
+    const rightItem = right[index];
+    if (
+      leftItem.key !== rightItem.key ||
+      leftItem.name !== rightItem.name ||
+      leftItem.vendor !== rightItem.vendor ||
+      !sensorListEquals(leftItem.sensors, rightItem.sensors) ||
+      !sensorListEquals(leftItem.powerSensors, rightItem.powerSensors)
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const flyDigiCapabilityEquals = (left?: types.FlyDigiRuntimeCapability | null, right?: types.FlyDigiRuntimeCapability | null) => {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return left.available === right.available &&
+    left.gearSettings === right.gearSettings &&
+    left.maxGearCode === right.maxGearCode &&
+    left.maxGearLabel === right.maxGearLabel &&
+    left.maxGearIndex === right.maxGearIndex &&
+    left.maxRpm === right.maxRpm &&
+    left.selectedGearCode === right.selectedGearCode &&
+    left.selectedGear === right.selectedGear &&
+    left.source === right.source &&
+    left.reason === right.reason;
+};
+
+const fanDataEquals = (left: types.FanData | null, right: types.FanData | null) => {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return left.reportId === right.reportId &&
+    left.magicSync === right.magicSync &&
+    left.command === right.command &&
+    left.status === right.status &&
+    left.gearSettings === right.gearSettings &&
+    left.currentMode === right.currentMode &&
+    left.reserved1 === right.reserved1 &&
+    left.currentRpm === right.currentRpm &&
+    left.targetRpm === right.targetRpm &&
+    left.maxGear === right.maxGear &&
+    left.setGear === right.setGear &&
+    left.workMode === right.workMode &&
+    left.transport === right.transport &&
+    left.speedUnit === right.speedUnit &&
+    flyDigiCapabilityEquals(left.flyDigiCapability, right.flyDigiCapability);
+};
+
+const temperatureDataEquals = (left: types.TemperatureData | null, right: types.TemperatureData | null) => {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return left.cpuTemp === right.cpuTemp &&
+    left.gpuTemp === right.gpuTemp &&
+    optionalNumber(left.cpuPowerWatts) === optionalNumber(right.cpuPowerWatts) &&
+    optionalNumber(left.gpuPowerWatts) === optionalNumber(right.gpuPowerWatts) &&
+    left.gpuReadState === right.gpuReadState &&
+    left.maxTemp === right.maxTemp &&
+    left.controlTemp === right.controlTemp &&
+    left.controlSource === right.controlSource &&
+    left.selectedGpuDevice === right.selectedGpuDevice &&
+    left.cpuModel === right.cpuModel &&
+    left.gpuModel === right.gpuModel &&
+    left.bridgeOk === right.bridgeOk &&
+    left.bridgeMessage === right.bridgeMessage &&
+    sensorListEquals(left.cpuSensors, right.cpuSensors) &&
+    sensorListEquals(left.gpuSensors, right.gpuSensors) &&
+    sensorListEquals(left.cpuPowerSensors, right.cpuPowerSensors) &&
+    sensorListEquals(left.gpuPowerSensors, right.gpuPowerSensors) &&
+    gpuDeviceListEquals(left.gpuDevices, right.gpuDevices);
+};
+
 type ActiveTab = 'status' | 'curve' | 'control' | 'devices' | 'about';
 export type CurveFocusTarget = 'curve-editor' | 'history-details';
 
@@ -107,10 +208,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   handleTemperaturePayload: (data) => {
     const bridgeMessage = data?.bridgeMessage?.trim() ?? '';
-    set({
-      temperature: data,
-      bridgeWarning: data?.bridgeOk === false ? bridgeMessage || getBridgeWarningMessage() : null,
-    });
+    const bridgeWarning = data?.bridgeOk === false ? bridgeMessage || getBridgeWarningMessage() : null;
+    const current = get();
+    if (temperatureDataEquals(current.temperature, data) && current.bridgeWarning === bridgeWarning) {
+      return;
+    }
+    set({ temperature: data, bridgeWarning });
   },
 
   appendSessionHistoryPoint: (data) => {
@@ -339,6 +442,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     unsubscribers.push(
       deviceService.onFanDataUpdate((data) => {
+        const current = get();
+        if (fanDataEquals(current.fanData, data)) return;
         set({ fanData: data });
       })
     );

@@ -18,6 +18,9 @@ import (
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
+// currentProtocolVersion 是当前 IPC 协议版本,统一引用 appmeta 以避免版本号漂移。
+const currentProtocolVersion = appmeta.ProtocolVersion
+
 var messageCounter uint64
 
 const (
@@ -312,7 +315,7 @@ func (s *Server) handleClient(conn net.Conn, state *clientState) {
 			continue
 		}
 		if req.ProtocolVersion == "" {
-			req.ProtocolVersion = appmeta.ProtocolVersion
+			req.ProtocolVersion = currentProtocolVersion
 		}
 		if req.RequestID == "" {
 			req.RequestID = newMessageID("req")
@@ -323,7 +326,7 @@ func (s *Server) handleClient(conn net.Conn, state *clientState) {
 		s.logDebug("IPC 请求[%s]: %s", req.RequestID, req.Type)
 		resp := s.handler(req)
 		if resp.ProtocolVersion == "" {
-			resp.ProtocolVersion = appmeta.ProtocolVersion
+			resp.ProtocolVersion = currentProtocolVersion
 		}
 		if resp.RequestID == "" {
 			resp.RequestID = req.RequestID
@@ -389,7 +392,7 @@ func (s *Server) BroadcastEvent(eventType string, data any) {
 	}
 
 	event := Event{
-		SchemaVersion: appmeta.ProtocolVersion,
+		SchemaVersion: currentProtocolVersion,
 		EventID:       newMessageID("evt"),
 		Timestamp:     time.Now().UnixMilli(),
 		Source:        "core",
@@ -627,7 +630,7 @@ func (c *Client) SendRequestWithTimeout(reqType RequestType, data any, timeout t
 
 	requestID := newMessageID("req")
 	req := Request{
-		ProtocolVersion: appmeta.ProtocolVersion,
+		ProtocolVersion: currentProtocolVersion,
 		RequestID:       requestID,
 		Timestamp:       time.Now().UnixMilli(),
 		Type:            reqType,

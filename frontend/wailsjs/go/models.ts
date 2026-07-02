@@ -7,6 +7,7 @@ export namespace theme {
 	    author?: string;
 	    version?: string;
 	    description?: string;
+	    layer?: string;
 	    source: string;
 
 	    static createFrom(source: any = {}) {
@@ -21,6 +22,7 @@ export namespace theme {
 	        this.author = source["author"];
 	        this.version = source["version"];
 	        this.description = source["description"];
+	        this.layer = source["layer"];
 	        this.source = source["source"];
 	    }
 	}

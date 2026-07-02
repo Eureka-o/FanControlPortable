@@ -2,7 +2,6 @@ package types
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 )
 
@@ -106,12 +105,6 @@ func FlyDigiProfileByID(profileID string) (DeviceProfile, bool) {
 	}
 }
 
-func BuiltInDeviceProfiles(endpoint string) []DeviceProfile {
-	profiles := []DeviceProfile{DefaultWiFiPercentProfile(endpoint)}
-	profiles = append(profiles, FlyDigiBuiltInProfiles()...)
-	return profiles
-}
-
 func IsFlyDigiDeviceProfileID(profileID string) bool {
 	switch strings.TrimSpace(profileID) {
 	case FlyDigiBS1ProfileID,
@@ -122,33 +115,6 @@ func IsFlyDigiDeviceProfileID(profileID string) bool {
 		return true
 	default:
 		return false
-	}
-}
-
-func IsBuiltInDeviceProfileID(profileID string) bool {
-	if IsFlyDigiDeviceProfileID(profileID) {
-		return true
-	}
-	switch strings.TrimSpace(profileID) {
-	case DefaultWiFiPercentProfileID,
-		DefaultWiFiPercentTemplateProfileID,
-		LegacyRPMProfileID:
-		return true
-	default:
-		return false
-	}
-}
-
-func builtInDeviceProfileForTransport(endpoint, transport string) (DeviceProfile, bool) {
-	switch NormalizeDeviceTransport(transport) {
-	case DeviceTransportWiFi:
-		return DefaultWiFiPercentProfile(endpoint), true
-	case DeviceTransportBLE:
-		return FlyDigiBS1Profile(), true
-	case DeviceTransportHID:
-		return FlyDigiBS2Profile(), true
-	default:
-		return DeviceProfile{}, false
 	}
 }
 
@@ -261,31 +227,4 @@ func flyDigiProfileNotes(def flyDigiProfileDefinition) string {
 		note += " BS3/BS3PRO optional functions are reference-compatible and still need more real-device feedback."
 	}
 	return note
-}
-
-func ensureBuiltInDeviceProfiles(cfg *AppConfig) bool {
-	if cfg == nil {
-		return false
-	}
-	changed := false
-	for _, builtIn := range BuiltInDeviceProfiles(cfg.FanControlDeviceIp) {
-		builtIn = NormalizeDeviceProfile(builtIn, cfg.FanControlDeviceIp)
-		idx := -1
-		for i := range cfg.DeviceProfiles {
-			if cfg.DeviceProfiles[i].ID == builtIn.ID {
-				idx = i
-				break
-			}
-		}
-		if idx < 0 {
-			cfg.DeviceProfiles = append(cfg.DeviceProfiles, builtIn)
-			changed = true
-			continue
-		}
-		if !reflect.DeepEqual(cfg.DeviceProfiles[idx], builtIn) {
-			cfg.DeviceProfiles[idx] = builtIn
-			changed = true
-		}
-	}
-	return changed
 }

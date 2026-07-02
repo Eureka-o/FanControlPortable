@@ -43,6 +43,7 @@ func (m *Manager) bleConnectedInfoLocked() map[string]string {
 		"model":        model,
 		"transport":    types.DeviceTransportBLE,
 		"endpoint":     endpoint,
+		"profileId":    strings.TrimSpace(profile.ID),
 	}
 }
 
@@ -92,6 +93,34 @@ func (m *Manager) disconnectBLELocked() bool {
 	return true
 }
 
+// refreshBLEStateWithChangeDetection 是 RefreshBLEState 的内部比较逻辑，
+// 用轻量字段比较替代 reflect.DeepEqual（BLE 刷新频率高，避免每次反射开销）。
+func refreshBLEStateWithChangeDetection(prev, next *types.FanData) bool {
+	if prev == nil || next == nil {
+		return prev != next
+	}
+	// 实际控制关心的字段：当前转速和目标转速。
+	if prev.CurrentRPM != next.CurrentRPM {
+		return true
+	}
+	if prev.TargetRPM != next.TargetRPM {
+		return true
+	}
+	// FlyDigiCapability 指针比较。
+	if (prev.FlyDigiCapability == nil) != (next.FlyDigiCapability == nil) {
+		return true
+	}
+	if prev.FlyDigiCapability != nil && next.FlyDigiCapability != nil {
+		if prev.FlyDigiCapability.GearSettings != next.FlyDigiCapability.GearSettings {
+			return true
+		}
+		if prev.FlyDigiCapability.SelectedGearCode != next.FlyDigiCapability.SelectedGearCode {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Manager) RefreshBLEState() bool {
 	if m.GetDeviceType() != types.DeviceTransportBLE {
 		return true
@@ -102,14 +131,17 @@ func (m *Manager) RefreshBLEState() bool {
 		m.mutex.Unlock()
 		return false
 	}
-	fanData, err := m.readBLEStateLocked()
+	fanData, err := m.refreshBLEStateLocked()
 	if err != nil {
 		m.mutex.Unlock()
 		m.logError("BLE controller state refresh failed: %v", err)
 		return false
 	}
-	m.currentFanData.Store(fanData)
-	callback := m.onFanDataUpdate
+	var callback func(data *types.FanData)
+	if refreshBLEStateWithChangeDetection(m.currentFanData.Load(), fanData) {
+		m.currentFanData.Store(fanData)
+		callback = m.onFanDataUpdate
+	}
 	m.mutex.Unlock()
 
 	if callback != nil {
@@ -123,6 +155,19 @@ func (m *Manager) readBLEStateLocked() (*types.FanData, error) {
 		return nil, fmt.Errorf("ble profile executor is not configured")
 	}
 	fanData, err := m.bleExecutor.Open(nil)
+	if err != nil {
+		return nil, err
+	}
+	fanData.Transport = types.DeviceTransportBLE
+	fanData.SpeedUnit = types.NormalizeFanSpeedUnit(m.activeProfile.SpeedUnit)
+	return fanData, nil
+}
+
+func (m *Manager) refreshBLEStateLocked() (*types.FanData, error) {
+	if m.bleExecutor == nil {
+		return nil, fmt.Errorf("ble profile executor is not configured")
+	}
+	fanData, err := m.bleExecutor.ReadState(nil)
 	if err != nil {
 		return nil, err
 	}

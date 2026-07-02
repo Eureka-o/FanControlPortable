@@ -2,13 +2,10 @@ package coreapp
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/TIANLI0/THRM/internal/device"
 	"github.com/TIANLI0/THRM/internal/deviceprofileexec"
-	"github.com/TIANLI0/THRM/internal/deviceprofiles"
-	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -171,156 +168,11 @@ func availableSerialPortNames() map[string]bool {
 }
 
 func (a *CoreApp) ConnectDeviceCandidate(req types.DeviceConnectRequest) bool {
-	transport := candidateTransport(req.Transport)
-	switch transport {
-	case types.DeviceTransportWiFi, types.DeviceTransportSerial:
-		return a.connectCompatibilityCandidate(transport, req.ProfileID, req.Endpoint)
-	case types.DeviceTransportHID, types.DeviceTransportBLE:
-		return a.ConnectNativeDevice(req.ProfileID)
-	default:
-		if a.ipcServer != nil {
-			a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "缺少可连接的设备信息")
-		}
-		return false
-	}
-}
-
-func candidateTransport(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case types.DeviceTransportWiFi:
-		return types.DeviceTransportWiFi
-	case types.DeviceTransportSerial:
-		return types.DeviceTransportSerial
-	case types.DeviceTransportHID:
-		return types.DeviceTransportHID
-	case types.DeviceTransportBLE:
-		return types.DeviceTransportBLE
-	default:
-		return ""
-	}
-}
-
-func (a *CoreApp) connectCompatibilityCandidate(transport, profileID, endpoint string) bool {
-	a.autoReconnectSuppressed.Store(false)
-
-	oldCfg := a.configManager.Get()
-	types.NormalizeDeviceProfileConfig(&oldCfg)
-	nextCfg := oldCfg
-
-	idx := compatibilityProfileIndex(nextCfg, transport, profileID)
-	if idx < 0 && transport == types.DeviceTransportWiFi {
-		nextCfg.DeviceProfiles = append(nextCfg.DeviceProfiles, types.DefaultWiFiPercentProfile(nextCfg.FanControlDeviceIp))
-		idx = len(nextCfg.DeviceProfiles) - 1
-	}
-	if idx < 0 {
-		a.broadcastDeviceError("未找到可连接的兼容设备")
-		return false
-	}
-
-	profile := types.NormalizeDeviceProfile(nextCfg.DeviceProfiles[idx], nextCfg.FanControlDeviceIp)
-	endpoint = strings.TrimSpace(endpoint)
-	if endpoint != "" {
-		switch transport {
-		case types.DeviceTransportWiFi:
-			profile.Connection.Endpoint = endpoint
-			nextCfg.FanControlDeviceIp = endpoint
-		case types.DeviceTransportSerial:
-			profile.Connection.SerialPort = endpoint
-		}
-	}
-	nextCfg.DeviceProfiles[idx] = profile
-	nextCfg.ActiveDeviceProfileID = profile.ID
-	nextCfg.DeviceTransport = transport
-	if nextCfg.ActiveDeviceProfileIDsByTransport == nil {
-		nextCfg.ActiveDeviceProfileIDsByTransport = map[string]string{}
-	}
-	nextCfg.ActiveDeviceProfileIDsByTransport[transport] = profile.ID
-	if transport == types.DeviceTransportWiFi {
-		nextCfg.WiFiCompatibilityEnabled = true
-	} else {
-		nextCfg.SerialCompatibilityEnabled = true
-	}
-	types.NormalizeDeviceProfileConfig(&nextCfg)
-
-	a.disconnectForCandidateSwitch()
-	a.configureDeviceManager(nextCfg)
-	success, deviceInfo := a.deviceManager.Connect()
-	if !success {
-		a.configureDeviceManager(oldCfg)
-		a.broadcastDeviceError("连接失败")
-		return false
-	}
-
-	if err := a.configManager.Update(nextCfg); err != nil {
-		a.logError("保存设备连接配置失败: %v", err)
-		a.broadcastDeviceError(err.Error())
-		return false
-	}
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, nextCfg)
-	}
-	a.lastConnectionWasNative.Store(false)
-	a.finishSuccessfulDeviceConnection(deviceInfo, "ConnectDeviceCandidate")
-	return true
-}
-
-func compatibilityProfileIndex(cfg types.AppConfig, transport, profileID string) int {
-	if strings.TrimSpace(profileID) != "" {
-		if idx := deviceprofiles.FindIndex(cfg.DeviceProfiles, profileID); idx >= 0 {
-			if types.NormalizeDeviceTransport(cfg.DeviceProfiles[idx].Transport) == transport {
-				return idx
-			}
-		}
-	}
-	activeID := types.ActiveDeviceProfileIDForTransport(&cfg, transport)
-	if idx := deviceprofiles.FindIndex(cfg.DeviceProfiles, activeID); idx >= 0 {
-		return idx
-	}
-	for i := range cfg.DeviceProfiles {
-		if types.NormalizeDeviceTransport(cfg.DeviceProfiles[i].Transport) == transport {
-			return i
-		}
-	}
-	return -1
-}
-
-func (a *CoreApp) disconnectForCandidateSwitch() {
-	if !a.deviceManager.IsConnected() {
-		return
-	}
-	a.deviceManager.DisconnectSilently()
-	a.mutex.Lock()
-	a.isConnected = false
-	a.deviceSettings = nil
-	a.mutex.Unlock()
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
-	}
+	return newDeviceConnectionFlow(a).connectCandidate(req)
 }
 
 func (a *CoreApp) ConnectBestScannedDevice() bool {
-	scan := a.ScanDeviceCandidates(types.DeviceScanModeNormal)
-	if len(scan.Devices) == 0 {
-		a.broadcastDeviceError("未发现可连接的设备")
-		return false
-	}
-	if len(scan.Devices) > 1 {
-		a.broadcastDeviceError(fmt.Sprintf("发现多个设备（%d 个），请到设置页选择", len(scan.Devices)))
-		return false
-	}
-	device := scan.Devices[0]
-	return a.ConnectDeviceCandidate(types.DeviceConnectRequest{
-		ID:        device.ID,
-		Transport: device.Transport,
-		ProfileID: device.ProfileID,
-		Endpoint:  device.Endpoint,
-	})
-}
-
-func (a *CoreApp) broadcastDeviceError(message string) {
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventDeviceError, message)
-	}
+	return newDeviceConnectionFlow(a).connectBestScannedDevice()
 }
 
 func firstNonEmptyString(values ...string) string {

@@ -8,6 +8,7 @@
   "_name_说明": "在「系统设置 → 界面主题」下拉里显示的名字。",
 
   "base": "light",
+  "layer": "basic",
   "_base_说明": "本主题基于哪种底色，可填 light 或 dark。应用会先套用对应的浅色/深色底，再叠加本主题的 theme.css。",
 
   "author": "THRM",

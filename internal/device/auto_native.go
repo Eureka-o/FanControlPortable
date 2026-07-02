@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/TIANLI0/THRM/internal/deviceprofileexec"
+	"github.com/TIANLI0/THRM/internal/deviceprofiles"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -77,6 +78,40 @@ func (m *Manager) AutoConnectNativeProfiles(profiles []types.DeviceProfile) (boo
 	return false, nil
 }
 
+func (m *Manager) ConnectNativeProfile(profile types.DeviceProfile) (bool, map[string]string) {
+	profile = types.NormalizeDeviceProfile(profile, "")
+	if !types.IsNativeDeviceTransport(profile.Transport) {
+		return false, nil
+	}
+
+	m.mutex.RLock()
+	wasConnected := m.isConnected
+	m.mutex.RUnlock()
+
+	if wasConnected {
+		m.DisconnectSilently()
+	}
+
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	previousProfile := m.activeProfile
+	previousEndpoint := m.wifiEndpoint
+	m.configureProfileLocked(profile, previousEndpoint)
+	switch profile.Transport {
+	case types.DeviceTransportHID:
+		if success, info := m.connectLegacyHIDLocked(); success {
+			return true, info
+		}
+	case types.DeviceTransportBLE:
+		if success, info := m.connectBLELocked(); success {
+			return true, info
+		}
+	}
+	m.configureProfileLocked(previousProfile, previousEndpoint)
+	return false, nil
+}
+
 func nativeAutoConnectCandidates(profiles []types.DeviceProfile) []types.DeviceProfile {
 	seen := map[string]bool{}
 	hidProfiles := make([]types.DeviceProfile, 0)
@@ -103,7 +138,7 @@ func nativeAutoConnectCandidates(profiles []types.DeviceProfile) []types.DeviceP
 	}
 
 	for _, profile := range profiles {
-		if profile.BuiltIn && types.IsFlyDigiDeviceProfileID(profile.ID) {
+		if profile.BuiltIn && deviceprofiles.IsBuiltInProfileID(profile.ID) {
 			continue
 		}
 		add(profile)

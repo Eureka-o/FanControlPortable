@@ -3,7 +3,8 @@
   "id": "shinchan",
   "name": "蜡笔小新",
   "base": "light",
+  "layer": "advanced",
   "author": "FanControl",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "蜡笔小新主题。使用暖奶油底色、红黄蓝蜡笔配色、本地插画和幕布资源，保持便携与兼容。"
 }

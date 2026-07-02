@@ -132,3 +132,32 @@ func TestBLEManagerProfileConnectsAndSetsPercentSpeed(t *testing.T) {
 		t.Fatal("expected BLE client to close on disconnect")
 	}
 }
+
+func TestBLEManagerRefreshBS1KeepsLastNotifyOnlyState(t *testing.T) {
+	client := &managerFakeBLEClient{}
+	m := NewManager(nil)
+	m.bleConnector = deviceprofileexec.BLEConnectorFunc(func(ctx context.Context, profile types.DeviceProfile) (deviceprofileexec.BLEClient, error) {
+		return client, nil
+	})
+	m.ConfigureProfile(types.FlyDigiBS1Profile(), "")
+	defer m.Disconnect()
+
+	connected, _ := m.Connect()
+	if !connected {
+		t.Fatal("expected BS1 BLE profile to connect")
+	}
+	if ok := m.SetTargetSpeed(1800, types.FanSpeedUnitRPM); !ok {
+		t.Fatal("expected BS1 RPM target speed to be sent")
+	}
+	before := m.GetCurrentFanData()
+	if before == nil || before.TargetRPM != 1800 {
+		t.Fatalf("before refresh fan data = %#v, want target 1800", before)
+	}
+	if !m.RefreshBLEState() {
+		t.Fatal("expected BS1 BLE refresh to succeed")
+	}
+	after := m.GetCurrentFanData()
+	if after == nil || after.TargetRPM != 1800 {
+		t.Fatalf("after refresh fan data = %#v, want target 1800", after)
+	}
+}

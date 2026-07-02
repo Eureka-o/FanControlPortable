@@ -284,15 +284,6 @@ export default function ControlPanel({
     }
   }, [config, onConfigChange]);
 
-  useEffect(() => {
-    const i = window.setInterval(() => {
-      if (document.hidden) {
-        return;
-      }
-      apiService.updateGuiResponseTime().catch(() => {});
-    }, 60000);
-    return () => window.clearInterval(i);
-  }, []);
   useEffect(() => { void loadDeviceProfiles(); }, [loadDeviceProfiles]);
   useEffect(() => {
     const profiles = configuredDeviceProfiles(config);
