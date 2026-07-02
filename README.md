@@ -1,15 +1,18 @@
 # FanControl
 
-FanControl 是面向 Windows 的散热控制软件，用于通过设备档案连接和控制多种散热器、风扇控制器和 DIY 主控。它可以读取电脑 CPU/GPU 温度，显示设备状态，并根据手动速度或风扇曲线控制散热设备；当前内置默认设备为 **Slim压风散热器Pro**。
+FanControl 是面向 Windows 的多设备散热控制工具，用于连接和控制外置散热器、风扇控制器和 DIY 主控。它支持 WiFi、HID、BLE 与虚拟串口/COM 等连接方式，可以读取 CPU/GPU 温度与功耗，按风扇曲线或手动挡位调节转速，并提供设备扫描、设备档案、托盘后台运行、主题系统和配置继承等能力。
+
+当前版本已内置 **Slim压风散热器Pro** 与多款飞智（FlyDigi）BS 系列设备档案；WiFi 与虚拟串口/COM 设备也可以通过兼容模式手动添加或扫描发现。
 
 [下载最新版](https://github.com/Eureka-o/FanControlPortable/releases/latest)
 
 ## 适用范围
 
 - 系统：Windows 10 / Windows 11 64 位。
-- 内置默认设备：Slim压风散热器Pro；同时提供 WiFi、虚拟串口/COM 兼容档案基础；飞智 BLE/HID 设备走原生自动识别通道。
-- 默认连接方式：WiFi。
-- 高级设备页：面向 DIY 主控的 WiFi、虚拟串口/COM 兼容档案，以及用户 BLE/HID 原生档案维护；BLE/HID 不需要在高级设备页手动启用。
+- 内置设备：Slim压风散热器Pro、飞智（FlyDigi）BS1、BS2、BS2PRO、BS3、BS3PRO。
+- 连接方式：WiFi、HID、BLE、虚拟串口/COM；飞智 BLE/HID 设备走原生自动识别通道。
+- 兼容模式：面向 DIY 主控、WiFi 设备和虚拟串口/COM 设备，支持手动添加地址、动态 IP 兼容和扫描发现。
+- 主题系统：内置基础主题和高级主题，也支持导入/编辑第三方主题资源。
 
 ## 已适配设备
 
