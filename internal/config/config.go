@@ -483,6 +483,9 @@ func applyMissingDeviceDefaults(cfg *types.AppConfig, rawConfig map[string]json.
 	if _, ok := rawConfig["wifiDynamicIpCompatibilityEnabled"]; !ok {
 		cfg.WiFiDynamicIPCompatibilityEnabled = true
 	}
+	if _, ok := rawConfig["ignoreDeviceOnReconnect"]; !ok {
+		cfg.IgnoreDeviceOnReconnect = defaults.IgnoreDeviceOnReconnect
+	}
 	if _, ok := rawConfig["wifiSmartStartStopStandbySpeed"]; !ok {
 		cfg.WiFiSmartStartStopStandbySpeed = types.WiFiSmartStartStopStandbyMinPercent
 	}

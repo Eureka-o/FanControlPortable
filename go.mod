@@ -5,6 +5,7 @@ go 1.26.2
 require (
 	fyne.io/systray v1.12.1
 	github.com/Microsoft/go-winio v0.6.2
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/gen2brain/beeep v0.11.2
 	github.com/shirou/gopsutil/v4 v4.26.4
 	github.com/sstallion/go-hid v0.15.0

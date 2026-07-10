@@ -92,7 +92,23 @@ func TestShouldTryDynamicWiFiCompatibilityOnlyForEnabledWiFiCompatibility(t *tes
 		want bool
 	}{
 		{
-			name: "wifi compatibility enabled",
+			name: "wifi dynamic compatibility enabled",
+			cfg: func() types.AppConfig {
+				cfg := types.GetDefaultConfig(false)
+				cfg.DeviceTransport = types.DeviceTransportWiFi
+				cfg.ActiveDeviceProfileID = wifi.ID
+				cfg.WiFiCompatibilityEnabled = true
+				cfg.WiFiDynamicIPCompatibilityEnabled = true
+				cfg.DeviceProfiles = []types.DeviceProfile{wifi, serial}
+				cfg.ActiveDeviceProfileIDsByTransport = map[string]string{
+					types.DeviceTransportWiFi: wifi.ID,
+				}
+				return cfg
+			}(),
+			want: true,
+		},
+		{
+			name: "wifi dynamic compatibility disabled",
 			cfg: func() types.AppConfig {
 				cfg := types.GetDefaultConfig(false)
 				cfg.DeviceTransport = types.DeviceTransportWiFi
@@ -105,7 +121,7 @@ func TestShouldTryDynamicWiFiCompatibilityOnlyForEnabledWiFiCompatibility(t *tes
 				}
 				return cfg
 			}(),
-			want: true,
+			want: false,
 		},
 		{
 			name: "wifi compatibility disabled",

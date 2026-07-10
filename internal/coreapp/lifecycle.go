@@ -134,6 +134,7 @@ func (a *CoreApp) Start() error {
 		a.logError("启动 IPC 服务器失败: %v", err)
 		return err
 	}
+	a.startPluginDiscovery()
 	if !a.legionFnQSupportChecked.Load() {
 		a.startLegionFnQSupportDetection()
 	}
@@ -197,6 +198,7 @@ func (a *CoreApp) Stop() {
 		a.safeRun("power-notify-unregister", a.powerNotifyStop)
 		a.powerNotifyStop = nil
 	}
+	a.stopPluginDiscovery()
 	a.stopTemperatureMonitoring()
 	if a.hotkeyManager != nil {
 		a.hotkeyManager.Stop()

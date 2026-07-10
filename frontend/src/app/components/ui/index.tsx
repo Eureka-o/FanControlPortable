@@ -317,7 +317,7 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
 );
 NumberInput.displayName = 'NumberInput';
 
-interface CardProps {
+interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
   className?: string;
   padding?: 'none' | 'sm' | 'md' | 'lg';
@@ -331,9 +331,10 @@ const cardPaddingVariants = {
   lg: 'p-6',
 };
 
-export function Card({ children, className, padding = 'md', hover = false }: CardProps) {
+export function Card({ children, className, padding = 'md', hover = false, ...props }: CardProps) {
   return (
     <ShadcnCard
+      {...props}
       className={clsx(
         cardPaddingVariants[padding],
         hover && 'transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md',
@@ -411,3 +412,5 @@ export {
   DialogTrigger,
 } from '@/components/ui/dialog';
 export { Skeleton } from '@/components/ui/skeleton';
+export { SharedFanCurveEditor as FanCurveEditor, normalizeSharedFanCurve, syncSharedCurveSpeedAtIndex } from '../shared/FanCurveEditor';
+export type { SharedFanCurvePoint, SharedFanCurveEditorProps, SharedFanCurveEditorLabels } from '../shared/FanCurveEditor';

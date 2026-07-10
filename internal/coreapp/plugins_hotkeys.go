@@ -137,7 +137,15 @@ func (a *CoreApp) handleLegionPowerModeChange(state fnqpowermode.PowerModeState)
 }
 
 func (a *CoreApp) applyPluginConfig(cfg types.AppConfig) {
-	if a.pluginManager == nil || !a.legionFnQSupported.Load() {
+	if a.pluginManager == nil {
+		return
+	}
+
+	a.applyLegionFnQPluginConfig(cfg)
+}
+
+func (a *CoreApp) applyLegionFnQPluginConfig(cfg types.AppConfig) {
+	if !a.legionFnQSupported.Load() {
 		return
 	}
 

@@ -72,8 +72,11 @@ func (a *CoreApp) recoverDynamicWiFiEndpoint(cfg *types.AppConfig) bool {
 		}
 		return false
 	}
-	nextEndpoint := strings.TrimSpace(result.Devices[0].Endpoint)
-	if nextEndpoint == "" || strings.EqualFold(nextEndpoint, oldEndpoint) {
+	nextEndpoint := selectDynamicWiFiEndpoint(result.Devices, oldEndpoint)
+	if nextEndpoint == "" {
+		if len(result.Devices) > 1 {
+			a.logInfo("dynamic WiFi endpoint scan found %d devices; keeping saved endpoint %s", len(result.Devices), oldEndpoint)
+		}
 		return false
 	}
 
@@ -97,6 +100,21 @@ func (a *CoreApp) recoverDynamicWiFiEndpoint(cfg *types.AppConfig) bool {
 	}
 	a.logInfo("dynamic WiFi endpoint updated from %s to %s", oldEndpoint, nextEndpoint)
 	return true
+}
+
+func selectDynamicWiFiEndpoint(devices []types.WiFiDiscoveredDevice, oldEndpoint string) string {
+	if len(devices) != 1 {
+		return ""
+	}
+	oldEndpoint = strings.TrimSpace(oldEndpoint)
+	if oldEndpoint == "" {
+		return ""
+	}
+	nextEndpoint := strings.TrimSpace(devices[0].Endpoint)
+	if nextEndpoint == "" || strings.EqualFold(nextEndpoint, oldEndpoint) {
+		return ""
+	}
+	return nextEndpoint
 }
 
 func activeWiFiProfile(cfg types.AppConfig) types.DeviceProfile {

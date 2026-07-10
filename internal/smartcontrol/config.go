@@ -66,6 +66,10 @@ func NormalizeConfigForUnit(cfg types.SmartControlConfig, curve []types.FanCurve
 		cfg.LearningBias = normalizedBias
 		changed = true
 	}
+	if normalizedJointBias := types.NormalizeJointBias(cfg.JointBias); normalizedJointBias != cfg.JointBias {
+		cfg.JointBias = normalizedJointBias
+		changed = true
+	}
 	if cfg.LearnWindow < 3 || cfg.LearnWindow > 24 {
 		cfg.LearnWindow = defaults.LearnWindow
 		changed = true

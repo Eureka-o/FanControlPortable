@@ -35,7 +35,8 @@ import { apiService } from '../../services/api';
 import FanCurveProfileSelect from '../FanCurveProfileSelect';
 import { Button, Select, ToggleSwitch } from '../ui';
 import { Section, SettingRow } from './SettingLayout';
-import TemperatureBaselineSection, { normalizeTemperatureSource } from './TemperatureBaselineSection';
+import TemperatureBaselineSection from './TemperatureBaselineSection';
+import { normalizeSampleCount, useTemperatureBaselineSettings } from './useTemperatureBaselineSettings';
 
 interface FanControlSectionProps {
   config: types.AppConfig;
@@ -66,11 +67,6 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-function normalizeSampleCount(count: string | number) {
-  const parsed = typeof count === 'number' ? count : Number(count);
-  return SAMPLE_COUNT_OPTIONS.some((item) => item.value === parsed) ? parsed : 1;
-}
-
 export default function FanControlSection({
   config,
   onConfigChange,
@@ -84,7 +80,6 @@ export default function FanControlSection({
 }: FanControlSectionProps) {
   const { t } = useTranslation();
   const { locale } = useLocale();
-  const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
   const [showCustomSpeedWarning, setShowCustomSpeedWarning] = useState(false);
   const overviewRuntimeProfile = isConnected ? runtimeDeviceProfile : null;
   const overviewSpeedUnit = getFanSpeedUnit(fanData as any, config as any, overviewRuntimeProfile as any);
@@ -103,6 +98,16 @@ export default function FanControlSection({
   const [curveActiveProfileId, setCurveActiveProfileId] = useState('');
   const [curveProfileLoading, setCurveProfileLoading] = useState(false);
   const [temperatureHistoryEnabled, setTemperatureHistoryEnabled] = useState(false);
+  const {
+    loadingStates,
+    runWithLoading,
+    saveConfigPatch,
+    handleTempSourceChange,
+    handleGpuReadModeChange,
+    handleGpuDeviceChange,
+    handleTempSensorChange,
+    handlePowerSensorChange,
+  } = useTemperatureBaselineSettings(config, onConfigChange);
 
   const customSpeedInputValue = useMemo(
     () => clampFanSpeedToRange(customSpeedInput, overviewSpeedRange, defaultCustomSpeed) ?? defaultCustomSpeed,
@@ -131,26 +136,6 @@ export default function FanControlSection({
     () => SAMPLE_COUNT_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey) })),
     [locale, t],
   );
-  const setLoading = useCallback((key: string, value: boolean) => {
-    setLoadingStates((prev) => ({ ...prev, [key]: value }));
-  }, []);
-
-  const runWithLoading = useCallback(async (key: string, task: () => Promise<void>) => {
-    setLoading(key, true);
-    try {
-      await task();
-    } finally {
-      setLoading(key, false);
-    }
-  }, [setLoading]);
-
-  const saveConfigPatch = useCallback(async (patch: Record<string, unknown>) => {
-    const newCfg = types.AppConfig.createFrom({ ...config, ...patch });
-    await apiService.updateConfig(newCfg);
-    onConfigChange(newCfg);
-    return newCfg;
-  }, [config, onConfigChange]);
-
   const handleAutoControlChange = useCallback(async (enabled: boolean) => {
     await runWithLoading('autoControl', async () => {
       try {
@@ -229,66 +214,6 @@ export default function FanControlSection({
       /* noop */
     }
   }, [saveConfigPatch]);
-
-  const handleTempSourceChange = useCallback(async (source: string) => {
-    await runWithLoading('tempSource', async () => {
-      try {
-        await saveConfigPatch({ tempSource: normalizeTemperatureSource(source) });
-      } catch {
-        /* noop */
-      }
-    });
-  }, [runWithLoading, saveConfigPatch]);
-
-  const handleGpuDeviceChange = useCallback(async (deviceKey: string) => {
-    await runWithLoading('gpuDevice', async () => {
-      try {
-        await saveConfigPatch({
-          gpuDevice: deviceKey,
-          gpuSensor: 'auto',
-          gpuPowerSensor: 'auto',
-        });
-      } catch {
-        /* noop */
-      }
-    });
-  }, [runWithLoading, saveConfigPatch]);
-
-  const handleTempSensorChange = useCallback(async (kind: 'cpu' | 'gpu', sensorKey: string) => {
-    const loadingKey = kind === 'cpu' ? 'cpuSensor' : 'gpuSensor';
-    await runWithLoading(loadingKey, async () => {
-      try {
-        await saveConfigPatch(kind === 'cpu' ? { cpuSensor: sensorKey } : { gpuSensor: sensorKey });
-      } catch {
-        /* noop */
-      }
-    });
-  }, [runWithLoading, saveConfigPatch]);
-
-  const handlePowerSensorChange = useCallback(async (kind: 'cpu' | 'gpu', sensorKey: string) => {
-    const loadingKey = kind === 'cpu' ? 'cpuPowerSensor' : 'gpuPowerSensor';
-    await runWithLoading(loadingKey, async () => {
-      try {
-        await saveConfigPatch(kind === 'cpu' ? { cpuPowerSensor: sensorKey } : { gpuPowerSensor: sensorKey });
-      } catch {
-        /* noop */
-      }
-    });
-  }, [runWithLoading, saveConfigPatch]);
-
-  const handleGpuReadModeChange = useCallback(async (mode: string) => {
-    const normalizedMode = mode === 'always' ? 'always' : 'auto';
-    await runWithLoading('gpuReadMode', async () => {
-      try {
-        await saveConfigPatch({
-          gpuReadMode: normalizedMode,
-          gpuLowPowerProtection: normalizedMode !== 'always',
-        });
-      } catch {
-        /* noop */
-      }
-    });
-  }, [runWithLoading, saveConfigPatch]);
 
   const handleTransientSpikeFilterChange = useCallback(async (enabled: boolean) => {
     await runWithLoading('transientSpikeFilter', async () => {

@@ -34,8 +34,16 @@ export function DeleteFanCurveProfile(arg1) {
   return window['go']['main']['App']['DeleteFanCurveProfile'](arg1);
 }
 
+export function DisablePlugin(arg1) {
+  return window['go']['main']['App']['DisablePlugin'](arg1);
+}
+
 export function DisconnectDevice() {
   return window['go']['main']['App']['DisconnectDevice']();
+}
+
+export function EnablePlugin(arg1) {
+  return window['go']['main']['App']['EnablePlugin'](arg1);
 }
 
 export function ExportDeviceProfiles() {
@@ -64,6 +72,10 @@ export function GetAutoStartMethod() {
 
 export function GetAvailableGears() {
   return window['go']['main']['App']['GetAvailableGears']();
+}
+
+export function GetAvailablePlugins() {
+  return window['go']['main']['App']['GetAvailablePlugins']();
 }
 
 export function GetBridgeProgramStatus() {
@@ -100,6 +112,22 @@ export function GetFanCurve() {
 
 export function GetFanCurveProfiles() {
   return window['go']['main']['App']['GetFanCurveProfiles']();
+}
+
+export function GetPluginFrontendAsset(arg1) {
+  return window['go']['main']['App']['GetPluginFrontendAsset'](arg1);
+}
+
+export function GetPluginFrontendAssetPath(arg1, arg2) {
+  return window['go']['main']['App']['GetPluginFrontendAssetPath'](arg1, arg2);
+}
+
+export function GetPluginFrontendHTML(arg1) {
+  return window['go']['main']['App']['GetPluginFrontendHTML'](arg1);
+}
+
+export function GetPluginStatus(arg1) {
+  return window['go']['main']['App']['GetPluginStatus'](arg1);
 }
 
 export function GetSupportedDeviceProfiles() {
@@ -180,6 +208,10 @@ export function QuitApp() {
 
 export function RefreshDeviceSettings() {
   return window['go']['main']['App']['RefreshDeviceSettings']();
+}
+
+export function RefreshPluginDiscovery() {
+  return window['go']['main']['App']['RefreshPluginDiscovery']();
 }
 
 export function ReinstallPawnIO() {

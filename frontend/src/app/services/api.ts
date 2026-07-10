@@ -20,29 +20,31 @@ import {
   SetLightStrip,
   GetTemperature,
   GetTemperatureHistory,
-  SetTemperatureHistoryEnabled,
-  GetCurrentFanData,
-  TestTemperatureReading,
-  GetDebugInfo,
-  ExportDiagnosticsToFile,
-  SetDebugMode,
-  UpdateGuiResponseTime,
-  SetCustomSpeed
-  // CheckWindowsAutoStart,
-  // SetWindowsAutoStart
+	SetTemperatureHistoryEnabled,
+	GetCurrentFanData,
+	TestTemperatureReading,
+	GetDebugInfo,
+	ExportDiagnosticsToFile,
+	SetDebugMode,
+	UpdateGuiResponseTime,
+	SetCustomSpeed
+	// CheckWindowsAutoStart,
+	// SetWindowsAutoStart
 } from '../../../wailsjs/go/main/App';
 
 import { types } from '../../../wailsjs/go/models';
 
 import type {
-  DeviceInfo,
-  DeviceDebugCommandResult,
-  DeviceDebugFrame,
-  DeviceSettings,
+	DeviceInfo,
+	DeviceDebugCommandResult,
+	DeviceDebugFrame,
+	DeviceSettings,
   DebugInfo,
   LegionFnQSupportPayload,
   LegionPowerModePayload,
-  ThemeMeta,
+	PluginInfo,
+	PluginListPayload,
+	ThemeMeta,
 } from '../types/app';
 
 export interface AutoScanDeviceInfo {
@@ -129,6 +131,8 @@ export interface DeviceScanResult {
 }
 
 class ApiService {
+  supportsPluginAssetPath = true;
+
   // 设备连接
   async connectDevice(): Promise<boolean> {
     return await ConnectDevice();
@@ -326,6 +330,49 @@ class ApiService {
     return await SetLightStrip(config);
   }
 
+  // 插件
+  async getAvailablePlugins(): Promise<PluginInfo[]> {
+    const plugins = await (window as any).go?.main?.App?.GetAvailablePlugins?.();
+    return Array.isArray(plugins) ? plugins as PluginInfo[] : [];
+  }
+
+  async getPluginStatus(pluginID: string): Promise<PluginInfo | null> {
+    const plugin = await (window as any).go?.main?.App?.GetPluginStatus?.(pluginID);
+    return plugin && typeof plugin === 'object' ? plugin as PluginInfo : null;
+  }
+
+  async enablePlugin(pluginID: string): Promise<void> {
+    return await (window as any).go?.main?.App?.EnablePlugin?.(pluginID);
+  }
+
+  async disablePlugin(pluginID: string): Promise<void> {
+    return await (window as any).go?.main?.App?.DisablePlugin?.(pluginID);
+  }
+
+  async refreshPluginDiscovery(): Promise<PluginInfo[]> {
+    const plugins = await (window as any).go?.main?.App?.RefreshPluginDiscovery?.();
+    return Array.isArray(plugins) ? plugins as PluginInfo[] : [];
+  }
+
+  async getPluginFrontendAssetPath(pluginID: string, assetPath: string): Promise<string> {
+    const app = (window as any).go?.main?.App;
+    const asset = await app?.GetPluginFrontendAssetPath?.(pluginID, assetPath);
+    return typeof asset === 'string' ? asset : '';
+  }
+
+  async getPluginFrontendAsset(pluginID: string, assetPath = ''): Promise<string> {
+    if (assetPath) {
+      return this.getPluginFrontendAssetPath(pluginID, assetPath);
+    }
+    const app = (window as any).go?.main?.App;
+    const asset = await (app?.GetPluginFrontendAsset?.(pluginID) ?? app?.GetPluginFrontendHTML?.(pluginID));
+    return typeof asset === 'string' ? asset : '';
+  }
+
+  async getPluginFrontendHTML(pluginID: string): Promise<string> {
+    return this.getPluginFrontendAsset(pluginID);
+  }
+
   // Windows自启动相关
   async checkWindowsAutoStart(): Promise<boolean> {
     // 临时使用window对象调用，等Wails生成绑定后更新
@@ -434,6 +481,22 @@ class ApiService {
 
   onLegionFnQSupportUpdate(callback: (payload: LegionFnQSupportPayload) => void): () => void {
     return EventsOn('legion-fnq-support-update', callback);
+  }
+
+  onPluginsDiscovered(callback: (payload: PluginListPayload | PluginInfo[]) => void): () => void {
+    return EventsOn('plugins-discovered', callback);
+  }
+
+  onPluginInstalled(callback: (payload: PluginInfo) => void): () => void {
+    return EventsOn('plugin-installed', callback);
+  }
+
+  onPluginUninstalled(callback: (payload: PluginInfo) => void): () => void {
+    return EventsOn('plugin-uninstalled', callback);
+  }
+
+  onPluginStatusChanged(callback: (payload: PluginInfo) => void): () => void {
+    return EventsOn('plugin-status-changed', callback);
   }
 
   async getDebugInfo(): Promise<DebugInfo> {

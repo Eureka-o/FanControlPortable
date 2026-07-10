@@ -1,6 +1,6 @@
 'use client';
 
-import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
+import type { ComponentType, CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -40,7 +40,19 @@ const MAIN_TAB_ITEMS = [
 
 const ABOUT_TAB = { id: 'about', titleKey: 'appShell.tabs.about', icon: Info } as const;
 
-type ActiveTab = (typeof MAIN_TAB_ITEMS)[number]['id'] | typeof ABOUT_TAB.id;
+type PluginTabId = `plugin:${string}`;
+type SidebarIcon = ComponentType<{ className?: string }>;
+
+interface PluginTabItem {
+  id: PluginTabId;
+  title: string;
+  /** Inline `<svg>…</svg>` string from plugin manifest, or a legacy id (falls back to default glyph). */
+  icon?: string;
+  content: ReactNode;
+}
+
+type ActiveTab = (typeof MAIN_TAB_ITEMS)[number]['id'] | PluginTabId | typeof ABOUT_TAB.id;
+type TabChangeHandler = { bivarianceHack(tab: ActiveTab): void }['bivarianceHack'];
 
 const TAB_TRANSITION_ORDER: ActiveTab[] = [...MAIN_TAB_ITEMS.map((tab) => tab.id), ABOUT_TAB.id];
 
@@ -82,11 +94,44 @@ const TAB_CARD_RISE_SELECTOR = [
   '[data-theme-card="curve-history-chart"]',
   '[data-theme-card="fan-curve-preview"]',
   '[data-theme-card="temperature-history"]',
-].join(',');
+	].join(',');
+
+// Plugin icon rendering:
+// - Preferred path: plugin.json declares icon as inline `<svg>…</svg>` string (validated on the Go side,
+//   ≤8 KiB). We render it as an <img data:image/svg+xml> so browser namespace/hydration edges around
+//   dangerouslySetInnerHTML + SVG don't fire.
+// - Legacy path: any non-svg id falls back to a generic Boxes glyph. Host code no longer enumerates
+//   plugin-specific ids — adding a new plugin does not require touching the shell.
+// - Component identity is cached per icon string: re-renders reuse the same React component type,
+//   so tab-icon slots don't unmount/remount on every parent render.
+const pluginIconComponentCache = new Map<string, SidebarIcon>();
+
+function pluginSidebarIcon(icon?: string): SidebarIcon {
+  const trimmed = (icon ?? '').trim();
+  if (!trimmed) return Boxes;
+  const cached = pluginIconComponentCache.get(trimmed);
+  if (cached) return cached;
+
+  if (trimmed.startsWith('<svg') && trimmed.endsWith('</svg>')) {
+    const dataUri = 'data:image/svg+xml;utf8,' + encodeURIComponent(trimmed);
+    const InlinePluginIcon: SidebarIcon = ({ className }) => (
+      <img
+        aria-hidden="true"
+        alt=""
+        src={dataUri}
+        className={clsx('relative z-10 inline-block object-contain', className)}
+      />
+    );
+    pluginIconComponentCache.set(trimmed, InlinePluginIcon);
+    return InlinePluginIcon;
+  }
+  pluginIconComponentCache.set(trimmed, Boxes);
+  return Boxes;
+}
 
 interface AppShellProps {
   activeTab: ActiveTab;
-  onTabChange: (tab: ActiveTab) => void;
+  onTabChange: TabChangeHandler;
   isConnected: boolean;
   fanData: types.FanData | null;
   temperature: types.TemperatureData | null;
@@ -102,6 +147,7 @@ interface AppShellProps {
   curveContent: ReactNode;
   controlContent: ReactNode;
   devicesContent: ReactNode;
+  pluginTabs?: PluginTabItem[];
   aboutContent: ReactNode;
 }
 
@@ -478,6 +524,7 @@ export default function AppShell({
   curveContent,
   controlContent,
   devicesContent,
+  pluginTabs = [],
   aboutContent,
 }: AppShellProps) {
   const { t } = useTranslation();
@@ -550,16 +597,33 @@ export default function AppShell({
     if (tab === activeTab) return;
     onTabChange(tab);
   };
+	const visibleMainTabs = [
+	    ...MAIN_TAB_ITEMS,
+	    ...pluginTabs.map((plugin) => ({
+	      id: plugin.id,
+	      title: plugin.title,
+	      icon: pluginSidebarIcon(plugin.icon),
+	    })),
+	  ];
 
-  const contentMap: Record<ActiveTab, ReactNode> = {
+  const contentMap: Partial<Record<ActiveTab, ReactNode>> = {
     status: statusContent,
     curve: curveContent,
     control: controlContent,
     devices: devicesContent,
     about: aboutContent,
   };
+  for (const plugin of pluginTabs) {
+    contentMap[plugin.id] = plugin.content;
+  }
   const transitionDirection = getTabTransitionDirection(previousActiveTabRef.current, activeTab);
   const windowBlurMode = String((config as any)?.windowBlur || 'on');
+
+  useEffect(() => {
+    if (activeTab.startsWith('plugin:') && !pluginTabs.some((plugin) => plugin.id === activeTab)) {
+      onTabChange('status');
+    }
+  }, [activeTab, onTabChange, pluginTabs]);
 
   useEffect(() => {
     if (previousActiveTabRef.current === activeTab) {
@@ -623,10 +687,10 @@ export default function AppShell({
         </div>
 
         <nav className="flex flex-1 flex-col items-center gap-1 px-2" role="tablist" style={NO_DRAG_STYLE}>
-          {MAIN_TAB_ITEMS.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            const tabTitle = t(tab.titleKey);
+	          {visibleMainTabs.map((tab) => {
+	            const Icon = tab.icon;
+	            const isActive = activeTab === tab.id;
+	            const tabTitle = 'titleKey' in tab ? t(tab.titleKey) : tab.title;
             return (
               <Tooltip key={tab.id}>
                 <TooltipTrigger asChild>
@@ -785,7 +849,7 @@ export default function AppShell({
                 }}
                 className="app-tab-surface w-full min-w-0 px-1 pb-2 will-change-transform"
               >
-                {contentMap[activeTab]}
+	                {contentMap[activeTab]}
               </motion.div>
             </AnimatePresence>
           </main>

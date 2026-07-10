@@ -1,6 +1,8 @@
 package smartcontrol
 
 import (
+	"math"
+
 	"github.com/TIANLI0/THRM/internal/temperature"
 	"github.com/TIANLI0/THRM/internal/types"
 )
@@ -8,6 +10,35 @@ import (
 // CalculateTargetRPM 以基础曲线加学习偏移计算目标转速。
 func CalculateTargetRPM(currentTemp int, curve []types.FanCurvePoint, cfg types.SmartControlConfig) int {
 	return calculateTargetSpeed(currentTemp, curve, cfg, rawPercentUnit)
+}
+
+func CalculateTargetRPMForCurve(curve []types.FanCurvePoint, temp int) int {
+	if len(curve) == 0 {
+		return 0
+	}
+	if temp <= curve[0].Temperature {
+		return curve[0].RPM
+	}
+	last := curve[len(curve)-1]
+	if temp >= last.Temperature {
+		return last.RPM
+	}
+
+	for i := 1; i < len(curve); i++ {
+		left := curve[i-1]
+		right := curve[i]
+		if temp > right.Temperature {
+			continue
+		}
+		span := right.Temperature - left.Temperature
+		if span <= 0 {
+			return right.RPM
+		}
+		progress := float64(temp-left.Temperature) / float64(span)
+		return int(math.Round(float64(left.RPM) + progress*float64(right.RPM-left.RPM)))
+	}
+
+	return last.RPM
 }
 
 func CurveForUnit(curve []types.FanCurvePoint, unit string) []types.FanCurvePoint {

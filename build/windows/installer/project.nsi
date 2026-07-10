@@ -90,9 +90,13 @@ Unicode true
 !define CORE_EXECUTABLE_SOURCE "..\..\bin\FanControl Core.exe"
 !endif
 
+!ifndef INFO_NUMERIC_PRODUCTVERSION
+!define INFO_NUMERIC_PRODUCTVERSION "2.5.0.0"
+!endif
+
 # The version information for this two must consist of 4 parts
-VIProductVersion "${INFO_PRODUCTVERSION}.0"
-VIFileVersion    "${INFO_PRODUCTVERSION}.0"
+VIProductVersion "${INFO_NUMERIC_PRODUCTVERSION}"
+VIFileVersion    "${INFO_NUMERIC_PRODUCTVERSION}"
 
 VIAddVersionKey "CompanyName"     "${INFO_COMPANYNAME}"
 VIAddVersionKey "FileDescription" "${INFO_PRODUCTNAME} Installer"
@@ -796,9 +800,9 @@ Section "uninstall"
     DetailPrint "$(THRM_STR_REMOVE_LOGS)"
     RMDir /r "$INSTDIR\logs"
 
-    # Remove entire installation directory
+    # Remove the root only if empty; separately installed plugins are intentionally preserved.
     DetailPrint "$(THRM_STR_REMOVE_DIR)"
-    RMDir /r $INSTDIR
+    RMDir $INSTDIR
 
     # Remove shortcuts
     DetailPrint "$(THRM_STR_REMOVE_SHORTCUTS)"

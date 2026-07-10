@@ -115,6 +115,13 @@ const (
 	ReqIsAutoStartLaunch RequestType = "IsAutoStartLaunch"
 	ReqSubscribeEvents   RequestType = "SubscribeEvents"
 	ReqUnsubscribeEvents RequestType = "UnsubscribeEvents"
+
+	// 插件相关
+	ReqGetAvailablePlugins    RequestType = "GetAvailablePlugins"
+	ReqGetPluginStatus        RequestType = "GetPluginStatus"
+	ReqEnablePlugin           RequestType = "EnablePlugin"
+	ReqDisablePlugin          RequestType = "DisablePlugin"
+	ReqRefreshPluginDiscovery RequestType = "RefreshPluginDiscovery"
 )
 
 // Request IPC 请求
@@ -164,6 +171,10 @@ const (
 	EventLegionFnQSupportUpdate   = "legion-fnq-support-update"
 	EventHealthPing               = "health-ping"
 	EventHeartbeat                = "heartbeat"
+	EventPluginsDiscovered        = "plugins-discovered"
+	EventPluginInstalled          = "plugin-installed"
+	EventPluginUninstalled        = "plugin-uninstalled"
+	EventPluginStatusChanged      = "plugin-status-changed"
 )
 
 // Server IPC 服务器

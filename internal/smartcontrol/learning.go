@@ -617,26 +617,29 @@ func solveLearnStepForUnitWithPower(steadyTemp int, eff float64, haveEff bool, c
 	return delta
 }
 
+// learningPowerGain 按平均总功耗 (CPU+GPU) 分档，给学习步长一个乘数。
+// 阈值针对笔记本工况：CPU ≥ 55W 或 GPU ≥ 80W 通常已经进入"重载"，两者合计 ≥ 90W 就算重载区间；
+// 15W 以下多是待机/轻网页，避免为噪音扣转速；15–90W 之间是常见混合负载，走标准增益。
 func learningPowerGain(step, meanPower float64) float64 {
 	if meanPower <= 0 {
 		return 1
 	}
 	if step > 0 {
 		switch {
-		case meanPower >= 120:
-			return 1.10
-		case meanPower <= 35:
-			return 0.85
+		case meanPower >= 90:
+			return 1.10 // 重载：增速时略激进，压温度优先
+		case meanPower <= 15:
+			return 0.85 // 轻载：增速时保守，避免风扇噪音
 		default:
 			return 1
 		}
 	}
 	if step < 0 {
 		switch {
-		case meanPower >= 120:
-			return 0.75
-		case meanPower <= 35:
-			return 1.15
+		case meanPower >= 90:
+			return 0.75 // 重载：降速时保守，防止温度反弹
+		case meanPower <= 15:
+			return 1.15 // 轻载：降速时激进，降噪
 		default:
 			return 1
 		}

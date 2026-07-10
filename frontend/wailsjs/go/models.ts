@@ -87,6 +87,7 @@ export namespace types {
 	    enabled: boolean;
 	    learning: boolean;
 	    learningBias: string;
+	    jointBias: number;
 	    filterTransientSpike: boolean;
 	    targetTemp: number;
 	    aggressiveness: number;
@@ -120,6 +121,7 @@ export namespace types {
 	        this.enabled = source["enabled"];
 	        this.learning = source["learning"];
 	        this.learningBias = source["learningBias"];
+	        this.jointBias = source["jointBias"];
 	        this.filterTransientSpike = source["filterTransientSpike"];
 	        this.targetTemp = source["targetTemp"];
 	        this.aggressiveness = source["aggressiveness"];
@@ -1569,6 +1571,44 @@ export namespace types {
 
 
 
+	export class PluginInfo {
+	    id: string;
+	    name: string;
+	    version: string;
+	    type: string;
+	    description?: string;
+	    minCoreVersion?: string;
+	    frontend?: string;
+	    icon?: string;
+	    status?: string;
+	    installed: boolean;
+	    supported: boolean;
+	    running: boolean;
+	    exePath?: string;
+	    lastError?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new PluginInfo(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.version = source["version"];
+	        this.type = source["type"];
+	        this.description = source["description"];
+	        this.minCoreVersion = source["minCoreVersion"];
+	        this.frontend = source["frontend"];
+	        this.icon = source["icon"];
+	        this.status = source["status"];
+	        this.installed = source["installed"];
+	        this.supported = source["supported"];
+	        this.running = source["running"];
+	        this.exePath = source["exePath"];
+	        this.lastError = source["lastError"];
+	    }
+	}
 
 
 	export class SerialPortInfo {

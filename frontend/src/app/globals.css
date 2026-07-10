@@ -4,6 +4,9 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
+  --font-ui-sans: "Manrope", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-ui-cjk: "Noto Sans SC", "Source Han Sans CN", "思源黑体 CN", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-geist-mono: "Geist Mono", "Cascadia Mono", "Consolas", "SFMono-Regular", monospace;
   --background: #f6f8fc;
   --foreground: #111827;
   --card: #ffffff;

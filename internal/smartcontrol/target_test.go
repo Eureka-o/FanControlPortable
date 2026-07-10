@@ -23,6 +23,61 @@ func TestCalculateTargetRPMIgnoresOffsetsWhenLearningDisabled(t *testing.T) {
 	}
 }
 
+func TestCalculateTargetRPMForCurveEmptyCurve(t *testing.T) {
+	if got := CalculateTargetRPMForCurve(nil, 70); got != 0 {
+		t.Fatalf("CalculateTargetRPMForCurve(nil) = %d, want 0", got)
+	}
+}
+
+func TestCalculateTargetRPMForCurveClampsEndpoints(t *testing.T) {
+	curve := []types.FanCurvePoint{
+		{Temperature: 40, RPM: 1200},
+		{Temperature: 80, RPM: 3600},
+	}
+
+	tests := []struct {
+		name string
+		temp int
+		want int
+	}{
+		{name: "below first", temp: 35, want: 1200},
+		{name: "at first", temp: 40, want: 1200},
+		{name: "at last", temp: 80, want: 3600},
+		{name: "above last", temp: 85, want: 3600},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CalculateTargetRPMForCurve(curve, tt.temp); got != tt.want {
+				t.Fatalf("CalculateTargetRPMForCurve(temp=%d) = %d, want %d", tt.temp, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCalculateTargetRPMForCurveInterpolatesAndRounds(t *testing.T) {
+	curve := []types.FanCurvePoint{
+		{Temperature: 50, RPM: 1000},
+		{Temperature: 70, RPM: 2001},
+	}
+
+	if got := CalculateTargetRPMForCurve(curve, 60); got != 1501 {
+		t.Fatalf("CalculateTargetRPMForCurve() = %d, want rounded midpoint 1501", got)
+	}
+}
+
+func TestCalculateTargetRPMForCurvePreservesRPMScaleValues(t *testing.T) {
+	curve := []types.FanCurvePoint{
+		{Temperature: 40, RPM: 1800},
+		{Temperature: 60, RPM: 2600},
+		{Temperature: 80, RPM: 4200},
+	}
+
+	if got := CalculateTargetRPMForCurve(curve, 70); got != 3400 {
+		t.Fatalf("CalculateTargetRPMForCurve() = %d, want RPM-scale interpolation 3400", got)
+	}
+}
+
 func TestCalculateTargetRPMAppliesOffsetsWhenLearningEnabled(t *testing.T) {
 	curve := []types.FanCurvePoint{
 		{Temperature: 50, RPM: 25},

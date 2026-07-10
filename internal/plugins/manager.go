@@ -32,6 +32,13 @@ func (m *Manager) Register(plugin Plugin) {
 	m.plugins = append(m.plugins, plugin)
 }
 
+func (m *Manager) Plugin(pluginID string) Plugin {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	return m.findLocked(pluginID)
+}
+
 func (m *Manager) StartAll(parent context.Context) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()

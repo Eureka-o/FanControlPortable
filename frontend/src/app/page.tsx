@@ -13,6 +13,7 @@ import AppShell from './components/AppShell';
 import ControlPanel from './components/ControlPanel';
 import DeviceStatus from './components/DeviceStatus';
 import FanCurve from './components/FanCurve';
+import PluginPage from './components/PluginPage';
 import { useAppBootstrap } from './hooks/useAppBootstrap';
 import { apiService } from './services/api';
 import { useAppStore } from './store/app-store';
@@ -42,11 +43,12 @@ export default function Home() {
       bridgeWarning: state.bridgeWarning,
       coreServiceError: state.coreServiceError,
       isLoading: state.isLoading,
-      error: state.error,
-      activeTab: state.activeTab,
-      curveFocusTarget: state.curveFocusTarget,
-    })),
-  );
+	      error: state.error,
+	      activeTab: state.activeTab,
+	      curveFocusTarget: state.curveFocusTarget,
+	      availablePlugins: state.availablePlugins,
+	    })),
+	  );
 
   const initializeApp = useAppStore((state) => state.initializeApp);
   const connectDevice = useAppStore((state) => state.connectDevice);
@@ -62,6 +64,16 @@ export default function Home() {
     () => view.config || new types.AppConfig(),
     [view.config],
   );
+  const pluginTabs = useMemo(() => (
+    view.availablePlugins
+      .filter((plugin) => plugin.installed && plugin.frontend)
+		      .map((plugin) => ({
+		        id: `plugin:${plugin.id}` as const,
+		        title: plugin.name,
+		        icon: plugin.icon,
+		        content: <PluginPage plugin={plugin} />,
+		      }))
+  ), [view.availablePlugins]);
 
   const exportDiagnostics = useCallback(async () => {
     if (diagnosticsExporting) return;
@@ -154,7 +166,8 @@ export default function Home() {
           onConfigChange={updateConfig}
         />
       }
-      aboutContent={<AboutPanel />}
+	      pluginTabs={pluginTabs}
+	      aboutContent={<AboutPanel />}
     />
   );
 }

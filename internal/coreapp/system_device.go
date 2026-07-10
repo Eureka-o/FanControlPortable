@@ -175,6 +175,10 @@ func cloneReconnectDelays(delays []time.Duration) []time.Duration {
 	return cloned
 }
 
+func autoReconnectDelaysForConfig(cfg types.AppConfig, retryDelays []time.Duration) []time.Duration {
+	return cloneReconnectDelays(retryDelays)
+}
+
 func (a *CoreApp) requestReconnect(reason string, retryDelays []time.Duration) {
 	if a.autoReconnectSuppressed.Load() {
 		a.logInfo("自动重连已被手动断开抑制，忽略请求: %s", reason)
@@ -186,7 +190,7 @@ func (a *CoreApp) requestReconnect(reason string, retryDelays []time.Duration) {
 		return
 	}
 
-	delays := cloneReconnectDelays(retryDelays)
+	delays := autoReconnectDelaysForConfig(a.configManager.Get(), retryDelays)
 	a.safeGo("reconnect@"+reason, func() {
 		defer a.reconnectInProgress.Store(false)
 		a.runReconnectLoop(reason, delays)
@@ -256,7 +260,14 @@ func (a *CoreApp) reconnectDevice() bool {
 	if a.lastConnectionWasNative.Load() {
 		return a.ConnectNativeDevice("")
 	}
-	return a.ConnectDevice()
+	if a.ConnectDevice() {
+		return true
+	}
+	cfg := a.configManager.Get()
+	if shouldTryDynamicWiFiCompatibility(cfg) && a.recoverDynamicWiFiEndpoint(&cfg) {
+		return a.ConnectDevice()
+	}
+	return false
 }
 
 func compatibilityConnectionEnabled(cfg types.AppConfig) bool {
@@ -274,6 +285,9 @@ func compatibilityConnectionEnabled(cfg types.AppConfig) bool {
 
 func shouldTryDynamicWiFiCompatibility(cfg types.AppConfig) bool {
 	if !cfg.WiFiCompatibilityEnabled {
+		return false
+	}
+	if !cfg.WiFiDynamicIPCompatibilityEnabled {
 		return false
 	}
 	types.NormalizeDeviceProfileConfig(&cfg)
@@ -537,6 +551,7 @@ func (a *CoreApp) reapplyConfigAfterReconnect() {
 
 	// 重新应用智能变频配置
 	if cfg.AutoControl {
+		a.forceNextAutoTarget.Store(true)
 		a.logInfo("重新启动智能变频")
 	} else if cfg.CustomSpeedEnabled {
 		// 重新应用自定义转速

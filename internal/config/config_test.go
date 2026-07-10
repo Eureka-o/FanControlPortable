@@ -18,6 +18,25 @@ func findDeviceProfileForTest(profiles []types.DeviceProfile, id string) (types.
 	return types.DeviceProfile{}, false
 }
 
+func loadConfigFromRawForTest(t *testing.T, raw map[string]any) types.AppConfig {
+	t.Helper()
+
+	installDir := t.TempDir()
+	configDir := filepath.Join(installDir, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	data, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config.json"), data, 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	return NewManager(installDir, nil).Load(false)
+}
+
 func TestValidateFanCurveForUnitAllowsReferenceRPMCurve(t *testing.T) {
 	if err := ValidateFanCurveForUnit(types.GetDefaultRPMFanCurve(), types.FanSpeedUnitRPM); err != nil {
 		t.Fatalf("ValidateFanCurveForUnit(RPM default) returned error: %v", err)
@@ -146,6 +165,31 @@ func TestLoadUpgradeConfigPreservesWiFiIPAndCurveProfiles(t *testing.T) {
 	if len(cfg.FanCurveProfiles) != 2 || cfg.FanCurveProfiles[1].ID != "boost" || cfg.FanCurveProfiles[1].Curve[1].RPM != 42 {
 		t.Fatalf("fanCurveProfiles not preserved: %#v", cfg.FanCurveProfiles)
 	}
+}
+
+func TestLoadBackfillsIgnoreDeviceOnReconnectWhenMissing(t *testing.T) {
+	t.Run("missing uses default true", func(t *testing.T) {
+		cfg := loadConfigFromRawForTest(t, map[string]any{
+			"deviceTransport":    types.DeviceTransportWiFi,
+			"fanControlDeviceIp": "10.8.0.42",
+		})
+
+		if !cfg.IgnoreDeviceOnReconnect {
+			t.Fatal("IgnoreDeviceOnReconnect = false, want default true")
+		}
+	})
+
+	t.Run("explicit false is preserved", func(t *testing.T) {
+		cfg := loadConfigFromRawForTest(t, map[string]any{
+			"deviceTransport":         types.DeviceTransportWiFi,
+			"fanControlDeviceIp":      "10.8.0.42",
+			"ignoreDeviceOnReconnect": false,
+		})
+
+		if cfg.IgnoreDeviceOnReconnect {
+			t.Fatal("IgnoreDeviceOnReconnect = true, want explicit false")
+		}
+	})
 }
 
 func TestLoadPreservesPersistedNativeRPMCurveBeforeCompatibilityMigration(t *testing.T) {

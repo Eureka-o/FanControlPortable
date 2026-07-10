@@ -27,41 +27,42 @@ import (
 type CoreApp struct {
 	ctx context.Context
 
-	deviceManager    *device.Manager
-	bridgeManager    *bridge.Manager
-	tempReader       *temperature.Reader
-	tempHistory      *temperature.HistoryRecorder
-	configManager    *config.Manager
-	trayManager      *tray.Manager
-	hotkeyManager    *hotkeysvc.Manager
-	notifier         *notifier.Manager
-	autostartManager *autostart.Manager
-	pluginManager    *plugins.Manager
-	logger           *logger.CustomLogger
-	ipcServer        *ipc.Server
-	wifiScanControl  *types.WiFiDiscoveryControl
-	wifiScanRunning  atomic.Bool
+	deviceManager         *device.Manager
+	bridgeManager         *bridge.Manager
+	tempReader            *temperature.Reader
+	tempHistory           *temperature.HistoryRecorder
+	configManager         *config.Manager
+	trayManager           *tray.Manager
+	hotkeyManager         *hotkeysvc.Manager
+	notifier              *notifier.Manager
+	autostartManager      *autostart.Manager
+	pluginManager         *plugins.Manager
+	logger                *logger.CustomLogger
+	ipcServer             *ipc.Server
+	wifiScanControl       *types.WiFiDiscoveryControl
+	wifiScanRunning       atomic.Bool
+	pluginDiscoveryCancel context.CancelFunc
 
-	isConnected             bool
-	monitoringTemp          atomic.Bool
-	currentTemp             types.TemperatureData
-	deviceSettings          *types.DeviceSettings
-	lastDeviceMode          string
-	userSetAutoControl      bool
-	isAutoStartLaunch       bool
-	debugMode               bool
-	legionFnQSupported      atomic.Bool
-	legionFnQSupportChecked atomic.Bool
-	legionFnQRegistered     atomic.Bool
-	reconnectInProgress     atomic.Bool
-	autoReconnectSuppressed atomic.Bool
-	lastConnectionWasNative atomic.Bool
-	resumeRecoveryRunning   atomic.Bool
-	systemSuspended         atomic.Bool
-	wifiStandbyApplied      atomic.Bool
-	forceNextAutoTarget     atomic.Bool
-	lastResumeRecoveryUnix  int64
-	lastHealthReconnectUnix     int64
+	isConnected                   bool
+	monitoringTemp                atomic.Bool
+	currentTemp                   types.TemperatureData
+	deviceSettings                *types.DeviceSettings
+	lastDeviceMode                string
+	userSetAutoControl            bool
+	isAutoStartLaunch             bool
+	debugMode                     bool
+	legionFnQSupported            atomic.Bool
+	legionFnQSupportChecked       atomic.Bool
+	legionFnQRegistered           atomic.Bool
+	reconnectInProgress           atomic.Bool
+	autoReconnectSuppressed       atomic.Bool
+	lastConnectionWasNative       atomic.Bool
+	resumeRecoveryRunning         atomic.Bool
+	systemSuspended               atomic.Bool
+	wifiStandbyApplied            atomic.Bool
+	forceNextAutoTarget           atomic.Bool
+	lastResumeRecoveryUnix        int64
+	lastHealthReconnectUnix       int64
 	healthConsecutiveFailureCount int32
 
 	powerNotifyStop func()
@@ -73,6 +74,8 @@ type CoreApp struct {
 	quitChan          chan bool
 
 	mutex                 sync.RWMutex
+	pluginDiscoveryMutex  sync.RWMutex
+	availablePlugins      map[string]types.PluginInfo
 	stopMonitoring        chan bool
 	manualGearLevelMemory map[string]string
 }
@@ -170,6 +173,7 @@ func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 		cleanupChan:        make(chan bool, 1),
 		quitChan:           make(chan bool, 1),
 		guiMonitorEnabled:  true,
+		availablePlugins:   map[string]types.PluginInfo{},
 		manualGearLevelMemory: map[string]string{
 			"静音": "中",
 			"标准": "中",

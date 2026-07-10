@@ -196,6 +196,11 @@ func NormalizeLearningBias(bias string) string {
 	}
 }
 
+// NormalizeJointBias 归一化联合控制偏置：-100 偏散热器，+100 偏电脑风扇。
+func NormalizeJointBias(bias int) int {
+	return clampInt(bias, -100, 100)
+}
+
 // TemperatureSelection 温度读取选择配置。
 type TemperatureSelection struct {
 	TempSource            string `json:"tempSource"`
@@ -303,6 +308,24 @@ type FanData struct {
 	Transport         string                    `json:"transport,omitempty"`
 	SpeedUnit         string                    `json:"speedUnit,omitempty"`
 	FlyDigiCapability *FlyDigiRuntimeCapability `json:"flyDigiCapability,omitempty"`
+}
+
+// PluginInfo is the GUI-safe discovery snapshot for optional plugins.
+type PluginInfo struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Version        string `json:"version"`
+	Type           string `json:"type"`
+	Description    string `json:"description,omitempty"`
+	MinCoreVersion string `json:"minCoreVersion,omitempty"`
+	Frontend       string `json:"frontend,omitempty"`
+	Icon           string `json:"icon,omitempty"`
+	Status         string `json:"status,omitempty"`
+	Installed      bool   `json:"installed"`
+	Supported      bool   `json:"supported"`
+	Running        bool   `json:"running"`
+	ExePath        string `json:"exePath,omitempty"`
+	LastError      string `json:"lastError,omitempty"`
 }
 
 // DeviceDebugFrame is a captured low-level device protocol frame.
@@ -492,6 +515,7 @@ type SmartControlConfig struct {
 	Enabled                           bool             `json:"enabled"`              // 智能耦合控制开关
 	Learning                          bool             `json:"learning"`             // 学习开关
 	LearningBias                      string           `json:"learningBias"`         // 学习倾向: balanced/cooling/quiet
+	JointBias                         int              `json:"jointBias"`            // 联合控制偏置: -100 偏散热器, +100 偏电脑风扇
 	FilterTransientSpike              bool             `json:"filterTransientSpike"` // 是否过滤孤立温度尖峰
 	TargetTemp                        int              `json:"targetTemp"`           // 目标温度(°C)
 	Aggressiveness                    int              `json:"aggressiveness"`       // 响应激进度(1-10)
@@ -601,6 +625,7 @@ func GetDefaultSmartControlConfigForUnit(curve []FanCurvePoint, unit string) Sma
 			Enabled:                           true,
 			Learning:                          true,
 			LearningBias:                      LearningBiasBalanced,
+			JointBias:                         0,
 			FilterTransientSpike:              true,
 			TargetTemp:                        68,
 			Aggressiveness:                    5,
@@ -630,6 +655,7 @@ func GetDefaultSmartControlConfigForUnit(curve []FanCurvePoint, unit string) Sma
 		Enabled:                           true,
 		Learning:                          true,
 		LearningBias:                      LearningBiasBalanced,
+		JointBias:                         0,
 		FilterTransientSpike:              true,
 		TargetTemp:                        68,
 		Aggressiveness:                    5,
@@ -695,6 +721,37 @@ func NormalizeLegionFnQConfig(cfg LegionFnQConfig) LegionFnQConfig {
 	}
 
 	return cfg
+}
+
+func cloneFanCurvePoints(curve []FanCurvePoint) []FanCurvePoint {
+	if len(curve) == 0 {
+		return nil
+	}
+	out := make([]FanCurvePoint, len(curve))
+	copy(out, curve)
+	return out
+}
+
+func cloneIntSlice(values []int) []int {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]int, len(values))
+	copy(out, values)
+	return out
+}
+
+func clampInt(value, minValue, maxValue int) int {
+	if maxValue < minValue {
+		return minValue
+	}
+	if value < minValue {
+		return minValue
+	}
+	if value > maxValue {
+		return maxValue
+	}
+	return value
 }
 
 func normalizeFanGearTarget(target, fallback FanGearTarget) FanGearTarget {

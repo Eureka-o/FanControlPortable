@@ -12,7 +12,7 @@ import {
 import type { TemperatureHistoryPoint } from '../lib/temperature-history';
 import { i18n } from '../lib/i18n';
 import { toast } from 'sonner';
-import type { DeviceSettings } from '../types/app';
+import type { DeviceSettings, PluginInfo, PluginListPayload } from '../types/app';
 
 const getBridgeWarningMessage = () => i18n.t('store.bridgeWarning.default');
 
@@ -141,8 +141,14 @@ const temperatureDataEquals = (left: types.TemperatureData | null, right: types.
     gpuDeviceListEquals(left.gpuDevices, right.gpuDevices);
 };
 
-type ActiveTab = 'status' | 'curve' | 'control' | 'devices' | 'about';
+type ActiveTab = 'status' | 'curve' | 'control' | 'devices' | `plugin:${string}` | 'about';
 export type CurveFocusTarget = 'curve-editor' | 'history-details';
+
+function activePluginTabInstalled(activeTab: ActiveTab, plugins: PluginInfo[]) {
+  if (!activeTab.startsWith('plugin:')) return true;
+  const pluginID = activeTab.slice('plugin:'.length);
+  return plugins.some((plugin) => plugin.id === pluginID && plugin.installed === true && plugin.frontend);
+}
 
 interface AppStore {
   isConnected: boolean;
@@ -155,6 +161,7 @@ interface AppStore {
   fanData: types.FanData | null;
   temperature: types.TemperatureData | null;
   legionFnQSupported: boolean;
+  availablePlugins: PluginInfo[];
   bridgeWarning: string | null;
   coreServiceError: string | null;
   isLoading: boolean;
@@ -169,6 +176,8 @@ interface AppStore {
   clearBridgeWarning: () => void;
   handleTemperaturePayload: (data: types.TemperatureData | null) => void;
   appendSessionHistoryPoint: (data: types.TemperatureData | null) => void;
+  updatePluginSnapshot: (plugins: PluginInfo[]) => void;
+  refreshPluginSnapshot: () => Promise<PluginInfo[]>;
 
   initializeApp: () => Promise<void>;
   connectDevice: () => Promise<void>;
@@ -190,6 +199,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   fanData: null,
   temperature: null,
   legionFnQSupported: false,
+  availablePlugins: [],
   bridgeWarning: null,
   coreServiceError: null,
   isLoading: true,
@@ -205,6 +215,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
   clearCurveFocusTarget: () => set({ curveFocusTarget: null }),
 
   clearBridgeWarning: () => set({ bridgeWarning: null }),
+
+  updatePluginSnapshot: (plugins) => {
+    const list = Array.isArray(plugins) ? plugins : [];
+    set((state) => ({
+      availablePlugins: list,
+      activeTab: activePluginTabInstalled(state.activeTab, list) ? state.activeTab : 'status',
+    }));
+  },
+
+  refreshPluginSnapshot: async () => {
+    const plugins = await apiService.getAvailablePlugins().catch(() => []);
+    get().updatePluginSnapshot(plugins);
+    return plugins;
+  },
 
   handleTemperaturePayload: (data) => {
     const bridgeMessage = data?.bridgeMessage?.trim() ?? '';
@@ -241,10 +265,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       set({ isLoading: true });
 
-      const [appConfig, deviceStatus, debugInfo] = await Promise.all([
+      const [appConfig, deviceStatus, debugInfo, plugins] = await Promise.all([
         configService.getConfig(),
         deviceService.getStatus() as Promise<DeviceStatusPayload>,
         apiService.getDebugInfo().catch(() => null),
+        apiService.getAvailablePlugins().catch(() => []),
       ]);
       const coreServiceError = deviceStatus.error ? getCoreServiceErrorMessage(deviceStatus.error) : null;
 
@@ -258,6 +283,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         runtimeDeviceCapabilities: deviceStatus.deviceCapabilities || deviceStatus.deviceProfile?.capabilities || null,
         fanData: deviceStatus.currentData || null,
         legionFnQSupported: debugInfo?.legionFnQSupported === true,
+        availablePlugins: plugins,
         coreServiceError,
         error: coreServiceError,
       });
@@ -306,9 +332,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   refreshDeviceContext: async () => {
     try {
-      const [appConfig, status] = await Promise.all([
+      const [appConfig, status, plugins] = await Promise.all([
         configService.getConfig().catch(() => null),
         deviceService.getStatus() as Promise<DeviceStatusPayload>,
+        apiService.getAvailablePlugins().catch(() => []),
       ]);
       const coreServiceError = status?.error ? getCoreServiceErrorMessage(status.error) : null;
       set({
@@ -320,6 +347,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         runtimeDeviceProfile: status?.deviceProfile || null,
         runtimeDeviceCapabilities: status?.deviceCapabilities || status?.deviceProfile?.capabilities || null,
         fanData: status?.currentData || null,
+        availablePlugins: plugins,
+        activeTab: activePluginTabInstalled(get().activeTab, plugins) ? get().activeTab : 'status',
         coreServiceError,
         error: coreServiceError,
       });
@@ -497,6 +526,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
         set({ legionFnQSupported: payload?.supported === true });
       })
     );
+
+    const readPluginList = (payload: PluginListPayload | PluginInfo[]) => {
+      if (Array.isArray(payload)) return payload;
+      return Array.isArray(payload?.plugins) ? payload.plugins : [];
+    };
+
+    const handlePluginUpdate = (_plugin?: PluginInfo | null) => {
+      void get().refreshPluginSnapshot();
+    };
+
+    unsubscribers.push(
+      apiService.onPluginsDiscovered((payload) => {
+        get().updatePluginSnapshot(readPluginList(payload));
+      })
+    );
+
+    unsubscribers.push(apiService.onPluginInstalled(handlePluginUpdate));
+    unsubscribers.push(apiService.onPluginUninstalled(handlePluginUpdate));
+    unsubscribers.push(apiService.onPluginStatusChanged(handlePluginUpdate));
 
     return () => {
       clearPendingDisconnect();

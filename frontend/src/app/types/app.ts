@@ -123,6 +123,7 @@ export interface SmartControlConfig {
   enabled: boolean;
   learning: boolean;
   learningBias: string;
+  jointBias?: number;
   filterTransientSpike: boolean;
   targetTemp: number;
   aggressiveness: number;
@@ -176,6 +177,27 @@ export interface LegionFnQSupportPayload {
   supported: boolean;
 }
 
+export interface PluginInfo {
+  id: string;
+  name: string;
+  version?: string;
+  type?: string;
+  description?: string;
+  minCoreVersion?: string;
+  frontend?: string;
+  icon?: string;
+  status?: string;
+  installed: boolean;
+  supported: boolean;
+  running: boolean;
+  exePath?: string;
+  lastError?: string;
+}
+
+export interface PluginListPayload {
+  plugins?: PluginInfo[];
+}
+
 export interface DebugInfo {
   debugMode: boolean;
   trayReady: boolean;
@@ -187,7 +209,7 @@ export interface DebugInfo {
   monitoringTemp: boolean;
   autoStartLaunch: boolean;
   pawnIOInstallerPath?: string;
-  plugins?: Array<{ id: string; name: string; running: boolean; lastError?: string }>;
+  plugins?: Array<{ id: string; name: string; running: boolean; frontend?: string; lastError?: string }>;
 }
 
 export interface DeviceDebugFrame {

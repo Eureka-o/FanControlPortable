@@ -1,0 +1,11 @@
+{
+  "id": "omen-fan",
+  "name": "HP OMEN Fan Control",
+  "version": "0.1.0",
+  "type": "device",
+  "executable": "omen-fan-driver.exe",
+  "frontend": "ui/omen-fan.plugin.js",
+  "icon": "<svg viewBox=\"0 0 24 24\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\" shape-rendering=\"geometricPrecision\"><defs><linearGradient id=\"omenDiamondGradient\" x1=\"1.2\" y1=\"12\" x2=\"22.8\" y2=\"12\" gradientUnits=\"userSpaceOnUse\"><stop offset=\"0\" stop-color=\"#ff4dff\"/><stop offset=\"0.34\" stop-color=\"#ff004f\"/><stop offset=\"0.66\" stop-color=\"#ff4200\"/><stop offset=\"1\" stop-color=\"#ffc400\"/></linearGradient></defs><path d=\"M12 1.35 22.65 12 12 22.65 1.35 12Z\" fill=\"url(#omenDiamondGradient)\"/></svg>",
+  "minCoreVersion": "2.4.0",
+  "description": "Optional HP OMEN internal laptop fan driver."
+}

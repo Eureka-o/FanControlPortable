@@ -20,7 +20,11 @@ export function DeleteDeviceProfile(arg1:string):Promise<void>;
 
 export function DeleteFanCurveProfile(arg1:string):Promise<void>;
 
+export function DisablePlugin(arg1:string):Promise<void>;
+
 export function DisconnectDevice():Promise<void>;
+
+export function EnablePlugin(arg1:string):Promise<void>;
 
 export function ExportDeviceProfiles():Promise<string>;
 
@@ -35,6 +39,8 @@ export function GetAppVersion():Promise<string>;
 export function GetAutoStartMethod():Promise<string>;
 
 export function GetAvailableGears():Promise<Record<string, Array<types.GearCommand>>>;
+
+export function GetAvailablePlugins():Promise<Array<types.PluginInfo>>;
 
 export function GetBridgeProgramStatus():Promise<Record<string, any>>;
 
@@ -53,6 +59,14 @@ export function GetDeviceStatus():Promise<Record<string, any>>;
 export function GetFanCurve():Promise<Array<types.FanCurvePoint>>;
 
 export function GetFanCurveProfiles():Promise<types.FanCurveProfilesPayload>;
+
+export function GetPluginFrontendAsset(arg1:string):Promise<string>;
+
+export function GetPluginFrontendAssetPath(arg1:string,arg2:string):Promise<string>;
+
+export function GetPluginFrontendHTML(arg1:string):Promise<string>;
+
+export function GetPluginStatus(arg1:string):Promise<types.PluginInfo>;
 
 export function GetSupportedDeviceProfiles():Promise<Array<types.DeviceProfile>>;
 
@@ -93,6 +107,8 @@ export function QuitAll():Promise<void>;
 export function QuitApp():Promise<void>;
 
 export function RefreshDeviceSettings():Promise<types.DeviceSettings>;
+
+export function RefreshPluginDiscovery():Promise<Array<types.PluginInfo>>;
 
 export function ReinstallPawnIO():Promise<Record<string, any>>;
 
