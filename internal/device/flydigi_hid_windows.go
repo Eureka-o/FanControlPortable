@@ -19,6 +19,7 @@ const (
 
 	flyDigiHIDMaxConsecutiveReadErrors = 5
 	flyDigiHIDReadErrorBackoff         = 500 * time.Millisecond
+	flyDigiHIDReadyTimeout             = 2 * time.Second
 )
 
 var errFlyDigiHIDTimeout = errors.New("hid read timeout")
@@ -49,21 +50,22 @@ func (m *Manager) connectFlyDigiHIDLocked() (bool, map[string]string) {
 	}
 
 	m.flyDigiHID = dev
-	m.isConnected = true
 	m.deviceType = types.DeviceTransportHID
 	m.productID = dev.productID
 	if profile, ok := types.FlyDigiProfileForHIDProductID(dev.productID); ok {
 		m.activeProfile = profile
 	}
-	m.currentFanData.Store(&types.FanData{
-		ReportID:  deviceproto.ReportID,
-		MagicSync: 0x5AA5,
-		Transport: types.DeviceTransportHID,
-		SpeedUnit: types.FanSpeedUnitRPM,
-		WorkMode:  "HID 已连接",
-	})
-
-	m.startFlyDigiHIDReaderLocked(dev)
+	ready := m.startFlyDigiHIDReaderLocked(dev)
+	if !waitForFlyDigiHIDReady(ready, flyDigiHIDReadyTimeout) {
+		m.logWarn("FlyDigi HID opened but no valid status frame arrived within %s", flyDigiHIDReadyTimeout)
+		m.closeFlyDigiHIDLocked()
+		m.isConnected = false
+		m.deviceType = ""
+		m.productID = 0
+		m.currentFanData.Store(nil)
+		return false, m.flyDigiHIDInfoLocked(0, "")
+	}
+	m.isConnected = true
 
 	info := m.flyDigiHIDInfoLocked(dev.productID, dev.path)
 	m.logInfo("飞智 HID 设备连接成功: %s", info["product"])
@@ -93,13 +95,26 @@ func (m *Manager) closeFlyDigiHIDLocked() {
 	m.flyDigiHID = nil
 }
 
-func (m *Manager) startFlyDigiHIDReaderLocked(dev *flyDigiHIDDevice) {
+func (m *Manager) startFlyDigiHIDReaderLocked(dev *flyDigiHIDDevice) <-chan struct{} {
 	m.stopFlyDigiHIDReaderLocked()
 	stop := make(chan struct{})
 	done := make(chan struct{})
+	ready := make(chan struct{})
 	m.flyDigiHIDStop = stop
 	m.flyDigiHIDDone = done
-	go m.readFlyDigiHIDLoop(dev, stop, done)
+	go m.readFlyDigiHIDLoop(dev, stop, done, ready)
+	return ready
+}
+
+func waitForFlyDigiHIDReady(ready <-chan struct{}, timeout time.Duration) bool {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-ready:
+		return true
+	case <-timer.C:
+		return false
+	}
 }
 
 func (m *Manager) stopFlyDigiHIDReaderLocked() {
@@ -121,7 +136,7 @@ func (m *Manager) stopFlyDigiHIDReaderLocked() {
 	}
 }
 
-func (m *Manager) readFlyDigiHIDLoop(dev *flyDigiHIDDevice, stop <-chan struct{}, done chan<- struct{}) {
+func (m *Manager) readFlyDigiHIDLoop(dev *flyDigiHIDDevice, stop <-chan struct{}, done chan<- struct{}, ready chan<- struct{}) {
 	defer close(done)
 	if dev == nil {
 		return
@@ -131,6 +146,7 @@ func (m *Manager) readFlyDigiHIDLoop(dev *flyDigiHIDDevice, stop <-chan struct{}
 	}
 
 	consecutiveErrors := 0
+	readySent := false
 	for {
 		select {
 		case <-stop:
@@ -162,7 +178,10 @@ func (m *Manager) readFlyDigiHIDLoop(dev *flyDigiHIDDevice, stop <-chan struct{}
 		if len(raw) == 0 {
 			continue
 		}
-		m.handleFlyDigiHIDRX(raw)
+		if m.handleFlyDigiHIDRX(raw) && !readySent {
+			close(ready)
+			readySent = true
+		}
 	}
 }
 
@@ -184,7 +203,9 @@ func (m *Manager) handleFlyDigiHIDReaderFailure(dev *flyDigiHIDDevice) {
 		m.mutex.Unlock()
 		return
 	}
-	notify = m.onDisconnect
+	if m.isConnected {
+		notify = m.onDisconnect
+	}
 	m.isConnected = false
 	m.deviceType = ""
 	m.productID = 0
@@ -202,14 +223,16 @@ func (m *Manager) handleFlyDigiHIDReaderFailure(dev *flyDigiHIDDevice) {
 	}
 }
 
-func (m *Manager) handleFlyDigiHIDRX(raw []byte) {
+func (m *Manager) handleFlyDigiHIDRX(raw []byte) bool {
 	m.recordDebugFrame("rx", types.DeviceTransportHID, raw)
 	if fanData := parseFlyDigiFanData(raw); fanData != nil {
 		m.currentFanData.Store(fanData)
 		if m.onFanDataUpdate != nil {
 			go m.onFanDataUpdate(fanData)
 		}
+		return true
 	}
+	return false
 }
 
 func (m *Manager) flyDigiHIDInfoLocked(productID uint16, path string) map[string]string {
@@ -301,6 +324,9 @@ func padFlyDigiHIDReport(report []byte, size int) []byte {
 }
 
 func (m *Manager) writeFlyDigiHIDFrameLocked(cmd byte, payload []byte, reportLen int) error {
+	if m.writesBlocked.Load() {
+		return fmt.Errorf("device writes are blocked during system suspend")
+	}
 	if m.flyDigiHID == nil {
 		return fmt.Errorf("飞智 HID 设备未连接")
 	}
@@ -361,7 +387,7 @@ func (m *Manager) flyDigiHIDRuntimeCapabilityLocked() types.FlyDigiRuntimeCapabi
 func (m *Manager) setFlyDigiHIDManualGearRPM(gear, level string, rpm int) bool {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	if !m.isConnected || m.flyDigiHID == nil {
+	if m.writesBlocked.Load() || !m.isConnected || m.flyDigiHID == nil {
 		return false
 	}
 	idx, ok := types.GearIndex(gear)

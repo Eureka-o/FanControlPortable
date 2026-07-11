@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/TIANLI0/THRM/internal/types"
 )
@@ -267,6 +268,18 @@ func TestFlyDigiHIDReadErrorPolicyToleratesTransientFailures(t *testing.T) {
 	next, stop = flyDigiHIDReadErrorState(transient, flyDigiHIDMaxConsecutiveReadErrors-1)
 	if next != flyDigiHIDMaxConsecutiveReadErrors || !stop {
 		t.Fatalf("threshold state = (%d, %v), want (%d, true)", next, stop, flyDigiHIDMaxConsecutiveReadErrors)
+	}
+}
+
+func TestWaitForFlyDigiHIDReady(t *testing.T) {
+	ready := make(chan struct{})
+	close(ready)
+	if !waitForFlyDigiHIDReady(ready, time.Second) {
+		t.Fatal("ready status frame should complete HID connection")
+	}
+
+	if waitForFlyDigiHIDReady(make(chan struct{}), time.Millisecond) {
+		t.Fatal("missing status frame should time out HID connection")
 	}
 }
 

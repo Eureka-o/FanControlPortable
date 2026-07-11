@@ -20,6 +20,9 @@ func DebugCommandPresets() []types.DeviceDebugCommandPreset {
 }
 
 func (m *Manager) writeHIDFrameLocked(cmd byte, payload []byte, reportLen int) error {
+	if m.writesBlocked.Load() {
+		return fmt.Errorf("device writes are blocked during system suspend")
+	}
 	frame := deviceproto.BuildFrame(cmd, payload...)
 	report := deviceproto.BuildReport(frame, reportLen)
 	m.recordDebugFrame("tx", types.DeviceTypeHID, report)
@@ -56,6 +59,9 @@ func (m *Manager) GetDebugFrames() []types.DeviceDebugFrame {
 }
 
 func (m *Manager) SendDebugCommand(input string, waitMs int) (types.DeviceDebugCommandResult, error) {
+	if m.writesBlocked.Load() {
+		return types.DeviceDebugCommandResult{}, fmt.Errorf("device writes are blocked during system suspend")
+	}
 	if waitMs < 0 {
 		waitMs = 0
 	}

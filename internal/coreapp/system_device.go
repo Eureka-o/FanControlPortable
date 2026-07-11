@@ -445,6 +445,7 @@ func (a *CoreApp) onSystemSuspend() {
 	if !a.systemSuspended.CompareAndSwap(false, true) {
 		return
 	}
+	a.deviceManager.BlockWrites()
 	start := time.Now()
 	a.logInfo("收到系统挂起通知：提前停止监控并断开设备/桥接，避免唤醒后失效句柄导致崩溃")
 
@@ -454,8 +455,6 @@ func (a *CoreApp) onSystemSuspend() {
 	done := make(chan struct{})
 	a.safeGo("suspend-cleanup", func() {
 		defer close(done)
-
-		a.applyWiFiSmartStartStopStandbySpeed("system-suspend")
 
 		a.safeRun("suspend-device-disconnect", func() {
 			a.deviceManager.DisconnectSilently()
@@ -619,6 +618,7 @@ func (a *CoreApp) ConnectNativeDevice(profileID string) bool {
 }
 
 func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string, caller string) *types.DeviceSettings {
+	a.deviceManager.UnblockWrites()
 	a.syncConnectedBuiltInDeviceProfile(deviceInfo)
 
 	a.mutex.Lock()

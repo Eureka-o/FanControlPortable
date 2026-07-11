@@ -19,6 +19,9 @@ var deviceSettingsQueryCommands = []byte{
 }
 
 func (m *Manager) QueryDeviceSettings() (types.DeviceSettings, error) {
+	if m.writesBlocked.Load() {
+		return types.DeviceSettings{}, fmt.Errorf("device writes are blocked during system suspend")
+	}
 	if m.GetDeviceType() == types.DeviceTypeBLE {
 		return m.bleManager.QueryDeviceSettings()
 	}

@@ -53,7 +53,7 @@ func (m *Manager) queryFlyDigiHIDDeviceSettings() (types.DeviceSettings, error) 
 func (m *Manager) queryFlyDigiHIDCommand(cmd byte) ([]types.DeviceDebugFrame, error) {
 	startSeq := m.currentDebugSeq()
 	m.mutex.Lock()
-	if !m.isConnected || m.flyDigiHID == nil {
+	if m.writesBlocked.Load() || !m.isConnected || m.flyDigiHID == nil {
 		m.mutex.Unlock()
 		return nil, fmt.Errorf("设备未连接")
 	}
@@ -81,7 +81,7 @@ func (m *Manager) sendFlyDigiHIDDebugCommand(input string, waitMs int) (types.De
 	startSeq := m.currentDebugSeq()
 
 	m.mutex.Lock()
-	if !m.isConnected || m.flyDigiHID == nil {
+	if m.writesBlocked.Load() || !m.isConnected || m.flyDigiHID == nil {
 		m.mutex.Unlock()
 		return types.DeviceDebugCommandResult{}, fmt.Errorf("device is not connected")
 	}

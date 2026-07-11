@@ -4,6 +4,9 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
+  --font-ui-sans: "Manrope", "Segoe UI", sans-serif;
+  --font-ui-cjk: "Noto Sans SC", "Microsoft YaHei UI", sans-serif;
+  --font-geist-mono: "Geist Mono", "Cascadia Mono", monospace;
   --background: #f6f8fc;
   --foreground: #111827;
   --card: #ffffff;
@@ -367,9 +370,7 @@ html[data-window-blur="on"]:not([data-theme]) body:has(.glacier-native-backdrop)
 }
 
 html[data-window-blur="on"]:not([data-theme]) .glacier-native-backdrop {
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--window-glass-shell-bg) 82%, transparent), transparent 72%),
-    var(--window-glass-shell-bg) !important;
+  background: var(--window-glass-panel-bg) !important;
 }
 
 .glacier-native-backdrop .glacier-sidebar {
@@ -378,13 +379,9 @@ html[data-window-blur="on"]:not([data-theme]) .glacier-native-backdrop {
 }
 
 html[data-window-blur="on"]:not([data-theme]) .glacier-native-backdrop .glacier-sidebar {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 38%),
-    var(--window-glass-sidebar-bg);
-  border-right-color: var(--window-glass-border-muted);
-  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.08), 18px 0 40px -34px rgba(0, 0, 0, 0.36);
-  backdrop-filter: var(--window-glass-blur);
-  -webkit-backdrop-filter: var(--window-glass-blur);
+  background: transparent;
+  border-right-color: transparent;
+  box-shadow: none;
 }
 
 .glacier-native-backdrop .glacier-titlebar {
@@ -392,12 +389,7 @@ html[data-window-blur="on"]:not([data-theme]) .glacier-native-backdrop .glacier-
 }
 
 html[data-window-blur="on"]:not([data-theme]) .glacier-native-backdrop .glacier-titlebar {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 78%),
-    var(--window-glass-titlebar-bg);
-  border-bottom: 1px solid var(--window-glass-border-muted);
-  backdrop-filter: var(--window-glass-blur);
-  -webkit-backdrop-filter: var(--window-glass-blur);
+  background: transparent;
 }
 
 .glacier-native-backdrop .glacier-content {
@@ -418,15 +410,11 @@ html[data-window-blur="on"]:not([data-theme]) .glacier-native-backdrop .glacier-
 }
 
 html[data-window-blur="on"]:not([data-theme]) .glacier-native-backdrop .glacier-content-panel {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 72%),
-    var(--window-glass-panel-bg);
+  background: transparent;
   border-top-color: transparent;
-  border-left-color: var(--window-glass-border-muted);
+  border-left-color: transparent;
   border-top-left-radius: 0;
-  box-shadow: var(--window-glass-shadow);
-  backdrop-filter: var(--window-glass-blur);
-  -webkit-backdrop-filter: var(--window-glass-blur);
+  box-shadow: none;
 }
 
 .dark .glacier-native-backdrop .glacier-content-panel {
@@ -475,9 +463,7 @@ html[data-window-blur="on"]:not([data-theme]) {
 }
 
 html[data-window-blur="on"]:not([data-theme]) .glacier-shell[data-theme-page] [data-theme-section="content-panel"] {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 72%),
-    var(--window-glass-panel-bg);
+  background: transparent;
 }
 
 .glacier-shell [data-theme-ui="setting-section"],

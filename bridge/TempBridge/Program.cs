@@ -6,6 +6,7 @@ using System.Linq;
 using System.Management;
 using System.Runtime.InteropServices;
 using System.ServiceProcess;
+using System.Text;
 using System.Threading;
 using Newtonsoft.Json;
 using LibreHardwareMonitor.Hardware;
@@ -207,6 +208,7 @@ namespace FanControl.TempBridge
 
     partial class Program
     {
+        private static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
         private const string PipeName = "FanControl2_TempBridge";
         private const string MutexName = @"Global\FanControl2_TempBridge_Singleton";
         private const int MaxInitRetries = 3;
@@ -258,6 +260,8 @@ namespace FanControl.TempBridge
 
         static void Main(string[] args)
         {
+            Console.InputEncoding = Utf8NoBom;
+            Console.OutputEncoding = Utf8NoBom;
             bool msrSelfTest = HasArg(args, "--self-test-msr");
             bool diagnosticMode = ShouldRunDiagnosticMode(args);
             bool pipeMode = ShouldRunPipeMode(args);
@@ -324,8 +328,8 @@ namespace FanControl.TempBridge
             LogInitProgress(string.Format("hardware monitor initialized in {0} ms", initStopwatch.ElapsedMilliseconds));
             using (var stdin = Console.OpenStandardInput())
             using (var stdout = Console.OpenStandardOutput())
-            using (var reader = new StreamReader(stdin))
-            using (var writer = new StreamWriter(stdout) { AutoFlush = true })
+            using (var reader = new StreamReader(stdin, Utf8NoBom, false))
+            using (var writer = new StreamWriter(stdout, Utf8NoBom) { AutoFlush = true })
             {
                 writer.WriteLine("READY:STDIO");
                 ServeCommandLoop(reader, writer);
@@ -1600,8 +1604,8 @@ namespace FanControl.TempBridge
                     using (var pipeServer = new NamedPipeServerStream(PipeName, PipeDirection.InOut))
                     {
                         pipeServer.WaitForConnection();
-                        using (var reader = new StreamReader(pipeServer))
-                        using (var writer = new StreamWriter(pipeServer) { AutoFlush = true })
+                        using (var reader = new StreamReader(pipeServer, Utf8NoBom, false))
+                        using (var writer = new StreamWriter(pipeServer, Utf8NoBom) { AutoFlush = true })
                         {
                             ServeCommandLoop(reader, writer);
                         }

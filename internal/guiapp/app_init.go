@@ -25,6 +25,9 @@ func New(themeManager *theme.Manager) *App {
 // Startup 应用启动时调用
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
+	if err := restoreWindowState(ctx); err != nil {
+		guiLogger.Warnf("restore window state failed: %v", err)
+	}
 
 	guiLogger.Infof("=== %s GUI 启动 ===", appmeta.AppName)
 
@@ -59,5 +62,8 @@ func (a *App) GetAppVersion() string {
 
 // OnWindowClosing 窗口关闭事件处理
 func (a *App) OnWindowClosing(ctx context.Context) bool {
+	if err := saveCurrentWindowState(ctx); err != nil {
+		guiLogger.Warnf("save window state failed: %v", err)
+	}
 	return false
 }
