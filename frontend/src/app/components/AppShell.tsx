@@ -68,22 +68,6 @@ const TAB_CONTENT_VARIANTS = {
   }),
 };
 
-const TAB_CARD_RISE_SELECTOR = [
-  '.glacier-hero-card',
-  '.glacier-metric-card',
-  '.glacier-control-card',
-  '.glacier-chart-card',
-  '.glacier-stat-tile',
-  '[data-theme-ui="setting-section"]',
-  '[data-theme-card="curve-header"]',
-  '[data-theme-card="curve-editor"]',
-  '[data-theme-card="curve-manual-gears"]',
-  '[data-theme-card="curve-history-summary"]',
-  '[data-theme-card="curve-history-chart"]',
-  '[data-theme-card="fan-curve-preview"]',
-  '[data-theme-card="temperature-history"]',
-].join(',');
-
 interface AppShellProps {
   activeTab: ActiveTab;
   onTabChange: (tab: ActiveTab) => void;
@@ -486,7 +470,6 @@ export default function AppShell({
   ));
   const [isMaximised, setIsMaximised] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const tabSurfaceRef = useRef<HTMLDivElement | null>(null);
   const previousActiveTabRef = useRef<ActiveTab>(activeTab);
 
   const syncWindowState = useCallback(async () => {
@@ -594,16 +577,6 @@ export default function AppShell({
       scrollElement.scrollLeft = 0;
     }
     previousActiveTabRef.current = activeTab;
-  }, [activeTab]);
-
-  useLayoutEffect(() => {
-    const surface = tabSurfaceRef.current;
-    if (!surface) return;
-
-    const riseItems = surface.querySelectorAll<HTMLElement>(TAB_CARD_RISE_SELECTOR);
-    riseItems.forEach((item, index) => {
-      item.style.setProperty('--app-card-rise-delay', `${Math.min(index, 9) * 28}ms`);
-    });
   }, [activeTab]);
 
   return (
@@ -795,7 +768,6 @@ export default function AppShell({
           <main className="mx-auto w-full max-w-[1120px] min-[1680px]:max-w-[1280px] min-[2200px]:max-w-[1480px] min-w-0 overflow-hidden">
             <AnimatePresence mode="wait" initial={false} custom={transitionDirection}>
               <motion.div
-                ref={tabSurfaceRef}
                 key={activeTab}
                 custom={transitionDirection}
                 variants={TAB_CONTENT_VARIANTS}
@@ -806,7 +778,7 @@ export default function AppShell({
                   duration: 0.2,
                   ease: [0.22, 1, 0.36, 1],
                 }}
-                className="app-tab-surface w-full min-w-0 px-1 pb-2 will-change-transform"
+                className="w-full min-w-0 px-1 pb-2 will-change-transform"
               >
                 {contentMap[activeTab]}
               </motion.div>
