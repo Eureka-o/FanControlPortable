@@ -26,6 +26,20 @@ const (
 	temperatureBridgeRestartCooldown         = 10 * time.Second
 )
 
+// smartControlSampleContext identifies telemetry that may safely share
+// transient prediction and learning state.
+type smartControlSampleContext struct {
+	selection types.TemperatureSelection
+	speedUnit string
+}
+
+func newSmartControlSampleContext(selection types.TemperatureSelection, speedUnit string) smartControlSampleContext {
+	return smartControlSampleContext{
+		selection: types.NormalizeTemperatureSelection(selection),
+		speedUnit: types.NormalizeFanSpeedUnit(speedUnit),
+	}
+}
+
 func (a *CoreApp) recoverTemperatureBridge(reason string) {
 	a.safeRun("temperature-bridge-recover@"+reason, func() {
 		a.bridgeManager.Stop()
@@ -113,6 +127,14 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	// 每个曲线点对应一个稳态采样桶。
 	speedUnit := a.activeDeviceSpeedUnit(&cfg)
 	steadyObserver := newStableObserverForActiveUnit(len(cfg.FanCurve), speedUnit)
+	lastSmartSampleContext := newSmartControlSampleContext(cachedSelection, speedUnit)
+	lastAutoControl := cfg.AutoControl
+	lastSmartTelemetryUsable := false
+	resetSmartControlSampling := func() {
+		risePredictionSamples = risePredictionSamples[:0]
+		steadyObserver = newStableObserverForActiveUnit(len(cfg.FanCurve), speedUnit)
+		lastSmartTelemetryUsable = false
+	}
 	timer := time.NewTimer(updateInterval)
 	wifiOverviewInterval := wifiOverviewRefreshInterval(false, cfg.AutoControl)
 	wifiOverviewTimer := time.NewTimer(wifiOverviewInterval)
@@ -150,6 +172,8 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			gap := now.Sub(lastMonitorTick)
 			lastMonitorTick = now
 			if a.maybeRecoverFromSystemResume("temperature-monitor", gap, updateInterval) {
+				resetSmartControlSampling()
+				lastTargetRPM = -1
 				timer.Reset(updateInterval)
 				continue
 			}
@@ -187,11 +211,11 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			prevHasClients = hasClients
 
 			temp := a.tempReader.Read(cachedSelection)
+			staleBridgeTelemetry := false
 			if temp.BridgeOk {
 				bridgeFailureCount = 0
-				staleBridge := false
-				lastBridgeUpdateTime, staleBridgeUpdateCount, staleBridge = trackBridgeTemperatureStaleness(temp, lastBridgeUpdateTime, staleBridgeUpdateCount)
-				if staleBridge && time.Since(lastBridgeRestart) >= temperatureBridgeRestartCooldown {
+				lastBridgeUpdateTime, staleBridgeUpdateCount, staleBridgeTelemetry = trackBridgeTemperatureStaleness(temp, lastBridgeUpdateTime, staleBridgeUpdateCount)
+				if staleBridgeTelemetry && time.Since(lastBridgeRestart) >= temperatureBridgeRestartCooldown {
 					a.logError("温度桥接返回的 updateTime 连续 %d 次未变化，触发桥接重连自愈", staleBridgeUpdateCount+1)
 					a.recoverTemperatureBridge("stale-update")
 					lastBridgeRestart = time.Now()
@@ -220,7 +244,8 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			a.currentTemp = temp
 			a.mutex.Unlock()
 
-			historyPoint, recorded := a.tempHistory.Add(temp, a.deviceManager.GetCurrentFanData())
+			fanData := a.deviceManager.GetCurrentFanData()
+			historyPoint, recorded := a.tempHistory.Add(temp, fanData)
 
 			// 广播温度更新（无 GUI 客户端时跳过差分与序列化，降低后台每 tick 开销）
 			if hasClients {
@@ -244,9 +269,25 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					}
 				}
 			}
+			advancedTelemetryUsable := !staleBridgeTelemetry && hasUsableSmartControlTelemetry(temp)
+			if !advancedTelemetryUsable && lastSmartTelemetryUsable {
+				resetSmartControlSampling()
+			}
+			lastSmartTelemetryUsable = advancedTelemetryUsable
 
 			if cfg.AutoControl && temp.ControlTemp > 0 {
 				speedUnit = a.activeDeviceSpeedUnit(&cfg)
+				sampleContext := newSmartControlSampleContext(cachedSelection, speedUnit)
+				contextChanged := !lastAutoControl || sampleContext != lastSmartSampleContext
+				if contextChanged {
+					unitChanged := sampleContext.speedUnit != lastSmartSampleContext.speedUnit
+					resetSmartControlSampling()
+					if unitChanged {
+						lastTargetRPM = -1
+					}
+				}
+				lastAutoControl = true
+				lastSmartSampleContext = sampleContext
 				controlCurve := smartcontrol.CurveForUnit(cfg.FanCurve, speedUnit)
 				// 采样窗口变化时重置 EMA，避免阶跃。
 				newSampleCount := max(cfg.TempSampleCount, 1)
@@ -291,6 +332,18 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					controlTemp, controlSpikeSuppressed = smartcontrol.FilterTransientSpike(avgTemp, recentAvgTemps, smartCfg.TargetTemp, smartCfg.Hysteresis)
 				}
 				spikeSuppressed := sampleSpikeSuppressed || controlSpikeSuppressed
+				advancedSampleUsable := advancedTelemetryUsable && validSmartControlTemperature(controlTemp)
+				if !advancedSampleUsable {
+					if lastSmartTelemetryUsable {
+						resetSmartControlSampling()
+					}
+					lastSmartTelemetryUsable = false
+				} else if spikeSuppressed {
+					risePredictionSamples = risePredictionSamples[:0]
+					advancedSampleUsable = false
+				} else {
+					lastSmartTelemetryUsable = true
+				}
 				recentControlTemps = append(recentControlTemps, controlTemp)
 				if len(recentControlTemps) > 24 {
 					recentControlTemps = recentControlTemps[len(recentControlTemps)-24:]
@@ -315,35 +368,39 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					targetRPM = min(max(targetRPM, curveMinRPM), curveMaxRPM)
 				}
 
-				gpuPowerForPrediction := temp.GPUPowerWatts
-				if temp.GPUReadState == types.GPUReadStateNotPolled {
-					gpuPowerForPrediction = 0
-				}
-				risePredictionSamples = append(risePredictionSamples, smartcontrol.RisePredictionSample{
-					ControlTemp:   controlTemp,
-					CPUPowerWatts: temp.CPUPowerWatts,
-					GPUPowerWatts: gpuPowerForPrediction,
-				})
-				if len(risePredictionSamples) > 12 {
-					risePredictionSamples = risePredictionSamples[len(risePredictionSamples)-12:]
-				}
-				risePredictionBoosted := false
-				if targetRPM > 0 && !spikeSuppressed {
-					predictedTarget, boost := smartcontrol.ApplyTemperatureRisePrediction(targetRPM, risePredictionSamples, smartCfg, speedUnit)
-					if boost > 0 {
-						targetRPM = min(max(predictedTarget, curveMinRPM), curveMaxRPM)
-						risePredictionBoosted = true
-					}
+				actualSpeed := 0
+				actualSpeedValid := false
+				if fanData != nil && fanData.CurrentRPM > 0 {
+					actualSpeed = fanDataSpeedForControlUnit(int(fanData.CurrentRPM), speedUnit)
+					actualSpeedValid = true
 				}
 
+				effectivePower := smartcontrol.EffectivePower{}
+				prediction := smartcontrol.RisePredictionResult{Target: targetRPM, RampUpMultiplier: 1}
+				if advancedSampleUsable {
+					effectivePower = effectiveTemperaturePower(temp)
+					risePredictionSamples = append(risePredictionSamples, newSmartControlRisePredictionSample(now, temp, controlTemp, effectivePower, prevTargetRPM, actualSpeed, actualSpeedValid))
+					if len(risePredictionSamples) > 12 {
+						risePredictionSamples = risePredictionSamples[len(risePredictionSamples)-12:]
+					}
+					prediction = smartcontrol.EvaluateTemperatureRisePrediction(targetRPM, risePredictionSamples, smartCfg, speedUnit)
+					if prediction.Target > 0 {
+						targetRPM = min(max(prediction.Target, curveMinRPM), curveMaxRPM)
+					}
+				}
+				predictionActive := prediction.RampUpMultiplier > 1 || prediction.Boost > 0
+
 				if prevTargetRPM >= 0 {
-					targetRPM = smartcontrol.ApplyRampLimit(targetRPM, prevTargetRPM, smartCfg.RampUpLimit, smartCfg.RampDownLimit)
+					rampUpLimit := smartCfg.RampUpLimit
+					if rampUpLimit > 0 && prediction.RampUpMultiplier > 1 {
+						rampUpLimit = int(float64(rampUpLimit)*prediction.RampUpMultiplier + 0.5)
+					}
+					targetRPM = smartcontrol.ApplyRampLimit(targetRPM, prevTargetRPM, rampUpLimit, smartCfg.RampDownLimit)
 					if targetRPM > 0 {
 						targetRPM = min(max(targetRPM, curveMinRPM), curveMaxRPM)
 					}
 				}
 
-				fanData := a.deviceManager.GetCurrentFanData()
 				targetLimited := false
 				requestedTargetRPM := targetRPM
 				targetRPM, targetLimited = applyFlyDigiRuntimeCapabilityToTarget(targetRPM, fanData, speedUnit)
@@ -351,8 +408,8 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					a.logInfo("智能控温目标受飞智当前供电/挡位上限限制: %dRPM -> %dRPM", requestedTargetRPM, targetRPM)
 				}
 				observedRPM := targetRPM
-				if fanData != nil && fanData.CurrentRPM > 0 {
-					observedRPM = fanDataSpeedForControlUnit(int(fanData.CurrentRPM), speedUnit)
+				if actualSpeedValid {
+					observedRPM = actualSpeed
 				}
 				forceSend := false
 				if targetRPM > 0 {
@@ -370,10 +427,9 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					}
 				}
 
-				if smartCfg.Learning && !spikeSuppressed && !risePredictionBoosted && !targetLimited {
-					powerWatts, havePower := totalTemperaturePowerWatts(temp)
-					steady := steadyObserver.ObserveWithPower(controlTemp, observedRPM, powerWatts, havePower, controlCurve, smartCfg)
-					if steady.Ready && steady.BucketIdx >= 0 {
+				if smartCfg.Learning && advancedSampleUsable && !predictionActive && !targetLimited {
+					steady := steadyObserver.ObserveWithEffectivePower(controlTemp, observedRPM, effectivePower, controlCurve, smartCfg)
+					if steady.BucketIdx >= 0 && smartcontrol.AllowsSteadyOffsetLearning(steady, smartCfg) {
 						newOffsets, changed := learnSteadyOffsetForActiveUnit(steady.BucketIdx, steady.MeanTemp, steady.MeanPower, steady.HavePower, steady.LocalEff, steady.HaveEff, cfg.FanCurve, smartCfg.LearnedOffsets, smartCfg, speedUnit)
 						if changed {
 							smartCfg.LearnedOffsets = newOffsets
@@ -395,7 +451,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 							}
 						}
 					}
-				} else if !smartCfg.Learning || risePredictionBoosted || targetLimited {
+				} else if !smartCfg.Learning || !advancedSampleUsable || predictionActive || targetLimited {
 					steadyObserver.Reset()
 				}
 
@@ -405,6 +461,10 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			}
 
 			if !cfg.AutoControl {
+				if lastAutoControl {
+					resetSmartControlSampling()
+				}
+				lastAutoControl = false
 				lastTargetRPM = -1
 			}
 
@@ -482,15 +542,84 @@ func displaySpeedForLog(speed int, unit string) int {
 	return speed
 }
 
-func totalTemperaturePowerWatts(temp types.TemperatureData) (float64, bool) {
-	total := 0.0
-	if temp.CPUPowerWatts > 0 {
-		total += temp.CPUPowerWatts
+func validSmartControlTemperature(temp int) bool {
+	return temp > 0 && temp <= types.FanCurveMaxTemperature+15
+}
+
+// hasUsableSmartControlTelemetry gates only prediction and learning. Baseline
+// automatic fan control intentionally continues to use its existing path.
+func hasUsableSmartControlTelemetry(temp types.TemperatureData) bool {
+	if !temp.TelemetryFresh || !validSmartControlTemperature(temp.ControlTemp) {
+		return false
 	}
-	if temp.GPUReadState != types.GPUReadStateNotPolled && temp.GPUPowerWatts > 0 {
-		total += temp.GPUPowerWatts
+	cpuTempValid := validSmartControlTemperature(temp.CPUTemp)
+	gpuTempValid := validSmartControlTemperature(temp.GPUTemp) && temp.GPUReadState != types.GPUReadStateNotPolled
+	switch types.NormalizeTempSource(temp.ControlSource) {
+	case types.TempSourceCPU:
+		return cpuTempValid
+	case types.TempSourceGPU:
+		return gpuTempValid
+	default:
+		return cpuTempValid || gpuTempValid
 	}
-	return total, total > 0
+}
+
+// effectiveTemperaturePower keeps unknown power unknown. It is intentionally
+// stricter than the display/control path: stale or implausible telemetry may
+// still drive the existing safety controls, but must not train or predict.
+func effectiveTemperaturePower(temp types.TemperatureData) smartcontrol.EffectivePower {
+	if !hasUsableSmartControlTelemetry(temp) {
+		return smartcontrol.EffectivePower{}
+	}
+
+	cpuTempValid := validSmartControlTemperature(temp.CPUTemp)
+	gpuTempValid := validSmartControlTemperature(temp.GPUTemp) && temp.GPUReadState != types.GPUReadStateNotPolled
+	switch types.NormalizeTempSource(temp.ControlSource) {
+	case types.TempSourceCPU:
+		if !cpuTempValid {
+			return smartcontrol.EffectivePower{}
+		}
+	case types.TempSourceGPU:
+		if !gpuTempValid {
+			return smartcontrol.EffectivePower{}
+		}
+	default:
+		if !cpuTempValid && !gpuTempValid {
+			return smartcontrol.EffectivePower{}
+		}
+	}
+
+	return smartcontrol.EffectivePower{
+		CPUWatts: temp.CPUPowerWatts,
+		GPUWatts: temp.GPUPowerWatts,
+		CPUValid: cpuTempValid && temp.CPUPowerWatts > 0,
+		GPUValid: gpuTempValid && temp.GPUPowerWatts > 0,
+	}
+}
+
+func newSmartControlRisePredictionSample(now time.Time, temp types.TemperatureData, controlTemp int, power smartcontrol.EffectivePower, previousTarget, actualSpeed int, actualSpeedValid bool) smartcontrol.RisePredictionSample {
+	cpuTemp := temp.CPUTemp
+	if !validSmartControlTemperature(cpuTemp) {
+		cpuTemp = 0
+	}
+	gpuTemp := temp.GPUTemp
+	if !validSmartControlTemperature(gpuTemp) || temp.GPUReadState == types.GPUReadStateNotPolled {
+		gpuTemp = 0
+	}
+	return smartcontrol.RisePredictionSample{
+		SampledAt:        now,
+		ControlTemp:      controlTemp,
+		CPUTemp:          cpuTemp,
+		GPUTemp:          gpuTemp,
+		CPUPowerWatts:    power.CPUWatts,
+		GPUPowerWatts:    power.GPUWatts,
+		CPUPowerValid:    power.CPUValid,
+		GPUPowerValid:    power.GPUValid,
+		ControlSource:    types.NormalizeTempSource(temp.ControlSource),
+		PreviousTarget:   previousTarget,
+		ActualSpeed:      actualSpeed,
+		ActualSpeedValid: actualSpeedValid,
+	}
 }
 
 func newStableObserverForActiveUnit(curveLen int, unit string) *smartcontrol.StableObserver {

@@ -2,6 +2,9 @@ package temperature
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -154,6 +157,78 @@ func TestReadUsesRecentBridgeTemperatureOnTransientFailure(t *testing.T) {
 	}
 }
 
+func TestReadTelemetryFreshOnlyForDirectBridgeData(t *testing.T) {
+	oldNow := readTimeNow
+	defer func() {
+		readTimeNow = oldNow
+	}()
+
+	now := time.Unix(1_717_000_000, 0)
+	readTimeNow = func() time.Time { return now }
+
+	bridge := &fakeBridgeTemperatureProvider{
+		responses: []types.BridgeTemperatureData{
+			{
+				Success:       true,
+				CpuTemp:       61,
+				ControlTemp:   61,
+				ControlSource: types.TempSourceCPU,
+			},
+			{
+				Success: false,
+				Error:   "timeout",
+			},
+		},
+	}
+
+	reader := NewReader(bridge, testLogger{})
+	selection := types.GetDefaultTemperatureSelection()
+	selection.TempSource = types.TempSourceCPU
+
+	direct := reader.Read(selection)
+	if !direct.TelemetryFresh {
+		t.Fatal("direct bridge data TelemetryFresh = false, want true")
+	}
+
+	now = now.Add(time.Second)
+	cached := reader.Read(selection)
+	if cached.TelemetryFresh {
+		t.Fatal("cached bridge data TelemetryFresh = true, want false")
+	}
+}
+
+func TestReadTelemetryFreshIsFalseForLocalFallback(t *testing.T) {
+	oldExec := execHelperCommand
+	defer func() {
+		execHelperCommand = oldExec
+	}()
+	execHelperCommand = func(time.Duration, string, ...string) ([]byte, error) {
+		return nil, errors.New("unavailable")
+	}
+
+	bridge := &fakeBridgeTemperatureProvider{
+		responses: []types.BridgeTemperatureData{{
+			Success:      true,
+			GPUReadState: types.GPUReadStateNotPolled,
+		}},
+	}
+	reader := NewReader(bridge, testLogger{})
+
+	if got := reader.Read(types.GetDefaultTemperatureSelection()); got.TelemetryFresh {
+		t.Fatal("local fallback TelemetryFresh = true, want false")
+	}
+}
+
+func TestTelemetryFreshIsNotSerialized(t *testing.T) {
+	encoded, err := json.Marshal(types.TemperatureData{TelemetryFresh: true})
+	if err != nil {
+		t.Fatalf("marshal TemperatureData: %v", err)
+	}
+	if strings.Contains(string(encoded), "telemetryFresh") {
+		t.Fatalf("serialized TemperatureData = %s, must not include TelemetryFresh", encoded)
+	}
+}
+
 func TestReadDoesNotUseExpiredBridgeTemperatureCache(t *testing.T) {
 	oldNow := readTimeNow
 	defer func() {
@@ -195,5 +270,8 @@ func TestReadDoesNotUseExpiredBridgeTemperatureCache(t *testing.T) {
 	}
 	if second.BridgeMsg != "timeout" {
 		t.Fatalf("second read BridgeMsg = %q, want timeout", second.BridgeMsg)
+	}
+	if second.TelemetryFresh {
+		t.Fatal("second read TelemetryFresh = true, want false after bridge failure")
 	}
 }
