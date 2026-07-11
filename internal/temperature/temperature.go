@@ -85,6 +85,7 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 
 		temp.BridgeOk = true
 		temp.BridgeMsg = ""
+		temp.TelemetryFresh = true
 		r.storeLastGoodBridgeTemperature(selection, temp)
 		return temp
 	}
@@ -96,6 +97,7 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 		cached.UpdateTime = time.Now().UnixMilli()
 		cached.BridgeOk = true
 		cached.BridgeMsg = ""
+		cached.TelemetryFresh = false
 		return cached
 	}
 

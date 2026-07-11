@@ -53,6 +53,125 @@ func TestActiveTemperatureMonitorIntervalReturnsFromIdleToForeground(t *testing.
 	}
 }
 
+func TestSmartControlSampleContextChangesForTelemetryOrSpeedUnit(t *testing.T) {
+	selection := types.TemperatureSelection{
+		TempSource:     types.TempSourceCPU,
+		CpuSensor:      "cpu/package",
+		CpuPowerSensor: "cpu/package-power",
+		GpuDevice:      types.TempDeviceAuto,
+		GpuReadMode:    types.GPUReadModeAuto,
+	}
+	base := newSmartControlSampleContext(selection, types.FanSpeedUnitRPM)
+
+	if base != newSmartControlSampleContext(selection, types.FanSpeedUnitRPM) {
+		t.Fatal("same telemetry context must compare equal")
+	}
+	selection.CpuPowerSensor = "cpu/core-power"
+	if base == newSmartControlSampleContext(selection, types.FanSpeedUnitRPM) {
+		t.Fatal("power-sensor change must reset smart-control samples")
+	}
+	selection.CpuPowerSensor = "cpu/package-power"
+	if base == newSmartControlSampleContext(selection, types.FanSpeedUnitPercent) {
+		t.Fatal("speed-unit change must reset smart-control samples")
+	}
+}
+
+func TestEffectiveTemperaturePowerRequiresFreshTelemetry(t *testing.T) {
+	stale := types.TemperatureData{
+		CPUTemp:       68,
+		GPUTemp:       72,
+		ControlTemp:   72,
+		CPUPowerWatts: 45,
+		GPUPowerWatts: 85,
+		GPUReadState:  types.GPUReadStateActive,
+	}
+	if got := effectiveTemperaturePower(stale); got.CPUValid || got.GPUValid {
+		t.Fatalf("stale telemetry must not provide effective power: %#v", got)
+	}
+
+	fresh := stale
+	fresh.TelemetryFresh = true
+	got := effectiveTemperaturePower(fresh)
+	if !got.CPUValid || !got.GPUValid {
+		t.Fatalf("fresh CPU/GPU power must be valid: %#v", got)
+	}
+
+	fresh.GPUReadState = types.GPUReadStateNotPolled
+	got = effectiveTemperaturePower(fresh)
+	if !got.CPUValid || got.GPUValid {
+		t.Fatalf("not-polled GPU must not contribute effective power: %#v", got)
+	}
+}
+
+func TestEffectiveTemperaturePowerIsolatesMissingCpuPowerAndBadCpuTemperature(t *testing.T) {
+	base := types.TemperatureData{
+		TelemetryFresh: true,
+		CPUTemp:        68,
+		GPUTemp:        72,
+		ControlTemp:    72,
+		GPUPowerWatts:  85,
+		GPUReadState:   types.GPUReadStateActive,
+	}
+	if got := effectiveTemperaturePower(base); got.CPUValid || !got.GPUValid {
+		t.Fatalf("missing CPU power must remain unknown without losing GPU power: %#v", got)
+	}
+
+	badCPU := base
+	badCPU.CPUTemp = 150
+	badCPU.CPUPowerWatts = 45
+	if got := effectiveTemperaturePower(badCPU); got.CPUValid || !got.GPUValid {
+		t.Fatalf("bad CPU temperature must isolate only CPU power: %#v", got)
+	}
+
+	badControl := badCPU
+	badControl.ControlTemp = badCPU.CPUTemp
+	if got := effectiveTemperaturePower(badControl); got.CPUValid || got.GPUValid {
+		t.Fatalf("bad control temperature must not enter prediction or learning: %#v", got)
+	}
+}
+
+func TestSmartControlTelemetryIsolationKeepsValidGPUWhenCPUIsBad(t *testing.T) {
+	temp := types.TemperatureData{
+		TelemetryFresh: true,
+		CPUTemp:        150,
+		GPUTemp:        72,
+		ControlTemp:    72,
+		CPUPowerWatts:  45,
+		GPUPowerWatts:  85,
+		GPUReadState:   types.GPUReadStateActive,
+		ControlSource:  types.TempSourceMax,
+	}
+	if !hasUsableSmartControlTelemetry(temp) {
+		t.Fatal("valid max-control GPU telemetry must remain usable when only CPU telemetry is bad")
+	}
+	stale := temp
+	stale.TelemetryFresh = false
+	if hasUsableSmartControlTelemetry(stale) {
+		t.Fatal("stale telemetry must not enter prediction or learning")
+	}
+
+	power := effectiveTemperaturePower(temp)
+	sample := newSmartControlRisePredictionSample(time.Now(), temp, temp.ControlTemp, power, 1800, 1700, true)
+	if sample.CPUTemp != 0 || sample.CPUPowerValid {
+		t.Fatalf("bad CPU telemetry must be removed from prediction sample: %#v", sample)
+	}
+	if sample.GPUTemp != 72 || !sample.GPUPowerValid || sample.ControlSource != types.TempSourceMax {
+		t.Fatalf("valid GPU telemetry must remain intact: %#v", sample)
+	}
+
+	temp.ControlSource = types.TempSourceCPU
+	temp.ControlTemp = 68
+	if hasUsableSmartControlTelemetry(temp) {
+		t.Fatal("bad CPU telemetry must not be usable when CPU is the control source")
+	}
+
+	temp.ControlSource = types.TempSourceMax
+	temp.ControlTemp = 150
+	if hasUsableSmartControlTelemetry(temp) {
+		t.Fatal("abnormal control temperature must never enter prediction or learning")
+	}
+}
+
 func TestCompactTemperatureEventPayload(t *testing.T) {
 	sharedCPUSensors := []types.TemperatureSensor{{Key: "cpu-package", Name: "CPU Package", Value: 71}}
 	sharedGPUSensors := []types.TemperatureSensor{{Key: "gpu-core", Name: "GPU Core", Value: 66}}

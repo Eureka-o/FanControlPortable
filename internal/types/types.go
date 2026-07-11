@@ -401,6 +401,7 @@ type TemperatureData struct {
 	UpdateTime        int64                  `json:"updateTime"`        // 更新时间戳
 	BridgeOk          bool                   `json:"bridgeOk"`          // 桥接程序是否正常
 	BridgeMsg         string                 `json:"bridgeMessage"`     // 桥接故障提示
+	TelemetryFresh    bool                   `json:"-"`                 // 本轮是否直接读取到有效桥接遥测
 }
 
 // TemperatureHistoryPoint CPU/GPU 温度历史点。
