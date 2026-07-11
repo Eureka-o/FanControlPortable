@@ -118,6 +118,9 @@ func ensureMinFlyDigiColors(colors []types.RGBColor, min int) []types.RGBColor {
 }
 
 func (m *Manager) sendFlyDigiLightCommandLocked(fields ...byte) error {
+	if m.writesBlocked.Load() {
+		return fmt.Errorf("device writes are blocked during system suspend")
+	}
 	if len(fields) < 2 {
 		return fmt.Errorf("invalid light command")
 	}

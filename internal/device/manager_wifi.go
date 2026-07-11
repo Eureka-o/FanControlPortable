@@ -42,6 +42,7 @@ type Manager struct {
 	mutex           sync.RWMutex
 	logger          types.Logger
 	currentFanData  atomic.Pointer[types.FanData]
+	writesBlocked   atomic.Bool
 
 	onFanDataUpdate func(data *types.FanData)
 	onDisconnect    func()
@@ -190,7 +191,7 @@ func (m *Manager) SetPercentSpeed(percent int) bool {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	if !m.isConnected {
+	if m.writesBlocked.Load() || !m.isConnected {
 		return false
 	}
 	switch m.deviceType {
@@ -226,7 +227,7 @@ func (m *Manager) SetTargetSpeed(value int, unit string) bool {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	if !m.isConnected {
+	if m.writesBlocked.Load() || !m.isConnected {
 		return false
 	}
 	if types.IsRPMSpeedUnit(unit) {
@@ -275,6 +276,9 @@ func (m *Manager) EnterAutoMode() error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
+	if m.writesBlocked.Load() {
+		return fmt.Errorf("device writes are blocked during system suspend")
+	}
 	if !m.isConnected {
 		return fmt.Errorf("设备未连接")
 	}

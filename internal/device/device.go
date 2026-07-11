@@ -64,6 +64,7 @@ type Manager struct {
 	mutex           sync.RWMutex
 	logger          types.Logger
 	currentFanData  atomic.Pointer[types.FanData]
+	writesBlocked   atomic.Bool
 
 	// HID 监控协程生命周期（监控协程是 HID 句柄的唯一拥有者，负责最终关闭）。
 	monitorStop        chan struct{}
@@ -590,6 +591,9 @@ func (m *Manager) parseWorkMode(mode uint8) string {
 func (m *Manager) SetPercentSpeed(percent int) bool {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
+	if m.writesBlocked.Load() {
+		return false
+	}
 
 	if m.deviceType == types.DeviceTransportSerial {
 		if !m.isConnected {
@@ -620,6 +624,10 @@ func (m *Manager) SetTargetSpeed(value int, unit string) bool {
 	unit = types.NormalizeFanSpeedUnit(unit)
 
 	m.mutex.Lock()
+	if m.writesBlocked.Load() {
+		m.mutex.Unlock()
+		return false
+	}
 	if m.deviceType == types.DeviceTransportWiFi {
 		if !m.isConnected {
 			m.mutex.Unlock()
@@ -663,6 +671,9 @@ func (m *Manager) SetTargetSpeed(value int, unit string) bool {
 
 // SetFanSpeed 设置风扇转速
 func (m *Manager) SetFanSpeed(rpm int) bool {
+	if m.writesBlocked.Load() {
+		return false
+	}
 	if m.IsBS1() {
 		if err := m.bleManager.SetFanSpeed(rpm); err != nil {
 			m.logError("BS1 设置转速失败: %v", err)
@@ -711,6 +722,9 @@ func (m *Manager) SetFanSpeed(rpm int) bool {
 
 // SetCustomFanSpeed 设置自定义风扇转速（无限制）
 func (m *Manager) SetCustomFanSpeed(rpm int) bool {
+	if m.writesBlocked.Load() {
+		return false
+	}
 	if m.IsBS1() {
 		if err := m.bleManager.SetFanSpeed(rpm); err != nil {
 			m.logError("BS1 设置自定义转速失败: %v", err)
@@ -785,6 +799,9 @@ func (m *Manager) EnterAutoMode() error {
 
 // SetManualGear 设置手动挡位
 func (m *Manager) SetManualGear(gear, level string) bool {
+	if m.writesBlocked.Load() {
+		return false
+	}
 	if m.IsBS1() {
 		// BS1 只有4个固定挡位，无子级别
 		if err := m.bleManager.SetManualGear(gear); err != nil {
@@ -862,6 +879,9 @@ func (m *Manager) SetManualGear(gear, level string) bool {
 
 // SetManualGearRPM 按自定义转速设置手动挡位(HID 通过 0x26 下发指定转速; BS1 回退固定挡位)
 func (m *Manager) SetManualGearRPM(gear, level string, rpm int) bool {
+	if m.writesBlocked.Load() {
+		return false
+	}
 	if m.IsBS1() {
 		if err := m.bleManager.SetManualGear(gear); err != nil {
 			m.logError("BS1 设置挡位失败: %v", err)
@@ -905,6 +925,9 @@ func (m *Manager) SetManualGearRPM(gear, level string, rpm int) bool {
 
 // SetGearLight 设置挡位灯
 func (m *Manager) SetGearLight(enabled bool) bool {
+	if m.writesBlocked.Load() {
+		return false
+	}
 	if m.IsBS1() {
 		m.logInfo("BS1 不支持挡位灯设置")
 		return false
@@ -935,6 +958,9 @@ func (m *Manager) SetGearLight(enabled bool) bool {
 
 // SetPowerOnStart 设置通电自启动
 func (m *Manager) SetPowerOnStart(enabled bool) bool {
+	if m.writesBlocked.Load() {
+		return false
+	}
 	if m.IsBS1() {
 		if err := m.bleManager.SetPowerOnStart(enabled); err != nil {
 			m.logError("BS1 设置通电自启动失败: %v", err)
@@ -971,6 +997,9 @@ func (m *Manager) SetPowerOnStart(enabled bool) bool {
 
 // SetSmartStartStop 设置智能启停
 func (m *Manager) SetSmartStartStop(mode string) bool {
+	if m.writesBlocked.Load() {
+		return false
+	}
 	if m.IsBS1() {
 		m.logInfo("BS1 不支持智能启停设置")
 		return false
@@ -1009,6 +1038,9 @@ func (m *Manager) SetSmartStartStop(mode string) bool {
 
 // SetBrightness 设置亮度
 func (m *Manager) SetBrightness(percentage int) bool {
+	if m.writesBlocked.Load() {
+		return false
+	}
 	if m.IsBS1() {
 		m.logInfo("BS1 不支持亮度设置")
 		return false

@@ -40,6 +40,7 @@ func OnSecondInstanceLaunch(secondInstanceData options.SecondInstanceData) {
 	if wailsContext != nil {
 		wailsruntime.WindowUnminimise(*wailsContext)
 		wailsruntime.WindowShow(*wailsContext)
+		restorePendingWindowMaximise(*wailsContext)
 		wailsruntime.WindowSetAlwaysOnTop(*wailsContext, true)
 		go func() {
 			time.Sleep(1 * time.Second)

@@ -453,8 +453,8 @@ const MiniFanCurveChart = memo(function MiniFanCurveChart({
               </g>
             );
           })}
-          <polygon points={areaPoints} fill="var(--chart-fan-speed)" opacity="0.14" />
-          <polyline points={linePoints} fill="none" stroke="var(--chart-fan-speed)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+          <polygon points={areaPoints} fill="var(--chart-primary)" opacity="0.14" />
+          <polyline points={linePoints} fill="none" stroke="var(--chart-primary)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
           {currentX !== null && (
             <line x1={currentX} y1={pad.top} x2={currentX} y2={pad.top + plotHeight} stroke="var(--chart-temperature-indicator)" strokeWidth="1.5" strokeDasharray="4 4" opacity="0.9" />
           )}

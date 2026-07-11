@@ -42,3 +42,22 @@ func TestShouldRestartTemperatureBridgeClassifiesPermanentMSRFailure(t *testing.
 		})
 	}
 }
+
+func TestMergeTemperatureHardwareMetadataKeepsCPUSelectionsDuringTransientEmptyRead(t *testing.T) {
+	previous := types.TemperatureData{
+		CpuSensors:      []types.TemperatureSensor{{Key: "cpu/package", Name: "CPU Package", Value: 68}},
+		CpuPowerSensors: []types.PowerSensor{{Key: "cpu/package-power", Name: "CPU Package", Value: 49}},
+	}
+
+	merged := mergeTemperatureHardwareMetadata(previous, types.TemperatureData{
+		CpuSensors:      []types.TemperatureSensor{},
+		CpuPowerSensors: []types.PowerSensor{},
+	})
+
+	if len(merged.CpuSensors) != 1 || merged.CpuSensors[0].Key != "cpu/package" {
+		t.Fatalf("CPU sensor metadata was not preserved: %#v", merged.CpuSensors)
+	}
+	if len(merged.CpuPowerSensors) != 1 || merged.CpuPowerSensors[0].Key != "cpu/package-power" {
+		t.Fatalf("CPU power sensor metadata was not preserved: %#v", merged.CpuPowerSensors)
+	}
+}

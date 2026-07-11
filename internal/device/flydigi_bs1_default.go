@@ -9,7 +9,7 @@ import (
 func (m *Manager) setFlyDigiBS1PowerOnStart(enabled bool) bool {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	if !m.isConnected || m.bleExecutor == nil {
+	if m.writesBlocked.Load() || !m.isConnected || m.bleExecutor == nil {
 		return false
 	}
 	payload := byte(0x02)

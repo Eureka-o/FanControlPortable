@@ -116,22 +116,10 @@ export default function TemperatureBaselineSection({
     return gpuPowerSensors;
   }, [activeGpuDevice, gpuPowerSensors]);
 
-  const selectedCpuSensor = useMemo(() => {
-    const configured = (((config as any).cpuSensor as string) || 'auto');
-    return cpuSensors.some((sensor) => sensor.key === configured) ? configured : 'auto';
-  }, [config, cpuSensors]);
-  const selectedGpuSensor = useMemo(() => {
-    const configured = (((config as any).gpuSensor as string) || 'auto');
-    return effectiveGpuSensors.some((sensor) => sensor.key === configured) ? configured : 'auto';
-  }, [config, effectiveGpuSensors]);
-  const selectedCpuPowerSensor = useMemo(() => {
-    const configured = (((config as any).cpuPowerSensor as string) || 'auto');
-    return cpuPowerSensors.some((sensor) => sensor.key === configured) ? configured : 'auto';
-  }, [config, cpuPowerSensors]);
-  const selectedGpuPowerSensor = useMemo(() => {
-    const configured = (((config as any).gpuPowerSensor as string) || 'auto');
-    return effectiveGpuPowerSensors.some((sensor) => sensor.key === configured) ? configured : 'auto';
-  }, [config, effectiveGpuPowerSensors]);
+  const selectedCpuSensor = (((config as any).cpuSensor as string) || 'auto');
+  const selectedGpuSensor = (((config as any).gpuSensor as string) || 'auto');
+  const selectedCpuPowerSensor = (((config as any).cpuPowerSensor as string) || 'auto');
+  const selectedGpuPowerSensor = (((config as any).gpuPowerSensor as string) || 'auto');
 
   const tempSourceOptions = useMemo(
     () => TEMP_SOURCE_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey) })),
@@ -151,19 +139,31 @@ export default function TemperatureBaselineSection({
   const cpuSensorOptions = useMemo(() => [
     { value: 'auto', label: cpuSensors.length > 0 ? t('controlPanel.options.sensor.autoRecommended') : t('controlPanel.options.sensor.auto') },
     ...cpuSensors.map((sensor) => ({ value: sensor.key, label: `${sensor.name} (${sensor.value}°C)` })),
-  ], [cpuSensors, locale, t]);
+    ...(selectedCpuSensor !== 'auto' && !cpuSensors.some((sensor) => sensor.key === selectedCpuSensor)
+      ? [{ value: selectedCpuSensor, label: selectedCpuSensor, disabled: true }]
+      : []),
+  ], [cpuSensors, locale, selectedCpuSensor, t]);
   const gpuSensorOptions = useMemo(() => [
     { value: 'auto', label: effectiveGpuSensors.length > 0 ? t('controlPanel.options.sensor.autoRecommended') : t('controlPanel.options.sensor.auto') },
     ...effectiveGpuSensors.map((sensor) => ({ value: sensor.key, label: `${sensor.name} (${sensor.value}°C)` })),
-  ], [effectiveGpuSensors, locale, t]);
+    ...(selectedGpuSensor !== 'auto' && !effectiveGpuSensors.some((sensor) => sensor.key === selectedGpuSensor)
+      ? [{ value: selectedGpuSensor, label: selectedGpuSensor, disabled: true }]
+      : []),
+  ], [effectiveGpuSensors, locale, selectedGpuSensor, t]);
   const cpuPowerSensorOptions = useMemo(() => [
     { value: 'auto', label: cpuPowerSensors.length > 0 ? t('controlPanel.options.sensor.autoRecommended') : t('controlPanel.options.sensor.auto') },
     ...cpuPowerSensors.map((sensor) => ({ value: sensor.key, label: `${sensor.name} (${formatPowerSensorValue(sensor.value)})` })),
-  ], [cpuPowerSensors, locale, t]);
+    ...(selectedCpuPowerSensor !== 'auto' && !cpuPowerSensors.some((sensor) => sensor.key === selectedCpuPowerSensor)
+      ? [{ value: selectedCpuPowerSensor, label: selectedCpuPowerSensor, disabled: true }]
+      : []),
+  ], [cpuPowerSensors, locale, selectedCpuPowerSensor, t]);
   const gpuPowerSensorOptions = useMemo(() => [
     { value: 'auto', label: effectiveGpuPowerSensors.length > 0 ? t('controlPanel.options.sensor.autoRecommended') : t('controlPanel.options.sensor.auto') },
     ...effectiveGpuPowerSensors.map((sensor) => ({ value: sensor.key, label: `${sensor.name} (${formatPowerSensorValue(sensor.value)})` })),
-  ], [effectiveGpuPowerSensors, locale, t]);
+    ...(selectedGpuPowerSensor !== 'auto' && !effectiveGpuPowerSensors.some((sensor) => sensor.key === selectedGpuPowerSensor)
+      ? [{ value: selectedGpuPowerSensor, label: selectedGpuPowerSensor, disabled: true }]
+      : []),
+  ], [effectiveGpuPowerSensors, locale, selectedGpuPowerSensor, t]);
 
   return (
     <div className="px-5 py-4">
@@ -234,7 +234,7 @@ export default function TemperatureBaselineSection({
                   options={cpuSensorOptions}
                   size="sm"
                   className="w-full min-w-0"
-                  disabled={!cpuSensors.length || loadingStates.cpuSensor}
+                  disabled={loadingStates.cpuSensor}
                 />
               </SelectionField>
 
@@ -245,7 +245,7 @@ export default function TemperatureBaselineSection({
                   options={cpuPowerSensorOptions}
                   size="sm"
                   className="w-full min-w-0"
-                  disabled={!cpuPowerSensors.length || loadingStates.cpuPowerSensor}
+                  disabled={loadingStates.cpuPowerSensor}
                 />
               </SelectionField>
             </div>
@@ -285,7 +285,7 @@ export default function TemperatureBaselineSection({
                   options={gpuSensorOptions}
                   size="sm"
                   className="w-full min-w-0"
-                  disabled={gpuNotPolled || !effectiveGpuSensors.length || loadingStates.gpuSensor}
+                  disabled={gpuNotPolled || loadingStates.gpuSensor}
                 />
               </SelectionField>
 
@@ -296,7 +296,7 @@ export default function TemperatureBaselineSection({
                   options={gpuPowerSensorOptions}
                   size="sm"
                   className="w-full min-w-0"
-                  disabled={gpuNotPolled || !effectiveGpuPowerSensors.length || loadingStates.gpuPowerSensor}
+                  disabled={gpuNotPolled || loadingStates.gpuPowerSensor}
                 />
               </SelectionField>
             </div>
