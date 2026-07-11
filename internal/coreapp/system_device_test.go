@@ -242,6 +242,19 @@ func TestReconnectTransportUsesCompatibilityFastPathAfterCompatibilitySuccess(t 
 	}
 }
 
+func TestReapplyConfigAfterReconnectKeepsNativeRuntimeProfile(t *testing.T) {
+	cfg := types.GetDefaultConfig(false)
+	cfg.AutoControl = true
+	app := newDeviceProfileTestApp(t, cfg)
+	app.deviceManager.ConfigureProfile(types.FlyDigiBS1Profile(), "")
+
+	app.reapplyConfigAfterReconnect()
+
+	if got := app.deviceManager.ActiveProfile().ID; got != types.FlyDigiBS1ProfileID {
+		t.Fatalf("active profile = %q, want %q", got, types.FlyDigiBS1ProfileID)
+	}
+}
+
 func TestDidDeviceSwitchToManualModeRecognizesProtocolLabels(t *testing.T) {
 	if !didDeviceSwitchToManualMode("auto/realtime RPM mode", "manual/fixed gear mode") {
 		t.Fatal("expected protocol manual mode to be recognized")

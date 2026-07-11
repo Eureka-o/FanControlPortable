@@ -635,16 +635,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
 
   const detailHistoryPoints = useMemo(() => temperatureHistory.slice(-720), [temperatureHistory]);
 
-  const historyFanMax = useMemo(() => {
-    let maxFan = speedRange.max;
-    for (const point of detailHistoryPoints) {
-      if (point.fanRpm > 0) {
-        maxFan = Math.max(maxFan, normalizeSpeedValue(point.fanRpm, speedRange.min, speedRange.max));
-      }
-    }
-    return maxFan;
-  }, [detailHistoryPoints, speedRange.max, speedRange.min]);
-
   const historySummary = useMemo(() => {
     const latest = temperatureHistory[temperatureHistory.length - 1] ?? null;
     const first = temperatureHistory[0] ?? null;
@@ -717,19 +707,9 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
 
   const historyChartStats = useMemo(() => {
     let maxPower = 0;
-    let minTemp = Number.POSITIVE_INFINITY;
-    let maxTemp = 0;
     const data = detailHistoryPoints.map((point) => {
       const cpuPowerWatts = Number(point.cpuPowerWatts || 0);
       const gpuPowerWatts = Number(point.gpuPowerWatts || 0);
-      if (point.cpuTemp > 0) {
-        minTemp = Math.min(minTemp, point.cpuTemp);
-        maxTemp = Math.max(maxTemp, point.cpuTemp);
-      }
-      if (point.gpuTemp > 0) {
-        minTemp = Math.min(minTemp, point.gpuTemp);
-        maxTemp = Math.max(maxTemp, point.gpuTemp);
-      }
       if (historySeriesVisibility.cpuPower) {
         maxPower = Math.max(maxPower, cpuPowerWatts);
       }
@@ -747,23 +727,15 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       };
     });
 
-    const tempDomain: [number, number] = Number.isFinite(minTemp)
-      ? [
-        Math.max(0, Math.floor((minTemp - 4) / 5) * 5),
-        Math.max(Math.max(0, Math.floor((minTemp - 4) / 5) * 5) + 10, Math.min(110, Math.ceil((maxTemp + 4) / 5) * 5)),
-      ]
-      : [30, 90];
     const powerMax = maxPower > 0 ? Math.max(20, Math.ceil((maxPower + 10) / 10) * 10) : 20;
 
     return {
       data,
-      tempDomain,
       powerMax,
       hasPower: maxPower > 0,
     };
   }, [detailHistoryPoints, historySeriesVisibility.cpuPower, historySeriesVisibility.gpuPower, speedRange.max, speedRange.min]);
   const historyChartData = historyChartStats.data;
-  const historyTempDomain = historyChartStats.tempDomain;
   const historyPowerMax = historyChartStats.powerMax;
   const historyHasPower = historyChartStats.hasPower;
 
@@ -1828,25 +1800,41 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                           tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
                         />
                         <YAxis
-                          yAxisId="temp"
+                          yAxisId="fan"
                           type="number"
-                          domain={historyTempDomain}
+                          domain={[speedRange.min, speedRange.max]}
+                          ticks={speedRange.ticks}
+                          allowDataOverflow
+                          tickFormatter={(value) => `${formatSpeedValue(Number(value))}${speedUnitSuffix}`}
                           tickLine={false}
                           axisLine={{ stroke: 'var(--chart-axis)' }}
                           tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
-                          width={40}
+                          width={64}
                         />
                         <YAxis
-                          yAxisId="fan"
+                          yAxisId="temp"
                           orientation="right"
                           type="number"
-                          domain={[0, historyFanMax]}
+                          domain={[temperatureRange.min, temperatureRange.max]}
+                          ticks={temperatureRange.ticks.filter((value) => value === temperatureRange.max || (value - temperatureRange.min) % (FAN_CURVE_TEMP_STEP * 4) === 0)}
+                          allowDataOverflow
+                          tickFormatter={(value) => `${Number(value)}°C`}
                           tickLine={false}
                           axisLine={{ stroke: 'var(--chart-axis)' }}
                           tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
-                          width={52}
+                          width={44}
                         />
-                        <YAxis yAxisId="power" type="number" domain={[0, historyPowerMax]} hide />
+                        {historyHasPower && <YAxis
+                          yAxisId="power"
+                          orientation="right"
+                          type="number"
+                          domain={[0, historyPowerMax]}
+                          tickFormatter={(value) => Number(value) === 0 ? '0 W' : `${formatPowerValue(Number(value))} W`}
+                          tickLine={false}
+                          axisLine={{ stroke: 'var(--chart-axis)' }}
+                          tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
+                          width={54}
+                        />}
                         <RechartsTooltip
                           content={({ active, label, payload }) => {
                             if (!active || !Array.isArray(payload) || payload.length === 0) {

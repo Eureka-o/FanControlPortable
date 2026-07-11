@@ -685,7 +685,6 @@ func (a *CoreApp) DisconnectDevice() {
 // reapplyConfigAfterReconnect 重连后重新应用APP配置
 func (a *CoreApp) reapplyConfigAfterReconnect() {
 	cfg := a.configManager.Get()
-	a.configureDeviceManager(cfg)
 
 	// 重新应用智能变频配置
 	if cfg.AutoControl {
