@@ -40,9 +40,11 @@ func newDeviceDebugFrame(direction, transport string, raw []byte) types.DeviceDe
 func appendBoundedDebugFrame(seq *uint64, frames *[]types.DeviceDebugFrame, frame types.DeviceDebugFrame) uint64 {
 	*seq = *seq + 1
 	frame.ID = *seq
-	*frames = append(*frames, frame)
-	if len(*frames) > maxDebugFrames {
-		*frames = append([]types.DeviceDebugFrame(nil), (*frames)[len(*frames)-maxDebugFrames:]...)
+	if len(*frames) < maxDebugFrames {
+		*frames = append(*frames, frame)
+	} else {
+		copy(*frames, (*frames)[1:])
+		(*frames)[maxDebugFrames-1] = frame
 	}
 	return frame.ID
 }

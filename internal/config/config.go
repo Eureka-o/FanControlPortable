@@ -825,24 +825,19 @@ func (m *Manager) Save() error {
 func (m *Manager) saveLocked() error {
 	installConfigDir := filepath.Join(m.installDir, "config")
 	installConfigPath := filepath.Join(installConfigDir, "config.json")
+	data, err := json.MarshalIndent(m.config, "", "  ")
+	if err != nil {
+		m.logError("序列化配置失败: %v", err)
+		return err
+	}
 
 	m.logDebug("尝试保存配置到便携目录: %s", installConfigPath)
-
-	if err := os.MkdirAll(installConfigDir, 0755); err != nil {
-		m.logError("创建便携配置目录失败: %v", err)
+	if err := writeConfigFileAtomically(installConfigPath, data); err != nil {
+		m.logError("保存配置到便携目录失败: %v", err)
 	} else {
-		data, err := json.MarshalIndent(m.config, "", "  ")
-		if err != nil {
-			m.logError("序列化配置失败: %v", err)
-		} else {
-			if err := os.WriteFile(installConfigPath, data, 0644); err != nil {
-				m.logError("保存配置到便携目录失败: %v", err)
-			} else {
-				m.config.ConfigPath = installConfigPath
-				m.logInfo("配置保存到便携目录成功: %s", installConfigPath)
-				return nil
-			}
-		}
+		m.config.ConfigPath = installConfigPath
+		m.logInfo("配置保存到便携目录成功: %s", installConfigPath)
+		return nil
 	}
 
 	defaultConfigDir := m.GetDefaultConfigDir()
@@ -850,18 +845,7 @@ func (m *Manager) saveLocked() error {
 
 	m.logInfo("保存到便携目录失败，尝试保存到用户目录: %s", defaultConfigPath)
 
-	if err := os.MkdirAll(defaultConfigDir, 0755); err != nil {
-		m.logError("创建用户配置目录失败: %v", err)
-		return err
-	}
-
-	data, err := json.MarshalIndent(m.config, "", "  ")
-	if err != nil {
-		m.logError("序列化配置失败: %v", err)
-		return err
-	}
-
-	if err := os.WriteFile(defaultConfigPath, data, 0644); err != nil {
+	if err := writeConfigFileAtomically(defaultConfigPath, data); err != nil {
 		m.logError("保存配置到用户目录失败: %v", err)
 		return err
 	}
@@ -869,6 +853,36 @@ func (m *Manager) saveLocked() error {
 	m.config.ConfigPath = defaultConfigPath
 	m.logInfo("配置保存到用户目录成功: %s", defaultConfigPath)
 	return nil
+}
+
+func writeConfigFileAtomically(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+
+	file, err := os.CreateTemp(filepath.Dir(path), ".config-*.tmp")
+	if err != nil {
+		return err
+	}
+	tempPath := file.Name()
+	defer os.Remove(tempPath)
+
+	if err := file.Chmod(0644); err != nil {
+		file.Close()
+		return err
+	}
+	if _, err := file.Write(data); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tempPath, path)
 }
 
 // GetDefaultConfigDir 获取默认配置目录

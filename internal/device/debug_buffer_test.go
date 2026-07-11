@@ -27,6 +27,22 @@ func TestDebugFrameBufferStaysBounded(t *testing.T) {
 	}
 }
 
+func TestDebugFrameBufferReusesFullBackingArray(t *testing.T) {
+	var seq uint64
+	frames := make([]types.DeviceDebugFrame, 0, maxDebugFrames)
+	for i := 0; i < maxDebugFrames; i++ {
+		appendBoundedDebugFrame(&seq, &frames, newDeviceDebugFrame("rx", types.DeviceTransportHID, []byte{byte(i)}))
+	}
+	firstSlot := &frames[0]
+	appendBoundedDebugFrame(&seq, &frames, newDeviceDebugFrame("rx", types.DeviceTransportHID, []byte{0xFF}))
+	if &frames[0] != firstSlot {
+		t.Fatal("full debug buffer allocated a new backing array")
+	}
+	if frames[len(frames)-1].ID != seq {
+		t.Fatalf("last frame ID = %d, want %d", frames[len(frames)-1].ID, seq)
+	}
+}
+
 func TestWiFiDebugAttemptsAreRecordedButBounded(t *testing.T) {
 	manager := NewManager(nil)
 

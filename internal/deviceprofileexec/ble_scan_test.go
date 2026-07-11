@@ -2,10 +2,26 @@ package deviceprofileexec
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/TIANLI0/THRM/internal/types"
 )
+
+func TestDefaultBLEAdapterLeaseWaitIsCancelable(t *testing.T) {
+	release, err := acquireDefaultBLEAdapter(context.Background())
+	if err != nil {
+		t.Fatalf("first adapter lease failed: %v", err)
+	}
+	defer release()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := acquireDefaultBLEAdapter(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("second adapter lease error = %v, want context canceled", err)
+	}
+}
 
 func TestNormalizeAndMatchBLEDevicesMatchesNameAndService(t *testing.T) {
 	devices := []types.BLEDeviceInfo{
@@ -130,5 +146,39 @@ func TestScanBLEDevicesWithScannerReturnsEmptyResult(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("got %#v, want empty result", got)
+	}
+}
+
+func TestMatchedBLEAdvertisementStopsScanWithoutWaitingForTimeout(t *testing.T) {
+	stopScan := make(chan struct{}, 1)
+	started := time.Now()
+	devices, err := scanBLEAdvertisements(
+		context.Background(),
+		types.BLEScanParams{NameFilter: "BS1", OnlyMatched: true},
+		func(report func(types.BLEDeviceInfo)) error {
+			report(types.BLEDeviceInfo{Address: "AA:BB:CC:00:00:07", Name: "FlyDigi BS1"})
+			select {
+			case <-stopScan:
+				return nil
+			case <-time.After(500 * time.Millisecond):
+				return errors.New("matched advertisement did not stop scan")
+			}
+		},
+		func() error {
+			select {
+			case stopScan <- struct{}{}:
+			default:
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("scanBLEAdvertisements returned error: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed >= 200*time.Millisecond {
+		t.Fatalf("matched BLE scan took %v, want immediate stop", elapsed)
+	}
+	if len(devices) != 1 || devices[0].Name != "FlyDigi BS1" {
+		t.Fatalf("devices = %#v, want matched BS1", devices)
 	}
 }

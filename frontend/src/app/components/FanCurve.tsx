@@ -455,6 +455,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const pendingDragYRef = useRef<number | null>(null);
   const historySeriesItemRefs = useRef<Partial<Record<HistorySeriesKey, HTMLDivElement>>>({});
   const historySeriesDragRef = useRef<{ key: HistorySeriesKey; target?: HistorySeriesKey; placement?: 'before' | 'after' } | null>(null);
+  const historySeriesDragCleanupRef = useRef<(() => void) | null>(null);
   const runtimeProfileForSpeed = useMemo(() => {
     if (!isConnected) {
       return null;
@@ -792,6 +793,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       return;
     }
 
+    historySeriesDragCleanupRef.current?.();
     event.preventDefault();
     event.stopPropagation();
     setDraggedHistorySeries(key);
@@ -830,18 +832,28 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       }
     };
 
-    const handlePointerEnd = () => {
-      historySeriesDragRef.current = null;
-      setDraggedHistorySeries(null);
+    const cleanup = () => {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerEnd);
       window.removeEventListener('pointercancel', handlePointerEnd);
+      if (historySeriesDragCleanupRef.current === cleanup) {
+        historySeriesDragCleanupRef.current = null;
+      }
+    };
+
+    const handlePointerEnd = () => {
+      historySeriesDragRef.current = null;
+      setDraggedHistorySeries(null);
+      cleanup();
     };
 
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerEnd);
     window.addEventListener('pointercancel', handlePointerEnd);
+    historySeriesDragCleanupRef.current = cleanup;
   }, [historySeriesMeta, reorderSeries]);
+
+  useEffect(() => () => historySeriesDragCleanupRef.current?.(), []);
 
   /* ── Init ── */
 
@@ -854,17 +866,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
 
   useEffect(() => {
     loadCurveProfiles().catch(() => {});
-  }, [loadCurveProfiles]);
-
-  useEffect(() => {
-    if (externalActiveProfileId && externalActiveProfileId !== activeProfileId) {
-      loadCurveProfiles().catch(() => {});
-    }
-  }, [activeProfileId, externalActiveProfileId, loadCurveProfiles]);
-
-  useEffect(() => {
-    loadCurveProfiles().catch(() => {});
-  }, [externalDeviceCurveKey, loadCurveProfiles]);
+  }, [externalActiveProfileId, externalDeviceCurveKey, loadCurveProfiles]);
 
   /* ── Chart data ── */
 
@@ -1099,7 +1101,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
         if (!ok) {
           return;
         }
-        await loadCurveProfiles();
       }
       const code = await apiService.exportFanCurveProfiles();
       setExportCode(code);

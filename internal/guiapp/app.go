@@ -12,9 +12,10 @@ import (
 
 // App struct - GUI 应用程序结构
 type App struct {
-	ctx       context.Context
-	ipcClient *ipc.Client
-	mutex     sync.RWMutex
+	ctx               context.Context
+	ipcClient         *ipc.Client
+	mutex             sync.RWMutex
+	ipcReconnectMutex sync.Mutex
 
 	// 缓存的状态
 	isConnected bool

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -17,9 +18,11 @@ import (
 type CustomLogger struct {
 	logger    *zap.Logger
 	sugar     *zap.SugaredLogger
-	debugMode bool
+	debugMode *atomic.Bool
 	logDir    string
 	atom      zap.AtomicLevel
+	appLog    *lumberjack.Logger
+	debugLog  *lumberjack.Logger
 }
 
 // NewCustomLogger 创建新的日志记录器
@@ -71,6 +74,8 @@ func NewCustomLogger(debugMode bool, installDir string) (*CustomLogger, error) {
 
 	// 设置日志级别
 	atom := zap.NewAtomicLevel()
+	debugEnabled := &atomic.Bool{}
+	debugEnabled.Store(debugMode)
 	if debugMode {
 		atom.SetLevel(zapcore.DebugLevel)
 	} else {
@@ -92,7 +97,9 @@ func NewCustomLogger(debugMode bool, installDir string) (*CustomLogger, error) {
 	debugCore := zapcore.NewCore(
 		fileEncoder,
 		zapcore.AddSync(debugLogRotate),
-		atom,
+		zap.LevelEnablerFunc(func(lvl zapcore.Level) bool {
+			return debugEnabled.Load() && lvl >= zapcore.DebugLevel
+		}),
 	)
 
 	// 控制台输出核心
@@ -112,9 +119,11 @@ func NewCustomLogger(debugMode bool, installDir string) (*CustomLogger, error) {
 	return &CustomLogger{
 		logger:    logger,
 		sugar:     sugar,
-		debugMode: debugMode,
+		debugMode: debugEnabled,
 		logDir:    logDir,
 		atom:      atom,
+		appLog:    appLogRotate,
+		debugLog:  debugLogRotate,
 	}, nil
 }
 
@@ -150,7 +159,13 @@ func (l *CustomLogger) Fatal(format string, v ...any) {
 // Close 关闭日志
 func (l *CustomLogger) Close() {
 	if l.logger != nil {
-		l.logger.Sync()
+		_ = l.logger.Sync()
+	}
+	if l.appLog != nil {
+		_ = l.appLog.Close()
+	}
+	if l.debugLog != nil {
+		_ = l.debugLog.Close()
 	}
 }
 
@@ -177,7 +192,7 @@ func (l *CustomLogger) CleanOldLogs() {
 
 // SetDebugMode 设置调试模式
 func (l *CustomLogger) SetDebugMode(enabled bool) {
-	l.debugMode = enabled
+	l.debugMode.Store(enabled)
 	if enabled {
 		l.atom.SetLevel(zapcore.DebugLevel)
 	} else {
@@ -192,7 +207,7 @@ func (l *CustomLogger) GetLogDir() string {
 
 // GetDebugMode 获取调试模式状态
 func (l *CustomLogger) GetDebugMode() bool {
-	return l.debugMode
+	return l.debugMode.Load()
 }
 
 // GetZapLogger 获取底层 zap logger

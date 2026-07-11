@@ -104,6 +104,19 @@ func TestNativeAutoConnectCandidatesKeepUserNativeProfilesBeforeBuiltInFallbacks
 	}
 }
 
+func TestNativeAutoConnectCandidatesPreferLastRuntimeProfile(t *testing.T) {
+	previous := types.FlyDigiBS1Profile()
+	previous.Connection.Endpoint = "AA:BB:CC:DD:EE:FF"
+
+	candidates := nativeAutoConnectCandidates(nil, previous)
+	if len(candidates) == 0 || candidates[0].ID != types.FlyDigiBS1ProfileID {
+		t.Fatalf("first candidate = %#v, want previous BS1 profile", candidates)
+	}
+	if candidates[0].Connection.Endpoint != previous.Connection.Endpoint {
+		t.Fatalf("preferred endpoint = %q, want %q", candidates[0].Connection.Endpoint, previous.Connection.Endpoint)
+	}
+}
+
 func TestNativeBLEDeviceInfoUsesMatchedUserProfile(t *testing.T) {
 	userBLE := types.FlyDigiBS1Profile()
 	userBLE.ID = "user.ble.rpm"

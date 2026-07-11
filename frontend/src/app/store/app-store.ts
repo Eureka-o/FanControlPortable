@@ -173,7 +173,7 @@ interface AppStore {
   initializeApp: () => Promise<void>;
   connectDevice: () => Promise<void>;
   disconnectDevice: () => Promise<void>;
-  updateConfig: (config: types.AppConfig) => Promise<void>;
+  setConfig: (config: types.AppConfig) => void;
   refreshDeviceContext: () => Promise<DeviceStatusPayload | null>;
 
   startEventListeners: () => () => void;
@@ -294,15 +294,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  updateConfig: async (config) => {
-    try {
-      await configService.updateConfig(config);
-      set({ config, error: null });
-    } catch (error) {
-      console.error('配置更新失败:', error);
-      set({ error: i18n.t('store.errors.saveConfig') });
-    }
-  },
+  setConfig: (config) => set({ config }),
 
   refreshDeviceContext: async () => {
     try {

@@ -42,26 +42,34 @@ type CoreApp struct {
 	wifiScanControl  *types.WiFiDiscoveryControl
 	wifiScanRunning  atomic.Bool
 
-	isConnected             bool
-	monitoringTemp          atomic.Bool
-	currentTemp             types.TemperatureData
-	deviceSettings          *types.DeviceSettings
-	lastDeviceMode          string
-	userSetAutoControl      bool
-	isAutoStartLaunch       bool
-	debugMode               bool
-	legionFnQSupported      atomic.Bool
-	legionFnQSupportChecked atomic.Bool
-	legionFnQRegistered     atomic.Bool
-	reconnectInProgress     atomic.Bool
-	autoReconnectSuppressed atomic.Bool
-	lastConnectionWasNative atomic.Bool
-	resumeRecoveryRunning   atomic.Bool
-	systemSuspended         atomic.Bool
-	wifiStandbyApplied      atomic.Bool
-	forceNextAutoTarget     atomic.Bool
-	lastResumeRecoveryUnix  int64
-	lastHealthReconnectUnix     int64
+	isConnected                   bool
+	monitoringTemp                atomic.Bool
+	monitoringMutex               sync.Mutex
+	monitoringCancel              context.CancelFunc
+	monitoringDone                chan struct{}
+	monitoringStopping            bool
+	currentTemp                   types.TemperatureData
+	deviceSettings                *types.DeviceSettings
+	lastDeviceMode                string
+	userSetAutoControl            bool
+	isAutoStartLaunch             bool
+	debugMode                     bool
+	legionFnQSupported            atomic.Bool
+	legionFnQSupportChecked       atomic.Bool
+	legionFnQRegistered           atomic.Bool
+	reconnectInProgress           atomic.Bool
+	reconnectMutex                sync.Mutex
+	reconnectCancel               context.CancelFunc
+	reconnectGeneration           uint64
+	autoReconnectSuppressed       atomic.Bool
+	hasSuccessfulConnection       atomic.Bool
+	lastConnectionWasNative       atomic.Bool
+	resumeRecoveryRunning         atomic.Bool
+	systemSuspended               atomic.Bool
+	wifiStandbyApplied            atomic.Bool
+	forceNextAutoTarget           atomic.Bool
+	lastResumeRecoveryUnix        int64
+	lastHealthReconnectUnix       int64
 	healthConsecutiveFailureCount int32
 
 	powerNotifyStop func()
@@ -73,7 +81,6 @@ type CoreApp struct {
 	quitChan          chan bool
 
 	mutex                 sync.RWMutex
-	stopMonitoring        chan bool
 	manualGearLevelMemory map[string]string
 }
 
@@ -161,7 +168,6 @@ func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 		logger:             customLogger,
 		wifiScanControl:    types.NewWiFiDiscoveryControl(),
 		isConnected:        false,
-		stopMonitoring:     make(chan bool, 1),
 		lastDeviceMode:     "",
 		userSetAutoControl: false,
 		isAutoStartLaunch:  isAutoStart,

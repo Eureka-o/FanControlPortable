@@ -110,10 +110,9 @@ export default function DeviceConnectionPanel({
 
   const refreshAfterConnection = useCallback(async () => {
     await refreshConnectedDeviceContext();
-    const nextConfig = await refreshDeviceConfig();
-    onConfigChange(nextConfig);
+    await refreshDeviceConfig();
     await loadDeviceProfiles();
-  }, [loadDeviceProfiles, onConfigChange, refreshConnectedDeviceContext, refreshDeviceConfig]);
+  }, [loadDeviceProfiles, refreshConnectedDeviceContext, refreshDeviceConfig]);
 
   const scanDevicesNow = useCallback(async () => {
     wifiDiscovery.reset();

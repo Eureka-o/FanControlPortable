@@ -173,7 +173,7 @@ type Server struct {
 	mutex         sync.RWMutex
 	handler       RequestHandler
 	logger        types.Logger
-	running       bool
+	running       atomic.Bool
 	throttleMutex sync.Mutex
 	lastEventEmit map[string]time.Time
 }
@@ -217,7 +217,7 @@ func (s *Server) Start() error {
 	}
 
 	s.listener = listener
-	s.running = true
+	s.running.Store(true)
 	s.logInfo("IPC 服务器已启动: %s", PipePath)
 
 	// 接受连接
@@ -229,10 +229,10 @@ func (s *Server) Start() error {
 // acceptConnections 接受客户端连接
 func (s *Server) acceptConnections() {
 	consecutiveFailures := 0
-	for s.running {
+	for s.running.Load() {
 		conn, err := s.listener.Accept()
 		if err != nil {
-			if !s.running {
+			if !s.running.Load() {
 				return
 			}
 			// 监听器持续故障时退避重试，避免热循环空转占满 CPU 并刷爆日志。
@@ -301,7 +301,7 @@ func (s *Server) handleClient(conn net.Conn, state *clientState) {
 
 	reader := bufio.NewReader(conn)
 
-	for s.running {
+	for s.running.Load() {
 		line, err := reader.ReadBytes('\n')
 		if err != nil {
 			s.logDebug("读取客户端请求失败: %v", err)
@@ -421,20 +421,21 @@ func (s *Server) BroadcastEvent(eventType string, data any) {
 
 // Stop 停止服务器
 func (s *Server) Stop() {
-	s.running = false
+	s.running.Store(false)
 	if s.listener != nil {
 		s.listener.Close()
 	}
 
 	s.mutex.Lock()
-	for conn, state := range s.clients {
-		state.closeOnce.Do(func() {
-			close(state.closed)
-			conn.Close()
-		})
+	clients := make([]*clientState, 0, len(s.clients))
+	for _, state := range s.clients {
+		clients = append(clients, state)
 	}
 	s.clients = make(map[net.Conn]*clientState)
 	s.mutex.Unlock()
+	for _, state := range clients {
+		s.closeClient(state)
+	}
 
 	s.logInfo("IPC 服务器已停止")
 }
@@ -484,24 +485,35 @@ func isClosedConnectionError(err error) bool {
 }
 
 type Client struct {
-	conn         net.Conn
-	mutex        sync.Mutex
-	reader       *bufio.Reader
-	logger       types.Logger
-	eventHandler func(Event)
+	conn               net.Conn
+	mutex              sync.Mutex
+	eventDispatchMutex sync.Mutex
+	logger             types.Logger
+	eventHandler       func(Event)
 
 	pendingMutex sync.Mutex
-	pending      map[string]chan *Response
+	pending      map[string]pendingRequest
 
-	connected bool
-	connMutex sync.RWMutex
+	connected  bool
+	generation uint64
+	connMutex  sync.RWMutex
+}
+
+type requestResult struct {
+	response *Response
+	err      error
+}
+
+type pendingRequest struct {
+	generation uint64
+	result     chan requestResult
 }
 
 // NewClient 创建 IPC 客户端
 func NewClient(logger types.Logger) *Client {
 	return &Client{
 		logger:  logger,
-		pending: make(map[string]chan *Response),
+		pending: make(map[string]pendingRequest),
 	}
 }
 
@@ -529,33 +541,24 @@ func (c *Client) Connect() error {
 	}
 
 	c.conn = conn
-	c.reader = bufio.NewReader(conn)
 	c.connected = true
+	c.generation++
+	generation := c.generation
 	c.logInfo("已连接到 IPC 服务器")
 
 	// 启动消息接收循环
-	go c.readLoop()
+	go c.readLoop(conn, bufio.NewReader(conn), generation)
 
 	return nil
 }
 
 // readLoop 统一的消息读取循环
-func (c *Client) readLoop() {
+func (c *Client) readLoop(conn net.Conn, reader *bufio.Reader, generation uint64) {
 	for {
-		c.connMutex.RLock()
-		if !c.connected || c.reader == nil {
-			c.connMutex.RUnlock()
-			return
-		}
-		reader := c.reader
-		c.connMutex.RUnlock()
-
 		line, err := reader.ReadBytes('\n')
 		if err != nil {
 			c.logDebug("读取消息失败: %v", err)
-			c.connMutex.Lock()
-			c.connected = false
-			c.connMutex.Unlock()
+			c.disconnectCurrent(conn, generation, fmt.Errorf("IPC 连接已断开: %w", err))
 			return
 		}
 
@@ -574,14 +577,16 @@ func (c *Client) readLoop() {
 			if err := json.Unmarshal(line, &resp); err == nil {
 				// 按 RequestID 路由到对应等待者；找不到则说明请求已超时取消，直接丢弃
 				c.pendingMutex.Lock()
-				ch, ok := c.pending[resp.RequestID]
-				if ok {
+				pending, ok := c.pending[resp.RequestID]
+				if ok && pending.generation == generation {
 					delete(c.pending, resp.RequestID)
+				} else {
+					ok = false
 				}
 				c.pendingMutex.Unlock()
 				if ok {
 					// channel 容量 1 + delete 后立即送达，不会阻塞
-					ch <- &resp
+					pending.result <- requestResult{response: &resp}
 				} else {
 					c.logDebug("收到无主响应，丢弃: requestID=%s", resp.RequestID)
 				}
@@ -589,17 +594,61 @@ func (c *Client) readLoop() {
 		} else if msg.IsEvent {
 			var event Event
 			if err := json.Unmarshal(line, &event); err == nil && event.Type != "" {
-				if c.eventHandler != nil {
-					go c.eventHandler(event)
+				c.eventDispatchMutex.Lock()
+				c.connMutex.RLock()
+				current := c.connected && c.generation == generation && c.conn == conn
+				handler := c.eventHandler
+				c.connMutex.RUnlock()
+				if !current {
+					c.eventDispatchMutex.Unlock()
+					return
 				}
+				if handler != nil {
+					handler(event)
+				}
+				c.eventDispatchMutex.Unlock()
 			}
 		}
 	}
 }
 
+func (c *Client) disconnectCurrent(conn net.Conn, generation uint64, err error) {
+	c.connMutex.Lock()
+	if c.generation != generation || c.conn != conn {
+		c.connMutex.Unlock()
+		c.failPending(generation, err)
+		return
+	}
+	c.connected = false
+	c.conn = nil
+	c.generation++
+	c.connMutex.Unlock()
+
+	_ = conn.Close()
+	c.failPending(generation, err)
+}
+
+func (c *Client) failPending(generation uint64, err error) {
+	c.pendingMutex.Lock()
+	results := make([]chan requestResult, 0, len(c.pending))
+	for requestID, pending := range c.pending {
+		if pending.generation != generation {
+			continue
+		}
+		delete(c.pending, requestID)
+		results = append(results, pending.result)
+	}
+	c.pendingMutex.Unlock()
+	for _, ch := range results {
+		ch <- requestResult{err: err}
+	}
+}
+
 // SetEventHandler 设置事件处理函数
 func (c *Client) SetEventHandler(handler func(Event)) {
+	c.connMutex.Lock()
 	c.eventHandler = handler
+	c.connMutex.Unlock()
 }
 
 // SendRequest 发送请求并等待响应
@@ -608,13 +657,20 @@ func (c *Client) SendRequest(reqType RequestType, data any) (*Response, error) {
 }
 
 func (c *Client) SendRequestWithTimeout(reqType RequestType, data any, timeout time.Duration) (*Response, error) {
+	response, _, err := c.SendRequestWithTimeoutGeneration(reqType, data, timeout)
+	return response, err
+}
+
+// SendRequestWithTimeoutGeneration 同时返回请求实际使用的连接代次。
+func (c *Client) SendRequestWithTimeoutGeneration(reqType RequestType, data any, timeout time.Duration) (*Response, uint64, error) {
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
 	c.connMutex.RLock()
+	generation := c.generation
 	if !c.connected || c.conn == nil {
 		c.connMutex.RUnlock()
-		return nil, fmt.Errorf("未连接到服务器")
+		return nil, generation, fmt.Errorf("未连接到服务器")
 	}
 	conn := c.conn
 	c.connMutex.RUnlock()
@@ -624,7 +680,7 @@ func (c *Client) SendRequestWithTimeout(reqType RequestType, data any, timeout t
 		var err error
 		dataBytes, err = json.Marshal(data)
 		if err != nil {
-			return nil, fmt.Errorf("序列化请求数据失败: %v", err)
+			return nil, generation, fmt.Errorf("序列化请求数据失败: %v", err)
 		}
 	}
 
@@ -639,12 +695,12 @@ func (c *Client) SendRequestWithTimeout(reqType RequestType, data any, timeout t
 
 	reqBytes, err := json.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("序列化请求失败: %v", err)
+		return nil, generation, fmt.Errorf("序列化请求失败: %v", err)
 	}
 
-	respCh := make(chan *Response, 1)
+	respCh := make(chan requestResult, 1)
 	c.pendingMutex.Lock()
-	c.pending[requestID] = respCh
+	c.pending[requestID] = pendingRequest{generation: generation, result: respCh}
 	c.pendingMutex.Unlock()
 
 	c.mutex.Lock()
@@ -654,30 +710,54 @@ func (c *Client) SendRequestWithTimeout(reqType RequestType, data any, timeout t
 		c.pendingMutex.Lock()
 		delete(c.pending, requestID)
 		c.pendingMutex.Unlock()
-		return nil, fmt.Errorf("发送请求失败: %v", err)
+		c.disconnectCurrent(conn, generation, fmt.Errorf("发送请求失败: %w", err))
+		return nil, generation, fmt.Errorf("发送请求失败: %v", err)
 	}
 
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 	select {
-	case resp := <-respCh:
-		return resp, nil
-	case <-time.After(timeout):
+	case result := <-respCh:
+		return result.response, generation, result.err
+	case <-timer.C:
 		c.pendingMutex.Lock()
 		delete(c.pending, requestID)
 		c.pendingMutex.Unlock()
-		return nil, fmt.Errorf("等待响应超时")
+		return nil, generation, fmt.Errorf("等待响应超时")
 	}
 }
 
-// Close 关闭连接
-func (c *Client) Close() {
-	c.connMutex.Lock()
-	defer c.connMutex.Unlock()
+// ConnectionGeneration 返回当前连接代次的线程安全快照。
+func (c *Client) ConnectionGeneration() uint64 {
+	c.connMutex.RLock()
+	defer c.connMutex.RUnlock()
+	return c.generation
+}
 
-	c.connected = false
-	if c.conn != nil {
-		c.conn.Close()
-		c.conn = nil
+// CloseGeneration 仅在 generation 仍是当前代次时关闭连接。
+func (c *Client) CloseGeneration(generation uint64) bool {
+	c.connMutex.Lock()
+	if c.generation != generation {
+		c.connMutex.Unlock()
+		c.failPending(generation, errors.New("IPC 连接已关闭"))
+		return false
 	}
+	conn := c.conn
+	c.connected = false
+	c.conn = nil
+	c.generation++
+	c.connMutex.Unlock()
+
+	if conn != nil {
+		_ = conn.Close()
+	}
+	c.failPending(generation, errors.New("IPC 连接已关闭"))
+	return true
+}
+
+// Close 关闭调用时观察到的连接，不影响随后建立的新代连接。
+func (c *Client) Close() {
+	c.CloseGeneration(c.ConnectionGeneration())
 }
 
 // IsConnected 检查是否已连接

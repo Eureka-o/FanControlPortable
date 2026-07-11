@@ -16,14 +16,26 @@ func (m *Manager) ScanNativeDevices() []map[string]string {
 }
 
 func (m *Manager) ScanNativeDevicesProfiles(profiles []types.DeviceProfile) []map[string]string {
-	candidates := nativeAutoConnectCandidates(profiles)
-	devices := scanNativeHIDDevices(candidates)
-	if bleDevices, err := scanNativeBLEDevices(candidates); err != nil {
-		m.logWarn("BLE native scan failed: %v", err)
-	} else {
-		devices = append(devices, bleDevices...)
-	}
+	devices := m.ScanNativeDevicesProfilesByTransport(profiles, types.DeviceTransportHID)
+	devices = append(devices, m.ScanNativeDevicesProfilesByTransport(profiles, types.DeviceTransportBLE)...)
 	return devices
+}
+
+func (m *Manager) ScanNativeDevicesProfilesByTransport(profiles []types.DeviceProfile, transport string) []map[string]string {
+	candidates := nativeAutoConnectCandidates(profiles)
+	switch types.NormalizeDeviceTransport(transport) {
+	case types.DeviceTransportHID:
+		return scanNativeHIDDevices(candidates)
+	case types.DeviceTransportBLE:
+		devices, err := scanNativeBLEDevices(candidates)
+		if err != nil {
+			m.logWarn("BLE native scan failed: %v", err)
+			return nil
+		}
+		return devices
+	default:
+		return nil
+	}
 }
 
 // AutoConnectNative enumerates built-in FlyDigi native transports.
@@ -60,7 +72,7 @@ func (m *Manager) AutoConnectNativeProfiles(profiles []types.DeviceProfile) (boo
 	previousProfile := m.activeProfile
 	previousEndpoint := m.wifiEndpoint
 
-	for _, profile := range nativeAutoConnectCandidates(profiles) {
+	for _, profile := range nativeAutoConnectCandidates(profiles, previousProfile) {
 		m.configureProfileLocked(profile, previousEndpoint)
 		switch profile.Transport {
 		case types.DeviceTransportHID:
@@ -112,12 +124,13 @@ func (m *Manager) ConnectNativeProfile(profile types.DeviceProfile) (bool, map[s
 	return false, nil
 }
 
-func nativeAutoConnectCandidates(profiles []types.DeviceProfile) []types.DeviceProfile {
+func nativeAutoConnectCandidates(profiles []types.DeviceProfile, preferred ...types.DeviceProfile) []types.DeviceProfile {
 	seen := map[string]bool{}
+	preferredProfiles := make([]types.DeviceProfile, 0, len(preferred))
 	hidProfiles := make([]types.DeviceProfile, 0)
 	bleProfiles := make([]types.DeviceProfile, 0)
 
-	add := func(profile types.DeviceProfile) {
+	add := func(target *[]types.DeviceProfile, profile types.DeviceProfile) {
 		profile = types.NormalizeDeviceProfile(profile, "")
 		if !types.IsNativeDeviceTransport(profile.Transport) {
 			return
@@ -130,23 +143,26 @@ func nativeAutoConnectCandidates(profiles []types.DeviceProfile) []types.DeviceP
 			return
 		}
 		seen[key] = true
-		if profile.Transport == types.DeviceTransportHID {
-			hidProfiles = append(hidProfiles, profile)
-			return
-		}
-		bleProfiles = append(bleProfiles, profile)
+		*target = append(*target, profile)
 	}
 
+	for _, profile := range preferred {
+		add(&preferredProfiles, profile)
+	}
 	for _, profile := range profiles {
 		if profile.BuiltIn && deviceprofiles.IsBuiltInProfileID(profile.ID) {
 			continue
 		}
-		add(profile)
+		if types.NormalizeDeviceTransport(profile.Transport) == types.DeviceTransportHID {
+			add(&hidProfiles, profile)
+		} else {
+			add(&bleProfiles, profile)
+		}
 	}
-	add(types.LegacyRPMProfileForTransport(types.DeviceTransportHID))
-	add(types.FlyDigiBS1Profile())
+	add(&hidProfiles, types.LegacyRPMProfileForTransport(types.DeviceTransportHID))
+	add(&bleProfiles, types.FlyDigiBS1Profile())
 
-	return append(hidProfiles, bleProfiles...)
+	return append(preferredProfiles, append(hidProfiles, bleProfiles...)...)
 }
 
 func scanNativeHIDDevices(profiles []types.DeviceProfile) []map[string]string {
