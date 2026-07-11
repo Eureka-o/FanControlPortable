@@ -4,9 +4,9 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --font-ui-sans: "Manrope", "Segoe UI", sans-serif;
-  --font-ui-cjk: "Noto Sans SC", "Microsoft YaHei UI", sans-serif;
-  --font-geist-mono: "Geist Mono", "Cascadia Mono", monospace;
+  --font-ui-sans: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  --font-ui-cjk: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-geist-mono: "Cascadia Mono", Consolas, monospace;
   --background: #f6f8fc;
   --foreground: #111827;
   --card: #ffffff;
@@ -432,7 +432,7 @@ html[data-window-blur="on"]:not([data-theme]) {
   --theme-card-background: var(--window-glass-card-mid-bg);
   --theme-card-border: var(--window-glass-border-muted);
   --theme-card-shadow: var(--window-glass-shadow);
-  --theme-card-backdrop-filter: blur(18px) saturate(136%);
+  --theme-card-backdrop-filter: none;
   --theme-preview-card-background: var(--window-glass-card-soft-bg);
   --theme-preview-card-border: var(--window-glass-border-muted);
   --theme-preview-card-shadow: var(--window-glass-row-shadow);
@@ -561,8 +561,6 @@ html[data-window-blur="on"]:not([data-theme]) .glacier-shell .glacier-chart-card
     var(--window-glass-card-mid-bg);
   border-color: var(--window-glass-border-muted);
   box-shadow: var(--window-glass-shadow);
-  backdrop-filter: blur(16px) saturate(130%);
-  -webkit-backdrop-filter: blur(16px) saturate(130%);
   background-clip: padding-box;
 }
 
@@ -582,8 +580,6 @@ html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="c
     var(--window-glass-card-soft-bg);
   border-color: color-mix(in srgb, var(--window-glass-border-muted) 82%, transparent);
   box-shadow: var(--window-glass-row-shadow);
-  backdrop-filter: blur(12px) saturate(122%);
-  -webkit-backdrop-filter: blur(12px) saturate(122%);
 }
 
 html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="setting-row-icon"],
@@ -617,8 +613,6 @@ html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="set
     linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent 72%),
     var(--window-glass-card-soft-bg);
   box-shadow: var(--window-glass-row-shadow);
-  backdrop-filter: blur(12px) saturate(122%);
-  -webkit-backdrop-filter: blur(12px) saturate(122%);
 }
 
 html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="setting-row"]:has(> [data-theme-ui="setting-row-control"] [data-theme-ui="switch"]) {
@@ -846,7 +840,7 @@ body {
 
 body {
   overflow: hidden;
-  /* Western text prefers Manrope; CJK text falls back to bundled/system fonts. */
+  /* Match the native Windows UI stack without shipping font assets. */
   font-family: var(--font-sans), "PingFang SC", "Hiragino Sans GB",
     "Hiragino Sans", "Yu Gothic UI", "HarmonyOS Sans SC", "Source Han Sans SC", "Noto Sans CJK SC",
     "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI Variable",
@@ -959,56 +953,6 @@ textarea,
 
 *::-webkit-scrollbar-corner {
   background: transparent;
-}
-
-@keyframes app-card-rise {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 10px, 0);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-}
-
-.app-tab-surface :where(
-  .glacier-hero-card,
-  .glacier-metric-card,
-  .glacier-control-card,
-  .glacier-chart-card,
-  .glacier-stat-tile,
-  [data-theme-ui="setting-section"],
-  [data-theme-card="curve-header"],
-  [data-theme-card="curve-editor"],
-  [data-theme-card="curve-manual-gears"],
-  [data-theme-card="curve-history-summary"],
-  [data-theme-card="curve-history-chart"],
-  [data-theme-card="fan-curve-preview"],
-  [data-theme-card="temperature-history"]
-) {
-  animation: app-card-rise 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  animation-delay: var(--app-card-rise-delay, 0ms);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .app-tab-surface :where(
-    .glacier-hero-card,
-    .glacier-metric-card,
-    .glacier-control-card,
-    .glacier-chart-card,
-    .glacier-stat-tile,
-    [data-theme-ui="setting-section"],
-    [data-theme-card="curve-header"],
-    [data-theme-card="curve-editor"],
-    [data-theme-card="curve-manual-gears"],
-    [data-theme-card="curve-history-summary"],
-    [data-theme-card="curve-history-chart"],
-    [data-theme-card="fan-curve-preview"],
-    [data-theme-card="temperature-history"]
-  ) {
-    animation: none;
-  }
 }
 
 /* Smooth animations */

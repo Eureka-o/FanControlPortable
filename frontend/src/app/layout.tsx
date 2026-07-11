@@ -22,9 +22,6 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" suppressHydrationWarning>
       <head>
-        <link rel="stylesheet" href="/fonts/manrope.css" />
-        <link rel="stylesheet" href="/fonts/noto-sans-sc.css" />
-        <link rel="stylesheet" href="/fonts/geist-mono.css" />
         <script
           id="thrm-theme-bootstrap"
           dangerouslySetInnerHTML={{ __html: themeBootstrapScript }}
