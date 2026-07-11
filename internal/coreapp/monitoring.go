@@ -1,6 +1,7 @@
 package coreapp
 
 import (
+	"context"
 	"runtime/debug"
 	"sync/atomic"
 	"time"
@@ -37,28 +38,23 @@ func (a *CoreApp) recoverTemperatureBridge(reason string) {
 }
 
 func (a *CoreApp) stopTemperatureMonitoring() {
-	if !a.monitoringTemp.Load() {
-		return
+	a.monitoringMutex.Lock()
+	if a.monitoringDone != nil {
+		a.monitoringStopping = true
+		if a.monitoringCancel != nil {
+			a.monitoringCancel()
+		}
 	}
-
-	select {
-	case a.stopMonitoring <- true:
-	default:
-	}
+	a.monitoringMutex.Unlock()
 }
 
 // startTemperatureMonitoring 开始温度监控
 func (a *CoreApp) startTemperatureMonitoring() {
-	// CAS：原子地从 false 翻到 true，确保 Start/ConnectDevice 并发调用时只有一条循环启动。
-	if !a.monitoringTemp.CompareAndSwap(false, true) {
+	ctx, done, started := a.beginTemperatureMonitoring()
+	if !started {
 		return
 	}
-
-	// 清理可能残留的停止信号，避免新监控循环被立即中断。
-	select {
-	case <-a.stopMonitoring:
-	default:
-	}
+	defer a.finishTemperatureMonitoring(done)
 
 	// 注意：不在此处立即调用 EnterAutoMode，因为在启动时温度数据（桥接程序）可能尚未就绪。
 	// 如果在温度读取成功之前切换到软件控制模式，设备将不会收到转速指令，导致风扇停转。
@@ -96,6 +92,13 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	}
 	lastTargetRPM := -1
 	learningDirty := false
+	defer func() {
+		if learningDirty {
+			if err := a.configManager.Save(); err != nil {
+				a.logError("退出监控时保存学习曲线失败: %v", err)
+			}
+		}
+	}()
 	lastLearningSave := time.Now()
 	lastMonitorTick := time.Now()
 	lastBridgeUpdateTime := initialTemp.UpdateTime
@@ -119,10 +122,9 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	prevHasClients := a.ipcServer != nil && a.ipcServer.HasClients()
 	var lastMemRelease time.Time
 
-	for a.monitoringTemp.Load() {
+	for {
 		select {
-		case <-a.stopMonitoring:
-			a.monitoringTemp.Store(false)
+		case <-ctx.Done():
 			return
 		case <-wifiOverviewTimer.C:
 			now := time.Now()
@@ -156,7 +158,6 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			// 减少每 tick 产生的短命对象，降低 GC 压力。
 			if newRev := a.configManager.Revision(); newRev != cfgRevision {
 				cfg, cfgRevision = a.configManager.GetWithRevision()
-				updateInterval = temperatureMonitorInterval(cfg.TempUpdateRate)
 			}
 			// TemperatureSelection 与 cfg 同步，独立于 cfg 读取检查。
 			// wifiOverviewTimer 分支可能已更新 cfgRevision，此处统一重建，
@@ -177,9 +178,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 
 			// 后台空闲（无 GUI 连接且未开启智能控温）时放慢采样；智能控温或前台打开时保持原频率。
 			hasClients := a.ipcServer != nil && a.ipcServer.HasClients()
-			if !hasClients && !cfg.AutoControl && idleTemperatureMonitorInterval > updateInterval {
-				updateInterval = idleTemperatureMonitorInterval
-			}
+			updateInterval = activeTemperatureMonitorInterval(cfg.TempUpdateRate, hasClients, cfg.AutoControl)
 			// GUI 断开瞬间把会话期间膨胀的堆内存归还操作系统，降低核心常驻后台时的 RSS。
 			if prevHasClients && !hasClients && now.Sub(lastMemRelease) > idleMemoryReleaseCooldown {
 				lastMemRelease = now
@@ -413,11 +412,45 @@ func (a *CoreApp) startTemperatureMonitoring() {
 		}
 	}
 
-	if learningDirty {
-		if err := a.configManager.Save(); err != nil {
-			a.logError("退出监控时保存学习曲线失败: %v", err)
+}
+
+func (a *CoreApp) beginTemperatureMonitoring() (context.Context, chan struct{}, bool) {
+	for {
+		a.monitoringMutex.Lock()
+		if a.monitoringDone == nil {
+			parent := a.ctx
+			if parent == nil {
+				parent = context.Background()
+			}
+			ctx, cancel := context.WithCancel(parent)
+			done := make(chan struct{})
+			a.monitoringCancel = cancel
+			a.monitoringDone = done
+			a.monitoringStopping = false
+			a.monitoringTemp.Store(true)
+			a.monitoringMutex.Unlock()
+			return ctx, done, true
 		}
+		if !a.monitoringStopping {
+			a.monitoringMutex.Unlock()
+			return nil, nil, false
+		}
+		previousDone := a.monitoringDone
+		a.monitoringMutex.Unlock()
+		<-previousDone
 	}
+}
+
+func (a *CoreApp) finishTemperatureMonitoring(done chan struct{}) {
+	a.monitoringMutex.Lock()
+	if a.monitoringDone == done {
+		a.monitoringCancel = nil
+		a.monitoringDone = nil
+		a.monitoringStopping = false
+		a.monitoringTemp.Store(false)
+		close(done)
+	}
+	a.monitoringMutex.Unlock()
 }
 
 func temperatureMonitorInterval(updateRateSeconds int) time.Duration {
@@ -425,6 +458,14 @@ func temperatureMonitorInterval(updateRateSeconds int) time.Duration {
 		updateRateSeconds = 1
 	}
 	return time.Duration(updateRateSeconds) * time.Second
+}
+
+func activeTemperatureMonitorInterval(updateRateSeconds int, hasClients, autoControl bool) time.Duration {
+	interval := temperatureMonitorInterval(updateRateSeconds)
+	if !hasClients && !autoControl && idleTemperatureMonitorInterval > interval {
+		return idleTemperatureMonitorInterval
+	}
+	return interval
 }
 
 func fanDataSpeedForControlUnit(speed int, unit string) int {

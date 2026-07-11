@@ -28,31 +28,25 @@ func (a *App) Startup(ctx context.Context) {
 
 	guiLogger.Infof("=== %s GUI 启动 ===", appmeta.AppName)
 
-	if !EnsureCoreServiceRunning() {
+	if err := a.ensureIPCConnected(); err != nil {
 		guiLogger.Error("核心服务不可用，GUI 将进入受限状态")
-		a.emitCoreServiceError("启动或探测核心服务失败")
+		a.emitCoreServiceError(err.Error())
 		guiLogger.Infof("=== %s GUI 启动完成 ===", appmeta.AppName)
 		return
 	}
 
-	if err := a.ipcClient.Connect(); err != nil {
-		guiLogger.Errorf("连接核心服务失败: %v", err)
-		a.emitCoreServiceError(err.Error())
-	} else {
-		guiLogger.Info("已连接到核心服务")
-		a.ipcClient.SetEventHandler(a.handleCoreEvent)
-		if resp, pingErr := a.ipcClient.SendRequest(ipc.ReqPing, nil); pingErr != nil || resp == nil || !resp.Success {
-			if pingErr != nil {
-				guiLogger.Errorf("核心服务 Ping 失败: %v", pingErr)
-				a.emitCoreServiceError(pingErr.Error())
-			} else {
-				guiLogger.Errorf("核心服务 Ping 返回异常: %+v", resp)
-				a.emitCoreServiceError("核心服务 Ping 返回异常")
-			}
-			a.ipcClient.Close()
+	guiLogger.Info("已连接到核心服务")
+	if resp, pingErr := a.ipcClient.SendRequest(ipc.ReqPing, nil); pingErr != nil || resp == nil || !resp.Success {
+		if pingErr != nil {
+			guiLogger.Errorf("核心服务 Ping 失败: %v", pingErr)
+			a.emitCoreServiceError(pingErr.Error())
 		} else {
-			a.emitCoreServiceOK()
+			guiLogger.Errorf("核心服务 Ping 返回异常: %+v", resp)
+			a.emitCoreServiceError("核心服务 Ping 返回异常")
 		}
+		a.ipcClient.Close()
+	} else {
+		a.emitCoreServiceOK()
 	}
 
 	guiLogger.Infof("=== %s GUI 启动完成 ===", appmeta.AppName)

@@ -31,18 +31,13 @@ func (a *CoreApp) Start() error {
 	// 加载配置
 	a.logInfo("开始加载配置文件")
 	cfg := a.configManager.Load(a.isAutoStartLaunch)
+	configChanged := false
 	if normalizedLight, changed := normalizeLightStripConfig(cfg.LightStrip); changed {
 		cfg.LightStrip = normalizedLight
-		a.configManager.Set(cfg)
-		if err := a.configManager.Save(); err != nil {
-			a.logError("保存灯带默认配置失败: %v", err)
-		}
+		configChanged = true
 	}
 	if normalizeHotkeyConfig(&cfg) {
-		a.configManager.Set(cfg)
-		if err := a.configManager.Save(); err != nil {
-			a.logError("保存快捷键默认配置失败: %v", err)
-		}
+		configChanged = true
 	}
 	unit := types.DeviceProfileSpeedUnit(&cfg)
 	changedCurveState := syncDeviceFanCurveStateForStartup(&cfg)
@@ -53,41 +48,38 @@ func (a *CoreApp) Start() error {
 		changedCurveState = true
 	}
 	if changedCurveState {
-		a.configManager.Set(cfg)
-		if err := a.configManager.Save(); err != nil {
-			a.logError("保存温控曲线方案默认配置失败: %v", err)
-		}
+		configChanged = true
 	}
 	unit = types.DeviceProfileSpeedUnit(&cfg)
 	if normalizedSmart, changed := smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, unit); changed {
 		cfg.SmartControl = normalizedSmart
-		a.configManager.Set(cfg)
-		if err := a.configManager.Save(); err != nil {
-			a.logError("保存智能控温默认配置失败: %v", err)
-		}
+		configChanged = true
 	}
 	if syncSmartControlOffsetsForActiveProfile(&cfg) {
-		a.configManager.Set(cfg)
-		if err := a.configManager.Save(); err != nil {
-			a.logError("保存学习曲线方案隔离配置失败: %v", err)
-		}
+		configChanged = true
 	}
 	if normalizeManualGearMemoryConfig(&cfg) {
-		a.configManager.Set(cfg)
-		if err := a.configManager.Save(); err != nil {
-			a.logError("保存挡位记忆默认配置失败: %v", err)
-		}
+		configChanged = true
 	}
 	if types.NormalizeManualGearRPMForUnit(&cfg, startupManualGearSpeedUnit(cfg)) {
-		a.configManager.Set(cfg)
-		if err := a.configManager.Save(); err != nil {
-			a.logError("保存挡位转速默认配置失败: %v", err)
-		}
+		configChanged = true
 	}
 	if a.applyCachedLegionFnQSupport(&cfg) {
+		configChanged = true
+	}
+
+	// 将启动迁移和系统自启动状态合并为一次完整配置写入。
+	a.logInfo("检查Windows自启动状态")
+	actualAutoStart := a.autostartManager.CheckWindowsAutoStart()
+	if actualAutoStart != cfg.WindowsAutoStart {
+		cfg.WindowsAutoStart = actualAutoStart
+		configChanged = true
+		a.logInfo("已同步Windows自启动状态: %v", actualAutoStart)
+	}
+	if configChanged {
 		a.configManager.Set(cfg)
 		if err := a.configManager.Save(); err != nil {
-			a.logError("保存 Lenovo Legion Fn+Q 缓存配置失败: %v", err)
+			a.logError("保存启动归一化配置失败: %v", err)
 		}
 	}
 	a.syncManualGearLevelMemory(cfg)
@@ -101,19 +93,6 @@ func (a *CoreApp) Start() error {
 			a.logger.SetDebugMode(true)
 		}
 		a.logInfo("从配置文件同步调试模式: 启用")
-	}
-
-	// 检查并同步Windows自启动状态
-	a.logInfo("检查Windows自启动状态")
-	actualAutoStart := a.autostartManager.CheckWindowsAutoStart()
-	if actualAutoStart != cfg.WindowsAutoStart {
-		cfg.WindowsAutoStart = actualAutoStart
-		a.configManager.Set(cfg)
-		if err := a.configManager.Save(); err != nil {
-			a.logError("同步Windows自启动状态时保存配置失败: %v", err)
-		} else {
-			a.logInfo("已同步Windows自启动状态: %v", actualAutoStart)
-		}
 	}
 
 	// 初始化HID
@@ -167,19 +146,19 @@ func (a *CoreApp) Start() error {
 		a.startTemperatureMonitoring()
 	})
 
-	// 尝试连接设备
-	a.safeGo("delayedConnectDevice", func() {
-		if a.isAutoStartLaunch {
-			// 自启动时等待更长时间，让设备固件有足够时间完成初始化
-			a.logInfo("自启动模式：等待设备初始化（3秒）")
-			time.Sleep(3 * time.Second)
-		} else {
-			time.Sleep(1 * time.Second)
-		}
-		a.ConnectDevice()
-	})
+	// 启动连接与健康检查共用可取消的 generation 重连链路。
+	a.requestStartupReconnect()
 
 	return nil
+}
+
+func (a *CoreApp) requestStartupReconnect() {
+	delay := time.Second
+	if a.isAutoStartLaunch {
+		delay = 3 * time.Second
+		a.logInfo("自启动模式：等待设备初始化（3秒）")
+	}
+	a.requestReconnect("startup", []time.Duration{delay, 5 * time.Second, 10 * time.Second, 30 * time.Second})
 }
 
 func startupManualGearSpeedUnit(cfg types.AppConfig) string {

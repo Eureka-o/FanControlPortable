@@ -153,44 +153,55 @@ func (a *App) sendRequest(reqType ipc.RequestType, data any) (*ipc.Response, err
 	return a.sendRequestWithTimeout(reqType, data, 10*time.Second)
 }
 
+func (a *App) connectIPCLocked() error {
+	a.ipcClient.SetEventHandler(a.handleCoreEvent)
+	if a.ipcClient.IsConnected() {
+		return nil
+	}
+	if !EnsureCoreServiceRunning() {
+		return fmt.Errorf("核心服务未运行且启动失败")
+	}
+	return a.ipcClient.Connect()
+}
+
+func (a *App) ensureIPCConnected() error {
+	a.ipcReconnectMutex.Lock()
+	defer a.ipcReconnectMutex.Unlock()
+	return a.connectIPCLocked()
+}
+
+func (a *App) recoverIPCConnection(failedGeneration uint64) error {
+	a.ipcReconnectMutex.Lock()
+	defer a.ipcReconnectMutex.Unlock()
+	a.ipcClient.CloseGeneration(failedGeneration)
+	return a.connectIPCLocked()
+}
+
 func (a *App) sendRequestWithTimeout(reqType ipc.RequestType, data any, timeout time.Duration) (*ipc.Response, error) {
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
 	if !a.ipcClient.IsConnected() {
-		if !EnsureCoreServiceRunning() {
-			err := fmt.Errorf("核心服务未运行且启动失败")
-			a.emitCoreServiceError(err.Error())
-			return nil, err
-		}
-		if err := a.ipcClient.Connect(); err != nil {
+		if err := a.ensureIPCConnected(); err != nil {
 			wrapped := fmt.Errorf("未连接到核心服务: %v", err)
 			a.emitCoreServiceError(wrapped.Error())
 			return nil, wrapped
 		}
-		a.ipcClient.SetEventHandler(a.handleCoreEvent)
 		a.emitCoreServiceOK()
 	}
 
-	resp, err := a.ipcClient.SendRequestWithTimeout(reqType, data, timeout)
+	resp, requestGeneration, err := a.ipcClient.SendRequestWithTimeoutGeneration(reqType, data, timeout)
 	if err == nil {
 		a.emitCoreServiceOK()
 		return resp, nil
 	}
 
 	guiLogger.Warnf("IPC 请求失败，尝试重新连接核心服务后重试: %v", err)
-	a.ipcClient.Close()
-	if !EnsureCoreServiceRunning() {
-		wrapped := fmt.Errorf("核心服务连接断开且重新启动失败: %v", err)
-		a.emitCoreServiceError(wrapped.Error())
-		return nil, wrapped
-	}
-	if connectErr := a.ipcClient.Connect(); connectErr != nil {
+	if connectErr := a.recoverIPCConnection(requestGeneration); connectErr != nil {
 		wrapped := fmt.Errorf("重新连接核心服务失败: %v；原始错误: %v", connectErr, err)
 		a.emitCoreServiceError(wrapped.Error())
 		return nil, wrapped
 	}
-	a.ipcClient.SetEventHandler(a.handleCoreEvent)
 
 	resp, err = a.ipcClient.SendRequestWithTimeout(reqType, data, timeout)
 	if err != nil {

@@ -18,7 +18,25 @@ func newDeviceConnectionFlow(app *CoreApp) deviceConnectionFlow {
 }
 
 func (f deviceConnectionFlow) connectBestScannedDevice() bool {
-	scan := f.app.ScanDeviceCandidates(types.DeviceScanModeNormal)
+	cfg := f.app.configManager.Get()
+	selectionCfg := cfg
+	types.NormalizeDeviceProfileConfig(&cfg)
+	for _, transport := range []string{types.DeviceTransportHID, types.DeviceTransportBLE} {
+		devices := f.app.deviceManager.ScanNativeDevicesProfilesByTransport(cfg.DeviceProfiles, transport)
+		if len(devices) > 0 {
+			selected, ok := selectNativeAutoConnectCandidate(devices, selectionCfg, transport)
+			if !ok {
+				f.broadcastError(fmt.Sprintf("发现多个%s设备（%d 个），请到设置页选择", strings.ToUpper(transport), len(devices)))
+				return false
+			}
+			candidate := nativeDeviceCandidate(selected)
+			if candidate.ID != "" {
+				return f.connectScannedCandidate(candidate)
+			}
+		}
+	}
+
+	scan := f.app.scanDeviceCandidates(types.DeviceScanModeNormal, false)
 	if len(scan.Devices) == 0 {
 		f.broadcastError("未发现可连接的设备")
 		return false
@@ -27,7 +45,40 @@ func (f deviceConnectionFlow) connectBestScannedDevice() bool {
 		f.broadcastError(fmt.Sprintf("发现多个设备（%d 个），请到设置页选择", len(scan.Devices)))
 		return false
 	}
-	device := scan.Devices[0]
+	return f.connectScannedCandidate(scan.Devices[0])
+}
+
+func selectNativeAutoConnectCandidate(devices []map[string]string, cfg types.AppConfig, transport string) (map[string]string, bool) {
+	if len(devices) == 1 {
+		return devices[0], true
+	}
+	transport = types.NormalizeDeviceTransport(transport)
+	preferredIDs := []string{cfg.ActiveDeviceProfileIDsByTransport[transport], cfg.ActiveDeviceProfileID}
+	for _, preferredID := range preferredIDs {
+		preferredID = strings.TrimSpace(preferredID)
+		if preferredID == "" {
+			continue
+		}
+		var matched map[string]string
+		ambiguous := false
+		for _, device := range devices {
+			if strings.TrimSpace(device["profileId"]) != preferredID {
+				continue
+			}
+			if matched != nil {
+				ambiguous = true
+				break
+			}
+			matched = device
+		}
+		if matched != nil && !ambiguous {
+			return matched, true
+		}
+	}
+	return nil, false
+}
+
+func (f deviceConnectionFlow) connectScannedCandidate(device types.DeviceCandidate) bool {
 	return f.connectCandidate(types.DeviceConnectRequest{
 		ID:        device.ID,
 		Transport: device.Transport,

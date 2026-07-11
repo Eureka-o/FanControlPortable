@@ -1,10 +1,57 @@
 package coreapp
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/TIANLI0/THRM/internal/types"
 )
+
+func TestTemperatureMonitoringRestartWaitsForPreviousRun(t *testing.T) {
+	app := &CoreApp{ctx: context.Background()}
+	oldCtx, oldDone, started := app.beginTemperatureMonitoring()
+	if !started {
+		t.Fatal("first monitoring run did not start")
+	}
+
+	app.stopTemperatureMonitoring()
+	select {
+	case <-oldCtx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("stop did not cancel the current monitoring run")
+	}
+
+	restarted := make(chan chan struct{}, 1)
+	go func() {
+		_, done, ok := app.beginTemperatureMonitoring()
+		if ok {
+			restarted <- done
+		}
+	}()
+	select {
+	case <-restarted:
+		t.Fatal("new monitoring run started before the previous run exited")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	app.finishTemperatureMonitoring(oldDone)
+	select {
+	case newDone := <-restarted:
+		app.finishTemperatureMonitoring(newDone)
+	case <-time.After(time.Second):
+		t.Fatal("new monitoring run was lost after the previous run exited")
+	}
+}
+
+func TestActiveTemperatureMonitorIntervalReturnsFromIdleToForeground(t *testing.T) {
+	if got := activeTemperatureMonitorInterval(1, false, false); got != idleTemperatureMonitorInterval {
+		t.Fatalf("idle interval = %v, want %v", got, idleTemperatureMonitorInterval)
+	}
+	if got := activeTemperatureMonitorInterval(1, true, false); got != time.Second {
+		t.Fatalf("foreground interval = %v, want 1s", got)
+	}
+}
 
 func TestCompactTemperatureEventPayload(t *testing.T) {
 	sharedCPUSensors := []types.TemperatureSensor{{Key: "cpu-package", Name: "CPU Package", Value: 71}}

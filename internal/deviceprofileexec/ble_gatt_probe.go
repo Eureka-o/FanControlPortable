@@ -57,13 +57,21 @@ func ProbeBLEGATTWithProber(ctx context.Context, prober BLEGATTProber, params ty
 }
 
 func (p DefaultBLEGATTProber) ProbeBLEGATT(ctx context.Context, params types.BLEGATTProbeParams) (*types.BLEGATTProbeResult, error) {
+	ctx = ctxWithDefault(ctx)
+	address, deviceInfo, err := p.resolveProbeTarget(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	release, err := acquireDefaultBLEAdapter(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	adapter := bluetooth.DefaultAdapter
 	if err := adapter.Enable(); err != nil {
 		return nil, err
 	}
-
-	address, deviceInfo, err := p.resolveProbeTarget(ctx, params)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	device, err := adapter.Connect(address, bluetooth.ConnectionParams{})
@@ -71,6 +79,9 @@ func (p DefaultBLEGATTProber) ProbeBLEGATT(ctx context.Context, params types.BLE
 		return nil, err
 	}
 	defer device.Disconnect()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	serviceUUID := params.ServiceUUID
 	if serviceUUID == "" {

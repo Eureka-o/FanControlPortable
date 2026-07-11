@@ -500,6 +500,9 @@ export default function AppShell({
   useEffect(() => {
     let disposed = false;
     let cleanup = () => {};
+    let resizeFrame: number | null = null;
+    let resizeSyncing = false;
+    let resizeQueued = false;
 
     const initializeWindowChrome = async () => {
       try {
@@ -511,9 +514,29 @@ export default function AppShell({
           setIsMaximised(false);
           return;
         }
-        const handleResize = () => void syncWindowState();
+        const handleResize = () => {
+          if (resizeFrame !== null) return;
+          resizeFrame = window.requestAnimationFrame(async () => {
+            resizeFrame = null;
+            if (resizeSyncing) {
+              resizeQueued = true;
+              return;
+            }
+            resizeSyncing = true;
+            await syncWindowState();
+            resizeSyncing = false;
+            if (resizeQueued && !disposed) {
+              resizeQueued = false;
+              handleResize();
+            }
+          });
+        };
         window.addEventListener('resize', handleResize);
-        cleanup = () => window.removeEventListener('resize', handleResize);
+        cleanup = () => {
+          window.removeEventListener('resize', handleResize);
+          resizeQueued = false;
+          if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
+        };
         await syncWindowState();
       } catch {
         if (!disposed) {

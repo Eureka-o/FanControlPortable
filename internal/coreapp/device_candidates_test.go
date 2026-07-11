@@ -27,3 +27,25 @@ func TestSerialDeviceCandidatesRequireDetectedPort(t *testing.T) {
 		t.Fatalf("serial candidate = %#v, want serial COM3", got[0])
 	}
 }
+
+func TestSelectNativeAutoConnectCandidateUsesUniquePreferredProfile(t *testing.T) {
+	devices := []map[string]string{
+		{"profileId": types.FlyDigiBS2ProfileID, "endpoint": "hid-bs2"},
+		{"profileId": types.FlyDigiBS3ProfileID, "endpoint": "hid-bs3"},
+	}
+	cfg := types.AppConfig{
+		ActiveDeviceProfileIDsByTransport: map[string]string{
+			types.DeviceTransportHID: types.FlyDigiBS3ProfileID,
+		},
+	}
+
+	selected, ok := selectNativeAutoConnectCandidate(devices, cfg, types.DeviceTransportHID)
+	if !ok || selected["endpoint"] != "hid-bs3" {
+		t.Fatalf("selected = %#v, ok=%v, want unique preferred BS3", selected, ok)
+	}
+
+	devices = append(devices, map[string]string{"profileId": types.FlyDigiBS3ProfileID, "endpoint": "hid-bs3-second"})
+	if selected, ok := selectNativeAutoConnectCandidate(devices, cfg, types.DeviceTransportHID); ok || selected != nil {
+		t.Fatalf("duplicate preferred profile should stay ambiguous: selected=%#v ok=%v", selected, ok)
+	}
+}

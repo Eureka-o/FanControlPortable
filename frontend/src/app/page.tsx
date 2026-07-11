@@ -51,7 +51,7 @@ export default function Home() {
   const initializeApp = useAppStore((state) => state.initializeApp);
   const connectDevice = useAppStore((state) => state.connectDevice);
   const disconnectDevice = useAppStore((state) => state.disconnectDevice);
-  const updateConfig = useAppStore((state) => state.updateConfig);
+  const setConfig = useAppStore((state) => state.setConfig);
   const refreshDeviceContext = useAppStore((state) => state.refreshDeviceContext);
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const openCurveTab = useAppStore((state) => state.openCurveTab);
@@ -114,7 +114,7 @@ export default function Home() {
           coreServiceError={view.coreServiceError}
           onConnect={connectDevice}
           onDisconnect={disconnectDevice}
-          onConfigChange={updateConfig}
+          onConfigChange={setConfig}
           onOpenCurveEditor={() => openCurveTab('curve-editor')}
           onOpenHistoryDetails={() => openCurveTab('history-details')}
           diagnosticsExporting={diagnosticsExporting}
@@ -124,7 +124,7 @@ export default function Home() {
       curveContent={
         <FanCurve
           config={safeConfig}
-          onConfigChange={updateConfig}
+          onConfigChange={setConfig}
           isConnected={view.isConnected}
           fanData={view.fanData}
           temperature={view.temperature}
@@ -138,7 +138,7 @@ export default function Home() {
       controlContent={
         <ControlPanel
           config={safeConfig}
-          onConfigChange={updateConfig}
+          onConfigChange={setConfig}
           isConnected={view.isConnected}
           fanData={view.fanData}
           temperature={view.temperature}
@@ -151,7 +151,7 @@ export default function Home() {
         <AdvancedDevicesPanel
           config={safeConfig}
           isConnected={view.isConnected}
-          onConfigChange={updateConfig}
+          onConfigChange={setConfig}
         />
       }
       aboutContent={<AboutPanel />}

@@ -26,6 +26,9 @@ func shouldRestartTemperatureBridge(temp types.TemperatureData) bool {
 	if msg == "" {
 		return true
 	}
+	if strings.Contains(msg, "[msr-unavailable]") {
+		return false
+	}
 
 	restartHints := []string{
 		"启动桥接程序失败",
@@ -37,6 +40,7 @@ func shouldRestartTemperatureBridge(temp types.TemperatureData) bool {
 		"等待桥接程序启动超时",
 		"未能获取管道名称",
 		"pipe",
+		"eof",
 		"broken",
 		"closed",
 	}

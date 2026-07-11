@@ -18,6 +18,31 @@ func findDeviceProfileForTest(profiles []types.DeviceProfile, id string) (types.
 	return types.DeviceProfile{}, false
 }
 
+func TestWriteConfigFileAtomicallyReplacesCompleteFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config", "config.json")
+	if err := writeConfigFileAtomically(path, []byte(`{"version":1,"stale":"content"}`)); err != nil {
+		t.Fatalf("write initial config: %v", err)
+	}
+	if err := writeConfigFileAtomically(path, []byte(`{"version":2}`)); err != nil {
+		t.Fatalf("replace config: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if string(data) != `{"version":2}` {
+		t.Fatalf("config = %q, want complete replacement", data)
+	}
+	temps, err := filepath.Glob(filepath.Join(filepath.Dir(path), ".config-*.tmp"))
+	if err != nil {
+		t.Fatalf("glob temp files: %v", err)
+	}
+	if len(temps) != 0 {
+		t.Fatalf("temporary config files left behind: %v", temps)
+	}
+}
+
 func TestValidateFanCurveForUnitAllowsReferenceRPMCurve(t *testing.T) {
 	if err := ValidateFanCurveForUnit(types.GetDefaultRPMFanCurve(), types.FanSpeedUnitRPM); err != nil {
 		t.Fatalf("ValidateFanCurveForUnit(RPM default) returned error: %v", err)

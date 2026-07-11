@@ -399,7 +399,6 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 );
 Button.displayName = 'Button';
 
-export { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 export {
   Dialog,
   DialogClose,

@@ -2,9 +2,12 @@ package deviceprofileexec
 
 import (
 	"context"
+	"errors"
+	"io"
 	"testing"
 	"time"
 
+	"github.com/TIANLI0/THRM/internal/deviceproto"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -19,9 +22,10 @@ func (c *fakeBLEConnector) ConnectBLEDevice(ctx context.Context, profile types.D
 }
 
 type fakeBLEClient struct {
-	reads  [][]byte
-	writes []fakeBLEWrite
-	closed bool
+	reads    [][]byte
+	writes   []fakeBLEWrite
+	writeErr error
+	closed   bool
 }
 
 type fakeBLEWrite struct {
@@ -34,7 +38,7 @@ func (c *fakeBLEClient) WriteBLECommand(ctx context.Context, payload []byte, wit
 		payload:      append([]byte(nil), payload...),
 		withResponse: withResponse,
 	})
-	return nil
+	return c.writeErr
 }
 
 func (c *fakeBLEClient) ReadBLEFrame(ctx context.Context) ([]byte, error) {
@@ -208,6 +212,57 @@ func TestBLEExecutorFlyDigiBS1HeartbeatLifecycle(t *testing.T) {
 	}
 	if !client.closed {
 		t.Fatal("BLE client should be closed")
+	}
+}
+
+func TestBLEExecutorFlyDigiBS1ReadStateConsumesStatusNotification(t *testing.T) {
+	client := &fakeBLEClient{reads: [][]byte{
+		deviceproto.BuildFrame(deviceproto.CmdRGBStatus),
+		deviceproto.BuildFrame(deviceproto.CmdStatusNotify, 1, 2, 0, 0xD2, 0x04, 0x08, 0x07),
+	}}
+	executor, err := NewBLEExecutor(types.FlyDigiBS1Profile(), &fakeBLEConnector{client: client})
+	if err != nil {
+		t.Fatalf("NewBLEExecutor() error = %v", err)
+	}
+	defer executor.Close()
+
+	state, err := executor.ReadState(nil)
+	if err != nil {
+		t.Fatalf("ReadState() error = %v", err)
+	}
+	if state.CurrentRPM != 1234 || state.TargetRPM != 1800 {
+		t.Fatalf("BS1 notification state = %d/%d, want 1234/1800", state.CurrentRPM, state.TargetRPM)
+	}
+}
+
+func TestBLEExecutorFlyDigiBS1HeartbeatFailureInvalidatesAndReconnects(t *testing.T) {
+	failed := &fakeBLEClient{writeErr: io.ErrClosedPipe}
+	connector := &fakeBLEConnector{client: failed}
+	executor, err := NewBLEExecutor(types.FlyDigiBS1Profile(), connector)
+	if err != nil {
+		t.Fatalf("NewBLEExecutor() error = %v", err)
+	}
+	executor.client = failed
+	executor.heartbeatStop = make(chan struct{})
+
+	if err := executor.writeHeartbeat(context.Background(), types.BS1CmdHeartbeat1); !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("writeHeartbeat() error = %v, want closed pipe", err)
+	}
+	if executor.client != nil || executor.heartbeatStop != nil || !failed.closed {
+		t.Fatalf("failed heartbeat left stale client: client=%v stop=%v closed=%v", executor.client, executor.heartbeatStop, failed.closed)
+	}
+
+	reconnected := &fakeBLEClient{reads: [][]byte{
+		deviceproto.BuildFrame(deviceproto.CmdStatusNotify, 1, 2, 0, 0xDC, 0x05, 0x40, 0x06),
+	}}
+	connector.client = reconnected
+	state, err := executor.ReadState(nil)
+	if err != nil {
+		t.Fatalf("ReadState() after heartbeat failure error = %v", err)
+	}
+	defer executor.Close()
+	if state.CurrentRPM != 1500 || state.TargetRPM != 1600 {
+		t.Fatalf("reconnected state = %d/%d, want 1500/1600", state.CurrentRPM, state.TargetRPM)
 	}
 }
 

@@ -141,12 +141,7 @@ func (e *BLEExecutor) ReadState(ctx context.Context) (*types.FanData, error) {
 		return nil, err
 	}
 	if e.profile.ID == types.FlyDigiBS1ProfileID && !e.hasReadCommand {
-		if e.lastState != nil {
-			return cloneFanData(e.lastState), nil
-		}
-		state := e.syntheticStateLocked(types.NewRPMSpeed(0))
-		e.lastState = cloneFanData(state)
-		return state, nil
+		return e.readFlyDigiBS1StateLocked(ctx)
 	}
 	if e.hasReadCommand || e.canReadDirectly() {
 		return e.readStateLocked(ctx)
@@ -276,6 +271,29 @@ func (e *BLEExecutor) readStateLocked(ctx context.Context) (*types.FanData, erro
 	}
 	e.lastState = cloneFanData(state)
 	return state, nil
+}
+
+func (e *BLEExecutor) readFlyDigiBS1StateLocked(ctx context.Context) (*types.FanData, error) {
+	opCtx, cancel := e.operationContext(ctx)
+	defer cancel()
+	for {
+		if err := opCtx.Err(); err != nil {
+			return nil, err
+		}
+		body, err := e.client.ReadBLEFrame(opCtx)
+		if err != nil {
+			return nil, err
+		}
+		if len(body) > maxBLEFrameBytes {
+			return nil, fmt.Errorf("ble response exceeded %d bytes", maxBLEFrameBytes)
+		}
+		state, ok := parseFlyDigiBS1Notification(body)
+		if !ok {
+			continue
+		}
+		e.lastState = cloneFanData(state)
+		return state, nil
+	}
 }
 
 func (e *BLEExecutor) bleCommandBytes(command types.DeviceCommandTemplate, vars SpeedVars) ([]byte, error) {
@@ -457,7 +475,21 @@ func (e *BLEExecutor) writeHeartbeat(ctx context.Context, payload []byte) error 
 	if e.client == nil {
 		return io.ErrClosedPipe
 	}
-	return e.writeRawLocked(ctx, payload)
+	err := e.writeRawLocked(ctx, payload)
+	if err != nil {
+		e.invalidateClientLocked()
+	}
+	return err
+}
+
+func (e *BLEExecutor) invalidateClientLocked() {
+	e.stopHeartbeatLocked()
+	client := e.client
+	e.client = nil
+	e.lastState = nil
+	if client != nil {
+		_ = client.Close()
+	}
 }
 
 func (e *BLEExecutor) operationContext(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -496,21 +528,33 @@ func (e *BLEExecutor) retryDelay(attempt int) time.Duration {
 }
 
 func (c DefaultBLEConnector) ConnectBLEDevice(ctx context.Context, profile types.DeviceProfile) (BLEClient, error) {
+	ctx = ctxWithDefault(ctx)
 	profile = types.NormalizeDeviceProfile(profile, "")
 	if profile.Transport != types.DeviceTransportBLE {
 		return nil, fmt.Errorf("ble connector requires a ble profile")
 	}
-	adapter := bluetooth.DefaultAdapter
-	if err := adapter.Enable(); err != nil {
-		return nil, err
-	}
-
 	address, err := c.resolveAddress(ctx, profile)
 	if err != nil {
 		return nil, err
 	}
+	release, err := acquireDefaultBLEAdapter(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	adapter := bluetooth.DefaultAdapter
+	if err := adapter.Enable(); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	device, err := adapter.Connect(address, bluetooth.ConnectionParams{})
 	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		_ = device.Disconnect()
 		return nil, err
 	}
 

@@ -380,7 +380,6 @@ export default function FanControlSection({
     };
   }, []);
 
-  useEffect(() => { loadCurveProfiles(); }, [loadCurveProfiles]);
   useEffect(() => { loadCurveProfiles(); }, [configuredDeviceCurveKey, loadCurveProfiles]);
   useEffect(() => {
     setCustomSpeedInput(String(clampFanSpeedToRange((config as any).customSpeedRPM, overviewSpeedRange, defaultCustomSpeed) ?? defaultCustomSpeed));
