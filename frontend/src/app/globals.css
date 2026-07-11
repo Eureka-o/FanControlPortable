@@ -4,9 +4,9 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --font-ui-sans: "Segoe UI Variable Text", "Segoe UI", sans-serif;
-  --font-ui-cjk: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
-  --font-geist-mono: "Cascadia Mono", Consolas, monospace;
+  --font-ui-sans: "Manrope", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  --font-ui-cjk: "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-geist-mono: "Geist Mono", "Cascadia Mono", Consolas, monospace;
   --background: #f6f8fc;
   --foreground: #111827;
   --card: #ffffff;
@@ -840,7 +840,7 @@ body {
 
 body {
   overflow: hidden;
-  /* Match the native Windows UI stack without shipping font assets. */
+  /* Match the reference typography, with system fonts as a safe fallback. */
   font-family: var(--font-sans), "PingFang SC", "Hiragino Sans GB",
     "Hiragino Sans", "Yu Gothic UI", "HarmonyOS Sans SC", "Source Han Sans SC", "Noto Sans CJK SC",
     "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI Variable",
