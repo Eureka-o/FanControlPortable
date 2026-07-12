@@ -825,7 +825,7 @@
         "basic": "Basic functions",
         "basicDescription": "Runtime toggles exposed by the current device capability whitelist.",
         "smartStartStop": "Start/stop policy",
-        "smartStartStopDescription": "Shows native start/stop or WiFi Beta standby behavior according to the current device capabilities.",
+        "smartStartStopDescription": "Shows firmware-backed start/stop behavior according to the current device capabilities.",
         "lighting": "Lighting controls",
         "lightingDescription": "Shown only when the active device explicitly supports lighting."
       },
@@ -838,10 +838,10 @@
       "smartStartStopTitle": "Smart start/stop",
       "smartStartStopDescription": "Choose when cooling stops after the system shuts down",
       "wifiSmartStartStopTitle": "Smart start/stop",
-      "wifiSmartStartStopDescription": "Switch the WiFi device to standby speed before exit, sleep, or hibernate",
-      "wifiSmartStartStopTip": "Beta feature. It depends on the network still being available during shutdown; firmware heartbeat support will make it more reliable.",
+      "wifiSmartStartStopDescription": "Let the new firmware handle start/stop from the PC heartbeat",
+      "wifiSmartStartStopTip": "Requires firmware that supports the FanControl WiFi v2 protocol.",
       "wifiSmartStartStopStandbySpeed": "Standby speed",
-      "wifiSmartStartStopStandbySpeedDescription": "FanControl sends this speed before exit, sleep, or hibernate. 1% is recommended.",
+      "wifiSmartStartStopStandbySpeedDescription": "The firmware uses this speed after the PC heartbeat times out. 1% is recommended.",
       "betaBadge": "Beta",
       "contextRefreshing": "Matching device settings for {{device}}..."
     },

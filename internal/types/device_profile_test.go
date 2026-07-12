@@ -30,8 +30,8 @@ func TestDefaultWiFiPercentProfileNormalizesCapabilities(t *testing.T) {
 	if !profile.Capabilities.SupportsSetSpeed || !profile.Capabilities.SupportsReadState {
 		t.Fatalf("default WiFi profile should support read state and set speed: %#v", profile.Capabilities)
 	}
-	if !profile.Capabilities.SupportsSoftwareSmartStartStop {
-		t.Fatalf("default WiFi profile should whitelist software smart start/stop: %#v", profile.Capabilities)
+	if profile.Capabilities.SupportsSoftwareSmartStartStop {
+		t.Fatalf("default WiFi profile should not expose software smart start/stop: %#v", profile.Capabilities)
 	}
 }
 

@@ -85,6 +85,17 @@ func (a *App) SetSmartStartStop(mode string) bool {
 	return success
 }
 
+// SetWiFiSmartStartStopStandbySpeed 设置新固件待机转速
+func (a *App) SetWiFiSmartStartStopStandbySpeed(percent int) bool {
+	resp, err := a.sendRequest(ipc.ReqSetWiFiSmartStartStopStandbySpeed, ipc.SetIntParams{Value: percent})
+	if err != nil {
+		return false
+	}
+	var success bool
+	json.Unmarshal(resp.Data, &success)
+	return success
+}
+
 // SetBrightness 设置亮度
 func (a *App) SetBrightness(percentage int) bool {
 	resp, err := a.sendRequest(ipc.ReqSetBrightness, ipc.SetIntParams{Value: percentage})

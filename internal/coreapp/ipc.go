@@ -282,6 +282,14 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		success := a.SetSmartStartStop(params.Value)
 		return a.successResponse(success)
 
+	case ipc.ReqSetWiFiSmartStartStopStandbySpeed:
+		var params ipc.SetIntParams
+		if err := json.Unmarshal(req.Data, &params); err != nil {
+			return a.errorResponse("瑙ｆ瀽鍙傛暟澶辫触: " + err.Error())
+		}
+		success := a.SetWiFiSmartStartStopStandbySpeed(params.Value)
+		return a.successResponse(success)
+
 	case ipc.ReqSetBrightness:
 		var params ipc.SetIntParams
 		if err := json.Unmarshal(req.Data, &params); err != nil {
