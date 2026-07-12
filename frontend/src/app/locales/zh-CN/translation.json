@@ -528,6 +528,8 @@
       "newVersionFound": "发现新版本 {{version}}",
       "emptyReleaseNotes": "暂无日志内容，或本次获取失败。",
       "downloadAndInstall": "下载并安装",
+      "autoCheck": "自动检测更新",
+      "upToDate": "当前已是最新版本",
       "downloading": "下载中 {{percent}}%",
       "installing": "正在安装…",
       "restarting": "即将重启",
@@ -542,7 +544,7 @@
       "installingHint": "安装完成后应用会自动重启",
       "doneHint": "安装程序已启动，应用即将关闭",
       "updaterWindowTitle": "FanControl 正在更新",
-      "updaterWindowBody": "正在自动安装新版本，请勿关闭此窗口",
+      "updaterWindowBody": "正在下载并安装新版本，请勿关闭此窗口",
       "updaterWindowRestarting": "更新完成，正在重启应用"
     },
     "contact": {

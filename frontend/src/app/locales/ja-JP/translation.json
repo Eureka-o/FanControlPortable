@@ -528,6 +528,8 @@
       "newVersionFound": "新しいバージョン {{version}} が見つかりました",
       "emptyReleaseNotes": "リリースノートがないか、今回の取得に失敗しました。",
       "downloadAndInstall": "ダウンロードしてインストール",
+      "autoCheck": "更新を自動確認",
+      "upToDate": "最新バージョンです",
       "downloading": "ダウンロード中 {{percent}}%",
       "installing": "インストール中…",
       "restarting": "まもなく再起動",
@@ -542,7 +544,7 @@
       "installingHint": "インストール完了後、自動的に再起動します",
       "doneHint": "インストーラーを起動しました。まもなくアプリを終了します",
       "updaterWindowTitle": "FanControl を更新中",
-      "updaterWindowBody": "新しいバージョンを自動でインストールしています。このウィンドウを閉じないでください",
+      "updaterWindowBody": "新しいバージョンをダウンロードしてインストールしています。このウィンドウを閉じないでください",
       "updaterWindowRestarting": "更新完了。FanControl を再起動します"
     },
     "contact": {
