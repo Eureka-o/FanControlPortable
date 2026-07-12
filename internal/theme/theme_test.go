@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 )
 
 func TestEnsureSeededWritesBuiltinOnlyToInstallDir(t *testing.T) {
@@ -21,6 +22,119 @@ func TestEnsureSeededWritesBuiltinOnlyToInstallDir(t *testing.T) {
 	}
 	if _, err := os.Stat(legacyDir); !os.IsNotExist(err) {
 		t.Fatalf("legacy dir should not be created, got err=%v", err)
+	}
+}
+
+func TestEnsureSeededLeavesManifestlessThemeDirectoryUntouched(t *testing.T) {
+	installDir := filepath.Join(t.TempDir(), "themes")
+	themeDir := filepath.Join(installDir, "thrm")
+	if err := os.MkdirAll(themeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(themeDir, "user.txt")
+	if err := os.WriteFile(marker, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	NewManager(installDir, nil, builtinThemeFS("thrm", "THRM", "1.0.0", "/* builtin */")).EnsureSeeded()
+
+	if _, err := os.Stat(filepath.Join(themeDir, manifestName)); !os.IsNotExist(err) {
+		t.Fatalf("manifestless theme directory was modified, err=%v", err)
+	}
+	if data, err := os.ReadFile(marker); err != nil || string(data) != "keep" {
+		t.Fatalf("user marker changed: data=%q err=%v", data, err)
+	}
+}
+
+func TestEnsureSeededLeavesCurrentBuiltinThemeUntouched(t *testing.T) {
+	root := t.TempDir()
+	installDir := filepath.Join(root, "install", "themes")
+	writeTheme(t, installDir, "thrm", "Edited THRM", "1.0.0", "/* user edit */")
+	customPath := filepath.Join(installDir, "thrm", "user-extra.txt")
+	if err := os.WriteFile(customPath, []byte("keep"), 0o644); err != nil {
+		t.Fatalf("write custom file: %v", err)
+	}
+	manifestPath := filepath.Join(installDir, "thrm", manifestName)
+	cssPath := filepath.Join(installDir, "thrm", styleName)
+	oldTime := time.Unix(1_700_000_000, 0)
+	if err := os.Chtimes(manifestPath, oldTime, oldTime); err != nil {
+		t.Fatalf("chtimes manifest: %v", err)
+	}
+	if err := os.Chtimes(cssPath, oldTime, oldTime); err != nil {
+		t.Fatalf("chtimes css: %v", err)
+	}
+
+	manager := NewManager(installDir, nil, builtinThemeFS("thrm", "THRM", "1.0.0", "/* builtin */"))
+	manager.EnsureSeeded()
+
+	css, err := os.ReadFile(cssPath)
+	if err != nil {
+		t.Fatalf("read css: %v", err)
+	}
+	if string(css) != "/* user edit */" {
+		t.Fatalf("same-version css changed: %q", css)
+	}
+	for _, path := range []string{manifestPath, cssPath} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("stat %s: %v", path, err)
+		}
+		if !info.ModTime().Equal(oldTime) {
+			t.Fatalf("same-version file was rewritten: %s modtime=%v", path, info.ModTime())
+		}
+	}
+	if _, err := os.Stat(customPath); err != nil {
+		t.Fatalf("custom file should remain: %v", err)
+	}
+}
+
+func TestEnsureSeededLeavesOlderBuiltinThemeUntouched(t *testing.T) {
+	root := t.TempDir()
+	installDir := filepath.Join(root, "install", "themes")
+	writeTheme(t, installDir, "dune", "Dune", "1.0.0", "/* old */")
+	extraPath := filepath.Join(installDir, "dune", "user-extra.txt")
+	if err := os.WriteFile(extraPath, []byte("keep"), 0o644); err != nil {
+		t.Fatalf("write extra file: %v", err)
+	}
+	builtin := fstest.MapFS{
+		"dune/" + manifestName: {Data: []byte(`{"id":"dune","name":"Dune","base":"light","version":"1.1.0"}`)},
+		"dune/" + styleName:    {Data: []byte("/* new */")},
+		"dune/new-asset.txt":   {Data: []byte("new")},
+	}
+
+	NewManager(installDir, nil, builtin).EnsureSeeded()
+
+	css, err := os.ReadFile(filepath.Join(installDir, "dune", styleName))
+	if err != nil || string(css) != "/* old */" {
+		t.Fatalf("existing builtin theme changed: css=%q err=%v", css, err)
+	}
+	if _, err := os.Stat(extraPath); err != nil {
+		t.Fatalf("extra file should remain: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(installDir, "dune", "new-asset.txt")); !os.IsNotExist(err) {
+		t.Fatalf("existing theme should not receive new files, err=%v", err)
+	}
+}
+
+func TestEnsureSeededDoesNotTouchNonBuiltinTheme(t *testing.T) {
+	root := t.TempDir()
+	installDir := filepath.Join(root, "install", "themes")
+	writeTheme(t, installDir, "my-custom", "My Custom", "9.0.0", "/* custom */")
+	customPath := filepath.Join(installDir, "my-custom", styleName)
+	oldTime := time.Unix(1_700_000_000, 0)
+	if err := os.Chtimes(customPath, oldTime, oldTime); err != nil {
+		t.Fatalf("chtimes custom theme: %v", err)
+	}
+
+	NewManager(installDir, nil, builtinThemeFS("thrm", "THRM", "1.0.0", "/* builtin */")).EnsureSeeded()
+
+	data, err := os.ReadFile(customPath)
+	if err != nil || string(data) != "/* custom */" {
+		t.Fatalf("custom theme changed: data=%q err=%v", data, err)
+	}
+	info, err := os.Stat(customPath)
+	if err != nil || !info.ModTime().Equal(oldTime) {
+		t.Fatalf("custom theme was rewritten: modtime=%v err=%v", info.ModTime(), err)
 	}
 }
 

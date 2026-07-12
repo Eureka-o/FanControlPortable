@@ -861,7 +861,7 @@ export default function DeviceStatus({
   const maxTempStatus = getTempStatus(temperature?.maxTemp || 0);
 
   return (
-    <div className="space-y-3">
+    <div data-page-reveal="cards" className="space-y-3">
       {/* ── Device header card ── */}
       <div data-theme-section="hero" data-theme-card="device-hero" className="glacier-hero-card relative overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm shadow-black/5">
         <div className="theme-thrm-only glacier-hero-art pointer-events-none absolute inset-y-0 right-0 hidden overflow-hidden md:block" aria-hidden="true">

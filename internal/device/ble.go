@@ -33,6 +33,7 @@ type BLEManager struct {
 
 	debugSeq    uint64
 	debugFrames []types.DeviceDebugFrame
+	queryMutex  sync.Mutex
 }
 
 // NewBLEManager 创建 BLE 设备管理器

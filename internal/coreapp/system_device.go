@@ -347,6 +347,9 @@ func waitForReconnectDelay(ctx context.Context, delay time.Duration) bool {
 }
 
 func (a *CoreApp) reconnectDevice() reconnectAttemptResult {
+	a.connectMutex.Lock()
+	defer a.connectMutex.Unlock()
+
 	cfg := a.configManager.Get()
 	types.NormalizeDeviceProfileConfig(&cfg)
 	connected, deviceInfo := reconnectTransport(
@@ -585,6 +588,9 @@ func (a *CoreApp) AutoScanDevices() map[string]any {
 }
 
 func (a *CoreApp) ConnectNativeDevice(profileID string) bool {
+	a.cancelReconnect()
+	a.connectMutex.Lock()
+	defer a.connectMutex.Unlock()
 	return newDeviceConnectionFlow(a).connectNativeDevice(profileID)
 }
 

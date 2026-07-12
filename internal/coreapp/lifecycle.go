@@ -170,12 +170,25 @@ func startupManualGearSpeedUnit(cfg types.AppConfig) string {
 
 // Stop 停止核心服务
 func (a *CoreApp) Stop() {
+	if !a.stopping.CompareAndSwap(false, true) {
+		return
+	}
 	a.logInfo("核心服务正在停止...")
 	if a.powerNotifyStop != nil {
 		a.safeRun("power-notify-unregister", a.powerNotifyStop)
 		a.powerNotifyStop = nil
 	}
 	a.stopTemperatureMonitoring()
+	a.monitoringMutex.Lock()
+	monitoringDone := a.monitoringDone
+	a.monitoringMutex.Unlock()
+	if monitoringDone != nil {
+		select {
+		case <-monitoringDone:
+		case <-time.After(3 * time.Second):
+			a.logError("等待温度监控停止超时，继续退出")
+		}
+	}
 	if a.hotkeyManager != nil {
 		a.hotkeyManager.Stop()
 	}
@@ -201,6 +214,9 @@ func (a *CoreApp) Stop() {
 	a.trayManager.Quit()
 
 	a.logInfo("核心服务已停止")
+	if a.logger != nil {
+		a.logger.Close()
+	}
 }
 
 // initSystemTray 初始化系统托盘
@@ -307,10 +323,6 @@ func (a *CoreApp) cleanup() {
 	default:
 	}
 
-	if a.logger != nil {
-		a.logger.Info("核心服务正在退出，清理资源")
-		a.logger.Close()
-	}
 }
 
 // 日志辅助方法

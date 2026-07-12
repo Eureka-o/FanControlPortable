@@ -169,7 +169,7 @@ func (m *Manager) themeExistsOnDisk(baseDir, id string) bool {
 	if baseDir == "" {
 		return false
 	}
-	_, err := os.Stat(filepath.Join(baseDir, id, manifestName))
+	_, err := os.Stat(filepath.Join(baseDir, id))
 	return err == nil
 }
 

@@ -5,6 +5,7 @@ import {
   DisconnectDevice, 
   GetDeviceStatus,
   GetConfig,
+  DownloadAndInstallUpdate,
   UpdateConfig,
   SetFanCurve,
   ResetLearnedOffsets,
@@ -27,7 +28,6 @@ import {
   GetDebugInfo,
   ExportDiagnosticsToFile,
   SetDebugMode,
-  UpdateGuiResponseTime,
   SetCustomSpeed
   // CheckWindowsAutoStart,
   // SetWindowsAutoStart
@@ -186,6 +186,26 @@ class ApiService {
 
   async getAppVersion(): Promise<string> {
     return await GetAppVersion();
+  }
+
+  async downloadAndInstallUpdate(
+    downloadURL: string,
+    windowTitle: string,
+    windowBody: string,
+    windowRestarting: string,
+  ): Promise<void> {
+    return await DownloadAndInstallUpdate(
+      downloadURL,
+      windowTitle,
+      windowBody,
+      windowRestarting,
+    );
+  }
+
+  onUpdateDownloadProgress(
+    callback: (payload: { percent: number; received: number; total: number; stage: string; message: string }) => void,
+  ): () => void {
+    return EventsOn('update-download-progress', callback);
   }
 
   async updateConfig(config: types.AppConfig): Promise<void> {
@@ -481,10 +501,6 @@ class ApiService {
   // 在系统文件管理器中打开主题文件夹，便于用户编辑/新增主题。
   async openThemesFolder(): Promise<void> {
     return await (window as any).go?.main?.App?.OpenThemesFolder?.();
-  }
-
-  async updateGuiResponseTime(): Promise<void> {
-    return await UpdateGuiResponseTime();
   }
 
   // 调试事件监听

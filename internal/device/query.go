@@ -42,6 +42,8 @@ func (m *Manager) QueryDeviceSettings() (types.DeviceSettings, error) {
 		ReadAt:    time.Now().Format("2006-01-02 15:04:05"),
 		Model:     m.GetModelName(),
 	}
+	m.queryMutex.Lock()
+	defer m.queryMutex.Unlock()
 
 	m.mutex.RLock()
 	connected := m.isConnected && m.device != nil
@@ -57,6 +59,7 @@ func (m *Manager) QueryDeviceSettings() (types.DeviceSettings, error) {
 			lastErr = err
 			continue
 		}
+		frames = queryResponseFrames(cmd, frames)
 		settings.RawFrames = append(settings.RawFrames, frames...)
 		applyDeviceSettingsFrames(&settings, frames)
 	}
@@ -88,6 +91,9 @@ func (m *Manager) queryCommand(cmd byte) ([]types.DeviceDebugFrame, error) {
 }
 
 func (b *BLEManager) QueryDeviceSettings() (types.DeviceSettings, error) {
+	b.queryMutex.Lock()
+	defer b.queryMutex.Unlock()
+
 	settings := types.DeviceSettings{
 		Available: false,
 		Source:    types.DeviceTypeBLE,
@@ -106,6 +112,7 @@ func (b *BLEManager) QueryDeviceSettings() (types.DeviceSettings, error) {
 			lastErr = err
 			continue
 		}
+		frames = queryResponseFrames(cmd, frames)
 		settings.RawFrames = append(settings.RawFrames, frames...)
 		applyDeviceSettingsFrames(&settings, frames)
 	}
@@ -113,6 +120,17 @@ func (b *BLEManager) QueryDeviceSettings() (types.DeviceSettings, error) {
 
 	settings.Available = len(settings.GearRPMTable) > 0 || settings.WorkMode != "" || settings.Status != nil
 	return settings, lastErr
+}
+
+func queryResponseFrames(cmd byte, frames []types.DeviceDebugFrame) []types.DeviceDebugFrame {
+	command := fmt.Sprintf("0x%02X", cmd)
+	matched := make([]types.DeviceDebugFrame, 0, len(frames))
+	for _, frame := range frames {
+		if frame.Direction == "rx" && frame.ChecksumOK && frame.Command == command {
+			matched = append(matched, frame)
+		}
+	}
+	return matched
 }
 
 func (b *BLEManager) queryCommand(cmd byte) ([]types.DeviceDebugFrame, error) {

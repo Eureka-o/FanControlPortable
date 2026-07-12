@@ -61,6 +61,7 @@ foreach ($file in $requiredFiles) {
 }
 
 Require-Directory (Join-Path $buildBin "bridge")
+Require-Directory (Join-Path $buildBin "themes")
 
 $safeOutputDir = Resolve-InRepoPath $outputDir
 if (Test-Path -LiteralPath $safeOutputDir) {
@@ -72,13 +73,7 @@ Copy-Item -LiteralPath (Join-Path $buildBin "FanControl.exe") -Destination (Join
 Copy-Item -LiteralPath (Join-Path $buildBin "FanControl Core.exe") -Destination (Join-Path $safeOutputDir "FanControl Core.exe")
 Copy-Item -LiteralPath (Join-Path $buildBin "PawnIO_setup.exe") -Destination (Join-Path $safeOutputDir "PawnIO_setup.exe")
 Copy-Item -LiteralPath (Join-Path $buildBin "bridge") -Destination (Join-Path $safeOutputDir "bridge") -Recurse
-
-foreach ($dirName in @("themes")) {
-    $sourceDir = Join-Path $buildBin $dirName
-    if (Test-Path -LiteralPath $sourceDir -PathType Container) {
-        Copy-Item -LiteralPath $sourceDir -Destination (Join-Path $safeOutputDir $dirName) -Recurse
-    }
-}
+Copy-Item -LiteralPath (Join-Path $buildBin "themes") -Destination (Join-Path $safeOutputDir "themes") -Recurse
 
 $zipPath = Join-Path $buildBin "FanControl-$Version-portable.zip"
 if (Test-Path -LiteralPath $zipPath) {
