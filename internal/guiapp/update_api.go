@@ -54,24 +54,40 @@ func (a *App) DownloadAndInstallUpdate(downloadURL, windowTitle, windowBody, win
 		return err
 	}
 
-	installerPath, err := a.downloadUpdateInstaller(parsed.String())
-	if err != nil {
-		guiLogger.Errorf("update installer download failed: %v", err)
+	updateDir := filepath.Join(os.TempDir(), "FanControl-update")
+	if err := os.MkdirAll(updateDir, 0o755); err != nil {
 		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: err.Error()})
-		return err
+		return fmt.Errorf("create update directory: %w", err)
+	}
+	installerPath := filepath.Join(updateDir, updateInstallerName)
+	progressPath := filepath.Join(updateDir, "download.progress")
+	failedPath := filepath.Join(updateDir, "download.failed")
+	_ = os.Remove(installerPath)
+	_ = os.Remove(failedPath)
+	if err := os.WriteFile(progressPath, []byte("0\n"), 0o644); err != nil {
+		return fmt.Errorf("prepare update progress: %w", err)
 	}
 
-	a.emitUpdateProgress(updateProgress{Percent: 100, Stage: "installing"})
 	exePath, exeErr := os.Executable()
 	if exeErr != nil {
 		guiLogger.Warnf("failed to resolve current executable path: %v", exeErr)
 		exePath = ""
 	}
-	if err := launchUpdateInstaller(installerPath, exePath, windowTitle, windowBody, windowRestarting); err != nil {
+	if err := launchUpdateInstaller(installerPath, progressPath, failedPath, exePath, windowTitle, windowBody, windowRestarting); err != nil {
 		guiLogger.Errorf("failed to launch update installer: %v", err)
-		a.emitUpdateProgress(updateProgress{Percent: 100, Stage: "error", Message: err.Error()})
+		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: err.Error()})
 		return err
 	}
+
+	_, err = a.downloadUpdateInstaller(parsed.String(), progressPath)
+	if err != nil {
+		guiLogger.Errorf("update installer download failed: %v", err)
+		_ = os.WriteFile(failedPath, []byte(err.Error()+"\n"), 0o644)
+		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: err.Error()})
+		return err
+	}
+
+	a.emitUpdateProgress(updateProgress{Percent: 100, Stage: "installing"})
 
 	go func() {
 		time.Sleep(800 * time.Millisecond)
@@ -110,7 +126,7 @@ func validateReleaseAssetURL(raw string) (*url.URL, error) {
 	return parsed, nil
 }
 
-func (a *App) downloadUpdateInstaller(downloadURL string) (string, error) {
+func (a *App) downloadUpdateInstaller(downloadURL, progressPath string) (string, error) {
 	dir := filepath.Join(os.TempDir(), "FanControl-update")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("create update directory: %w", err)
@@ -154,6 +170,7 @@ func (a *App) downloadUpdateInstaller(downloadURL string) (string, error) {
 	}
 
 	total := response.ContentLength
+	writeUpdateProgress(progressPath, 0)
 	a.emitUpdateProgress(updateProgress{Percent: 0, Total: max64(total, 0), Stage: "downloading"})
 	reader := io.LimitReader(response.Body, updateMaxDownloadSize+1)
 	var received int64
@@ -177,6 +194,9 @@ func (a *App) downloadUpdateInstaller(downloadURL string) (string, error) {
 			}
 			if percent != lastPercent && (percent < 0 || percent == 100 || percent%2 == 0) {
 				lastPercent = percent
+				if percent >= 0 {
+					writeUpdateProgress(progressPath, percent)
+				}
 				a.emitUpdateProgress(updateProgress{Percent: percent, Received: received, Total: max64(total, 0), Stage: "downloading"})
 			}
 		}
@@ -203,6 +223,13 @@ func (a *App) downloadUpdateInstaller(downloadURL string) (string, error) {
 		return "", fmt.Errorf("prepare update installer: %w", err)
 	}
 	return target, nil
+}
+
+func writeUpdateProgress(path string, percent int) {
+	if path == "" {
+		return
+	}
+	_ = os.WriteFile(path, []byte(fmt.Sprintf("%d\n", percent)), 0o644)
 }
 
 func validateInstallerFile(path string) error {

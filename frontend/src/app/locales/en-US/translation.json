@@ -528,6 +528,8 @@
       "newVersionFound": "New version found: {{version}}",
       "emptyReleaseNotes": "No release notes available, or this fetch failed.",
       "downloadAndInstall": "Download & install",
+      "autoCheck": "Automatically check for updates",
+      "upToDate": "You already have the latest version",
       "downloading": "Downloading {{percent}}%",
       "installing": "Installing…",
       "restarting": "Restarting soon",
@@ -542,7 +544,7 @@
       "installingHint": "FanControl will restart automatically when installation finishes",
       "doneHint": "The installer has started; FanControl will close shortly",
       "updaterWindowTitle": "FanControl is updating",
-      "updaterWindowBody": "Installing the new version automatically. Please do not close this window",
+      "updaterWindowBody": "Downloading and installing the new version. Please do not close this window",
       "updaterWindowRestarting": "Update complete, restarting FanControl"
     },
     "contact": {

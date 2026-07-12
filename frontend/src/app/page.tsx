@@ -7,7 +7,7 @@ import { types } from '../../wailsjs/go/models';
 import { useShallow } from 'zustand/react/shallow';
 import AppFatalError from './components/AppFatalError';
 import AppLoadingSkeleton from './components/AppLoadingSkeleton';
-import AboutPanel from './components/AboutPanel';
+import AboutPanel, { AutoUpdateNotifier } from './components/AboutPanel';
 import AdvancedDevicesPanel from './components/AdvancedDevicesPanel';
 import AppShell from './components/AppShell';
 import ControlPanel from './components/ControlPanel';
@@ -87,74 +87,77 @@ export default function Home() {
   }
 
   return (
-    <AppShell
-      activeTab={view.activeTab}
-      onTabChange={setActiveTab}
-      isConnected={view.isConnected}
-      fanData={view.fanData}
-      temperature={view.temperature}
-      runtimeDeviceProfile={view.runtimeDeviceProfile}
-      config={safeConfig}
-      autoControl={safeConfig.autoControl}
-      error={view.error}
-      bridgeWarning={view.bridgeWarning}
-      diagnosticsExporting={diagnosticsExporting}
-      onExportDiagnostics={exportDiagnostics}
-      onDismissBridgeWarning={clearBridgeWarning}
-      statusContent={
-        <DeviceStatus
-          isConnected={view.isConnected}
-          deviceProductId={view.deviceProductId}
-          deviceModel={view.deviceModel}
-          deviceSettings={view.deviceSettings}
-          fanData={view.fanData}
-          temperature={view.temperature}
-          runtimeDeviceProfile={view.runtimeDeviceProfile}
-          config={safeConfig}
-          coreServiceError={view.coreServiceError}
-          onConnect={connectDevice}
-          onDisconnect={disconnectDevice}
-          onConfigChange={setConfig}
-          onOpenCurveEditor={() => openCurveTab('curve-editor')}
-          onOpenHistoryDetails={() => openCurveTab('history-details')}
-          diagnosticsExporting={diagnosticsExporting}
-          onExportDiagnostics={exportDiagnostics}
-        />
-      }
-      curveContent={
-        <FanCurve
-          config={safeConfig}
-          onConfigChange={setConfig}
-          isConnected={view.isConnected}
-          fanData={view.fanData}
-          temperature={view.temperature}
-          runtimeDeviceProfile={view.runtimeDeviceProfile}
-          runtimeDeviceCapabilities={view.runtimeDeviceCapabilities}
-          deviceModel={view.deviceModel}
-          focusTarget={view.curveFocusTarget}
-          onFocusHandled={clearCurveFocusTarget}
-        />
-      }
-      controlContent={
-        <ControlPanel
-          config={safeConfig}
-          onConfigChange={setConfig}
-          isConnected={view.isConnected}
-          fanData={view.fanData}
-          temperature={view.temperature}
-          runtimeDeviceProfile={view.runtimeDeviceProfile}
-          runtimeDeviceCapabilities={view.runtimeDeviceCapabilities}
-          onDeviceContextRefresh={refreshDeviceContext}
-        />
-      }
-      devicesContent={
-        <AdvancedDevicesPanel
-          config={safeConfig}
-          isConnected={view.isConnected}
-          onConfigChange={setConfig}
-        />
-      }
-      aboutContent={<AboutPanel />}
-    />
+    <>
+      <AutoUpdateNotifier />
+      <AppShell
+        activeTab={view.activeTab}
+        onTabChange={setActiveTab}
+        isConnected={view.isConnected}
+        fanData={view.fanData}
+        temperature={view.temperature}
+        runtimeDeviceProfile={view.runtimeDeviceProfile}
+        config={safeConfig}
+        autoControl={safeConfig.autoControl}
+        error={view.error}
+        bridgeWarning={view.bridgeWarning}
+        diagnosticsExporting={diagnosticsExporting}
+        onExportDiagnostics={exportDiagnostics}
+        onDismissBridgeWarning={clearBridgeWarning}
+        statusContent={
+          <DeviceStatus
+            isConnected={view.isConnected}
+            deviceProductId={view.deviceProductId}
+            deviceModel={view.deviceModel}
+            deviceSettings={view.deviceSettings}
+            fanData={view.fanData}
+            temperature={view.temperature}
+            runtimeDeviceProfile={view.runtimeDeviceProfile}
+            config={safeConfig}
+            coreServiceError={view.coreServiceError}
+            onConnect={connectDevice}
+            onDisconnect={disconnectDevice}
+            onConfigChange={setConfig}
+            onOpenCurveEditor={() => openCurveTab('curve-editor')}
+            onOpenHistoryDetails={() => openCurveTab('history-details')}
+            diagnosticsExporting={diagnosticsExporting}
+            onExportDiagnostics={exportDiagnostics}
+          />
+        }
+        curveContent={
+          <FanCurve
+            config={safeConfig}
+            onConfigChange={setConfig}
+            isConnected={view.isConnected}
+            fanData={view.fanData}
+            temperature={view.temperature}
+            runtimeDeviceProfile={view.runtimeDeviceProfile}
+            runtimeDeviceCapabilities={view.runtimeDeviceCapabilities}
+            deviceModel={view.deviceModel}
+            focusTarget={view.curveFocusTarget}
+            onFocusHandled={clearCurveFocusTarget}
+          />
+        }
+        controlContent={
+          <ControlPanel
+            config={safeConfig}
+            onConfigChange={setConfig}
+            isConnected={view.isConnected}
+            fanData={view.fanData}
+            temperature={view.temperature}
+            runtimeDeviceProfile={view.runtimeDeviceProfile}
+            runtimeDeviceCapabilities={view.runtimeDeviceCapabilities}
+            onDeviceContextRefresh={refreshDeviceContext}
+          />
+        }
+        devicesContent={
+          <AdvancedDevicesPanel
+            config={safeConfig}
+            isConnected={view.isConnected}
+            onConfigChange={setConfig}
+          />
+        }
+        aboutContent={<AboutPanel />}
+      />
+    </>
   );
 }
