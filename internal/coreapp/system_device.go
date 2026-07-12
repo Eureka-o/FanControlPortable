@@ -349,6 +349,8 @@ func waitForReconnectDelay(ctx context.Context, delay time.Duration) bool {
 func (a *CoreApp) reconnectDevice() reconnectAttemptResult {
 	a.connectMutex.Lock()
 	defer a.connectMutex.Unlock()
+	a.connectionPhase.Store(deviceConnectionPhaseConnecting)
+	defer a.connectionPhase.Store(deviceConnectionPhaseNone)
 
 	cfg := a.configManager.Get()
 	types.NormalizeDeviceProfileConfig(&cfg)
@@ -571,6 +573,8 @@ func (a *CoreApp) ConnectDevice() bool {
 }
 
 func (a *CoreApp) AutoScanDevices() map[string]any {
+	a.connectionPhase.Store(deviceConnectionPhaseDiscovering)
+	defer a.connectionPhase.Store(deviceConnectionPhaseNone)
 	cfg := a.configManager.Get()
 	types.NormalizeDeviceProfileConfig(&cfg)
 	devices := a.deviceManager.ScanNativeDevicesProfiles(cfg.DeviceProfiles)
@@ -591,6 +595,8 @@ func (a *CoreApp) ConnectNativeDevice(profileID string) bool {
 	a.cancelReconnect()
 	a.connectMutex.Lock()
 	defer a.connectMutex.Unlock()
+	a.connectionPhase.Store(deviceConnectionPhaseConnecting)
+	defer a.connectionPhase.Store(deviceConnectionPhaseNone)
 	return newDeviceConnectionFlow(a).connectNativeDevice(profileID)
 }
 
@@ -713,34 +719,38 @@ func (a *CoreApp) reapplyConfigAfterReconnect() {
 // GetDeviceStatus 获取设备状态
 func (a *CoreApp) GetDeviceStatus() map[string]any {
 	a.mutex.RLock()
-	connected := a.isConnected && a.deviceManager.IsConnected()
+	connected := a.isConnected
+	manager := a.deviceManager
 	settings := a.deviceSettings
 	currentTemp := a.currentTemp
 	monitoring := a.monitoringTemp.Load()
-	defer a.mutex.RUnlock()
+	a.mutex.RUnlock()
+	connected = connected && manager != nil && manager.IsConnected()
 
+	runtime := a.deviceRuntimeStatus()
 	if !connected {
 		return map[string]any{
 			"connected":   false,
 			"monitoring":  monitoring,
 			"currentData": nil,
 			"temperature": currentTemp,
+			"runtime":     runtime,
 		}
 	}
 
-	productID := a.deviceManager.GetProductID()
+	productID := manager.GetProductID()
 	productIDHex := ""
 	if productID != 0 {
 		productIDHex = fmt.Sprintf("0x%04X", productID)
 	}
 
-	model := a.deviceManager.GetModelName()
-	profile := a.deviceManager.ActiveProfile()
+	model := manager.GetModelName()
+	profile := manager.ActiveProfile()
 
 	return map[string]any{
 		"connected":          true,
 		"monitoring":         monitoring,
-		"currentData":        a.deviceManager.GetCurrentFanData(),
+		"currentData":        manager.GetCurrentFanData(),
 		"temperature":        currentTemp,
 		"productId":          productIDHex,
 		"model":              model,
@@ -748,6 +758,7 @@ func (a *CoreApp) GetDeviceStatus() map[string]any {
 		"deviceProfile":      profile,
 		"deviceCapabilities": profile.Capabilities,
 		"deviceSettings":     settings,
+		"runtime":            runtime,
 	}
 }
 

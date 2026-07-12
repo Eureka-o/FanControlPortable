@@ -59,6 +59,7 @@ type CoreApp struct {
 	legionFnQSupportChecked       atomic.Bool
 	legionFnQRegistered           atomic.Bool
 	reconnectInProgress           atomic.Bool
+	connectionPhase               atomic.Int32
 	connectMutex                  sync.Mutex
 	reconnectMutex                sync.Mutex
 	reconnectCancel               context.CancelFunc

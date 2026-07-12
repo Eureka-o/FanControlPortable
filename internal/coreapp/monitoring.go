@@ -63,10 +63,7 @@ func (a *CoreApp) stopTemperatureMonitoring() {
 }
 
 func (a *CoreApp) deviceControlReady() bool {
-	a.mutex.RLock()
-	connected := a.isConnected
-	a.mutex.RUnlock()
-	return connected && !a.systemSuspended.Load() && a.deviceManager != nil && a.deviceManager.IsConnected()
+	return a.deviceRuntimeStatus().CanControl
 }
 
 // startTemperatureMonitoring 开始温度监控
@@ -106,8 +103,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 		GpuLowPowerProtection: cfg.GpuLowPowerProtection,
 	}
 	selectionRevision := cfgRevision
-	initialSelection := cachedSelection
-	initialTemp := a.tempReader.Read(initialSelection)
+	initialTemp := a.tempReader.Read(cachedSelection)
 	if initialTemp.ControlTemp > 0 {
 		rawTempHistory = append(rawTempHistory, initialTemp.ControlTemp)
 	}
@@ -282,8 +278,12 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			}
 			lastSmartTelemetryUsable = advancedTelemetryUsable
 
+			inputReady := automaticControlInputReady(temp)
+			if cfg.AutoControl && inputReady && !lastAutoControl {
+				a.forceNextAutoTarget.Store(true)
+			}
 			controlReady := a.deviceControlReady()
-			if cfg.AutoControl && temp.ControlTemp > 0 && controlReady {
+			if cfg.AutoControl && inputReady && controlReady {
 				speedUnit = a.activeDeviceSpeedUnit(&cfg)
 				sampleContext := newSmartControlSampleContext(cachedSelection, speedUnit)
 				contextChanged := !lastAutoControl || sampleContext != lastSmartSampleContext
@@ -468,7 +468,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				}
 			}
 
-			if !cfg.AutoControl || !controlReady {
+			if !cfg.AutoControl || !inputReady || !controlReady {
 				if lastAutoControl {
 					resetSmartControlSampling()
 				}

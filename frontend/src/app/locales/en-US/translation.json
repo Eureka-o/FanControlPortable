@@ -126,6 +126,7 @@
     "capabilities": {
       "read": "Read state",
       "setSpeed": "Set speed",
+      "manualGears": "Manual gears",
       "debugFrames": "Debug frames",
       "raw": "Raw commands",
       "gearLight": "Gear light",
@@ -415,6 +416,22 @@
       "connected": "Connected",
       "offline": "Offline"
     },
+    "runtimeState": {
+      "disconnected": "Disconnected",
+      "discovering": "Discovering",
+      "connecting": "Connecting",
+      "capabilities": "Reading capabilities",
+      "ready": "Ready to control",
+      "unavailable": "Control unavailable"
+    },
+    "capabilities": {
+      "title": "Current device capabilities"
+    },
+    "telemetryState": {
+      "fresh": "Sensors live",
+      "delayed": "Sensors delayed",
+      "unavailable": "Sensors unavailable"
+    },
     "mode": {
       "smartControl": "Smart control",
       "fixedSpeed": "Fixed speed",
@@ -528,7 +545,6 @@
       "newVersionFound": "New version found: {{version}}",
       "emptyReleaseNotes": "No release notes available, or this fetch failed.",
       "downloadAndInstall": "Download & install",
-      "autoCheck": "Automatically check for updates",
       "upToDate": "You already have the latest version",
       "downloading": "Downloading {{percent}}%",
       "installing": "Installing…",

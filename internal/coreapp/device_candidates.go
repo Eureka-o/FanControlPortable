@@ -177,6 +177,8 @@ func (a *CoreApp) ConnectDeviceCandidate(req types.DeviceConnectRequest) bool {
 	a.cancelReconnect()
 	a.connectMutex.Lock()
 	defer a.connectMutex.Unlock()
+	a.connectionPhase.Store(deviceConnectionPhaseConnecting)
+	defer a.connectionPhase.Store(deviceConnectionPhaseNone)
 	return newDeviceConnectionFlow(a).connectCandidate(req)
 }
 
@@ -184,6 +186,8 @@ func (a *CoreApp) ConnectBestScannedDevice() bool {
 	a.cancelReconnect()
 	a.connectMutex.Lock()
 	defer a.connectMutex.Unlock()
+	a.connectionPhase.Store(deviceConnectionPhaseDiscovering)
+	defer a.connectionPhase.Store(deviceConnectionPhaseNone)
 	return newDeviceConnectionFlow(a).connectBestScannedDevice()
 }
 

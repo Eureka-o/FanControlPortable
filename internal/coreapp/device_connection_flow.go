@@ -88,6 +88,7 @@ func (f deviceConnectionFlow) connectScannedCandidate(device types.DeviceCandida
 }
 
 func (f deviceConnectionFlow) connectCandidate(req types.DeviceConnectRequest) bool {
+	f.app.connectionPhase.Store(deviceConnectionPhaseConnecting)
 	transport := candidateTransport(req.Transport)
 	switch transport {
 	case types.DeviceTransportWiFi, types.DeviceTransportSerial:

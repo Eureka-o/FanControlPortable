@@ -44,12 +44,14 @@ import { toast } from 'sonner';
 
 interface DeviceStatusProps {
   isConnected: boolean;
+  runtimeState: string;
   deviceProductId: string | null;
   deviceModel: string | null;
   deviceSettings: DeviceSettings | null;
   fanData: types.FanData | null;
   temperature: types.TemperatureData | null;
   runtimeDeviceProfile?: types.DeviceProfile | null;
+  runtimeDeviceCapabilities?: types.DeviceCapabilities | null;
   config: types.AppConfig;
   coreServiceError?: string | null;
   onConnect: () => void;
@@ -670,11 +672,13 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
 
 export default function DeviceStatus({
   isConnected,
+  runtimeState,
   deviceModel,
   deviceSettings,
   fanData,
   temperature,
   runtimeDeviceProfile,
+  runtimeDeviceCapabilities,
   config,
   coreServiceError,
   onConnect,
@@ -788,6 +792,12 @@ export default function DeviceStatus({
   };
 
   const activeDeviceName = activeDeviceProfile?.displayName?.trim() || '';
+  const showRuntimeState = runtimeState !== 'disconnected';
+  const runtimeStateClass = runtimeState === 'ready'
+    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
+    : runtimeState === 'unavailable'
+      ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+      : 'bg-primary/10 text-primary';
   const deviceModelName = isConnected
     ? (deviceModel?.trim() || activeDeviceName || t('deviceStatus.device.unknown'))
     : t('deviceStatus.disconnected.title');
@@ -859,6 +869,13 @@ export default function DeviceStatus({
                   ? t('deviceStatus.bridgeState.notStarted')
                   : '';
   const maxTempStatus = getTempStatus(temperature?.maxTemp || 0);
+  const capabilityLabels = useMemo(() => [
+    runtimeDeviceCapabilities?.supportsReadState ? t('advancedDevices.capabilities.read') : '',
+    runtimeDeviceCapabilities?.supportsSetSpeed ? t('advancedDevices.capabilities.setSpeed') : '',
+    runtimeDeviceCapabilities?.supportsManualGears ? t('advancedDevices.capabilities.manualGears') : '',
+    runtimeDeviceCapabilities?.supportsLighting ? t('advancedDevices.capabilities.lighting') : '',
+    runtimeDeviceCapabilities?.supportsScreen ? t('advancedDevices.capabilities.screen') : '',
+  ].filter(Boolean), [runtimeDeviceCapabilities, t]);
 
   return (
     <div data-page-reveal="cards" className="space-y-3">
@@ -883,7 +900,7 @@ export default function DeviceStatus({
                 <Fan className="h-8 w-8" />
               </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-base font-semibold text-foreground">{deviceModelName}</span>
                 <span
                   className={clsx(
@@ -895,15 +912,29 @@ export default function DeviceStatus({
                 >
                   {isConnected ? t('deviceStatus.connectStatus.connected') : t('deviceStatus.connectStatus.offline')}
                 </span>
+                {showRuntimeState && (
+                  <span className={clsx('rounded-md px-2 py-0.5 text-[11px] font-semibold', runtimeStateClass)}>
+                    {t(`deviceStatus.runtimeState.${runtimeState}`)}
+                  </span>
+                )}
               </div>
               {isConnected && (
-                <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                  {config.autoControl ? (
-                    <Zap className="h-3 w-3 text-primary" />
-                  ) : (
-                    <Settings className="h-3 w-3" />
+                <div className="mt-1 space-y-1.5 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1.5">
+                    {config.autoControl ? (
+                      <Zap className="h-3 w-3 text-primary" />
+                    ) : (
+                      <Settings className="h-3 w-3" />
+                    )}
+                    <span>{t('deviceStatus.hero.modeLine', { mode: modeTitle, description: modeDesc })}</span>
+                  </div>
+                  {capabilityLabels.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5" aria-label={t('deviceStatus.capabilities.title')}>
+                      {capabilityLabels.map((label) => (
+                        <span key={label} className="rounded-md bg-muted/65 px-1.5 py-0.5 text-[10px] font-medium text-foreground/75">{label}</span>
+                      ))}
+                    </div>
                   )}
-                  <span>{t('deviceStatus.hero.modeLine', { mode: modeTitle, description: modeDesc })}</span>
                 </div>
               )}
               {!isConnected && (

@@ -90,9 +90,9 @@ Unicode true
 !define CORE_EXECUTABLE_SOURCE "..\..\bin\FanControl Core.exe"
 !endif
 
-# The version information for this two must consist of 4 parts
-VIProductVersion "${INFO_PRODUCTVERSION}.0"
-VIFileVersion    "${INFO_PRODUCTVERSION}.0"
+# Windows version resources require four numeric parts.
+VIProductVersion "2.5.0.0"
+VIFileVersion    "2.5.0.0"
 
 VIAddVersionKey "CompanyName"     "${INFO_COMPANYNAME}"
 VIAddVersionKey "FileDescription" "${INFO_PRODUCTNAME} Installer"

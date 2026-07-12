@@ -33,6 +33,9 @@ const (
 	GPUReadStateUnavailable             = "unavailable"
 	GPUReadStateError                   = "error"
 	GPUReadStateUnknown                 = "unknown"
+	TelemetryStateFresh                 = "fresh"
+	TelemetryStateDelayed               = "delayed"
+	TelemetryStateUnavailable           = "unavailable"
 	GPUReadModeAuto                     = "auto"
 	GPUReadModeAlways                   = "always"
 	LearningBiasBalanced                = "balanced"
@@ -404,6 +407,7 @@ type TemperatureData struct {
 	UpdateTime        int64                  `json:"updateTime"`        // 更新时间戳
 	BridgeOk          bool                   `json:"bridgeOk"`          // 桥接程序是否正常
 	BridgeMsg         string                 `json:"bridgeMessage"`     // 桥接故障提示
+	TelemetryState    string                 `json:"telemetryState"`    // 前端展示用的遥测可信度
 	TelemetryFresh    bool                   `json:"-"`                 // 本轮是否直接读取到有效桥接遥测
 }
 

@@ -126,6 +126,7 @@
     "capabilities": {
       "read": "状態取得",
       "setSpeed": "速度設定",
+      "manualGears": "手動段階",
       "debugFrames": "デバッグフレーム",
       "raw": "Raw コマンド",
       "gearLight": "ギアランプ",
@@ -415,6 +416,22 @@
       "connected": "接続済み",
       "offline": "未接続"
     },
+    "runtimeState": {
+      "disconnected": "切断済み",
+      "discovering": "検出中",
+      "connecting": "接続中",
+      "capabilities": "機能確認中",
+      "ready": "制御可能",
+      "unavailable": "制御不可"
+    },
+    "capabilities": {
+      "title": "現在のデバイス機能"
+    },
+    "telemetryState": {
+      "fresh": "センサー: リアルタイム",
+      "delayed": "センサー: 遅延",
+      "unavailable": "センサー: 利用不可"
+    },
     "mode": {
       "smartControl": "スマート制御",
       "fixedSpeed": "固定回転数",
@@ -528,7 +545,6 @@
       "newVersionFound": "新しいバージョン {{version}} が見つかりました",
       "emptyReleaseNotes": "リリースノートがないか、今回の取得に失敗しました。",
       "downloadAndInstall": "ダウンロードしてインストール",
-      "autoCheck": "更新を自動確認",
       "upToDate": "最新バージョンです",
       "downloading": "ダウンロード中 {{percent}}%",
       "installing": "インストール中…",

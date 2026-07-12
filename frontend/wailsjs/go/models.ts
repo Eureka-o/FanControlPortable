@@ -1610,6 +1610,7 @@ export namespace types {
 	    updateTime: number;
 	    bridgeOk: boolean;
 	    bridgeMessage: string;
+	    telemetryState: string;
 
 	    static createFrom(source: any = {}) {
 	        return new TemperatureData(source);
@@ -1636,6 +1637,7 @@ export namespace types {
 	        this.updateTime = source["updateTime"];
 	        this.bridgeOk = source["bridgeOk"];
 	        this.bridgeMessage = source["bridgeMessage"];
+	        this.telemetryState = source["telemetryState"];
 	    }
 
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

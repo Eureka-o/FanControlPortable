@@ -53,13 +53,14 @@ func NewReader(bridgeManager bridgeTemperatureProvider, logger types.Logger) *Re
 }
 
 // Read 读取温度
-func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureData {
+func (r *Reader) Read(selection types.TemperatureSelection) (temp types.TemperatureData) {
 	selection = types.NormalizeTemperatureSelection(selection)
-	temp := types.TemperatureData{
+	temp = types.TemperatureData{
 		UpdateTime:    time.Now().UnixMilli(),
 		BridgeOk:      true,
 		ControlSource: selection.TempSource,
 	}
+	defer func() { temp.TelemetryState = telemetryStateFor(temp) }()
 
 	// 优先使用桥接程序读取温度
 	bridgeTemp := r.bridgeManager.GetTemperature(selection)
@@ -124,6 +125,16 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 	temp.ControlTemp = resolveControlTemp(temp.CPUTemp, temp.GPUTemp, selection.TempSource)
 
 	return temp
+}
+
+func telemetryStateFor(temp types.TemperatureData) string {
+	if !temp.BridgeOk || temp.ControlTemp <= 0 {
+		return types.TelemetryStateUnavailable
+	}
+	if temp.TelemetryFresh {
+		return types.TelemetryStateFresh
+	}
+	return types.TelemetryStateDelayed
 }
 
 func (r *Reader) storeLastGoodBridgeTemperature(selection types.TemperatureSelection, temp types.TemperatureData) {

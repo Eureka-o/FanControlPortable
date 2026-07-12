@@ -197,6 +197,27 @@ func TestReadTelemetryFreshOnlyForDirectBridgeData(t *testing.T) {
 	}
 }
 
+func TestTelemetryStateClassifiesFreshDelayedAndUnavailable(t *testing.T) {
+	cases := []struct {
+		name string
+		temp types.TemperatureData
+		want string
+	}{
+		{name: "fresh", temp: types.TemperatureData{BridgeOk: true, TelemetryFresh: true, ControlTemp: 60}, want: types.TelemetryStateFresh},
+		{name: "delayed", temp: types.TemperatureData{BridgeOk: true, ControlTemp: 60}, want: types.TelemetryStateDelayed},
+		{name: "bridge unavailable", temp: types.TemperatureData{ControlTemp: 60}, want: types.TelemetryStateUnavailable},
+		{name: "invalid temperature", temp: types.TemperatureData{BridgeOk: true, TelemetryFresh: true}, want: types.TelemetryStateUnavailable},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := telemetryStateFor(tc.temp); got != tc.want {
+				t.Fatalf("telemetryStateFor() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestReadTelemetryFreshIsFalseForLocalFallback(t *testing.T) {
 	oldExec := execHelperCommand
 	defer func() {

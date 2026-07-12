@@ -2,6 +2,11 @@ import { types } from '../../../wailsjs/go/models';
 import { apiService } from './api';
 import type { DeviceSettings, LegionPowerModePayload } from '../types/app';
 
+export interface DeviceRuntimeStatus {
+  state?: string;
+  canControl?: boolean;
+}
+
 export interface DeviceStatusPayload {
   connected?: boolean;
   currentData?: types.FanData | null;
@@ -13,6 +18,7 @@ export interface DeviceStatusPayload {
   model?: string;
   deviceName?: string;
   error?: string;
+  runtime?: DeviceRuntimeStatus;
 }
 
 class DeviceService {
