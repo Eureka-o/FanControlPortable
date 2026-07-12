@@ -970,7 +970,7 @@ export default function AdvancedDevicesPanel({ config, isConnected, onConfigChan
   }
 
   return (
-    <div className="space-y-4">
+    <div data-page-reveal="cards" className="space-y-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">

@@ -450,6 +450,41 @@ html[data-window-blur="on"]:not([data-theme]) {
   stroke-width: var(--theme-icon-stroke-width, 2);
 }
 
+@keyframes glacier-page-card-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+[data-page-reveal="cards"] > * {
+  animation: glacier-page-card-fade 0.3s ease-out both;
+}
+
+[data-page-reveal="cards"] > :nth-child(2) {
+  animation-delay: 0.08s;
+}
+
+[data-page-reveal="cards"] > :nth-child(3) {
+  animation-delay: 0.16s;
+}
+
+[data-page-reveal="cards"] > :nth-child(4) {
+  animation-delay: 0.24s;
+}
+
+[data-page-reveal="cards"] > :nth-child(5) {
+  animation-delay: 0.32s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-page-reveal="cards"] > * {
+    animation: none;
+  }
+}
+
 .glacier-shell[data-theme-page="status"] [data-theme-section="content-panel"] {
   background: var(--theme-page-home-background, var(--mica-content-surface));
 }
@@ -819,12 +854,19 @@ html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="com
 
 .glacier-shell [data-theme-ui="sidebar-item"] {
   border: 1px solid transparent;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
 }
 
 .glacier-shell [data-theme-ui="sidebar-item"][aria-selected="true"] {
-  background: color-mix(in srgb, var(--primary) 12%, var(--sidebar) 88%);
-  border-color: color-mix(in srgb, var(--primary) 18%, transparent);
-  box-shadow: 0 10px 24px -18px color-mix(in srgb, var(--primary) 50%, transparent);
+  background: color-mix(in srgb, var(--primary) 11%, var(--sidebar) 78%);
+  border-color: color-mix(in srgb, var(--primary) 25%, white 12%);
+  backdrop-filter: blur(12px) saturate(125%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 52%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--primary) 10%, transparent),
+    0 5px 10px -7px color-mix(in srgb, var(--foreground) 45%, transparent),
+    0 2px 5px -3px color-mix(in srgb, var(--primary) 40%, transparent);
+  transform: translateY(-1px);
 }
 
 html,

@@ -642,7 +642,7 @@ export default function AppShell({
                   >
                     {isActive && (
                       <span
-                        className="absolute inset-0 rounded-xl border border-primary/15 bg-primary/10"
+                        className="pointer-events-none absolute inset-0 rounded-xl"
                       />
                     )}
                     <Icon className="relative z-10 h-4.5 w-4.5" />
@@ -672,7 +672,7 @@ export default function AppShell({
                 )}
               >
                 {activeTab === ABOUT_TAB.id && (
-                  <span className="absolute inset-0 rounded-xl border border-primary/15 bg-primary/10" />
+                  <span className="pointer-events-none absolute inset-0 rounded-xl" />
                 )}
                 <ABOUT_TAB.icon className="relative z-10 h-4.5 w-4.5" />
               </button>

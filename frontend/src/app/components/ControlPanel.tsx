@@ -295,7 +295,7 @@ export default function ControlPanel({
 
   return (
     <>
-      <div data-theme-section="settings-page" className="space-y-4">
+      <div data-theme-section="settings-page" data-page-reveal="cards" className="space-y-4">
         <section data-theme-card="settings-overview" className="rounded-2xl border border-border bg-card p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-2">
             <Settings className="h-4 w-4 text-muted-foreground" />

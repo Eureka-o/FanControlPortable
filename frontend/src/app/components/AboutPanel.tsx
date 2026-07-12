@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BrowserOpenURL } from '../../../wailsjs/runtime/runtime';
-import { Heart, Mail, MessageCircle, RefreshCw, Rocket, Sparkles } from 'lucide-react';
+import { Download, Heart, Mail, MessageCircle, RefreshCw, Rocket, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { BRAND } from '../lib/brand';
@@ -19,7 +19,21 @@ type GithubRelease = {
   body?: string;
   prerelease?: boolean;
   draft?: boolean;
+  assets?: GithubReleaseAsset[];
 };
+
+type GithubReleaseAsset = {
+  name?: string;
+  browser_download_url?: string;
+};
+
+type UpdateStage = 'idle' | 'downloading' | 'installing' | 'done' | 'error';
+
+function findInstallerAsset(assets: GithubReleaseAsset[] | undefined) {
+  if (!Array.isArray(assets)) return '';
+  const asset = assets.find((item) => /fancontrol-.*-amd64-installer\.exe$/i.test(item?.name || ''));
+  return asset?.browser_download_url || '';
+}
 
 function openUrl(url: string) {
   try {
@@ -41,10 +55,11 @@ function isLatestVersion(currentVersion: string, latestVersion: string) {
     return match ? Number(match[1]) : null;
   };
 
-  const parseSemverParts = (value: string): number[] | null => {
-    const base = value.split('-')[0].split('+')[0];
+  const parseSemverParts = (value: string): { parts: number[]; prerelease: boolean } | null => {
+    const [withoutBuild] = value.split('+');
+    const [base, suffix] = withoutBuild.split('-', 2);
     if (!/^\d+(\.\d+){0,3}$/.test(base)) return null;
-    return base.split('.').map((part) => Number(part));
+    return { parts: base.split('.').map((part) => Number(part)), prerelease: Boolean(suffix) };
   };
 
   const currentNightly = parseNightly(currentRaw);
@@ -59,8 +74,8 @@ function isLatestVersion(currentVersion: string, latestVersion: string) {
     return false;
   }
 
-  const current = currentSemver;
-  const latest = latestSemver;
+  const current = currentSemver.parts;
+  const latest = latestSemver.parts;
   const length = Math.max(current.length, latest.length);
 
   for (let index = 0; index < length; index += 1) {
@@ -68,6 +83,10 @@ function isLatestVersion(currentVersion: string, latestVersion: string) {
     const latestPart = latest[index] ?? 0;
     if (latestPart > currentPart) return false;
     if (latestPart < currentPart) return true;
+  }
+
+  if (currentSemver.prerelease !== latestSemver.prerelease) {
+    return !latestSemver.prerelease;
   }
 
   return true;
@@ -85,8 +104,12 @@ export default function AboutPanel() {
   const [latestReleaseUrl, setLatestReleaseUrl] = useState<string>(BRAND.latestReleaseUrl);
   const [latestReleaseBody, setLatestReleaseBody] = useState('');
   const [latestReleaseIsPrerelease, setLatestReleaseIsPrerelease] = useState(false);
+  const [installerUrl, setInstallerUrl] = useState('');
   const [releaseLoading, setReleaseLoading] = useState(false);
   const [releaseError, setReleaseError] = useState('');
+  const [updateStage, setUpdateStage] = useState<UpdateStage>('idle');
+  const [updatePercent, setUpdatePercent] = useState(0);
+  const [updateError, setUpdateError] = useState('');
   const [isSponsorHovered, setIsSponsorHovered] = useState(false);
   const [isSponsorPinned, setIsSponsorPinned] = useState(false);
   const [sponsorPopupStyle, setSponsorPopupStyle] = useState<{ top: number; left: number; placement: 'top' | 'bottom' } | null>(null);
@@ -149,6 +172,7 @@ export default function AboutPanel() {
           setLatestReleaseUrl(BRAND.latestReleaseUrl);
           setLatestReleaseBody('');
           setLatestReleaseIsPrerelease(false);
+          setInstallerUrl('');
           setReleaseError(t('aboutPanel.version.noPrereleaseFound'));
           return;
         }
@@ -162,11 +186,13 @@ export default function AboutPanel() {
       setLatestReleaseUrl(targetRelease?.html_url || BRAND.latestReleaseUrl);
       setLatestReleaseBody(typeof targetRelease?.body === 'string' ? targetRelease.body.trim() : '');
       setLatestReleaseIsPrerelease(!!targetRelease?.prerelease);
+      setInstallerUrl(findInstallerAsset(targetRelease?.assets));
     } catch {
       setLatestReleaseTag('');
       setLatestReleaseUrl(BRAND.latestReleaseUrl);
       setLatestReleaseBody('');
       setLatestReleaseIsPrerelease(false);
+      setInstallerUrl('');
       setReleaseError(t('aboutPanel.version.checkFailed'));
     } finally {
       setReleaseLoading(false);
@@ -191,6 +217,20 @@ export default function AboutPanel() {
     void checkLatestRelease(releaseChannel);
   }, [checkLatestRelease, releaseChannel]);
 
+  useEffect(() => apiService.onUpdateDownloadProgress((payload) => {
+    const percent = Number.isFinite(payload?.percent) ? Math.max(0, Math.min(100, payload.percent)) : 0;
+    if (payload?.stage === 'downloading') {
+      setUpdateStage('downloading');
+      setUpdatePercent(percent);
+    } else if (payload?.stage === 'installing') {
+      setUpdateStage('installing');
+      setUpdatePercent(100);
+    } else if (payload?.stage === 'error') {
+      setUpdateStage('error');
+      setUpdateError(payload.message || t('aboutPanel.version.updateFailed'));
+    }
+  }), [t]);
+
   const clearSponsorHoverTimer = useCallback(() => {
     if (sponsorHoverTimerRef.current !== null) {
       window.clearTimeout(sponsorHoverTimerRef.current);
@@ -214,6 +254,30 @@ export default function AboutPanel() {
   const hasNewVersion = useMemo(() => {
     return !!appVersion && !!latestReleaseTag && !isLatestVersion(appVersion, latestReleaseTag);
   }, [appVersion, latestReleaseTag]);
+
+  const startDownloadInstall = useCallback(async () => {
+    if (!installerUrl) {
+      setUpdateStage('error');
+      setUpdateError(t('aboutPanel.version.noInstallerHint'));
+      return;
+    }
+    setUpdateStage('downloading');
+    setUpdatePercent(0);
+    setUpdateError('');
+    try {
+      await apiService.downloadAndInstallUpdate(
+        installerUrl,
+        t('aboutPanel.version.updaterWindowTitle'),
+        t('aboutPanel.version.updaterWindowBody'),
+        t('aboutPanel.version.updaterWindowRestarting'),
+      );
+      setUpdateStage('done');
+      setUpdatePercent(100);
+    } catch (error) {
+      setUpdateStage('error');
+      setUpdateError(error instanceof Error ? error.message : String(error));
+    }
+  }, [installerUrl, t]);
 
   const isSponsorOpen = isSponsorHovered || isSponsorPinned;
 
@@ -311,7 +375,7 @@ export default function AboutPanel() {
   }, [isSponsorOpen, updateSponsorPopupPosition]);
 
   return (
-    <div className="mx-auto max-w-[860px] space-y-4">
+    <div data-page-reveal="cards" className="mx-auto max-w-[860px] space-y-4">
       <section className="rounded-[28px] border border-border bg-card">
         <div className="flex items-center gap-2 border-b border-border/60 px-5 py-4">
           <Rocket className="h-4 w-4 text-muted-foreground" />
@@ -385,6 +449,26 @@ export default function AboutPanel() {
                   >
                     {releaseLoading ? t('aboutPanel.version.checkingButton') : t('aboutPanel.version.checkUpdate')}
                   </Button>
+                  {hasNewVersion && installerUrl && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      loading={updateStage === 'downloading' || updateStage === 'installing'}
+                      disabled={updateStage === 'done'}
+                      onClick={() => {
+                        void startDownloadInstall();
+                      }}
+                      icon={<Download className="h-3.5 w-3.5" />}
+                    >
+                      {updateStage === 'downloading'
+                        ? t('aboutPanel.version.downloading', { percent: updatePercent })
+                        : updateStage === 'installing'
+                          ? t('aboutPanel.version.installing')
+                          : updateStage === 'done'
+                            ? t('aboutPanel.version.restarting')
+                            : t('aboutPanel.version.downloadAndInstall')}
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
@@ -417,6 +501,9 @@ export default function AboutPanel() {
                 </div>
 
                 {releaseError && <div className="mt-3 text-xs text-amber-600 dark:text-amber-300">{releaseError}</div>}
+                {hasNewVersion && !installerUrl && !releaseLoading && (
+                  <div className="mt-3 text-xs text-muted-foreground">{t('aboutPanel.version.noInstallerHint')}</div>
+                )}
               </div>
             </div>
 
@@ -572,6 +659,72 @@ export default function AboutPanel() {
                 />
               </div>
             ))}
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {updateStage !== 'idle' && typeof document !== 'undefined' && createPortal(
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-5 right-5 z-[90] w-[23rem] max-w-[calc(100vw-2rem)] rounded-xl border border-border/80 bg-popover/95 p-4 shadow-2xl backdrop-blur-xl animate-in fade-in-0 slide-in-from-bottom-2"
+        >
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Download className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold text-foreground">
+                  {updateStage === 'downloading'
+                    ? t('aboutPanel.version.progressDownloading')
+                    : updateStage === 'installing'
+                      ? t('aboutPanel.version.progressInstalling')
+                      : updateStage === 'done'
+                        ? t('aboutPanel.version.progressRestarting')
+                        : t('aboutPanel.version.progressFailed')}
+                </div>
+                {updateStage === 'error' && (
+                  <button
+                    type="button"
+                    onClick={() => setUpdateStage('idle')}
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    aria-label={t('common.actions.close')}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {updateStage === 'error' ? (
+                <p className="mt-1 text-xs leading-relaxed text-amber-600 dark:text-amber-300">{updateError}</p>
+              ) : (
+                <>
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-border/70">
+                    <div
+                      className={`h-full rounded-full bg-primary transition-[width] duration-200 ${updateStage === 'installing' ? 'animate-pulse' : ''}`}
+                      style={{ width: `${updateStage === 'downloading' ? updatePercent : 100}%` }}
+                    />
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                    <span>{t(`aboutPanel.version.${updateStage}Hint`)}</span>
+                    {updateStage === 'downloading' && <span className="tabular-nums">{updatePercent}%</span>}
+                  </div>
+                </>
+              )}
+
+              {updateStage === 'error' && (
+                <div className="mt-3 flex gap-2">
+                  <Button variant="primary" size="sm" onClick={() => void startDownloadInstall()} icon={<RefreshCw className="h-3.5 w-3.5" />}>
+                    {t('aboutPanel.version.retryUpdate')}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => openUrl(latestReleaseUrl || BRAND.latestReleaseUrl)} icon={<Rocket className="h-3.5 w-3.5" />}>
+                    {t('aboutPanel.version.openReleasePage')}
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
         </div>,
         document.body,

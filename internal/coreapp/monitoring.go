@@ -62,6 +62,13 @@ func (a *CoreApp) stopTemperatureMonitoring() {
 	a.monitoringMutex.Unlock()
 }
 
+func (a *CoreApp) deviceControlReady() bool {
+	a.mutex.RLock()
+	connected := a.isConnected
+	a.mutex.RUnlock()
+	return connected && !a.systemSuspended.Load() && a.deviceManager != nil && a.deviceManager.IsConnected()
+}
+
 // startTemperatureMonitoring 开始温度监控
 func (a *CoreApp) startTemperatureMonitoring() {
 	ctx, done, started := a.beginTemperatureMonitoring()
@@ -275,7 +282,8 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			}
 			lastSmartTelemetryUsable = advancedTelemetryUsable
 
-			if cfg.AutoControl && temp.ControlTemp > 0 {
+			controlReady := a.deviceControlReady()
+			if cfg.AutoControl && temp.ControlTemp > 0 && controlReady {
 				speedUnit = a.activeDeviceSpeedUnit(&cfg)
 				sampleContext := newSmartControlSampleContext(cachedSelection, speedUnit)
 				contextChanged := !lastAutoControl || sampleContext != lastSmartSampleContext
@@ -460,7 +468,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				}
 			}
 
-			if !cfg.AutoControl {
+			if !cfg.AutoControl || !controlReady {
 				if lastAutoControl {
 					resetSmartControlSampling()
 				}

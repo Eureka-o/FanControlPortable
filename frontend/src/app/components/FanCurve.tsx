@@ -1357,7 +1357,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   }, [dragIndex, handleDragStart, speedUnitSuffix]);
 
   return (
-    <div data-theme-section="curve-page" className="relative space-y-4 px-1 pb-2">
+    <div data-theme-section="curve-page" data-page-reveal="cards" className="relative space-y-4 px-1 pb-2">
         <motion.div
           data-theme-card="curve-header"
           initial={{ opacity: 0, y: 8 }}

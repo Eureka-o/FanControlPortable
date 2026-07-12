@@ -129,42 +129,6 @@ function Copy-ThemeDirectory {
     Rename-Item -LiteralPath $tempDestination -NewName $name -Force -ErrorAction Stop
 }
 
-function Merge-ThemeDirectory {
-    param(
-        [string]$SourceDir,
-        [string]$DestinationDir
-    )
-
-    if ([string]::IsNullOrWhiteSpace($SourceDir) -or [string]::IsNullOrWhiteSpace($DestinationDir)) {
-        return
-    }
-    if (-not (Test-Path -LiteralPath $SourceDir -PathType Container)) {
-        return
-    }
-
-    $sourceRoot = (Get-Item -LiteralPath $SourceDir -ErrorAction Stop).FullName.TrimEnd('\')
-    New-Item -ItemType Directory -Path $DestinationDir -Force | Out-Null
-
-    Get-ChildItem -LiteralPath $sourceRoot -Force -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
-        $relative = $_.FullName.Substring($sourceRoot.Length).TrimStart('\')
-        if ([string]::IsNullOrWhiteSpace($relative)) {
-            return
-        }
-
-        $target = Join-Path $DestinationDir $relative
-        if ($_.PSIsContainer) {
-            New-Item -ItemType Directory -Path $target -Force | Out-Null
-            return
-        }
-
-        $parent = Split-Path -Parent $target
-        if (-not [string]::IsNullOrWhiteSpace($parent)) {
-            New-Item -ItemType Directory -Path $parent -Force | Out-Null
-        }
-        Copy-Item -LiteralPath $_.FullName -Destination $target -Force -ErrorAction Stop
-    }
-}
-
 function Sync-BundledThemes {
     param(
         [string]$InstallDir,
@@ -185,17 +149,12 @@ function Sync-BundledThemes {
         }
 
         $destination = Join-Path $InstallDir $bundled.Id
-        $destinationManifest = Join-Path $destination "theme.json"
-        if (Test-Path -LiteralPath $destinationManifest -PathType Leaf) {
-            $installedManifest = Read-ThemeManifest $destinationManifest
-            $installedVersion = if ($null -ne $installedManifest) { [string]$installedManifest.version } else { "" }
-            if ((Compare-ThemeVersion $bundled.Version $installedVersion) -le 0) {
-                return
-            }
+        if (Test-Path -LiteralPath $destination) {
+            return
         }
 
         try {
-            Merge-ThemeDirectory $bundled.Dir $destination
+            Copy-ThemeDirectory $bundled.Dir $destination "bundle"
         } catch {
             return
         }

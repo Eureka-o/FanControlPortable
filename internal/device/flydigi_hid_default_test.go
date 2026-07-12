@@ -283,6 +283,19 @@ func TestWaitForFlyDigiHIDReady(t *testing.T) {
 	}
 }
 
+func TestFlyDigiQueryResponseFramesFiltersUnrelatedTraffic(t *testing.T) {
+	frames := []types.DeviceDebugFrame{
+		{Direction: "tx", ChecksumOK: true, Command: "0x23"},
+		{Direction: "rx", ChecksumOK: false, Command: "0x23"},
+		{Direction: "rx", ChecksumOK: true, Command: "0xEF"},
+		{Direction: "rx", ChecksumOK: true, Command: "0x23"},
+	}
+	got := flyDigiQueryResponseFrames(0x23, frames)
+	if len(got) != 1 || got[0].Command != "0x23" {
+		t.Fatalf("matched frames = %#v, want one valid 0x23 response", got)
+	}
+}
+
 func TestParseFlyDigiFanDataFallsBackToReferenceOffsets(t *testing.T) {
 	report := []byte{
 		0x02, 0x5A, 0xA5, 0xEF,

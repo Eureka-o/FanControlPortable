@@ -89,9 +89,6 @@ func (m *Manager) closeFlyDigiHIDLocked() {
 		return
 	}
 	m.stopFlyDigiHIDReaderLocked()
-	if err := m.flyDigiHID.Close(); err != nil {
-		m.logWarn("飞智 HID 设备关闭失败: %v", err)
-	}
 	m.flyDigiHID = nil
 }
 
@@ -141,6 +138,11 @@ func (m *Manager) readFlyDigiHIDLoop(dev *flyDigiHIDDevice, stop <-chan struct{}
 	if dev == nil {
 		return
 	}
+	defer func() {
+		if err := dev.Close(); err != nil {
+			m.logWarn("FlyDigi HID close after reader exit failed: %v", err)
+		}
+	}()
 	if err := dev.SetNonblock(true); err != nil {
 		m.logWarn("设置飞智 HID 非阻塞读取失败: %v", err)
 	}
@@ -213,9 +215,6 @@ func (m *Manager) handleFlyDigiHIDReaderFailure(dev *flyDigiHIDDevice) {
 	m.flyDigiHIDStop = nil
 	m.flyDigiHIDDone = nil
 	m.currentFanData.Store(nil)
-	if err := dev.Close(); err != nil {
-		m.logWarn("FlyDigi HID close after reader failure failed: %v", err)
-	}
 	m.mutex.Unlock()
 
 	if notify != nil {

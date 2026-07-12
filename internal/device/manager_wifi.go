@@ -55,6 +55,7 @@ type Manager struct {
 	lightCmdBuf [65]byte
 
 	debugMutex  sync.Mutex
+	queryMutex  sync.Mutex
 	debugSeq    uint64
 	debugFrames []types.DeviceDebugFrame
 }

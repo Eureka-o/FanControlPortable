@@ -48,6 +48,7 @@ type CoreApp struct {
 	monitoringCancel              context.CancelFunc
 	monitoringDone                chan struct{}
 	monitoringStopping            bool
+	stopping                      atomic.Bool
 	currentTemp                   types.TemperatureData
 	deviceSettings                *types.DeviceSettings
 	lastDeviceMode                string
@@ -58,6 +59,7 @@ type CoreApp struct {
 	legionFnQSupportChecked       atomic.Bool
 	legionFnQRegistered           atomic.Bool
 	reconnectInProgress           atomic.Bool
+	connectMutex                  sync.Mutex
 	reconnectMutex                sync.Mutex
 	reconnectCancel               context.CancelFunc
 	reconnectGeneration           uint64

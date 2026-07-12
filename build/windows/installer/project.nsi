@@ -499,7 +499,7 @@ Section "$(THRM_STR_SECTION_MAIN)" SEC_MAIN
     SetOutPath $INSTDIR\bridge
     File /r "..\..\bin\bridge\*.*"
 
-    # Stage built-in themes first; the migration script copies only new or upgraded theme versions.
+    # Stage built-in themes first; the migration script copies only missing theme directories.
     DetailPrint "$(THRM_STR_INSTALLING_THEMES)"
     RMDir /r "$INSTDIR\.bundled-themes"
     SetOutPath $INSTDIR\.bundled-themes
@@ -796,9 +796,9 @@ Section "uninstall"
     DetailPrint "$(THRM_STR_REMOVE_LOGS)"
     RMDir /r "$INSTDIR\logs"
 
-    # Remove entire installation directory
+    # Remove the install root only when no user-managed files remain.
     DetailPrint "$(THRM_STR_REMOVE_DIR)"
-    RMDir /r $INSTDIR
+    RMDir $INSTDIR
 
     # Remove shortcuts
     DetailPrint "$(THRM_STR_REMOVE_SHORTCUTS)"

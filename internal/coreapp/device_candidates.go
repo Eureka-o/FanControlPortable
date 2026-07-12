@@ -174,10 +174,16 @@ func availableSerialPortNames() map[string]bool {
 }
 
 func (a *CoreApp) ConnectDeviceCandidate(req types.DeviceConnectRequest) bool {
+	a.cancelReconnect()
+	a.connectMutex.Lock()
+	defer a.connectMutex.Unlock()
 	return newDeviceConnectionFlow(a).connectCandidate(req)
 }
 
 func (a *CoreApp) ConnectBestScannedDevice() bool {
+	a.cancelReconnect()
+	a.connectMutex.Lock()
+	defer a.connectMutex.Unlock()
 	return newDeviceConnectionFlow(a).connectBestScannedDevice()
 }
 

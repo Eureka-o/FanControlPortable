@@ -247,24 +247,6 @@ jobs:
           FANCONTROL_BUILD_VERSION: ${{ needs.prepare-release.outputs.build_version }}
         run: build.bat
 
-      - name: Collect release files
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path build/output | Out-Null
-          $buildVersion = '${{ needs.prepare-release.outputs.build_version }}'
-          if ([string]::IsNullOrWhiteSpace($buildVersion)) {
-            $wailsConfig = Get-Content wails.json -Raw | ConvertFrom-Json
-            $buildVersion = $wailsConfig.info.productVersion
-          }
-          if ([string]::IsNullOrWhiteSpace($buildVersion)) {
-            $buildVersion = 'dev'
-          }
-          Copy-Item build/bin/FanControl.exe build/output/FanControl.exe
-          Copy-Item 'build/bin/FanControl Core.exe' 'build/output/FanControl Core.exe'
-          Copy-Item build/bin/PawnIO_setup.exe build/output/PawnIO_setup.exe
-          Copy-Item -Recurse build/bin/bridge build/output/bridge
-          Compress-Archive -Path build/output/* -DestinationPath "build/bin/FanControl-$buildVersion-portable.zip" -Force
-
       - name: Upload PR artifacts
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4

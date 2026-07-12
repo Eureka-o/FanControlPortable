@@ -21,6 +21,9 @@ var flyDigiDeviceSettingsQueryCommands = []byte{
 }
 
 func (m *Manager) queryFlyDigiHIDDeviceSettings() (types.DeviceSettings, error) {
+	m.queryMutex.Lock()
+	defer m.queryMutex.Unlock()
+
 	settings := types.DeviceSettings{
 		Available: false,
 		Source:    types.DeviceTransportHID,
@@ -42,12 +45,24 @@ func (m *Manager) queryFlyDigiHIDDeviceSettings() (types.DeviceSettings, error) 
 			lastErr = err
 			continue
 		}
+		frames = flyDigiQueryResponseFrames(cmd, frames)
 		settings.RawFrames = append(settings.RawFrames, frames...)
 		applyFlyDigiDeviceSettingsFrames(&settings, frames)
 	}
 	applyFlyDigiCurrentStatus(&settings, m.GetCurrentFanData())
 	settings.Available = len(settings.GearRPMTable) > 0 || settings.WorkMode != "" || settings.Status != nil
 	return settings, lastErr
+}
+
+func flyDigiQueryResponseFrames(cmd byte, frames []types.DeviceDebugFrame) []types.DeviceDebugFrame {
+	command := fmt.Sprintf("0x%02X", cmd)
+	matched := make([]types.DeviceDebugFrame, 0, len(frames))
+	for _, frame := range frames {
+		if frame.Direction == "rx" && frame.ChecksumOK && frame.Command == command {
+			matched = append(matched, frame)
+		}
+	}
+	return matched
 }
 
 func (m *Manager) queryFlyDigiHIDCommand(cmd byte) ([]types.DeviceDebugFrame, error) {
