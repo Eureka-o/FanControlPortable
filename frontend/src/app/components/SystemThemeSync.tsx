@@ -212,7 +212,7 @@ export default function SystemThemeSync() {
     const rawMode = (state.config as any)?.themeMode;
     return typeof rawMode === 'string' && rawMode.trim() ? rawMode.trim() : null;
   });
-  const windowBlurMode = useAppStore((state) => (state.config as any)?.windowBlur || 'on');
+  const windowBlurMode = useAppStore((state) => (state.config as any)?.windowBlur || 'acrylic');
 
   useLayoutEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
@@ -269,7 +269,7 @@ export default function SystemThemeSync() {
       .then(({ WindowBlurEnabled }) => WindowBlurEnabled())
       .then((enabled) => {
         if (cancelled) return;
-        if (enabled || windowBlurMode === 'on') {
+        if (enabled) {
           document.documentElement.dataset.windowBlur = 'on';
         } else {
           delete document.documentElement.dataset.windowBlur;

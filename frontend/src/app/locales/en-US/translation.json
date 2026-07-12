@@ -867,8 +867,8 @@
       "themeTitle": "Theme",
       "themeDescription": "Follow the system by default, lock to light/dark, or pick a custom theme from the install themes folder.",
       "themeOpenFolder": "Open themes folder",
-      "windowBlurTitle": "Glass window",
-      "windowBlurDescription": "Use Acrylic window material for built-in light/dark themes. Custom themes are not changed.",
+      "windowBlurTitle": "Window material",
+      "windowBlurDescription": "Choose Acrylic, Mica, Mica Alt, or Off. Built-in light and dark themes adapt automatically; custom themes are unchanged.",
       "windowBlurTip": "Restart the app for this setting to take effect.",
       "languageTitle": "Language",
       "languageDescription": "Change the app language instantly and remember the choice automatically.",
@@ -1147,6 +1147,12 @@
         "light": "Light",
         "dark": "Dark",
         "system": "Follow system"
+      },
+      "windowMaterial": {
+        "acrylic": "Acrylic",
+        "mica": "Mica",
+        "tabbed": "Mica Alt",
+        "off": "Off"
       },
       "lightMode": {
         "off": {

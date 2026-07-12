@@ -557,7 +557,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     const normalizeRateOffsets = (source?: number[]) => Array.isArray(source) ? [...source.slice(0, 7), ...defaultRateOffsets].slice(0, 7) : defaultRateOffsets;
 
     if (!existing) {
-      return { enabled: true, learning: true, learningBias: 'balanced', filterTransientSpike: true, temperatureRisePrediction: false, temperatureRisePredictionMaxBoost: 60, targetTemp: 68, aggressiveness: 5, hysteresis: 2, minRpmChange: 2, rampUpLimit: 8, rampDownLimit: 6, learnRate: 3, learnWindow: 8, learnDelay: 3, overheatWeight: 8, rpmDeltaWeight: 5, noiseWeight: 4, trendGain: 5, maxLearnOffset: 20, learnedOffsets: defaultOffsets, learnedOffsetsHeat: defaultOffsets, learnedOffsetsCool: defaultOffsets, learnedRateHeat: defaultRateOffsets, learnedRateCool: defaultRateOffsets };
+      return { enabled: true, learning: true, learningBias: 'balanced', filterTransientSpike: true, temperatureRisePrediction: true, temperatureRisePredictionMaxBoost: 60, targetTemp: 68, aggressiveness: 5, hysteresis: 2, minRpmChange: 2, rampUpLimit: 8, rampDownLimit: 6, learnRate: 3, learnWindow: 8, learnDelay: 3, overheatWeight: 8, rpmDeltaWeight: 5, noiseWeight: 4, trendGain: 5, maxLearnOffset: 20, learnedOffsets: defaultOffsets, learnedOffsetsHeat: defaultOffsets, learnedOffsetsCool: defaultOffsets, learnedRateHeat: defaultRateOffsets, learnedRateCool: defaultRateOffsets };
     }
 
     return {
@@ -565,7 +565,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       learning: existing.learning ?? true,
       learningBias: normalizeLearningBias((existing as any).learningBias),
       filterTransientSpike: existing.filterTransientSpike ?? true,
-      temperatureRisePrediction: (existing as any).temperatureRisePrediction ?? false,
+      temperatureRisePrediction: (existing as any).temperatureRisePrediction ?? true,
       temperatureRisePredictionMaxBoost: (existing as any).temperatureRisePredictionMaxBoost ?? 60,
       targetTemp: normalizeTargetTemp(existing.targetTemp ?? 68),
       hysteresis: Math.max(1, existing.hysteresis ?? 2),
