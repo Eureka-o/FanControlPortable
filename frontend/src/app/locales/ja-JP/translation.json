@@ -867,8 +867,8 @@
       "themeTitle": "テーマ",
       "themeDescription": "システム設定に従う、ライト/ダーク固定のほか、themes フォルダーからカスタムテーマも選択できます。",
       "themeOpenFolder": "themes フォルダー",
-      "windowBlurTitle": "ガラス風ウィンドウ",
-      "windowBlurDescription": "内蔵ライト/ダークテーマで Acrylic ウィンドウ素材を使用します。カスタムテーマには影響しません。",
+      "windowBlurTitle": "ウィンドウ素材",
+      "windowBlurDescription": "Acrylic、Mica、Mica Alt、オフから選択できます。内蔵のライト/ダークテーマに合わせて表示され、カスタムテーマには影響しません。",
       "windowBlurTip": "この設定はアプリ再起動後に反映されます。",
       "languageTitle": "言語",
       "languageDescription": "アプリの表示言語を切り替え、選択した言語は自動で保存されます。",
@@ -1147,6 +1147,12 @@
         "light": "ライト",
         "dark": "ダーク",
         "system": "システムに従う"
+      },
+      "windowMaterial": {
+        "acrylic": "Acrylic",
+        "mica": "Mica",
+        "tabbed": "Mica Alt",
+        "off": "オフ"
       },
       "lightMode": {
         "off": {

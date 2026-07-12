@@ -19,8 +19,9 @@ const (
 	ThemeModeLight                      = "light"
 	ThemeModeDark                       = "dark"
 	ThemeModeTHRM                       = "thrm"
-	WindowBlurAuto                      = "auto"
-	WindowBlurOn                        = "on"
+	WindowBlurAcrylic                   = "acrylic"
+	WindowBlurMica                      = "mica"
+	WindowBlurTabbed                    = "tabbed"
 	WindowBlurOff                       = "off"
 	TempSourceMax                       = "max"
 	TempSourceCPU                       = "cpu"
@@ -117,15 +118,17 @@ func NormalizeThemeMode(mode string) string {
 	return ThemeModeSystem
 }
 
-// NormalizeWindowBlur 归一化窗口毛玻璃设置，非法值回退为 on。
+// NormalizeWindowBlur 归一化窗口材质，旧版 on/auto 与非法值回退为 Acrylic。
 func NormalizeWindowBlur(mode string) string {
 	switch mode {
-	case WindowBlurAuto:
-		return WindowBlurAuto
+	case WindowBlurMica:
+		return WindowBlurMica
+	case WindowBlurTabbed:
+		return WindowBlurTabbed
 	case WindowBlurOff:
 		return WindowBlurOff
 	default:
-		return WindowBlurOn
+		return WindowBlurAcrylic
 	}
 }
 
@@ -546,7 +549,7 @@ type AppConfig struct {
 	PowerOnStart                      bool                                   `json:"powerOnStart"`            // 通电自启动
 	WindowsAutoStart                  bool                                   `json:"windowsAutoStart"`        // Windows开机自启动
 	ThemeMode                         string                                 `json:"themeMode"`               // 主题模式: system/light/dark/thrm
-	WindowBlur                        string                                 `json:"windowBlur"`              // 窗口毛玻璃: on/off/auto
+	WindowBlur                        string                                 `json:"windowBlur"`              // 窗口材质: acrylic/mica/tabbed/off
 	SmartStartStop                    string                                 `json:"smartStartStop"`          // 智能启停
 	Brightness                        int                                    `json:"brightness"`              // 亮度
 	TempUpdateRate                    int                                    `json:"tempUpdateRate"`          // 温度更新频率(秒)
@@ -622,7 +625,7 @@ func GetDefaultSmartControlConfigForUnit(curve []FanCurvePoint, unit string) Sma
 			LearnedOffsetsCool:                coolOffsets,
 			LearnedRateHeat:                   heatRate,
 			LearnedRateCool:                   coolRate,
-			TemperatureRisePrediction:         false,
+			TemperatureRisePrediction:         true,
 			TemperatureRisePredictionMaxBoost: 80,
 		}
 	}
@@ -651,7 +654,7 @@ func GetDefaultSmartControlConfigForUnit(curve []FanCurvePoint, unit string) Sma
 		LearnedOffsetsCool:                coolOffsets,
 		LearnedRateHeat:                   heatRate,
 		LearnedRateCool:                   coolRate,
-		TemperatureRisePrediction:         false,
+		TemperatureRisePrediction:         true,
 		TemperatureRisePredictionMaxBoost: 60,
 	}
 }
@@ -1038,7 +1041,7 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		PowerOnStart:            false,
 		WindowsAutoStart:        false,
 		ThemeMode:               ThemeModeSystem,
-		WindowBlur:              WindowBlurOn,
+		WindowBlur:              WindowBlurAcrylic,
 		SmartStartStop:          "off",
 		Brightness:              100,
 		TempUpdateRate:          2,

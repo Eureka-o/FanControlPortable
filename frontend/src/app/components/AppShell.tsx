@@ -565,7 +565,7 @@ export default function AppShell({
     about: aboutContent,
   };
   const transitionDirection = getTabTransitionDirection(previousActiveTabRef.current, activeTab);
-  const windowBlurMode = String((config as any)?.windowBlur || 'on');
+  const windowBlurMode = String((config as any)?.windowBlur || 'acrylic');
 
   useEffect(() => {
     if (previousActiveTabRef.current === activeTab) {

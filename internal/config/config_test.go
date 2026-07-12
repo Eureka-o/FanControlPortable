@@ -429,3 +429,65 @@ func TestLoadUpgradeConfigPreservesDeviceProfilesAndLearningState(t *testing.T) 
 		t.Fatalf("learned rate cool not preserved: %#v", loaded.SmartControl.LearnedRateCool)
 	}
 }
+
+func TestLoadAppearanceAndPredictionDefaultsPreserveExplicitChoices(t *testing.T) {
+	writeConfig := func(t *testing.T, cfg map[string]any) string {
+		t.Helper()
+		installDir := t.TempDir()
+		configDir := filepath.Join(installDir, "config")
+		if err := os.MkdirAll(configDir, 0755); err != nil {
+			t.Fatalf("mkdir config dir: %v", err)
+		}
+		data, err := json.Marshal(cfg)
+		if err != nil {
+			t.Fatalf("marshal config: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(configDir, "config.json"), data, 0644); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+		return installDir
+	}
+
+	defaultMap := func(t *testing.T) map[string]any {
+		t.Helper()
+		data, err := json.Marshal(types.GetDefaultConfig(false))
+		if err != nil {
+			t.Fatalf("marshal defaults: %v", err)
+		}
+		var cfg map[string]any
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			t.Fatalf("unmarshal defaults: %v", err)
+		}
+		return cfg
+	}
+
+	t.Run("missing fields receive new defaults", func(t *testing.T) {
+		cfg := defaultMap(t)
+		delete(cfg, "windowBlur")
+		smart := cfg["smartControl"].(map[string]any)
+		delete(smart, "temperatureRisePrediction")
+
+		loaded := NewManager(writeConfig(t, cfg), nil).Load(false)
+		if loaded.WindowBlur != "acrylic" {
+			t.Fatalf("WindowBlur = %q, want acrylic", loaded.WindowBlur)
+		}
+		if !loaded.SmartControl.TemperatureRisePrediction {
+			t.Fatal("missing temperatureRisePrediction should migrate to enabled")
+		}
+	})
+
+	t.Run("explicit choices survive upgrade", func(t *testing.T) {
+		cfg := defaultMap(t)
+		cfg["windowBlur"] = "mica"
+		smart := cfg["smartControl"].(map[string]any)
+		smart["temperatureRisePrediction"] = false
+
+		loaded := NewManager(writeConfig(t, cfg), nil).Load(false)
+		if loaded.WindowBlur != "mica" {
+			t.Fatalf("WindowBlur = %q, want mica", loaded.WindowBlur)
+		}
+		if loaded.SmartControl.TemperatureRisePrediction {
+			t.Fatal("explicit disabled temperatureRisePrediction should be preserved")
+		}
+	})
+}

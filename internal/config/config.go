@@ -405,7 +405,7 @@ func applyMissingWindowBlurDefaults(cfg *types.AppConfig, rawConfig map[string]j
 		return
 	}
 	if _, ok := rawConfig["windowBlur"]; !ok {
-		cfg.WindowBlur = types.WindowBlurOn
+		cfg.WindowBlur = types.WindowBlurAcrylic
 		return
 	}
 	cfg.WindowBlur = types.NormalizeWindowBlur(cfg.WindowBlur)

@@ -33,6 +33,13 @@ const THEME_MODE_OPTIONS = [
   { value: 'system', labelKey: 'controlPanel.options.themeMode.system' },
 ];
 
+const WINDOW_MATERIAL_OPTIONS = [
+  { value: 'acrylic', labelKey: 'controlPanel.options.windowMaterial.acrylic' },
+  { value: 'mica', labelKey: 'controlPanel.options.windowMaterial.mica' },
+  { value: 'tabbed', labelKey: 'controlPanel.options.windowMaterial.tabbed' },
+  { value: 'off', labelKey: 'controlPanel.options.windowMaterial.off' },
+];
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -70,6 +77,10 @@ export default function SystemSettingsSection({
       { value: 'en-US', label: t('common.languages.en-US') },
       { value: 'ja-JP', label: t('common.languages.ja-JP') },
     ]),
+    [locale, t],
+  );
+  const windowMaterialOptions = useMemo(
+    () => WINDOW_MATERIAL_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey) })),
     [locale, t],
   );
 
@@ -127,11 +138,11 @@ export default function SystemSettingsSection({
     }
   }, [config, customThemes, onConfigChange]);
 
-  const handleWindowBlurChange = useCallback(async (enabled: boolean) => {
+  const handleWindowBlurChange = useCallback(async (mode: string) => {
     const previousConfig = config;
     const optimisticCfg = types.AppConfig.createFrom({
       ...config,
-      windowBlur: enabled ? 'on' : 'off',
+      windowBlur: mode,
     });
     onConfigChange(optimisticCfg);
     try {
@@ -216,17 +227,19 @@ export default function SystemSettingsSection({
       </SettingRow>
 
       <SettingRow
-        icon={<Sparkles className={clsx('h-4 w-4', ((config as any).windowBlur || 'on') !== 'off' ? 'text-primary' : '')} />}
+        icon={<Sparkles className={clsx('h-4 w-4', ((config as any).windowBlur || 'acrylic') !== 'off' ? 'text-primary' : '')} />}
         title={t('controlPanel.system.windowBlurTitle')}
         description={t('controlPanel.system.windowBlurDescription')}
         tip={t('controlPanel.system.windowBlurTip')}
       >
-        <ToggleSwitch
-          enabled={((config as any).windowBlur || 'on') !== 'off'}
-          onChange={handleWindowBlurChange}
-          size="sm"
-          color="blue"
-        />
+        <div className="w-36">
+          <Select
+            value={String((config as any).windowBlur || 'acrylic')}
+            onChange={(value: string | number) => handleWindowBlurChange(String(value))}
+            options={windowMaterialOptions}
+            size="sm"
+          />
+        </div>
       </SettingRow>
 
       <SettingRow
