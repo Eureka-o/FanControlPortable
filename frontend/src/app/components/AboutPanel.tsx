@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { BRAND } from '../lib/brand';
 import { ALIPAY_QR_DATA_URL, WECHAT_PAY_QR_DATA_URL } from '../lib/support-assets';
 import { apiService } from '../services/api';
-import { Badge, Button, ScrollArea, ToggleSwitch } from './ui/index';
+import { Badge, Button, ScrollArea } from './ui/index';
 
 type ReleaseChannel = 'stable' | 'prerelease';
 
@@ -91,59 +91,8 @@ function isLatestVersion(currentVersion: string, latestVersion: string) {
 }
 
 const ABOUT_CARD_CLASS = 'min-w-0 rounded-3xl border border-border/70 bg-card p-5';
-const AUTO_CHECK_UPDATES_STORAGE_KEY = 'fancontrol.auto-check-updates';
-const AUTO_CHECK_UPDATES_SESSION_KEY = 'fancontrol.auto-check-updates.notified';
 const SUPPORT_EMAIL = '1989005183@qq.com';
 const SUPPORT_QQ_GROUP = '928338191';
-
-function readAutoCheckUpdates() {
-  if (typeof window === 'undefined') return false;
-  return window.localStorage.getItem(AUTO_CHECK_UPDATES_STORAGE_KEY) === 'true';
-}
-
-export function AutoUpdateNotifier() {
-  const { t } = useTranslation();
-
-  useEffect(() => {
-    let disposed = false;
-    const checkWhenForeground = async () => {
-      if (
-        document.visibilityState !== 'visible'
-        || window.localStorage.getItem(AUTO_CHECK_UPDATES_STORAGE_KEY) !== 'true'
-        || window.sessionStorage.getItem(AUTO_CHECK_UPDATES_SESSION_KEY) === 'true'
-      ) {
-        return;
-      }
-      window.sessionStorage.setItem(AUTO_CHECK_UPDATES_SESSION_KEY, 'true');
-      try {
-        const [currentVersion, response] = await Promise.all([
-          apiService.getAppVersion(),
-          fetch(BRAND.latestReleaseApiUrl, { headers: { Accept: 'application/vnd.github+json' } }),
-        ]);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const release = (await response.json()) as GithubRelease;
-        if (!release.tag_name) throw new Error('Release tag is missing');
-        if (disposed) return;
-        if (currentVersion && !isLatestVersion(currentVersion, release.tag_name)) {
-          toast.info(t('aboutPanel.version.newVersionFound', { version: release.tag_name }));
-        } else {
-          toast.success(t('aboutPanel.version.upToDate'));
-        }
-      } catch {
-        if (!disposed) toast.error(t('aboutPanel.version.checkFailed'));
-      }
-    };
-
-    void checkWhenForeground();
-    document.addEventListener('visibilitychange', checkWhenForeground);
-    return () => {
-      disposed = true;
-      document.removeEventListener('visibilitychange', checkWhenForeground);
-    };
-  }, [t]);
-
-  return null;
-}
 
 export default function AboutPanel() {
   const { t } = useTranslation();
@@ -156,7 +105,6 @@ export default function AboutPanel() {
   const [installerUrl, setInstallerUrl] = useState('');
   const [releaseLoading, setReleaseLoading] = useState(false);
   const [releaseError, setReleaseError] = useState('');
-  const [autoCheckUpdates, setAutoCheckUpdates] = useState(() => readAutoCheckUpdates());
   const [updateStarting, setUpdateStarting] = useState(false);
   const [isSponsorHovered, setIsSponsorHovered] = useState(false);
   const [isSponsorPinned, setIsSponsorPinned] = useState(false);
@@ -289,8 +237,12 @@ export default function AboutPanel() {
 
   const handleCheckUpdate = useCallback(async () => {
     const release = await checkLatestRelease(releaseChannel);
-    if (release?.tag_name && appVersion && isLatestVersion(appVersion, release.tag_name)) {
-      toast.success(t('aboutPanel.version.upToDate'));
+    if (release?.tag_name && appVersion) {
+      if (isLatestVersion(appVersion, release.tag_name)) {
+        toast.success(t('aboutPanel.version.upToDate'));
+      } else {
+        toast.info(t('aboutPanel.version.newVersionFound', { version: release.tag_name }));
+      }
     }
   }, [appVersion, checkLatestRelease, releaseChannel, t]);
 
@@ -328,11 +280,6 @@ export default function AboutPanel() {
       setUpdateStarting(false);
     }
   }, [appVersion, checkLatestRelease, installerUrl, latestReleaseTag, releaseChannel, t, updateStarting]);
-
-  const handleAutoCheckUpdatesChange = useCallback((enabled: boolean) => {
-    setAutoCheckUpdates(enabled);
-    window.localStorage.setItem(AUTO_CHECK_UPDATES_STORAGE_KEY, String(enabled));
-  }, []);
 
   const isSponsorOpen = isSponsorHovered || isSponsorPinned;
 
@@ -430,7 +377,7 @@ export default function AboutPanel() {
   }, [isSponsorOpen, updateSponsorPopupPosition]);
 
   return (
-    <div data-page-reveal="cards" className="mx-auto max-w-[860px] space-y-4">
+    <div data-page-reveal="cards" className="mx-auto max-w-[980px] space-y-4">
       <section className="rounded-[28px] border border-border bg-card">
         <div className="flex items-center gap-2 border-b border-border/60 px-5 py-4">
           <Rocket className="h-4 w-4 text-muted-foreground" />
@@ -492,20 +439,7 @@ export default function AboutPanel() {
                   </button>
                 </div>
 
-              <div className="mt-4 flex items-center justify-between gap-4 border-y border-border/60 py-3">
-                <div className="min-w-0">
-                  <div className="text-sm font-medium text-foreground">{t('aboutPanel.version.autoCheck')}</div>
-                </div>
-                  <ToggleSwitch
-                    enabled={autoCheckUpdates}
-                    onChange={handleAutoCheckUpdatesChange}
-                    size="sm"
-                    color="blue"
-                    srLabel={t('aboutPanel.version.autoCheck')}
-                  />
-                </div>
-
-                <div className="mt-4 flex flex-wrap items-center gap-2">
+                <div data-about-actions className="mt-4 flex flex-wrap items-center gap-2 lg:flex-nowrap">
                   <div data-update-actions className="inline-flex overflow-hidden rounded-lg border border-primary bg-primary shadow-sm">
                     <Button
                       variant="primary"

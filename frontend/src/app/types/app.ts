@@ -45,6 +45,7 @@ export interface FanData {
 }
 
 export type GPUReadState = 'active' | 'notPolled' | 'unavailable' | 'error' | 'unknown';
+export type TelemetryState = 'fresh' | 'delayed' | 'unavailable';
 
 // 温度数据
 export interface TemperatureData {
@@ -65,6 +66,7 @@ export interface TemperatureData {
   updateTime: number;  // 更新时间戳
   bridgeOk?: boolean;  // 桥接程序是否正常
   bridgeMessage?: string; // 桥接程序提示
+  telemetryState?: TelemetryState;
 }
 
 export interface TemperatureSensor {

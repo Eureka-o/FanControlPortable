@@ -134,6 +134,7 @@ const temperatureDataEquals = (left: types.TemperatureData | null, right: types.
     left.gpuModel === right.gpuModel &&
     left.bridgeOk === right.bridgeOk &&
     left.bridgeMessage === right.bridgeMessage &&
+    (left as types.TemperatureData & { telemetryState?: string }).telemetryState === (right as types.TemperatureData & { telemetryState?: string }).telemetryState &&
     sensorListEquals(left.cpuSensors, right.cpuSensors) &&
     sensorListEquals(left.gpuSensors, right.gpuSensors) &&
     sensorListEquals(left.cpuPowerSensors, right.cpuPowerSensors) &&
@@ -141,11 +142,15 @@ const temperatureDataEquals = (left: types.TemperatureData | null, right: types.
     gpuDeviceListEquals(left.gpuDevices, right.gpuDevices);
 };
 
+const runtimeStateFromStatus = (status?: DeviceStatusPayload | null) =>
+  status?.runtime?.state || (status?.connected ? 'ready' : 'disconnected');
+
 type ActiveTab = 'status' | 'curve' | 'control' | 'devices' | 'about';
 export type CurveFocusTarget = 'curve-editor' | 'history-details';
 
 interface AppStore {
   isConnected: boolean;
+  deviceRuntimeState: string;
   deviceProductId: string | null;
   deviceModel: string | null;
   deviceSettings: DeviceSettings | null;
@@ -181,6 +186,7 @@ interface AppStore {
 
 export const useAppStore = create<AppStore>((set, get) => ({
   isConnected: false,
+  deviceRuntimeState: 'disconnected',
   deviceProductId: null,
   deviceModel: null,
   deviceSettings: null,
@@ -207,13 +213,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
   clearBridgeWarning: () => set({ bridgeWarning: null }),
 
   handleTemperaturePayload: (data) => {
-    const bridgeMessage = data?.bridgeMessage?.trim() ?? '';
-    const bridgeWarning = data?.bridgeOk === false ? bridgeMessage || getBridgeWarningMessage() : null;
     const current = get();
-    if (temperatureDataEquals(current.temperature, data) && current.bridgeWarning === bridgeWarning) {
+    const merged = data && current.temperature ? {
+      ...data,
+      cpuSensors: data.cpuSensors ?? current.temperature.cpuSensors,
+      gpuSensors: data.gpuSensors ?? current.temperature.gpuSensors,
+      cpuPowerSensors: data.cpuPowerSensors ?? current.temperature.cpuPowerSensors,
+      gpuPowerSensors: data.gpuPowerSensors ?? current.temperature.gpuPowerSensors,
+      gpuDevices: data.gpuDevices ?? current.temperature.gpuDevices,
+    } as types.TemperatureData : data;
+    const bridgeMessage = merged?.bridgeMessage?.trim() ?? '';
+    const bridgeWarning = merged?.bridgeOk === false ? bridgeMessage || getBridgeWarningMessage() : null;
+    if (temperatureDataEquals(current.temperature, merged) && current.bridgeWarning === bridgeWarning) {
       return;
     }
-    set({ temperature: data, bridgeWarning });
+    set({ temperature: merged, bridgeWarning });
   },
 
   appendSessionHistoryPoint: (data) => {
@@ -229,12 +243,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     if (!point) return;
 
-    set((state) => ({
-      sessionHistoryPoints: appendSampledHistoryPoint(state.sessionHistoryPoints, point, {
+    set((state) => {
+      const points = appendSampledHistoryPoint(state.sessionHistoryPoints, point, {
         retentionMs: SESSION_HISTORY_RETENTION_MS,
         limit: SESSION_HISTORY_LIMIT,
-      }),
-    }));
+      });
+      return points === state.sessionHistoryPoints ? state : { sessionHistoryPoints: points };
+    });
   },
 
   initializeApp: async () => {
@@ -251,6 +266,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set({
         config: appConfig,
         isConnected: deviceStatus.connected || false,
+        deviceRuntimeState: runtimeStateFromStatus(deviceStatus),
         deviceProductId: deviceStatus.productId || null,
         deviceModel: deviceStatus.model || null,
         deviceSettings: deviceStatus.deviceSettings || null,
@@ -275,20 +291,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   connectDevice: async () => {
     try {
-      const success = await deviceService.connect();
-      if (success) {
-        await get().refreshDeviceContext();
-      }
+      set({ deviceRuntimeState: 'discovering' });
+      await deviceService.connect();
+      await get().refreshDeviceContext();
     } catch (error) {
       console.error('连接失败:', error);
-      set({ error: i18n.t('store.errors.connectDevice') });
+      set({ deviceRuntimeState: 'disconnected', error: i18n.t('store.errors.connectDevice') });
     }
   },
 
   disconnectDevice: async () => {
     try {
       await deviceService.disconnect();
-      set({ isConnected: false, deviceProductId: null, deviceModel: null, deviceSettings: null, runtimeDeviceProfile: null, runtimeDeviceCapabilities: null, fanData: null });
+      set({ isConnected: false, deviceRuntimeState: 'disconnected', deviceProductId: null, deviceModel: null, deviceSettings: null, runtimeDeviceProfile: null, runtimeDeviceCapabilities: null, fanData: null });
     } catch (error) {
       console.error('断开连接失败:', error);
     }
@@ -306,6 +321,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set({
         config: appConfig ? types.AppConfig.createFrom(appConfig) : get().config,
         isConnected: status?.connected || false,
+        deviceRuntimeState: runtimeStateFromStatus(status),
         deviceSettings: status?.deviceSettings || null,
         deviceProductId: status?.productId || null,
         deviceModel: status?.model || null,
@@ -345,6 +361,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           coreServiceError,
           error: coreServiceError,
           isConnected: false,
+          deviceRuntimeState: 'disconnected',
           deviceProductId: null,
           deviceModel: null,
           deviceSettings: null,
@@ -375,6 +392,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           currentData?: types.FanData | null;
           deviceProfile?: types.DeviceProfile | null;
           deviceCapabilities?: types.DeviceCapabilities | null;
+          runtime?: { state?: string };
         };
         const settings = (deviceInfo as { deviceSettings?: DeviceSettings | null })?.deviceSettings || null;
         const connectedDeviceName = [
@@ -385,6 +403,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         ].map((value) => (typeof value === 'string' ? value.trim() : '')).find(Boolean);
         set({
           isConnected: true,
+          deviceRuntimeState: info.runtime?.state || 'capabilities',
           deviceProductId: info.productId || null,
           deviceModel: info.model || null,
           deviceSettings: settings,
@@ -409,12 +428,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
         console.log('设备已断开');
         clearPendingDisconnect();
         if (!get().isConnected) {
-          set({ isConnected: false, deviceProductId: null, deviceModel: null, deviceSettings: null, runtimeDeviceProfile: null, runtimeDeviceCapabilities: null, fanData: null });
+          set({ isConnected: false, deviceRuntimeState: 'disconnected', deviceProductId: null, deviceModel: null, deviceSettings: null, runtimeDeviceProfile: null, runtimeDeviceCapabilities: null, fanData: null });
           return;
         }
         pendingDisconnectTimer = window.setTimeout(() => {
           pendingDisconnectTimer = null;
-          set({ isConnected: false, deviceProductId: null, deviceModel: null, deviceSettings: null, runtimeDeviceProfile: null, runtimeDeviceCapabilities: null, fanData: null });
+          set({ isConnected: false, deviceRuntimeState: 'disconnected', deviceProductId: null, deviceModel: null, deviceSettings: null, runtimeDeviceProfile: null, runtimeDeviceCapabilities: null, fanData: null });
         }, 2200);
       })
     );
@@ -422,6 +441,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     unsubscribers.push(
       deviceService.onDeviceSettingsUpdate((settings) => {
         set({ deviceSettings: settings || null });
+        void get().refreshDeviceContext();
       })
     );
 

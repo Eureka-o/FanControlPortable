@@ -178,7 +178,7 @@ export function useWiFiDiscovery({
     setNow(Date.now());
     const timer = window.setInterval(() => {
       setNow(Date.now());
-    }, 250);
+    }, 500);
 
     return () => {
       window.clearInterval(timer);

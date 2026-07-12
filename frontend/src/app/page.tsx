@@ -7,7 +7,7 @@ import { types } from '../../wailsjs/go/models';
 import { useShallow } from 'zustand/react/shallow';
 import AppFatalError from './components/AppFatalError';
 import AppLoadingSkeleton from './components/AppLoadingSkeleton';
-import AboutPanel, { AutoUpdateNotifier } from './components/AboutPanel';
+import AboutPanel from './components/AboutPanel';
 import AdvancedDevicesPanel from './components/AdvancedDevicesPanel';
 import AppShell from './components/AppShell';
 import ControlPanel from './components/ControlPanel';
@@ -31,6 +31,7 @@ export default function Home() {
   const view = useAppStore(
     useShallow((state) => ({
       isConnected: state.isConnected,
+      deviceRuntimeState: state.deviceRuntimeState,
       deviceProductId: state.deviceProductId,
       deviceModel: state.deviceModel,
       deviceSettings: state.deviceSettings,
@@ -88,7 +89,6 @@ export default function Home() {
 
   return (
     <>
-      <AutoUpdateNotifier />
       <AppShell
         activeTab={view.activeTab}
         onTabChange={setActiveTab}
@@ -106,12 +106,14 @@ export default function Home() {
         statusContent={
           <DeviceStatus
             isConnected={view.isConnected}
+            runtimeState={view.deviceRuntimeState}
             deviceProductId={view.deviceProductId}
             deviceModel={view.deviceModel}
             deviceSettings={view.deviceSettings}
             fanData={view.fanData}
             temperature={view.temperature}
             runtimeDeviceProfile={view.runtimeDeviceProfile}
+            runtimeDeviceCapabilities={view.runtimeDeviceCapabilities}
             config={safeConfig}
             coreServiceError={view.coreServiceError}
             onConnect={connectDevice}

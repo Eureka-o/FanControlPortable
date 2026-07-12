@@ -126,6 +126,7 @@
     "capabilities": {
       "read": "读取状态",
       "setSpeed": "设置速度",
+      "manualGears": "手动挡位",
       "debugFrames": "调试帧",
       "raw": "原始命令",
       "gearLight": "挡位灯",
@@ -415,6 +416,22 @@
       "connected": "已连接",
       "offline": "离线"
     },
+    "runtimeState": {
+      "disconnected": "已断开",
+      "discovering": "正在发现",
+      "connecting": "正在连接",
+      "capabilities": "读取能力",
+      "ready": "可控制",
+      "unavailable": "暂不可控"
+    },
+    "capabilities": {
+      "title": "当前设备能力"
+    },
+    "telemetryState": {
+      "fresh": "传感器实时",
+      "delayed": "传感器延迟",
+      "unavailable": "传感器不可用"
+    },
     "mode": {
       "smartControl": "智能控制",
       "fixedSpeed": "固定转速",
@@ -528,7 +545,6 @@
       "newVersionFound": "发现新版本 {{version}}",
       "emptyReleaseNotes": "暂无日志内容，或本次获取失败。",
       "downloadAndInstall": "下载并安装",
-      "autoCheck": "自动检测更新",
       "upToDate": "当前已是最新版本",
       "downloading": "下载中 {{percent}}%",
       "installing": "正在安装…",
