@@ -825,7 +825,7 @@
         "basic": "基础功能",
         "basicDescription": "根据当前设备功能白名单显示的运行开关。",
         "smartStartStop": "启停策略",
-        "smartStartStopDescription": "按当前设备能力显示原生启停或 WiFi Beta 待机策略。",
+        "smartStartStopDescription": "按当前设备能力显示固件支持的启停策略。",
         "lighting": "灯光控制",
         "lightingDescription": "只有当前设备明确支持灯光时才会显示。"
       },
@@ -838,10 +838,10 @@
       "smartStartStopTitle": "智能启停",
       "smartStartStopDescription": "系统关闭后何时停止散热",
       "wifiSmartStartStopTitle": "智能启停",
-      "wifiSmartStartStopDescription": "退出、睡眠或休眠前将 WiFi 设备切到待机转速",
-      "wifiSmartStartStopTip": "Beta 功能，依赖系统关机前网络仍可用；固件心跳兜底后会更稳定。",
+      "wifiSmartStartStopDescription": "由新固件根据电脑心跳自动处理启停",
+      "wifiSmartStartStopTip": "需要支持 FanControl WiFi v2 协议的新固件。",
       "wifiSmartStartStopStandbySpeed": "待机时转速",
-      "wifiSmartStartStopStandbySpeedDescription": "退出、睡眠或休眠前发送该速度，建议保持 1%。",
+      "wifiSmartStartStopStandbySpeedDescription": "固件在电脑心跳超时后会使用该待机速度。建议保持 1%。",
       "betaBadge": "Beta",
       "contextRefreshing": "正在匹配 {{device}} 的设备设置..."
     },

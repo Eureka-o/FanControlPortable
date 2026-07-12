@@ -16,6 +16,7 @@ import {
   SetGearLight,
   SetPowerOnStart,
   SetSmartStartStop,
+  SetWiFiSmartStartStopStandbySpeed,
   SetBrightness,
   SetLightStrip,
   GetTemperature,
@@ -275,6 +276,10 @@ class ApiService {
 
   async setSmartStartStop(mode: string): Promise<boolean> {
     return await SetSmartStartStop(mode);
+  }
+
+  async setWiFiSmartStartStopStandbySpeed(percent: number): Promise<boolean> {
+    return await SetWiFiSmartStartStopStandbySpeed(percent);
   }
 
   async setBrightness(percentage: number): Promise<boolean> {

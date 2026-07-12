@@ -17,14 +17,6 @@ type SelectOption<T extends string | number> = {
   disabled?: boolean;
 };
 
-function BetaBadge({ children }: { children: ReactNode }) {
-  return (
-    <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
-      {children}
-    </span>
-  );
-}
-
 function GroupHeader({
   icon,
   title,
@@ -56,7 +48,7 @@ export default function DeviceFeaturePanel({
   supportsGearLight,
   supportsPowerOnStart,
   supportsSmartStartStop,
-  supportsWiFiSmartStartStopBeta,
+  supportsWiFiSmartStartStopStandbySpeed,
   supportsScreen,
   lightingControls,
   smartStartStopOptions,
@@ -64,7 +56,6 @@ export default function DeviceFeaturePanel({
   onGearLightChange,
   onPowerOnStartChange,
   onSmartStartStopChange,
-  onWiFiSmartStartStopEnabledChange,
   onWiFiSmartStartStopStandbySpeedChange,
 }: {
   config: types.AppConfig;
@@ -75,7 +66,7 @@ export default function DeviceFeaturePanel({
   supportsGearLight: boolean;
   supportsPowerOnStart: boolean;
   supportsSmartStartStop: boolean;
-  supportsWiFiSmartStartStopBeta: boolean;
+  supportsWiFiSmartStartStopStandbySpeed: boolean;
   supportsScreen: boolean;
   lightingControls?: ReactNode;
   smartStartStopOptions: SelectOption<string>[];
@@ -83,12 +74,11 @@ export default function DeviceFeaturePanel({
   onGearLightChange: (enabled: boolean) => void;
   onPowerOnStartChange: (enabled: boolean) => void;
   onSmartStartStopChange: (mode: string) => void;
-  onWiFiSmartStartStopEnabledChange: (enabled: boolean) => void;
   onWiFiSmartStartStopStandbySpeedChange: (value: string | number) => void;
 }) {
   const { t } = useTranslation();
   const hasBasicFeatures = supportsGearLight || supportsPowerOnStart || supportsScreen;
-  const hasSmartStartStopFeatures = supportsWiFiSmartStartStopBeta || supportsSmartStartStop;
+  const hasSmartStartStopFeatures = supportsSmartStartStop;
   const deviceName = deviceProfile?.displayName || deviceProfile?.model || t('deviceStatus.device.unknown');
 
   if (!hasBasicFeatures && !hasSmartStartStopFeatures && !lightingControls && !refreshing) {
@@ -163,50 +153,26 @@ export default function DeviceFeaturePanel({
       {hasSmartStartStopFeatures && (
         <>
           {supportsSmartStartStop && (
-            <SettingRow
-              icon={<Zap className="h-4 w-4" />}
-              title={t('controlPanel.device.smartStartStopTitle')}
-              description={t('controlPanel.device.smartStartStopDescription')}
-              disabled={!isConnected}
-            >
-              <div className="w-full sm:w-40">
-                <Select
-                  value={config.smartStartStop || 'off'}
-                  onChange={onSmartStartStopChange}
-                  options={smartStartStopOptions}
-                  disabled={!isConnected}
-                  size="sm"
-                  className="w-full"
-                />
-              </div>
-            </SettingRow>
-          )}
-
-          {supportsWiFiSmartStartStopBeta && (
             <>
               <SettingRow
-                icon={<Power className={clsx('h-4 w-4', (config as any).wifiSmartStartStopEnabled ? 'text-primary' : '')} />}
-                title={
-                  <span className="inline-flex items-center gap-2">
-                    {t('controlPanel.device.wifiSmartStartStopTitle')}
-                    <BetaBadge>{t('controlPanel.device.betaBadge')}</BetaBadge>
-                  </span>
-                }
-                description={t('controlPanel.device.wifiSmartStartStopDescription')}
-                tip={t('controlPanel.device.wifiSmartStartStopTip')}
+                icon={<Zap className="h-4 w-4" />}
+                title={t('controlPanel.device.smartStartStopTitle')}
+                description={t('controlPanel.device.smartStartStopDescription')}
+                disabled={!isConnected}
               >
-                <div className="flex items-center justify-end">
-                  <ToggleSwitch
-                    enabled={!!(config as any).wifiSmartStartStopEnabled}
-                    onChange={onWiFiSmartStartStopEnabledChange}
-                    loading={loadingStates.wifiSmartStartStop}
+                <div className="w-full sm:w-40">
+                  <Select
+                    value={config.smartStartStop || 'off'}
+                    onChange={onSmartStartStopChange}
+                    options={smartStartStopOptions}
+                    disabled={!isConnected}
                     size="sm"
+                    className="w-full"
                   />
                 </div>
               </SettingRow>
-
-              <AnimatePresence>
-                {!!(config as any).wifiSmartStartStopEnabled && (
+              <AnimatePresence initial={false}>
+                {supportsWiFiSmartStartStopStandbySpeed && (config.smartStartStop || 'off') === 'delayed' && (
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
@@ -224,7 +190,7 @@ export default function DeviceFeaturePanel({
                             value={normalizeWiFiSmartStartStopStandbySpeed((config as any).wifiSmartStartStopStandbySpeed)}
                             onChange={onWiFiSmartStartStopStandbySpeedChange}
                             options={wifiSmartStartStopStandbySpeedOptions}
-                            disabled={loadingStates.wifiSmartStartStopStandbySpeed}
+                            disabled={!isConnected || loadingStates.wifiSmartStartStopStandbySpeed}
                             size="sm"
                             className="w-full"
                           />

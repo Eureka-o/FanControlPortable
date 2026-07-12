@@ -2,9 +2,11 @@ package device
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/TIANLI0/THRM/internal/types"
 )
@@ -233,6 +235,189 @@ func TestWiFiManagerRejectsNonSpeedFeatureCommandsByDefault(t *testing.T) {
 	}
 	if m.SetRGBOff() {
 		t.Fatal("default WiFi profile must not report RGB support")
+	}
+}
+
+func TestWiFiFirmwareV2ExposesNativeControlsButKeepsSpeedEndpoint(t *testing.T) {
+	var postedSpeed int
+	var postedConfigs []map[string]any
+	heartbeatCount := 0
+	heartbeatSeen := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/data":
+			if r.Method != http.MethodGet {
+				t.Fatalf("GET /api/data got method %s", r.Method)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"speed":           30,
+				"wifiTargetSpeed": 30,
+				"controlMode":     "wifi",
+			})
+		case "/api/device":
+			if r.Method != http.MethodGet {
+				t.Fatalf("GET /api/device got method %s", r.Method)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"model":    "FanControl Cooler v2",
+				"firmware": "fancontrol-cooler-v2",
+				"protocol": "fancontrol-wifi-v2",
+				"capabilities": map[string]any{
+					"smartStartStop": true,
+					"heartbeat":      true,
+					"powerOnStart":   true,
+				},
+			})
+		case "/api/speed":
+			if r.Method != http.MethodPost {
+				t.Fatalf("POST /api/speed got method %s", r.Method)
+			}
+			var payload map[string]int
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode speed payload: %v", err)
+			}
+			postedSpeed = payload["speed"]
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+		case "/api/config":
+			if r.Method != http.MethodPost {
+				t.Fatalf("POST /api/config got method %s", r.Method)
+			}
+			var payload map[string]any
+			body, _ := io.ReadAll(r.Body)
+			if err := json.Unmarshal(body, &payload); err != nil {
+				t.Fatalf("decode config payload %q: %v", string(body), err)
+			}
+			postedConfigs = append(postedConfigs, payload)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		case "/api/heartbeat":
+			if r.Method != http.MethodPost {
+				t.Fatalf("POST /api/heartbeat got method %s", r.Method)
+			}
+			heartbeatCount++
+			select {
+			case heartbeatSeen <- struct{}{}:
+			default:
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	m := NewManager(nil)
+	m.Configure(types.DeviceTransportWiFi, server.URL)
+	connected, _ := m.Connect()
+	if !connected {
+		t.Fatal("expected WiFi v2 test device to connect")
+	}
+	defer m.DisconnectSilently()
+
+	caps := m.ActiveCapabilities()
+	if !caps.SupportsPowerOnStart || !caps.SupportsSmartStartStop || caps.SupportsSoftwareSmartStartStop {
+		t.Fatalf("runtime capabilities = %#v, want native power/smart controls without software beta", caps)
+	}
+	select {
+	case <-heartbeatSeen:
+	case <-time.After(time.Second):
+		t.Fatal("expected heartbeat to start after v2 firmware detection")
+	}
+	if ok := m.SetFanSpeed(66); !ok {
+		t.Fatal("expected normal speed command to keep working")
+	}
+	if postedSpeed != 66 {
+		t.Fatalf("posted speed = %d, want 66", postedSpeed)
+	}
+	if ok := m.SetPowerOnStart(true); !ok {
+		t.Fatal("expected power-on-start config to succeed")
+	}
+	if ok := m.SetPowerOnStart(false); !ok {
+		t.Fatal("expected power-on-start disable config to succeed")
+	}
+	if ok := m.SetSmartStartStop("delayed"); !ok {
+		t.Fatal("expected smart start/stop config to succeed")
+	}
+	if ok := m.SetWiFiSmartStartStopStandbySpeed(10); !ok {
+		t.Fatal("expected standby speed config to succeed")
+	}
+	if len(postedConfigs) != 4 {
+		t.Fatalf("posted config count = %d, want 4", len(postedConfigs))
+	}
+	if postedConfigs[0]["powerOnStart"] != true {
+		t.Fatalf("power config = %#v, want powerOnStart true", postedConfigs[0])
+	}
+	if value, ok := postedConfigs[1]["powerOnStart"].(bool); !ok || value {
+		t.Fatalf("power disable config = %#v, want powerOnStart false", postedConfigs[1])
+	}
+	if postedConfigs[2]["smartStartStop"] != "delayed" || postedConfigs[2]["delaySeconds"] != float64(60) {
+		t.Fatalf("smart config = %#v, want delayed with 60 seconds", postedConfigs[2])
+	}
+	if postedConfigs[3]["standbySpeed"] != float64(10) {
+		t.Fatalf("standby speed config = %#v, want standbySpeed 10", postedConfigs[3])
+	}
+}
+
+func TestWiFiFirmwareV2WorksWithNonDefaultPercentProfile(t *testing.T) {
+	var postedConfigs []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/data":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"speed":           30,
+				"wifiTargetSpeed": 30,
+				"controlMode":     "wifi",
+			})
+		case "/api/device":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"model":    "FanControl Cooler v2",
+				"firmware": "fancontrol-cooler-v2",
+				"protocol": "fancontrol-wifi-v2",
+				"capabilities": map[string]any{
+					"smartStartStop": true,
+					"heartbeat":      false,
+					"powerOnStart":   true,
+				},
+			})
+		case "/api/config":
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode config payload: %v", err)
+			}
+			postedConfigs = append(postedConfigs, payload)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	profile := types.DefaultWiFiPercentProfile(server.URL)
+	profile.ID = "builtin.slim.cooler.percent"
+	profile.Capabilities.ProfileID = profile.ID
+
+	m := NewManager(nil)
+	m.ConfigureProfile(profile, server.URL)
+	connected, _ := m.Connect()
+	if !connected {
+		t.Fatal("expected WiFi v2 profile to connect")
+	}
+	defer m.DisconnectSilently()
+
+	caps := m.ActiveCapabilities()
+	if !caps.SupportsPowerOnStart || !caps.SupportsSmartStartStop {
+		t.Fatalf("runtime capabilities = %#v, want firmware v2 controls", caps)
+	}
+	if ok := m.SetPowerOnStart(true); !ok {
+		t.Fatal("expected non-default WiFi v2 profile power-on-start config to succeed")
+	}
+	if ok := m.SetPowerOnStart(false); !ok {
+		t.Fatal("expected non-default WiFi v2 profile power-on-start disable config to succeed")
+	}
+	if len(postedConfigs) != 2 || postedConfigs[0]["powerOnStart"] != true {
+		t.Fatalf("posted configs = %#v, want first powerOnStart true", postedConfigs)
+	}
+	if value, ok := postedConfigs[1]["powerOnStart"].(bool); !ok || value {
+		t.Fatalf("posted configs = %#v, want second powerOnStart false", postedConfigs)
 	}
 }
 

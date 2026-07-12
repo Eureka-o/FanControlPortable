@@ -429,15 +429,39 @@ func (a *CoreApp) SetSmartStartStop(mode string) bool {
 	if !a.activeDeviceCapabilities().SupportsSmartStartStop {
 		return false
 	}
+
+	cfg := a.configManager.Get()
+	cfg.WiFiSmartStartStopStandbySpeed = types.ClampWiFiSmartStartStopStandbyPercent(cfg.WiFiSmartStartStopStandbySpeed)
+	if mode == "delayed" && types.NormalizeDeviceTransport(a.deviceManager.ActiveProfile().Transport) == types.DeviceTransportWiFi {
+		_ = a.deviceManager.SetWiFiSmartStartStopStandbySpeed(cfg.WiFiSmartStartStopStandbySpeed)
+	}
 	if !a.deviceManager.SetSmartStartStop(mode) {
 		return false
 	}
-
-	cfg := a.configManager.Get()
 	cfg.SmartStartStop = mode
 	a.configManager.Update(cfg)
 
 	// 广播配置更新
+	if a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
+	}
+	return true
+}
+
+// SetWiFiSmartStartStopStandbySpeed 设置新固件心跳超时后的待机转速
+func (a *CoreApp) SetWiFiSmartStartStopStandbySpeed(percent int) bool {
+	if !a.activeDeviceCapabilities().SupportsSmartStartStop {
+		return false
+	}
+	percent = types.ClampWiFiSmartStartStopStandbyPercent(percent)
+	if !a.deviceManager.SetWiFiSmartStartStopStandbySpeed(percent) {
+		return false
+	}
+
+	cfg := a.configManager.Get()
+	cfg.WiFiSmartStartStopStandbySpeed = percent
+	a.configManager.Update(cfg)
+
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 	}
