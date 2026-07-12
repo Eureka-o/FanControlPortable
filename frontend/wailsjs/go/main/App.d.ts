@@ -140,6 +140,8 @@ export function SetSmartStartStop(arg1:string):Promise<boolean>;
 
 export function SetTemperatureHistoryEnabled(arg1:boolean):Promise<void>;
 
+export function SetWiFiSmartStartStopStandbySpeed(arg1:number):Promise<boolean>;
+
 export function SetWindowsAutoStart(arg1:boolean):Promise<void>;
 
 export function ShowWindow():Promise<void>;

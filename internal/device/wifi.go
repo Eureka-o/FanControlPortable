@@ -39,6 +39,24 @@ type wifiSetSpeedResponse struct {
 	Message     string `json:"message"`
 }
 
+type wifiDeviceInfoResponse struct {
+	Model        string `json:"model"`
+	Firmware     string `json:"firmware"`
+	Protocol     string `json:"protocol"`
+	Capabilities struct {
+		SmartStartStop bool `json:"smartStartStop"`
+		Heartbeat      bool `json:"heartbeat"`
+		PowerOnStart   bool `json:"powerOnStart"`
+	} `json:"capabilities"`
+}
+
+type wifiFirmwareConfigResponse struct {
+	PowerOnStart   bool   `json:"powerOnStart"`
+	SmartStartStop string `json:"smartStartStop"`
+	DelaySeconds   int    `json:"delaySeconds"`
+	StandbySpeed   int    `json:"standbySpeed"`
+}
+
 func newWiFiHTTPClient() *http.Client {
 	return &http.Client{
 		Timeout: wifiRequestTimeout,
@@ -184,6 +202,7 @@ func (m *Manager) connectWiFiLocked() (bool, map[string]string) {
 		m.logError("WiFi 控制器连接失败: %v", err)
 		return false, nil
 	}
+	m.detectWiFiFirmwareLocked()
 
 	m.isConnected = true
 	m.deviceType = types.DeviceTransportWiFi
@@ -192,6 +211,7 @@ func (m *Manager) connectWiFiLocked() (bool, map[string]string) {
 	if m.onFanDataUpdate != nil {
 		go m.onFanDataUpdate(fanData)
 	}
+	m.startWiFiHeartbeatLocked()
 
 	displayName := m.activeProfileDisplayNameLocked(wifiOnlyModelName)
 	info := map[string]string{
@@ -235,10 +255,14 @@ func (m *Manager) disconnectWiFiLocked() bool {
 	if m.deviceType != types.DeviceTransportWiFi {
 		return false
 	}
+	m.stopWiFiHeartbeatLocked()
 	m.isConnected = false
 	m.deviceType = ""
 	m.productID = 0
 	m.currentFanData.Store(nil)
+	m.wifiProtocol = ""
+	m.wifiConfig = false
+	m.wifiHeartbeat = false
 	return true
 }
 
@@ -453,6 +477,190 @@ func validateWiFiSetSpeedResponse(body []byte) error {
 		return fmt.Errorf("%s", strings.TrimSpace(data.Message))
 	}
 	return fmt.Errorf("status=%q controlMode=%q", data.Status, data.ControlMode)
+}
+
+func (m *Manager) detectWiFiFirmwareLocked() {
+	m.wifiProtocol = ""
+	m.wifiConfig = false
+	m.wifiHeartbeat = false
+	if !supportsWiFiFirmwareV2Probe(m.activeProfile) {
+		return
+	}
+	endpoint, err := normalizeWiFiEndpoint(m.wifiEndpoint)
+	if err != nil {
+		return
+	}
+	req, err := http.NewRequest(http.MethodGet, endpoint+"/api/device", nil)
+	if err != nil {
+		return
+	}
+	resp, err := m.wifiHTTPClient.Do(req)
+	if err != nil {
+		m.logDebug("WiFi firmware probe skipped: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if err != nil {
+		return
+	}
+	var info wifiDeviceInfoResponse
+	if err := json.Unmarshal(body, &info); err != nil {
+		return
+	}
+	if strings.TrimSpace(info.Protocol) != "fancontrol-wifi-v2" {
+		return
+	}
+
+	profile := m.activeProfile
+	profile.Capabilities.SupportsPowerOnStart = info.Capabilities.PowerOnStart
+	profile.Capabilities.SupportsSmartStartStop = info.Capabilities.SmartStartStop
+	profile.Capabilities.SupportsSoftwareSmartStartStop = false
+	m.activeProfile = profile
+	m.wifiProtocol = "fancontrol-wifi-v2"
+	m.wifiConfig = info.Capabilities.PowerOnStart || info.Capabilities.SmartStartStop
+	m.wifiHeartbeat = info.Capabilities.Heartbeat
+}
+
+func supportsWiFiFirmwareV2Probe(profile types.DeviceProfile) bool {
+	return profile.Transport == types.DeviceTransportWiFi && types.IsPercentSpeedUnit(profile.SpeedUnit)
+}
+
+func (m *Manager) isWiFiFirmwareV2Locked() bool {
+	return m.isConnected &&
+		m.deviceType == types.DeviceTransportWiFi &&
+		m.wifiProtocol == "fancontrol-wifi-v2" &&
+		m.wifiConfig
+}
+
+func (m *Manager) getWiFiFirmwareConfigLocked() (wifiFirmwareConfigResponse, error) {
+	endpoint, err := normalizeWiFiEndpoint(m.wifiEndpoint)
+	if err != nil {
+		return wifiFirmwareConfigResponse{}, err
+	}
+	req, err := http.NewRequest(http.MethodGet, endpoint+"/api/config", nil)
+	if err != nil {
+		return wifiFirmwareConfigResponse{}, err
+	}
+	resp, err := m.wifiHTTPClient.Do(req)
+	if err != nil {
+		return wifiFirmwareConfigResponse{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return wifiFirmwareConfigResponse{}, fmt.Errorf("GET /api/config returned HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if err != nil {
+		return wifiFirmwareConfigResponse{}, err
+	}
+	var cfg wifiFirmwareConfigResponse
+	if err := json.Unmarshal(body, &cfg); err != nil {
+		return wifiFirmwareConfigResponse{}, err
+	}
+	cfg.SmartStartStop = normalizeWiFiSmartStartStopMode(cfg.SmartStartStop)
+	return cfg, nil
+}
+
+func (m *Manager) setWiFiFirmwareConfigLocked(payload map[string]any) bool {
+	endpoint, err := normalizeWiFiEndpoint(m.wifiEndpoint)
+	if err != nil {
+		m.logError("WiFi 控制器地址无效: %v", err)
+		return false
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return false
+	}
+	if err := retryDeviceSend("WiFi firmware config", func() error {
+		req, err := http.NewRequest(http.MethodPost, endpoint+"/api/config", bytes.NewReader(body))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := m.wifiHTTPClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return fmt.Errorf("HTTP %d", resp.StatusCode)
+		}
+		return nil
+	}); err != nil {
+		m.logError("设置 WiFi 固件配置失败: %v", err)
+		return false
+	}
+	return true
+}
+
+func normalizeWiFiSmartStartStopMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "immediate", "delayed":
+		return strings.ToLower(strings.TrimSpace(mode))
+	default:
+		return "off"
+	}
+}
+
+func (m *Manager) startWiFiHeartbeatLocked() {
+	if !m.wifiHeartbeat || m.wifiHbStop != nil {
+		return
+	}
+	endpoint, err := normalizeWiFiEndpoint(m.wifiEndpoint)
+	if err != nil {
+		return
+	}
+	client := m.wifiHTTPClient
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	m.wifiHbStop = stop
+	m.wifiHbDone = done
+	go wifiHeartbeatLoop(client, endpoint, stop, done)
+}
+
+func (m *Manager) stopWiFiHeartbeatLocked() {
+	if m.wifiHbStop == nil {
+		return
+	}
+	close(m.wifiHbStop)
+	m.wifiHbStop = nil
+	m.wifiHbDone = nil
+}
+
+func wifiHeartbeatLoop(client *http.Client, endpoint string, stop <-chan struct{}, done chan<- struct{}) {
+	defer close(done)
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	postWiFiHeartbeat(client, endpoint)
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			postWiFiHeartbeat(client, endpoint)
+		}
+	}
+}
+
+func postWiFiHeartbeat(client *http.Client, endpoint string) {
+	if client == nil {
+		return
+	}
+	req, err := http.NewRequest(http.MethodPost, endpoint+"/api/heartbeat", bytes.NewReader([]byte("{}")))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 4*1024))
 }
 
 func fanDataFromWiFiResponse(data wifiDataResponse) *types.FanData {

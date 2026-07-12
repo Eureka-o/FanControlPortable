@@ -70,15 +70,16 @@ const (
 	ReqResetLearnedOffsets        RequestType = "ResetLearnedOffsets"
 
 	// 控制相关
-	ReqSetAutoControl    RequestType = "SetAutoControl"
-	ReqSetManualGear     RequestType = "SetManualGear"
-	ReqGetAvailableGears RequestType = "GetAvailableGears"
-	ReqSetCustomSpeed    RequestType = "SetCustomSpeed"
-	ReqSetGearLight      RequestType = "SetGearLight"
-	ReqSetPowerOnStart   RequestType = "SetPowerOnStart"
-	ReqSetSmartStartStop RequestType = "SetSmartStartStop"
-	ReqSetBrightness     RequestType = "SetBrightness"
-	ReqSetLightStrip     RequestType = "SetLightStrip"
+	ReqSetAutoControl                    RequestType = "SetAutoControl"
+	ReqSetManualGear                     RequestType = "SetManualGear"
+	ReqGetAvailableGears                 RequestType = "GetAvailableGears"
+	ReqSetCustomSpeed                    RequestType = "SetCustomSpeed"
+	ReqSetGearLight                      RequestType = "SetGearLight"
+	ReqSetPowerOnStart                   RequestType = "SetPowerOnStart"
+	ReqSetSmartStartStop                 RequestType = "SetSmartStartStop"
+	ReqSetWiFiSmartStartStopStandbySpeed RequestType = "SetWiFiSmartStartStopStandbySpeed"
+	ReqSetBrightness                     RequestType = "SetBrightness"
+	ReqSetLightStrip                     RequestType = "SetLightStrip"
 
 	// 温度相关
 	ReqGetTemperature               RequestType = "GetTemperature"
