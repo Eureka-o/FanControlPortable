@@ -30,6 +30,11 @@ type Manager struct {
 	deviceTransport string
 	wifiEndpoint    string
 	wifiHTTPClient  *http.Client
+	wifiProtocol    string
+	wifiConfig      bool
+	wifiHeartbeat   bool
+	wifiHbStop      chan struct{}
+	wifiHbDone      chan struct{}
 	activeProfile   types.DeviceProfile
 	wifiExecutor    *deviceprofileexec.WiFiExecutor
 	bleConnector    deviceprofileexec.BLEConnector
@@ -317,6 +322,14 @@ func (m *Manager) SetGearLight(enabled bool) bool {
 }
 
 func (m *Manager) SetPowerOnStart(enabled bool) bool {
+	m.mutex.Lock()
+	if m.isWiFiFirmwareV2Locked() {
+		ok := m.setWiFiFirmwareConfigLocked(map[string]any{"powerOnStart": enabled})
+		m.mutex.Unlock()
+		return ok
+	}
+	m.mutex.Unlock()
+
 	if m.IsBS1() {
 		return m.setFlyDigiBS1PowerOnStart(enabled)
 	}
@@ -327,10 +340,33 @@ func (m *Manager) SetPowerOnStart(enabled bool) bool {
 }
 
 func (m *Manager) SetSmartStartStop(mode string) bool {
+	mode = normalizeWiFiSmartStartStopMode(mode)
+	m.mutex.Lock()
+	if m.isWiFiFirmwareV2Locked() {
+		payload := map[string]any{"smartStartStop": mode}
+		if mode == "delayed" {
+			payload["delaySeconds"] = 60
+		}
+		ok := m.setWiFiFirmwareConfigLocked(payload)
+		m.mutex.Unlock()
+		return ok
+	}
+	m.mutex.Unlock()
+
 	if m.GetDeviceType() == types.DeviceTransportHID {
 		return m.setFlyDigiHIDSmartStartStop(mode)
 	}
 	return false
+}
+
+func (m *Manager) SetWiFiSmartStartStopStandbySpeed(percent int) bool {
+	percent = types.ClampWiFiSmartStartStopStandbyPercent(percent)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if !m.isWiFiFirmwareV2Locked() {
+		return false
+	}
+	return m.setWiFiFirmwareConfigLocked(map[string]any{"standbySpeed": percent})
 }
 
 func (m *Manager) SetBrightness(percentage int) bool {

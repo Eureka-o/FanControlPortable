@@ -51,7 +51,6 @@ const SMART_START_STOP_OPTIONS = [
   { value: 'immediate', labelKey: 'controlPanel.options.smartStartStop.immediate.label', descriptionKey: 'controlPanel.options.smartStartStop.immediate.description' },
   { value: 'delayed', labelKey: 'controlPanel.options.smartStartStop.delayed.label', descriptionKey: 'controlPanel.options.smartStartStop.delayed.description' },
 ];
-
 const WIFI_SMART_START_STOP_STANDBY_SPEED_OPTIONS = [1, 2, 5, 10, 15, 20];
 
 function getErrorMessage(error: unknown) {
@@ -134,8 +133,8 @@ export default function ControlPanel({
   const currentDeviceSupportsBrightness = !!((currentDeviceCapabilities as any)?.supportsBrightness || currentDeviceSupportsLighting);
   const currentDeviceSupportsPowerOnStart = !!currentDeviceCapabilities?.supportsPowerOnStart;
   const currentDeviceSupportsSmartStartStop = !!currentDeviceCapabilities?.supportsSmartStartStop;
+  const currentDeviceSupportsWiFiSmartStartStopStandbySpeed = currentDeviceSupportsSmartStartStop && connectedDeviceTransport === 'wifi';
   const currentDeviceSupportsScreen = !!(currentDeviceCapabilities as any)?.supportsScreen;
-  const currentDeviceSupportsWiFiSmartStartStopBeta = !!(currentDeviceCapabilities as any)?.supportsSoftwareSmartStartStop;
   const overviewConnectionName = isConnected
     ? (connectedDeviceProfile ? profileLabel(connectedDeviceProfile) : connectedDeviceTransport.toUpperCase() || '--')
     : t('controlPanel.system.deviceConnection.connectedDevicesEmpty');
@@ -166,7 +165,7 @@ export default function ControlPanel({
     [locale, t],
   );
   const wifiSmartStartStopStandbySpeedOptions = useMemo(
-    () => WIFI_SMART_START_STOP_STANDBY_SPEED_OPTIONS.map((value) => ({ value, label: `${value}%` })),
+    () => WIFI_SMART_START_STOP_STANDBY_SPEED_OPTIONS.map((percent) => ({ value: percent, label: `${percent}%` })),
     [],
   );
   const setLoading = (key: string, value: boolean) => setLoadingStates((prev) => ({ ...prev, [key]: value }));
@@ -244,7 +243,8 @@ export default function ControlPanel({
     try {
       const ok = await apiService.setSmartStartStop(mode);
       if (ok) {
-        onConfigChange(types.AppConfig.createFrom({ ...config, smartStartStop: mode }));
+        const standbySpeed = normalizeWiFiSmartStartStopStandbySpeed((config as any).wifiSmartStartStopStandbySpeed);
+        onConfigChange(types.AppConfig.createFrom({ ...config, smartStartStop: mode, wifiSmartStartStopStandbySpeed: standbySpeed }));
       } else {
         toast.error(t('controlPanel.alerts.deviceCommandFailed'));
       }
@@ -253,36 +253,23 @@ export default function ControlPanel({
     }
   }, [config, onConfigChange, isConnected, t]);
 
-  const handleWiFiSmartStartStopEnabledChange = useCallback(async (enabled: boolean) => {
-    setLoading('wifiSmartStartStop', true);
-    try {
-      const standbySpeed = normalizeWiFiSmartStartStopStandbySpeed((config as any).wifiSmartStartStopStandbySpeed);
-      const newCfg = types.AppConfig.createFrom({
-        ...config,
-        wifiSmartStartStopEnabled: enabled,
-        wifiSmartStartStopStandbySpeed: standbySpeed,
-      });
-      await apiService.updateConfig(newCfg);
-      onConfigChange(newCfg);
-    } catch { /* noop */ } finally {
-      setLoading('wifiSmartStartStop', false);
-    }
-  }, [config, onConfigChange]);
-
   const handleWiFiSmartStartStopStandbySpeedChange = useCallback(async (value: string | number) => {
+    if (!isConnected) return;
+    const standbySpeed = normalizeWiFiSmartStartStopStandbySpeed(value);
     setLoading('wifiSmartStartStopStandbySpeed', true);
     try {
-      const standbySpeed = normalizeWiFiSmartStartStopStandbySpeed(value);
-      const newCfg = types.AppConfig.createFrom({
-        ...config,
-        wifiSmartStartStopStandbySpeed: standbySpeed,
-      });
-      await apiService.updateConfig(newCfg);
-      onConfigChange(newCfg);
-    } catch { /* noop */ } finally {
+      const ok = await apiService.setWiFiSmartStartStopStandbySpeed(standbySpeed);
+      if (ok) {
+        onConfigChange(types.AppConfig.createFrom({ ...config, wifiSmartStartStopStandbySpeed: standbySpeed }));
+      } else {
+        toast.error(t('controlPanel.alerts.deviceCommandFailed'));
+      }
+    } catch (error) {
+      toast.error(t('controlPanel.alerts.deviceCommandFailedWithError', { error: getErrorMessage(error) }));
+    } finally {
       setLoading('wifiSmartStartStopStandbySpeed', false);
     }
-  }, [config, onConfigChange]);
+  }, [config, onConfigChange, isConnected, t]);
 
   useEffect(() => { void loadDeviceProfiles(); }, [loadDeviceProfiles]);
   useEffect(() => {
@@ -347,14 +334,13 @@ export default function ControlPanel({
           supportsGearLight={currentDeviceSupportsGearLight}
           supportsPowerOnStart={currentDeviceSupportsPowerOnStart}
           supportsSmartStartStop={currentDeviceSupportsSmartStartStop}
-          supportsWiFiSmartStartStopBeta={currentDeviceSupportsWiFiSmartStartStopBeta}
+          supportsWiFiSmartStartStopStandbySpeed={currentDeviceSupportsWiFiSmartStartStopStandbySpeed}
           supportsScreen={currentDeviceSupportsScreen}
           smartStartStopOptions={smartStartStopOptions}
           wifiSmartStartStopStandbySpeedOptions={wifiSmartStartStopStandbySpeedOptions}
           onGearLightChange={handleGearLightChange}
           onPowerOnStartChange={handlePowerOnStartChange}
           onSmartStartStopChange={handleSmartStartStopChange}
-          onWiFiSmartStartStopEnabledChange={handleWiFiSmartStartStopEnabledChange}
           onWiFiSmartStartStopStandbySpeedChange={handleWiFiSmartStartStopStandbySpeedChange}
           lightingControls={currentDeviceSupportsLighting ? (
             <DeviceLightingControls

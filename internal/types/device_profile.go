@@ -234,7 +234,7 @@ func DefaultWiFiPercentCapabilities() DeviceCapabilities {
 		SupportsScreen:                 false,
 		SupportsPowerOnStart:           false,
 		SupportsSmartStartStop:         false,
-		SupportsSoftwareSmartStartStop: true,
+		SupportsSoftwareSmartStartStop: false,
 	}
 }
 

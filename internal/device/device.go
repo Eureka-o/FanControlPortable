@@ -1036,6 +1036,10 @@ func (m *Manager) SetSmartStartStop(mode string) bool {
 	return true
 }
 
+func (m *Manager) SetWiFiSmartStartStopStandbySpeed(percent int) bool {
+	return false
+}
+
 // SetBrightness 设置亮度
 func (m *Manager) SetBrightness(percentage int) bool {
 	if m.writesBlocked.Load() {
