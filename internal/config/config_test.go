@@ -43,6 +43,34 @@ func TestWriteConfigFileAtomicallyReplacesCompleteFile(t *testing.T) {
 	}
 }
 
+func TestUpdateKeepsCurrentConfigWhenPersistenceFails(t *testing.T) {
+	blockedPath := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(blockedPath, []byte("not a directory"), 0644); err != nil {
+		t.Fatalf("create blocked path: %v", err)
+	}
+	t.Setenv("USERPROFILE", blockedPath)
+	t.Setenv("HOME", blockedPath)
+
+	manager := NewManager(blockedPath, nil)
+	initial := types.GetDefaultConfig(false)
+	manager.Set(initial)
+	before, beforeRevision := manager.GetWithRevision()
+
+	next := before
+	next.DebugMode = !before.DebugMode
+	if err := manager.Update(next); err == nil {
+		t.Fatal("Update() error = nil, want persistence failure")
+	}
+
+	after, afterRevision := manager.GetWithRevision()
+	if after.DebugMode != before.DebugMode {
+		t.Fatalf("DebugMode changed after failed update: got %v, want %v", after.DebugMode, before.DebugMode)
+	}
+	if afterRevision != beforeRevision {
+		t.Fatalf("revision changed after failed update: got %d, want %d", afterRevision, beforeRevision)
+	}
+}
+
 func TestValidateFanCurveForUnitAllowsReferenceRPMCurve(t *testing.T) {
 	if err := ValidateFanCurveForUnit(types.GetDefaultRPMFanCurve(), types.FanSpeedUnitRPM); err != nil {
 		t.Fatalf("ValidateFanCurveForUnit(RPM default) returned error: %v", err)

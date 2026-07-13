@@ -12,6 +12,8 @@ const readSource = (path) => {
 
 const widgetSource = readSource('../src/app/components/UpdateProgressWidget.tsx');
 const shellSource = readSource('../src/app/components/AppShell.tsx');
+const aboutSource = readSource('../src/app/components/AboutPanel.tsx');
+const backendSource = readSource('../../internal/guiapp/update_api.go');
 
 test('mounts update progress outside page content so navigation does not remove it', () => {
   assert.match(shellSource, /<UpdateProgressWidget\s*\/>/);
@@ -52,6 +54,22 @@ test('supports pause, resume, and cancel while preserving resumable progress', (
 test('offers a manual retry after a resumable download fails', () => {
   assert.match(widgetSource, /retryUpdate/);
   assert.match(widgetSource, /common\.actions\.retry/);
+});
+
+test('uses backend events as the only source of update stages and retry limits', () => {
+  const startBlock = widgetSource.slice(widgetSource.indexOf('startUpdate: async'), widgetSource.indexOf('retryUpdate: async'));
+  const pauseBlock = widgetSource.slice(widgetSource.indexOf('pauseUpdate: async'), widgetSource.indexOf('resumeUpdate: async'));
+  const resumeBlock = widgetSource.slice(widgetSource.indexOf('resumeUpdate: async'), widgetSource.indexOf('cancelUpdate: async'));
+  const cancelBlock = widgetSource.slice(widgetSource.indexOf('cancelUpdate: async'), widgetSource.indexOf('dismissUpdate:'));
+
+  assert.doesNotMatch(widgetSource, /maxAttempts: 3/);
+  assert.doesNotMatch(startBlock, /stage:/);
+  assert.doesNotMatch(pauseBlock, /stage:/);
+  assert.doesNotMatch(resumeBlock, /stage:/);
+  assert.doesNotMatch(cancelBlock, /stage:/);
+  assert.match(widgetSource, /starting: boolean/);
+  assert.match(aboutSource, /state\.starting/);
+  assert.match(backendSource, /beginUpdateDownload\(\)[\s\S]*?emitUpdateProgress\(updateProgress\{[^}]*Stage: *"downloading"[^}]*Attempt: *1[^}]*MaxAttempts: *updateDownloadAttempts/);
 });
 
 test('shows a one-time completion toast after the installer restarts the app', () => {

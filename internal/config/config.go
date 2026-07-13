@@ -1075,9 +1075,14 @@ func (m *Manager) Update(config types.AppConfig) error {
 	config = cloneAppConfig(config)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	previous := m.config
 	m.config = config
+	if err := m.saveLocked(); err != nil {
+		m.config = previous
+		return err
+	}
 	m.bumpRevisionLocked()
-	return m.saveLocked()
+	return nil
 }
 
 // MutateIfRevision atomically applies a narrow in-memory change when the

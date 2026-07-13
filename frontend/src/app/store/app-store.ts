@@ -8,8 +8,6 @@ import {
 } from './app-store-logic.mts';
 import { types } from '../../../wailsjs/go/models';
 import { apiService } from '../services/api';
-import { configService } from '../services/config-service';
-import { deviceService, type DeviceStatusPayload } from '../services/device-service';
 import {
   appendSampledHistoryPoint,
   createLiveHistoryPoint,
@@ -20,6 +18,19 @@ import type { TemperatureHistoryPoint } from '../lib/temperature-history';
 import { i18n } from '../lib/i18n';
 import { toast } from 'sonner';
 import type { DeviceSettings } from '../types/app';
+
+interface DeviceStatusPayload {
+  connected?: boolean;
+  currentData?: types.FanData | null;
+  deviceSettings?: DeviceSettings | null;
+  deviceProfile?: types.DeviceProfile | null;
+  deviceCapabilities?: types.DeviceCapabilities | null;
+  temperature?: types.TemperatureData | null;
+  productId?: string;
+  model?: string;
+  error?: string;
+  runtime?: { state?: string };
+}
 
 const getBridgeWarningMessage = () => i18n.t('store.bridgeWarning.default');
 
@@ -282,8 +293,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set({ isLoading: true });
 
       const [appConfig, deviceStatus, debugInfo] = await Promise.all([
-        configService.getConfig(),
-        deviceService.getStatus() as Promise<DeviceStatusPayload>,
+        apiService.getConfig(),
+        apiService.getDeviceStatus() as Promise<DeviceStatusPayload>,
         apiService.getDebugInfo().catch(() => null),
       ]);
       const coreServiceError = deviceStatus.error ? getCoreServiceErrorMessage(deviceStatus.error) : null;
@@ -317,7 +328,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   connectDevice: async () => {
     try {
       set({ deviceRuntimeState: 'discovering' });
-      await deviceService.connect();
+      await apiService.connectDevice();
       await get().refreshDeviceContext();
     } catch (error) {
       console.error('连接失败:', error);
@@ -328,7 +339,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   disconnectDevice: async () => {
     deviceContextRequestGate.invalidate();
     try {
-      await deviceService.disconnect();
+      await apiService.disconnectDevice();
       set({ isConnected: false, deviceRuntimeState: 'disconnected', deviceProductId: null, deviceModel: null, deviceSettings: null, runtimeDeviceProfile: null, runtimeDeviceCapabilities: null, fanData: null });
     } catch (error) {
       console.error('断开连接失败:', error);
@@ -341,8 +352,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const requestGeneration = deviceContextRequestGate.begin();
     try {
       const [appConfig, status] = await Promise.all([
-        configService.getConfig().catch(() => null),
-        deviceService.getStatus() as Promise<DeviceStatusPayload>,
+        apiService.getConfig().catch(() => null),
+        apiService.getDeviceStatus() as Promise<DeviceStatusPayload>,
       ]);
       if (!deviceContextRequestGate.isCurrent(requestGeneration)) {
         return status;
@@ -416,7 +427,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     );
 
     unsubscribers.push(
-      deviceService.onDeviceConnected((deviceInfo) => {
+      apiService.onDeviceConnected((deviceInfo) => {
         console.log('设备已连接:', deviceInfo);
         clearPendingDisconnect();
         const info = deviceInfo as {
@@ -458,7 +469,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     );
 
     unsubscribers.push(
-      deviceService.onDeviceDisconnected(() => {
+      apiService.onDeviceDisconnected(() => {
         deviceContextRequestGate.invalidate();
         console.log('设备已断开');
         clearPendingDisconnect();
@@ -474,21 +485,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
     );
 
     unsubscribers.push(
-      deviceService.onDeviceSettingsUpdate((settings) => {
+      apiService.onDeviceSettingsUpdate((settings) => {
         set({ deviceSettings: settings || null });
         void get().refreshDeviceContext();
       })
     );
 
     unsubscribers.push(
-      deviceService.onDeviceError((errorMsg) => {
+      apiService.onDeviceError((errorMsg) => {
         console.error('设备错误:', errorMsg);
         set({ error: errorMsg });
       })
     );
 
     unsubscribers.push(
-      deviceService.onFanDataUpdate((data) => {
+      apiService.onFanDataUpdate((data) => {
         const current = get();
         if (fanDataEquals(current.fanData, data)) return;
         set({ fanData: data });
@@ -496,20 +507,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
     );
 
     unsubscribers.push(
-      deviceService.onTemperatureUpdate((data) => {
+      apiService.onTemperatureUpdate((data) => {
         get().handleTemperaturePayload(data);
         get().appendSessionHistoryPoint(data);
       })
     );
 
     unsubscribers.push(
-      configService.onConfigUpdate((updatedConfig) => {
+      apiService.onConfigUpdate((updatedConfig) => {
         set({ config: updatedConfig });
       })
     );
 
     unsubscribers.push(
-      deviceService.onHotkeyTriggered((payload) => {
+      apiService.onHotkeyTriggered((payload) => {
         const message = typeof payload?.message === 'string' ? payload.message : '';
         if (!message) return;
         const ok = payload?.success !== false;
@@ -522,7 +533,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     );
 
     unsubscribers.push(
-      deviceService.onLegionPowerModeUpdate((payload) => {
+      apiService.onLegionPowerModeUpdate((payload) => {
         const mode = typeof payload?.mode === 'string' ? payload.mode : '';
         if (!mode) return;
         const modeLabel: Record<string, string> = {

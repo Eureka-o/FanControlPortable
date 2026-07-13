@@ -22,82 +22,6 @@ function openUrl(url: string) {
   }
 }
 
-function isLatestVersion(currentVersion: string, latestVersion: string) {
-  const normalize = (value: string) => value.trim().replace(/^v/i, '').toLowerCase();
-  const currentRaw = normalize(currentVersion);
-  const latestRaw = normalize(latestVersion);
-  if (!currentRaw || !latestRaw) return true;
-  if (currentRaw === latestRaw) return true;
-
-  const parseNightly = (value: string): number | null => {
-    const match = value.match(/^nightly[-.]?(\d{8})$/i);
-    return match ? Number(match[1]) : null;
-  };
-
-  const parseSemverParts = (value: string): { parts: number[]; prerelease: string[] } | null => {
-    const [withoutBuild] = value.split('+');
-    const separator = withoutBuild.indexOf('-');
-    const base = separator >= 0 ? withoutBuild.slice(0, separator) : withoutBuild;
-    const suffix = separator >= 0 ? withoutBuild.slice(separator + 1) : '';
-    if (!/^\d+(\.\d+){0,3}$/.test(base)) return null;
-    return {
-      parts: base.split('.').map((part) => Number(part)),
-      prerelease: suffix ? suffix.split('.') : [],
-    };
-  };
-
-  const currentNightly = parseNightly(currentRaw);
-  const latestNightly = parseNightly(latestRaw);
-  if (currentNightly !== null && latestNightly !== null) {
-    return latestNightly <= currentNightly;
-  }
-
-  const currentSemver = parseSemverParts(currentRaw);
-  const latestSemver = parseSemverParts(latestRaw);
-  if (!currentSemver || !latestSemver) {
-    return false;
-  }
-
-  const current = currentSemver.parts;
-  const latest = latestSemver.parts;
-  const length = Math.max(current.length, latest.length);
-
-  for (let index = 0; index < length; index += 1) {
-    const currentPart = current[index] ?? 0;
-    const latestPart = latest[index] ?? 0;
-    if (latestPart > currentPart) return false;
-    if (latestPart < currentPart) return true;
-  }
-
-  const currentPrerelease = currentSemver.prerelease;
-  const latestPrerelease = latestSemver.prerelease;
-  if (currentPrerelease.length === 0 || latestPrerelease.length === 0) {
-    if (currentPrerelease.length === latestPrerelease.length) return true;
-    return currentPrerelease.length === 0;
-  }
-
-  const prereleaseLength = Math.max(currentPrerelease.length, latestPrerelease.length);
-  for (let index = 0; index < prereleaseLength; index += 1) {
-    const currentIdentifier = currentPrerelease[index];
-    const latestIdentifier = latestPrerelease[index];
-    if (currentIdentifier === undefined) return false;
-    if (latestIdentifier === undefined) return true;
-    if (currentIdentifier === latestIdentifier) continue;
-
-    const currentNumeric = /^\d+$/.test(currentIdentifier);
-    const latestNumeric = /^\d+$/.test(latestIdentifier);
-    if (currentNumeric && latestNumeric) {
-      const difference = Number(currentIdentifier) - Number(latestIdentifier);
-      if (difference !== 0) return difference > 0;
-      continue;
-    }
-    if (currentNumeric !== latestNumeric) return !currentNumeric;
-    return currentIdentifier > latestIdentifier;
-  }
-
-  return true;
-}
-
 const ABOUT_CARD_CLASS = 'min-w-0 rounded-3xl border border-border/70 bg-card p-5';
 const SUPPORT_EMAIL = '1989005183@qq.com';
 const SUPPORT_QQ_GROUP = '928338191';
@@ -112,12 +36,14 @@ export default function AboutPanel() {
   const [latestReleaseIsPrerelease, setLatestReleaseIsPrerelease] = useState(false);
   const [installerUrl, setInstallerUrl] = useState('');
   const [installerSHA256, setInstallerSHA256] = useState('');
+  const [latestReleaseUpdateAvailable, setLatestReleaseUpdateAvailable] = useState(false);
   const [releaseLoading, setReleaseLoading] = useState(false);
   const [releaseError, setReleaseError] = useState('');
   const updateStage = useUpdateStore((state) => state.stage);
+  const updateRequestStarting = useUpdateStore((state) => state.starting);
   const updatePercent = useUpdateStore((state) => state.percent);
   const startUpdate = useUpdateStore((state) => state.startUpdate);
-  const updateStarting = updateStage === 'downloading' || updateStage === 'retrying' || updateStage === 'installing';
+  const updateStarting = updateRequestStarting || updateStage === 'downloading' || updateStage === 'retrying' || updateStage === 'installing';
   const [isSponsorHovered, setIsSponsorHovered] = useState(false);
   const [isSponsorPinned, setIsSponsorPinned] = useState(false);
   const [sponsorPopupStyle, setSponsorPopupStyle] = useState<{ top: number; left: number; placement: 'top' | 'bottom' } | null>(null);
@@ -172,6 +98,7 @@ export default function AboutPanel() {
         setLatestReleaseIsPrerelease(false);
         setInstallerUrl('');
         setInstallerSHA256('');
+        setLatestReleaseUpdateAvailable(false);
         setReleaseError(channel === 'prerelease'
           ? t('aboutPanel.version.noPrereleaseFound')
           : t('aboutPanel.version.checkFailed'));
@@ -184,6 +111,7 @@ export default function AboutPanel() {
       setLatestReleaseIsPrerelease(!!targetRelease?.prerelease);
       setInstallerUrl(targetRelease.installer_url || '');
       setInstallerSHA256(targetRelease.installer_sha256 || '');
+      setLatestReleaseUpdateAvailable(!!targetRelease.update_available);
       return targetRelease;
     } catch (error) {
       setLatestReleaseTag('');
@@ -192,6 +120,7 @@ export default function AboutPanel() {
       setLatestReleaseIsPrerelease(false);
       setInstallerUrl('');
       setInstallerSHA256('');
+      setLatestReleaseUpdateAvailable(false);
       setReleaseError(`${t('aboutPanel.version.checkFailed')}: ${error instanceof Error ? error.message : String(error)}`);
       return null;
     } finally {
@@ -233,34 +162,34 @@ export default function AboutPanel() {
     }, 120);
   }, [clearSponsorHoverTimer]);
 
-  const hasNewVersion = useMemo(() => {
-    return !!appVersion && !!latestReleaseTag && !isLatestVersion(appVersion, latestReleaseTag);
-  }, [appVersion, latestReleaseTag]);
+  const hasNewVersion = !!latestReleaseTag && latestReleaseUpdateAvailable;
 
   const handleCheckUpdate = useCallback(async () => {
     const release = await checkLatestRelease(releaseChannel);
-    if (release?.tag_name && appVersion) {
-      if (isLatestVersion(appVersion, release.tag_name)) {
-        toast.success(t('aboutPanel.version.upToDate'));
-      } else {
+    if (release?.tag_name) {
+      if (release.update_available) {
         toast.info(t('aboutPanel.version.newVersionFound', { version: release.tag_name }));
+      } else {
+        toast.success(t('aboutPanel.version.upToDate'));
       }
     }
-  }, [appVersion, checkLatestRelease, releaseChannel, t]);
+  }, [checkLatestRelease, releaseChannel, t]);
 
   const handleDownloadInstall = useCallback(async () => {
     if (updateStarting) return;
     let targetTag = latestReleaseTag;
     let targetInstallerUrl = installerUrl;
     let targetInstallerSHA256 = installerSHA256;
+    let targetUpdateAvailable = latestReleaseUpdateAvailable;
     if (!targetTag || !targetInstallerUrl) {
       const release = await checkLatestRelease(releaseChannel);
       if (!release) return;
       targetTag = release.tag_name || '';
       targetInstallerUrl = release.installer_url || '';
       targetInstallerSHA256 = release.installer_sha256 || '';
+      targetUpdateAvailable = !!release.update_available;
     }
-    if (targetTag && appVersion && isLatestVersion(appVersion, targetTag)) {
+    if (targetTag && !targetUpdateAvailable) {
       toast.success(t('aboutPanel.version.upToDate'));
       return;
     }
@@ -275,7 +204,7 @@ export default function AboutPanel() {
       windowBody: t('aboutPanel.version.updaterWindowBody'),
       windowRestarting: t('aboutPanel.version.updaterWindowRestarting'),
     });
-  }, [appVersion, checkLatestRelease, installerSHA256, installerUrl, latestReleaseTag, releaseChannel, startUpdate, t, updateStarting]);
+  }, [checkLatestRelease, installerSHA256, installerUrl, latestReleaseTag, latestReleaseUpdateAvailable, releaseChannel, startUpdate, t, updateStarting]);
 
   const isSponsorOpen = isSponsorHovered || isSponsorPinned;
 

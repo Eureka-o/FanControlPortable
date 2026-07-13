@@ -20,6 +20,7 @@ export interface UpdateRequest {
 }
 
 interface UpdateState {
+  starting: boolean;
   stage: UpdateStage;
   percent: number;
   received: number;
@@ -42,27 +43,18 @@ const isBusy = (stage: UpdateStage) => stage === 'downloading' || stage === 'pau
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export const useUpdateStore = create<UpdateState>((set, get) => ({
+  starting: false,
   stage: 'idle',
   percent: 0,
   received: 0,
   total: 0,
   message: '',
   attempt: 0,
-  maxAttempts: 3,
+  maxAttempts: 0,
   request: null,
   startUpdate: async (request) => {
-    if (isBusy(get().stage)) return;
-    const sameDownload = get().request?.downloadURL === request.downloadURL
-      && get().request?.expectedSHA256 === request.expectedSHA256;
-    set({
-      stage: 'downloading',
-      percent: sameDownload ? get().percent : 0,
-      received: sameDownload ? get().received : 0,
-      total: sameDownload ? get().total : 0,
-      message: '',
-      attempt: 1,
-      request,
-    });
+    if (get().starting || isBusy(get().stage)) return;
+    set({ starting: true, request });
     try {
       await apiService.downloadAndInstallUpdate(
         request.downloadURL,
@@ -71,10 +63,10 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         request.windowRestarting,
         request.expectedSHA256,
       );
-    } catch (error) {
-      if (get().stage !== 'error' && get().stage !== 'canceled') {
-        set({ stage: 'error', message: errorMessage(error) });
-      }
+    } catch {
+      // The backend emits the authoritative error or canceled stage.
+    } finally {
+      set({ starting: false });
     }
   },
   retryUpdate: async () => {
@@ -83,34 +75,30 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   },
   pauseUpdate: async () => {
     if (get().stage !== 'downloading' && get().stage !== 'retrying') return;
-    if (await apiService.pauseUpdateDownload()) {
-      set({ stage: 'paused' });
-    }
+    await apiService.pauseUpdateDownload();
   },
   resumeUpdate: async () => {
     if (get().stage !== 'paused') return;
-    if (await apiService.resumeUpdateDownload()) {
-      set({ stage: 'downloading' });
-    }
+    await apiService.resumeUpdateDownload();
   },
   cancelUpdate: async () => {
     const request = get().request;
     if (!request || get().stage === 'installing') return;
     await apiService.cancelUpdateDownload(request.downloadURL);
-    set({ stage: 'canceled', percent: 0, received: 0, total: 0, message: '' });
   },
-  dismissUpdate: () => set({ stage: 'idle', percent: 0, received: 0, total: 0, message: '', request: null }),
+  dismissUpdate: () => set({ starting: false, stage: 'idle', percent: 0, received: 0, total: 0, message: '', attempt: 0, maxAttempts: 0, request: null }),
   handleProgress: (progress) => {
     if (!progress || !progress.stage) return;
     if (progress.stage === 'canceled') {
-      set({ stage: 'canceled', percent: 0, received: 0, total: 0, message: '' });
+      set({ starting: false, stage: 'canceled', percent: 0, received: 0, total: 0, message: '' });
       return;
     }
     set((state) => ({
+      starting: false,
       stage: progress.stage,
       percent: progress.percent >= 0 ? Math.max(0, Math.min(100, progress.percent)) : state.percent,
-      received: progress.received > 0 ? progress.received : state.received,
-      total: progress.total > 0 ? progress.total : state.total,
+      received: progress.attempt === 1 ? progress.received : progress.received > 0 ? progress.received : state.received,
+      total: progress.attempt === 1 ? progress.total : progress.total > 0 ? progress.total : state.total,
       message: progress.message || '',
       attempt: progress.attempt || state.attempt,
       maxAttempts: progress.maxAttempts || state.maxAttempts,

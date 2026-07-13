@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/TIANLI0/THRM/internal/config"
+	"github.com/TIANLI0/THRM/internal/version"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -166,6 +167,7 @@ type UpdateRelease struct {
 	HTMLURL         string `json:"html_url"`
 	Body            string `json:"body"`
 	Prerelease      bool   `json:"prerelease"`
+	UpdateAvailable bool   `json:"update_available"`
 	InstallerURL    string `json:"installer_url"`
 	InstallerSHA256 string `json:"installer_sha256"`
 }
@@ -429,10 +431,11 @@ func checkLatestRelease(ctx context.Context, client *http.Client, channel, stabl
 	}
 
 	result := UpdateRelease{
-		TagName:    release.TagName,
-		HTMLURL:    release.HTMLURL,
-		Body:       release.Body,
-		Prerelease: release.Prerelease,
+		TagName:         release.TagName,
+		HTMLURL:         release.HTMLURL,
+		Body:            release.Body,
+		Prerelease:      release.Prerelease,
+		UpdateAvailable: version.IsNewer(version.Get(), release.TagName),
 	}
 	for _, asset := range release.Assets {
 		name := strings.ToLower(strings.TrimSpace(asset.Name))
@@ -464,19 +467,21 @@ func (a *App) DownloadAndInstallUpdate(downloadURL, windowTitle, windowBody, win
 
 	parsed, err := validateReleaseAssetURL(downloadURL)
 	if err != nil {
-		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: err.Error()})
+		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: err.Error(), MaxAttempts: updateDownloadAttempts})
 		return err
 	}
 	expectedSHA256, err = normalizeSHA256Digest(expectedSHA256)
 	if err != nil {
-		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: err.Error()})
+		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: err.Error(), MaxAttempts: updateDownloadAttempts})
 		return err
 	}
 	control, err := a.beginUpdateDownload()
 	if err != nil {
+		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: err.Error(), MaxAttempts: updateDownloadAttempts})
 		return err
 	}
 	defer a.finishUpdateDownload(control)
+	a.emitUpdateProgress(updateProgress{Percent: 0, Stage: "downloading", Attempt: 1, MaxAttempts: updateDownloadAttempts})
 
 	updateDir := updateDownloadDirectory(config.GetInstallDir())
 	if err := os.MkdirAll(updateDir, 0o755); err != nil {
