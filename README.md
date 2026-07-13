@@ -71,6 +71,7 @@ FanControl 现在以内置设备档案的方式支持多种设备。不同设备
 - 仅续传当前目标版本的断点文件，自动清理其他版本及过期的更新缓存。
 - 暂停下载不再消耗总超时时间，恢复后可继续当前任务。
 - 修复下载进度圆环收起后无法重新展开的问题，并加宽展开后的进度卡片。
+- 修复同一版本系列下 Preview 1 无法识别 Preview 2 更新的问题。
 
 完整更新记录请查看 [GitHub Releases](https://github.com/Eureka-o/FanControlPortable/releases) 或 `docs/release-notes/`。
 

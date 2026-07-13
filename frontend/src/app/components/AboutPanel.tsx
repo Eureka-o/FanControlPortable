@@ -34,11 +34,16 @@ function isLatestVersion(currentVersion: string, latestVersion: string) {
     return match ? Number(match[1]) : null;
   };
 
-  const parseSemverParts = (value: string): { parts: number[]; prerelease: boolean } | null => {
+  const parseSemverParts = (value: string): { parts: number[]; prerelease: string[] } | null => {
     const [withoutBuild] = value.split('+');
-    const [base, suffix] = withoutBuild.split('-', 2);
+    const separator = withoutBuild.indexOf('-');
+    const base = separator >= 0 ? withoutBuild.slice(0, separator) : withoutBuild;
+    const suffix = separator >= 0 ? withoutBuild.slice(separator + 1) : '';
     if (!/^\d+(\.\d+){0,3}$/.test(base)) return null;
-    return { parts: base.split('.').map((part) => Number(part)), prerelease: Boolean(suffix) };
+    return {
+      parts: base.split('.').map((part) => Number(part)),
+      prerelease: suffix ? suffix.split('.') : [],
+    };
   };
 
   const currentNightly = parseNightly(currentRaw);
@@ -64,8 +69,30 @@ function isLatestVersion(currentVersion: string, latestVersion: string) {
     if (latestPart < currentPart) return true;
   }
 
-  if (currentSemver.prerelease !== latestSemver.prerelease) {
-    return !latestSemver.prerelease;
+  const currentPrerelease = currentSemver.prerelease;
+  const latestPrerelease = latestSemver.prerelease;
+  if (currentPrerelease.length === 0 || latestPrerelease.length === 0) {
+    if (currentPrerelease.length === latestPrerelease.length) return true;
+    return currentPrerelease.length === 0;
+  }
+
+  const prereleaseLength = Math.max(currentPrerelease.length, latestPrerelease.length);
+  for (let index = 0; index < prereleaseLength; index += 1) {
+    const currentIdentifier = currentPrerelease[index];
+    const latestIdentifier = latestPrerelease[index];
+    if (currentIdentifier === undefined) return false;
+    if (latestIdentifier === undefined) return true;
+    if (currentIdentifier === latestIdentifier) continue;
+
+    const currentNumeric = /^\d+$/.test(currentIdentifier);
+    const latestNumeric = /^\d+$/.test(latestIdentifier);
+    if (currentNumeric && latestNumeric) {
+      const difference = Number(currentIdentifier) - Number(latestIdentifier);
+      if (difference !== 0) return difference > 0;
+      continue;
+    }
+    if (currentNumeric !== latestNumeric) return !currentNumeric;
+    return currentIdentifier > latestIdentifier;
   }
 
   return true;
