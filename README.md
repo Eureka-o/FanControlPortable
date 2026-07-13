@@ -37,8 +37,8 @@ FanControl 现在以内置设备档案的方式支持多种设备。不同设备
 
 ## 下载哪个文件
 
-- `FanControl-2.5.1-amd64-installer.exe`：推荐大多数用户使用。安装后可以从开始菜单或桌面启动，升级到 2.5.1 时会保留已有配置。
-- `FanControl-2.5.1-portable.zip`：免安装便携版。解压到一个固定文件夹后运行 `FanControl.exe`。
+- `FanControl-2.5.2-preview.1-amd64-installer.exe`：2.5.2 第一版预览安装包，升级时会保留已有配置。
+- `FanControl-2.5.2-preview.1-portable.zip`：2.5.2 第一版预览便携包，解压到固定文件夹后运行 `FanControl.exe`。
 
 首次启动时如果 Windows 弹出权限确认，请选择允许。软件需要管理员权限读取硬件温度，并可能安装或调用温度读取所需的辅助组件。
 
@@ -65,11 +65,11 @@ FanControl 现在以内置设备档案的方式支持多种设备。不同设备
 
 ## 最新版本
 
-当前版本：`2.5.1`
+当前预览版本：`2.5.2-preview.1`
 
-- 统一毛玻璃外观下标题栏、侧栏和内容区的材质，去除区域间的亮色接缝。
-- 修复传感器列表短暂刷新时只能保持自动选择的问题。
-- 首页风扇曲线预览恢复为当前主题的主色显示。
+- 使用 GitHub Release 提供的 SHA-256 摘要校验软件内下载的安装包。
+- 仅续传当前目标版本的断点文件，自动清理其他版本及过期的更新缓存。
+- 暂停下载不再消耗总超时时间，恢复后可继续当前任务。
 
 完整更新记录请查看 [GitHub Releases](https://github.com/Eureka-o/FanControlPortable/releases) 或 `docs/release-notes/`。
 
