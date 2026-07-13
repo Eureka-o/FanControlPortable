@@ -2,6 +2,7 @@ package device
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -187,6 +188,10 @@ func (m *Manager) shouldUseWiFi() bool {
 }
 
 func (m *Manager) connectWiFiLocked() (bool, map[string]string) {
+	return m.connectWiFiWithContextLocked(context.Background())
+}
+
+func (m *Manager) connectWiFiWithContextLocked(ctx context.Context) (bool, map[string]string) {
 	if !m.shouldUseWiFiLocked() {
 		return false, nil
 	}
@@ -197,12 +202,12 @@ func (m *Manager) connectWiFiLocked() (bool, map[string]string) {
 		m.wifiEndpoint = types.DefaultFanDeviceIP
 	}
 
-	fanData, err := m.readWiFiStateLocked()
+	fanData, err := m.readWiFiStateWithContextLocked(ctx)
 	if err != nil {
 		m.logError("WiFi 控制器连接失败: %v", err)
 		return false, nil
 	}
-	m.detectWiFiFirmwareLocked()
+	m.detectWiFiFirmwareWithContextLocked(ctx)
 
 	m.isConnected = true
 	m.deviceType = types.DeviceTransportWiFi
@@ -267,15 +272,19 @@ func (m *Manager) disconnectWiFiLocked() bool {
 }
 
 func (m *Manager) readWiFiStateLocked() (*types.FanData, error) {
+	return m.readWiFiStateWithContextLocked(context.Background())
+}
+
+func (m *Manager) readWiFiStateWithContextLocked(ctx context.Context) (*types.FanData, error) {
 	if m.wifiExecutor != nil {
-		return m.wifiExecutor.ReadState(nil)
+		return m.wifiExecutor.ReadState(ctx)
 	}
 
 	endpoint, err := normalizeWiFiEndpoint(m.wifiEndpoint)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest(http.MethodGet, endpoint+"/api/data", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/api/data", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -305,14 +314,22 @@ func (m *Manager) readWiFiStateLocked() (*types.FanData, error) {
 }
 
 func (m *Manager) setWiFiSpeedLocked(percent int) bool {
+	return m.setWiFiSpeedWithContextLocked(context.Background(), percent)
+}
+
+func (m *Manager) setWiFiSpeedWithContextLocked(ctx context.Context, percent int) bool {
 	speed := types.NewPercentSpeed(percent)
 	if types.IsRPMSpeedUnit(m.activeProfile.SpeedUnit) {
 		speed = types.NewRPMSpeed(percent)
 	}
-	return m.setWiFiTargetSpeedLocked(speed)
+	return m.setWiFiTargetSpeedWithContextLocked(ctx, speed)
 }
 
 func (m *Manager) setWiFiTargetSpeedLocked(speed types.FanSpeedValue) bool {
+	return m.setWiFiTargetSpeedWithContextLocked(context.Background(), speed)
+}
+
+func (m *Manager) setWiFiTargetSpeedWithContextLocked(ctx context.Context, speed types.FanSpeedValue) bool {
 	speed = speed.Normalized()
 	activeUnit := types.NormalizeFanSpeedUnit(m.activeProfile.SpeedUnit)
 	if speed.Unit != activeUnit {
@@ -321,7 +338,7 @@ func (m *Manager) setWiFiTargetSpeedLocked(speed types.FanSpeedValue) bool {
 	}
 
 	if m.wifiExecutor != nil {
-		next, err := m.wifiExecutor.SetSpeed(nil, speed)
+		next, err := m.wifiExecutor.SetSpeed(ctx, speed)
 		if err != nil {
 			m.logError("WiFi profile speed command failed: %v", err)
 			return false
@@ -358,8 +375,8 @@ func (m *Manager) setWiFiTargetSpeedLocked(speed types.FanSpeedValue) bool {
 		return false
 	}
 	var next *types.FanData
-	if err := retryDeviceSend("WiFi speed", func() error {
-		req, err := http.NewRequest(http.MethodPost, endpoint+"/api/speed", bytes.NewReader(payload))
+	if err := retryDeviceSendContext(ctx, "WiFi speed", func() error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/api/speed", bytes.NewReader(payload))
 		if err != nil {
 			return err
 		}
@@ -382,7 +399,7 @@ func (m *Manager) setWiFiTargetSpeedLocked(speed types.FanSpeedValue) bool {
 			return err
 		}
 
-		next, err = m.readWiFiStateLocked()
+		next, err = m.readWiFiStateWithContextLocked(ctx)
 		if err != nil {
 			return err
 		}
@@ -480,6 +497,10 @@ func validateWiFiSetSpeedResponse(body []byte) error {
 }
 
 func (m *Manager) detectWiFiFirmwareLocked() {
+	m.detectWiFiFirmwareWithContextLocked(context.Background())
+}
+
+func (m *Manager) detectWiFiFirmwareWithContextLocked(ctx context.Context) {
 	m.wifiProtocol = ""
 	m.wifiConfig = false
 	m.wifiHeartbeat = false
@@ -490,7 +511,7 @@ func (m *Manager) detectWiFiFirmwareLocked() {
 	if err != nil {
 		return
 	}
-	req, err := http.NewRequest(http.MethodGet, endpoint+"/api/device", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/api/device", nil)
 	if err != nil {
 		return
 	}

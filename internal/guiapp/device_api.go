@@ -44,10 +44,15 @@ func (a *App) AutoScanDevices() map[string]any {
 
 func (a *App) ScanDeviceCandidates(mode string) types.DeviceScanResult {
 	timeout := 15 * time.Second
+	params := ipc.ScanDeviceCandidatesParams{Mode: mode}
+	var resp *ipc.Response
+	var err error
 	if mode == types.DeviceScanModeDeep {
 		timeout = 90 * time.Second
+		resp, err = sendTemporaryIPCRequest(ipc.ReqScanDeviceCandidates, params, timeout)
+	} else {
+		resp, err = a.sendRequestWithTimeout(ipc.ReqScanDeviceCandidates, params, timeout)
 	}
-	resp, err := a.sendRequestWithTimeout(ipc.ReqScanDeviceCandidates, ipc.ScanDeviceCandidatesParams{Mode: mode}, timeout)
 	if err != nil {
 		guiLogger.Errorf("设备扫描请求失败: %v", err)
 		return types.DeviceScanResult{Mode: mode, Error: err.Error()}
@@ -96,10 +101,15 @@ func (a *App) ConnectNativeDevice(profileID string) bool {
 
 func (a *App) ScanWiFiDevices(mode string) types.WiFiDiscoveryResult {
 	timeout := 12 * time.Second
+	params := ipc.ScanWiFiDevicesParams{Mode: mode}
+	var resp *ipc.Response
+	var err error
 	if mode == types.WiFiDiscoveryModeDeep {
 		timeout = 90 * time.Second
+		resp, err = sendTemporaryIPCRequest(ipc.ReqScanWiFiDevices, params, timeout)
+	} else {
+		resp, err = a.sendRequestWithTimeout(ipc.ReqScanWiFiDevices, params, timeout)
 	}
-	resp, err := a.sendRequestWithTimeout(ipc.ReqScanWiFiDevices, ipc.ScanWiFiDevicesParams{Mode: mode}, timeout)
 	if err != nil {
 		guiLogger.Errorf("WiFi IP scan request failed: %v", err)
 		return types.WiFiDiscoveryResult{Mode: mode, Error: err.Error()}
@@ -116,14 +126,7 @@ func (a *App) ScanWiFiDevices(mode string) types.WiFiDiscoveryResult {
 }
 
 func (a *App) ControlWiFiScan(action string) bool {
-	controlClient := ipc.NewClient(nil)
-	if err := controlClient.Connect(); err != nil {
-		guiLogger.Errorf("WiFi scan control connect failed: %v", err)
-		return false
-	}
-	defer controlClient.Close()
-
-	resp, err := controlClient.SendRequestWithTimeout(ipc.ReqControlWiFiScan, ipc.ControlWiFiScanParams{Action: action}, 3*time.Second)
+	resp, err := sendTemporaryIPCRequest(ipc.ReqControlWiFiScan, ipc.ControlWiFiScanParams{Action: action}, 3*time.Second)
 	if err != nil {
 		guiLogger.Errorf("WiFi scan control request failed: %v", err)
 		return false
@@ -133,6 +136,15 @@ func (a *App) ControlWiFiScan(action string) bool {
 		return false
 	}
 	return true
+}
+
+func sendTemporaryIPCRequest(reqType ipc.RequestType, data any, timeout time.Duration) (*ipc.Response, error) {
+	client := ipc.NewClient(nil)
+	if err := client.Connect(); err != nil {
+		return nil, err
+	}
+	defer client.Close()
+	return client.SendRequestWithTimeout(reqType, data, timeout)
 }
 
 func (a *App) DisconnectDevice() error {

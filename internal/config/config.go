@@ -59,7 +59,7 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 		m.config.ConfigPath = installConfigPath
 		m.logInfo("从便携目录加载配置成功: %s", installConfigPath)
 		m.bumpRevisionLocked()
-		return m.config
+		return cloneAppConfig(m.config)
 	}
 
 	m.logInfo("从便携目录加载配置失败，尝试从用户目录迁移: %s", defaultConfigPath)
@@ -72,7 +72,7 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 			m.logError("failed to migrate legacy install-root config: %v", err)
 		}
 		m.bumpRevisionLocked()
-		return m.config
+		return cloneAppConfig(m.config)
 	}
 
 	if m.tryLoadFromPathLocked(defaultConfigPath) {
@@ -82,7 +82,7 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 			m.logError("迁移用户目录配置失败: %v", err)
 		}
 		m.bumpRevisionLocked()
-		return m.config
+		return cloneAppConfig(m.config)
 	}
 
 	for _, legacyConfigPath := range legacyConfigPaths {
@@ -95,7 +95,7 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 				m.logError("迁移旧目录配置失败: %v", err)
 			}
 			m.bumpRevisionLocked()
-			return m.config
+			return cloneAppConfig(m.config)
 		}
 	}
 
@@ -105,7 +105,7 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 			m.logError("保存迁移后的配置失败: %v", err)
 		}
 		m.bumpRevisionLocked()
-		return m.config
+		return cloneAppConfig(m.config)
 	}
 
 	m.logError("所有配置目录加载失败，使用默认配置")
@@ -117,7 +117,7 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 	}
 	m.bumpRevisionLocked()
 
-	return m.config
+	return cloneAppConfig(m.config)
 }
 
 // tryLoadFromPathLocked 尝试从指定路径加载配置（调用方需持有 m.mu）
@@ -649,6 +649,133 @@ func cloneIntSlice(input []int) []int {
 	return out
 }
 
+func cloneStringMapExact(input map[string]string) map[string]string {
+	if input == nil {
+		return nil
+	}
+	out := make(map[string]string, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneNestedIntMapExact(input map[string]map[string]int) map[string]map[string]int {
+	if input == nil {
+		return nil
+	}
+	out := make(map[string]map[string]int, len(input))
+	for key, values := range input {
+		if values == nil {
+			out[key] = nil
+			continue
+		}
+		inner := make(map[string]int, len(values))
+		for innerKey, value := range values {
+			inner[innerKey] = value
+		}
+		out[key] = inner
+	}
+	return out
+}
+
+func cloneIntSliceExact(input []int) []int {
+	if input == nil {
+		return nil
+	}
+	return append([]int{}, input...)
+}
+
+func cloneFanCurveExact(input []types.FanCurvePoint) []types.FanCurvePoint {
+	if input == nil {
+		return nil
+	}
+	return append([]types.FanCurvePoint{}, input...)
+}
+
+func cloneFanCurveProfilesExact(input []types.FanCurveProfile) []types.FanCurveProfile {
+	if input == nil {
+		return nil
+	}
+	out := make([]types.FanCurveProfile, len(input))
+	for index, profile := range input {
+		profile.Curve = cloneFanCurveExact(profile.Curve)
+		out[index] = profile
+	}
+	return out
+}
+
+func cloneDeviceProfilesExact(input []types.DeviceProfile) []types.DeviceProfile {
+	if input == nil {
+		return nil
+	}
+	out := make([]types.DeviceProfile, len(input))
+	for index, profile := range input {
+		out[index] = deviceprofiles.CloneProfile(profile)
+	}
+	return out
+}
+
+func cloneDeviceCurveStatesExact(input map[string]types.DeviceFanCurveProfilesState) map[string]types.DeviceFanCurveProfilesState {
+	if input == nil {
+		return nil
+	}
+	out := make(map[string]types.DeviceFanCurveProfilesState, len(input))
+	for key, state := range input {
+		state.Profiles = cloneFanCurveProfilesExact(state.Profiles)
+		state.FanCurve = cloneFanCurveExact(state.FanCurve)
+		state.ManualGearRPM = cloneNestedIntMapExact(state.ManualGearRPM)
+		out[key] = state
+	}
+	return out
+}
+
+func cloneLearnedOffsetsExact(input map[string][]int) map[string][]int {
+	if input == nil {
+		return nil
+	}
+	out := make(map[string][]int, len(input))
+	for key, offsets := range input {
+		out[key] = cloneIntSliceExact(offsets)
+	}
+	return out
+}
+
+func cloneSmartControlConfig(input types.SmartControlConfig) types.SmartControlConfig {
+	input.LearnedOffsets = cloneIntSliceExact(input.LearnedOffsets)
+	input.LearnedOffsetsHeat = cloneIntSliceExact(input.LearnedOffsetsHeat)
+	input.LearnedOffsetsCool = cloneIntSliceExact(input.LearnedOffsetsCool)
+	input.LearnedRateHeat = cloneIntSliceExact(input.LearnedRateHeat)
+	input.LearnedRateCool = cloneIntSliceExact(input.LearnedRateCool)
+	input.LearnedOffsetsByProfile = cloneLearnedOffsetsExact(input.LearnedOffsetsByProfile)
+	return input
+}
+
+func cloneAppConfig(input types.AppConfig) types.AppConfig {
+	input.LegionFnQ.ModeMapping = func() map[string]types.FanGearTarget {
+		if input.LegionFnQ.ModeMapping == nil {
+			return nil
+		}
+		out := make(map[string]types.FanGearTarget, len(input.LegionFnQ.ModeMapping))
+		for key, value := range input.LegionFnQ.ModeMapping {
+			out[key] = value
+		}
+		return out
+	}()
+	input.ActiveDeviceProfileIDsByTransport = cloneStringMapExact(input.ActiveDeviceProfileIDsByTransport)
+	input.DeviceProfiles = cloneDeviceProfilesExact(input.DeviceProfiles)
+	input.ManualGearLevels = cloneStringMapExact(input.ManualGearLevels)
+	input.ManualGearRPM = cloneNestedIntMapExact(input.ManualGearRPM)
+	input.FanCurve = cloneFanCurveExact(input.FanCurve)
+	input.FanCurveProfiles = cloneFanCurveProfilesExact(input.FanCurveProfiles)
+	input.FanCurveProfilesByDevice = cloneDeviceCurveStatesExact(input.FanCurveProfilesByDevice)
+	input.SmartControl = cloneSmartControlConfig(input.SmartControl)
+	if input.LightStrip.Colors != nil {
+		input.LightStrip.Colors = append([]types.RGBColor{}, input.LightStrip.Colors...)
+	}
+	return input
+}
+
 func preserveNativeLearningOffsetsBeforeCompatibilityMigration(cfg *types.AppConfig, deviceKey string) bool {
 	if cfg == nil || strings.TrimSpace(deviceKey) == "" || strings.TrimSpace(cfg.ActiveFanCurveProfileID) == "" {
 		return false
@@ -917,13 +1044,13 @@ func (m *Manager) GetLegacyConfigDirs() []string {
 func (m *Manager) Get() types.AppConfig {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.config
+	return cloneAppConfig(m.config)
 }
 
 func (m *Manager) GetWithRevision() (types.AppConfig, uint64) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.config, m.revision
+	return cloneAppConfig(m.config), m.revision
 }
 
 // Revision 返回当前配置版本号，不拷贝配置内容。
@@ -936,6 +1063,7 @@ func (m *Manager) Revision() uint64 {
 
 // Set 设置配置（线程安全）
 func (m *Manager) Set(config types.AppConfig) {
+	config = cloneAppConfig(config)
 	m.mu.Lock()
 	m.config = config
 	m.bumpRevisionLocked()
@@ -944,11 +1072,27 @@ func (m *Manager) Set(config types.AppConfig) {
 
 // Update 更新配置并保存（线程安全，原子操作）
 func (m *Manager) Update(config types.AppConfig) error {
+	config = cloneAppConfig(config)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.config = config
 	m.bumpRevisionLocked()
 	return m.saveLocked()
+}
+
+// MutateIfRevision atomically applies a narrow in-memory change when the
+// caller still holds the current snapshot. Persistence remains explicit via Save.
+func (m *Manager) MutateIfRevision(expected uint64, mutate func(*types.AppConfig)) (types.AppConfig, uint64, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if mutate == nil || m.revision != expected {
+		return cloneAppConfig(m.config), m.revision, false
+	}
+	next := cloneAppConfig(m.config)
+	mutate(&next)
+	m.config = cloneAppConfig(next)
+	m.bumpRevisionLocked()
+	return cloneAppConfig(m.config), m.revision, true
 }
 
 func (m *Manager) bumpRevisionLocked() {

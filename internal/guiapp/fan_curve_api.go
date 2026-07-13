@@ -54,7 +54,11 @@ func (a *App) GetFanCurve() []FanCurvePoint {
 func (a *App) GetFanCurveProfiles() FanCurveProfilesPayload {
 	resp, err := a.sendRequest(ipc.ReqGetFanCurveProfiles, nil)
 	if err != nil || !resp.Success {
-		cfg := a.GetConfig()
+		cfg, cfgErr := a.GetConfig()
+		if cfgErr != nil {
+			guiLogger.Errorf("获取曲线配置失败: %v", cfgErr)
+			return FanCurveProfilesPayload{}
+		}
 		return types.FanCurveProfilesPayload{
 			Profiles: cfg.FanCurveProfiles,
 			ActiveID: cfg.ActiveFanCurveProfileID,

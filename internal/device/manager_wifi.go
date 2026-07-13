@@ -24,30 +24,31 @@ const (
 // Manager is the default FanControl device manager.
 // It keeps WiFi and profile-driven serial transports in the normal build.
 type Manager struct {
-	isConnected     bool
-	productID       uint16
-	deviceType      string
-	deviceTransport string
-	wifiEndpoint    string
-	wifiHTTPClient  *http.Client
-	wifiProtocol    string
-	wifiConfig      bool
-	wifiHeartbeat   bool
-	wifiHbStop      chan struct{}
-	wifiHbDone      chan struct{}
-	activeProfile   types.DeviceProfile
-	wifiExecutor    *deviceprofileexec.WiFiExecutor
-	bleConnector    deviceprofileexec.BLEConnector
-	bleExecutor     *deviceprofileexec.BLEExecutor
-	serialDialer    deviceprofileexec.SerialDialer
-	serialExecutor  *deviceprofileexec.SerialExecutor
-	flyDigiHID      *flyDigiHIDDevice
-	flyDigiHIDStop  chan struct{}
-	flyDigiHIDDone  chan struct{}
-	mutex           sync.RWMutex
-	logger          types.Logger
-	currentFanData  atomic.Pointer[types.FanData]
-	writesBlocked   atomic.Bool
+	isConnected      bool
+	productID        uint16
+	deviceType       string
+	deviceTransport  string
+	wifiEndpoint     string
+	wifiHTTPClient   *http.Client
+	wifiProtocol     string
+	wifiConfig       bool
+	wifiHeartbeat    bool
+	wifiHbStop       chan struct{}
+	wifiHbDone       chan struct{}
+	activeProfile    types.DeviceProfile
+	wifiExecutor     *deviceprofileexec.WiFiExecutor
+	bleConnector     deviceprofileexec.BLEConnector
+	bleExecutor      *deviceprofileexec.BLEExecutor
+	serialDialer     deviceprofileexec.SerialDialer
+	serialExecutor   *deviceprofileexec.SerialExecutor
+	flyDigiHID       *flyDigiHIDDevice
+	flyDigiHIDStop   chan struct{}
+	flyDigiHIDDone   chan struct{}
+	mutex            sync.RWMutex
+	operationControl deviceOperationControl
+	logger           types.Logger
+	currentFanData   atomic.Pointer[types.FanData]
+	writesBlocked    atomic.Bool
 
 	onFanDataUpdate func(data *types.FanData)
 	onDisconnect    func()
@@ -89,18 +90,26 @@ func (m *Manager) Connect() (bool, map[string]string) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
+	if m.writesBlocked.Load() {
+		return false, nil
+	}
 	if m.isConnected {
 		return true, m.connectedInfoLocked()
 	}
+	ctx, finishOperation := m.operationControl.begin()
+	defer finishOperation()
+	if m.writesBlocked.Load() {
+		return false, nil
+	}
 
 	if m.shouldUseWiFiLocked() {
-		return m.connectWiFiLocked()
+		return m.connectWiFiWithContextLocked(ctx)
 	}
 	if m.shouldUseSerialLocked() {
-		return m.connectSerialLocked()
+		return m.connectSerialWithContextLocked(ctx)
 	}
 	if m.shouldUseBLELocked() {
-		return m.connectBLELocked()
+		return m.connectBLEWithContextLocked(ctx)
 	}
 	if m.shouldUseLegacyHIDLocked() {
 		return m.connectLegacyHIDLocked()
@@ -129,6 +138,7 @@ func (m *Manager) DisconnectSilently() {
 }
 
 func (m *Manager) disconnect(notify bool) {
+	m.operationControl.cancelActive()
 	m.mutex.Lock()
 	if !m.isConnected {
 		m.mutex.Unlock()
@@ -200,6 +210,11 @@ func (m *Manager) SetPercentSpeed(percent int) bool {
 	if m.writesBlocked.Load() || !m.isConnected {
 		return false
 	}
+	ctx, finishOperation := m.operationControl.begin()
+	defer finishOperation()
+	if m.writesBlocked.Load() {
+		return false
+	}
 	switch m.deviceType {
 	case types.DeviceTransportWiFi:
 		if !m.shouldUseWiFiLocked() {
@@ -209,19 +224,19 @@ func (m *Manager) SetPercentSpeed(percent int) bool {
 			m.logWarn("percent speed command rejected because the active WiFi profile uses RPM")
 			return false
 		}
-		return m.setWiFiSpeedLocked(types.ClampFanPercent(percent))
+		return m.setWiFiSpeedWithContextLocked(ctx, types.ClampFanPercent(percent))
 	case types.DeviceTransportSerial:
 		if types.IsRPMSpeedUnit(m.activeProfile.SpeedUnit) {
 			m.logWarn("percent speed command rejected because the active serial profile uses RPM")
 			return false
 		}
-		return m.setSerialTargetSpeedLocked(types.NewPercentSpeed(percent))
+		return m.setSerialTargetSpeedWithContextLocked(ctx, types.NewPercentSpeed(percent))
 	case types.DeviceTransportBLE:
 		if types.IsRPMSpeedUnit(m.activeProfile.SpeedUnit) {
 			m.logWarn("percent speed command rejected because the active BLE profile uses RPM")
 			return false
 		}
-		return m.setBLETargetSpeedLocked(types.NewPercentSpeed(percent))
+		return m.setBLETargetSpeedWithContextLocked(ctx, types.NewPercentSpeed(percent))
 	default:
 		return false
 	}
@@ -236,6 +251,11 @@ func (m *Manager) SetTargetSpeed(value int, unit string) bool {
 	if m.writesBlocked.Load() || !m.isConnected {
 		return false
 	}
+	ctx, finishOperation := m.operationControl.begin()
+	defer finishOperation()
+	if m.writesBlocked.Load() {
+		return false
+	}
 	if types.IsRPMSpeedUnit(unit) {
 		if m.deviceType == types.DeviceTransportHID {
 			return m.setFlyDigiHIDTargetSpeedLocked(types.NewRPMSpeed(value))
@@ -245,13 +265,13 @@ func (m *Manager) SetTargetSpeed(value int, unit string) bool {
 				m.logWarn("default WiFi percent profile does not support direct RPM target speed: %d", value)
 				return false
 			}
-			return m.setWiFiTargetSpeedLocked(types.NewRPMSpeed(value))
+			return m.setWiFiTargetSpeedWithContextLocked(ctx, types.NewRPMSpeed(value))
 		}
 		if m.deviceType == types.DeviceTransportSerial {
-			return m.setSerialTargetSpeedLocked(types.NewRPMSpeed(value))
+			return m.setSerialTargetSpeedWithContextLocked(ctx, types.NewRPMSpeed(value))
 		}
 		if m.deviceType == types.DeviceTransportBLE {
-			return m.setBLETargetSpeedLocked(types.NewRPMSpeed(value))
+			return m.setBLETargetSpeedWithContextLocked(ctx, types.NewRPMSpeed(value))
 		}
 		return false
 	}
@@ -259,13 +279,13 @@ func (m *Manager) SetTargetSpeed(value int, unit string) bool {
 		if !m.shouldUseWiFiLocked() {
 			return false
 		}
-		return m.setWiFiTargetSpeedLocked(types.NewPercentTickSpeed(value))
+		return m.setWiFiTargetSpeedWithContextLocked(ctx, types.NewPercentTickSpeed(value))
 	}
 	if m.deviceType == types.DeviceTransportSerial {
-		return m.setSerialTargetSpeedLocked(types.NewPercentTickSpeed(value))
+		return m.setSerialTargetSpeedWithContextLocked(ctx, types.NewPercentTickSpeed(value))
 	}
 	if m.deviceType == types.DeviceTransportBLE {
-		return m.setBLETargetSpeedLocked(types.NewPercentTickSpeed(value))
+		return m.setBLETargetSpeedWithContextLocked(ctx, types.NewPercentTickSpeed(value))
 	}
 	return false
 }
