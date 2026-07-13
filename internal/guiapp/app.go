@@ -16,6 +16,8 @@ type App struct {
 	ipcClient         *ipc.Client
 	mutex             sync.RWMutex
 	ipcReconnectMutex sync.Mutex
+	updateMutex       sync.Mutex
+	updateControl     *updateDownloadControl
 
 	// 缓存的状态
 	isConnected bool

@@ -65,7 +65,9 @@ func buildUpdateScript(installerPath, exePath, windowTitle, windowBody, windowRe
 	writeLine("timeout /t 6 /nobreak >nul")
 	writeLine(`if not "%EXE_PATH%"=="" if exist "%EXE_PATH%" start "" "%EXE_PATH%"`)
 	writeLine(":cleanup")
+	writeLine(`del "%INSTALLER_FILE%" >nul 2>&1`)
 	writeLine(`del "%~f0" >nul 2>&1`)
+	writeLine(`rmdir "%~dp0" >nul 2>&1`)
 	writeLine("exit")
 	return script.String()
 }
