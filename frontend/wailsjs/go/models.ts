@@ -5,6 +5,7 @@ export namespace guiapp {
 	    html_url: string;
 	    body: string;
 	    prerelease: boolean;
+	    update_available: boolean;
 	    installer_url: string;
 	    installer_sha256: string;
 
@@ -18,6 +19,7 @@ export namespace guiapp {
 	        this.html_url = source["html_url"];
 	        this.body = source["body"];
 	        this.prerelease = source["prerelease"];
+	        this.update_available = source["update_available"];
 	        this.installer_url = source["installer_url"];
 	        this.installer_sha256 = source["installer_sha256"];
 	    }
