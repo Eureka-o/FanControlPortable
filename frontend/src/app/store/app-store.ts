@@ -1,4 +1,11 @@
 import { create } from 'zustand';
+import {
+  LatestRequestGate,
+  cancelPendingTabChange as cancelTabChange,
+  completePendingTabChange as completeTabChange,
+  requestTabChange,
+  type AppTab,
+} from './app-store-logic.mts';
 import { types } from '../../../wailsjs/go/models';
 import { apiService } from '../services/api';
 import { configService } from '../services/config-service';
@@ -145,8 +152,10 @@ const temperatureDataEquals = (left: types.TemperatureData | null, right: types.
 const runtimeStateFromStatus = (status?: DeviceStatusPayload | null) =>
   status?.runtime?.state || (status?.connected ? 'ready' : 'disconnected');
 
-type ActiveTab = 'status' | 'curve' | 'control' | 'devices' | 'about';
+type ActiveTab = AppTab;
 export type CurveFocusTarget = 'curve-editor' | 'history-details';
+
+const deviceContextRequestGate = new LatestRequestGate();
 
 interface AppStore {
   isConnected: boolean;
@@ -165,10 +174,15 @@ interface AppStore {
   isLoading: boolean;
   error: string | null;
   activeTab: ActiveTab;
+  curveDraftDirty: boolean;
+  pendingTab: ActiveTab | null;
   curveFocusTarget: CurveFocusTarget | null;
   sessionHistoryPoints: TemperatureHistoryPoint[];
 
   setActiveTab: (tab: ActiveTab) => void;
+  setCurveDraftDirty: (dirty: boolean) => void;
+  completePendingTabChange: () => void;
+  cancelPendingTabChange: () => void;
   openCurveTab: (target: CurveFocusTarget) => void;
   clearCurveFocusTarget: () => void;
   clearBridgeWarning: () => void;
@@ -201,10 +215,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
   isLoading: true,
   error: null,
   activeTab: 'status',
+  curveDraftDirty: false,
+  pendingTab: null,
   curveFocusTarget: null,
   sessionHistoryPoints: [],
 
-  setActiveTab: (tab) => set({ activeTab: tab, curveFocusTarget: null }),
+  setActiveTab: (tab) => set((state) => ({
+    ...requestTabChange(state, tab),
+    curveFocusTarget: null,
+  })),
+
+  setCurveDraftDirty: (dirty) => set({ curveDraftDirty: dirty }),
+
+  completePendingTabChange: () => set((state) => completeTabChange(state)),
+
+  cancelPendingTabChange: () => set((state) => cancelTabChange(state)),
 
   openCurveTab: (target) => set({ activeTab: 'curve', curveFocusTarget: target }),
 
@@ -301,6 +326,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   disconnectDevice: async () => {
+    deviceContextRequestGate.invalidate();
     try {
       await deviceService.disconnect();
       set({ isConnected: false, deviceRuntimeState: 'disconnected', deviceProductId: null, deviceModel: null, deviceSettings: null, runtimeDeviceProfile: null, runtimeDeviceCapabilities: null, fanData: null });
@@ -312,11 +338,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setConfig: (config) => set({ config }),
 
   refreshDeviceContext: async () => {
+    const requestGeneration = deviceContextRequestGate.begin();
     try {
       const [appConfig, status] = await Promise.all([
         configService.getConfig().catch(() => null),
         deviceService.getStatus() as Promise<DeviceStatusPayload>,
       ]);
+      if (!deviceContextRequestGate.isCurrent(requestGeneration)) {
+        return status;
+      }
       const coreServiceError = status?.error ? getCoreServiceErrorMessage(status.error) : null;
       set({
         config: appConfig ? types.AppConfig.createFrom(appConfig) : get().config,
@@ -336,6 +366,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
       return status;
     } catch (error) {
+      if (!deviceContextRequestGate.isCurrent(requestGeneration)) {
+        return null;
+      }
       const detail = error instanceof Error ? error.message : undefined;
       const coreServiceError = isCoreServiceFailureDetail(detail) ? getCoreServiceErrorMessage(detail) : null;
       set({ error: coreServiceError || i18n.t('store.errors.connectDevice'), coreServiceError });
@@ -355,6 +388,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     unsubscribers.push(
       apiService.onCoreServiceError((message) => {
+        deviceContextRequestGate.invalidate();
         clearPendingDisconnect();
         const coreServiceError = getCoreServiceErrorMessage(message);
         set({
@@ -425,6 +459,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     unsubscribers.push(
       deviceService.onDeviceDisconnected(() => {
+        deviceContextRequestGate.invalidate();
         console.log('设备已断开');
         clearPendingDisconnect();
         if (!get().isConnected) {
