@@ -3,6 +3,7 @@ package guiapp
 import (
 	"testing"
 
+	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -46,5 +47,29 @@ func TestMergeTemperatureMetadata(t *testing.T) {
 	}
 	if mergedClear.GpuDevices == nil || len(mergedClear.GpuDevices) != 0 {
 		t.Fatal("mergeTemperatureMetadata() should keep explicit empty gpuDevices to allow clearing metadata")
+	}
+}
+
+func TestIPCRequestRetryableOnlyForReadOnlyRequests(t *testing.T) {
+	tests := []struct {
+		name  string
+		type_ ipc.RequestType
+		want  bool
+	}{
+		{name: "config read", type_: ipc.ReqGetConfig, want: true},
+		{name: "temperature read", type_: ipc.ReqGetTemperature, want: true},
+		{name: "diagnostics export", type_: ipc.ReqExportDiagnostics, want: true},
+		{name: "config write", type_: ipc.ReqUpdateConfig},
+		{name: "speed write", type_: ipc.ReqSetCustomSpeed},
+		{name: "connect", type_: ipc.ReqConnect},
+		{name: "debug command", type_: ipc.ReqSendDeviceDebugCommand},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := ipcRequestRetryable(test.type_); got != test.want {
+				t.Fatalf("ipcRequestRetryable(%q) = %v, want %v", test.type_, got, test.want)
+			}
+		})
 	}
 }

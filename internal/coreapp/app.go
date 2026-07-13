@@ -69,6 +69,8 @@ type CoreApp struct {
 	lastConnectionWasNative       atomic.Bool
 	resumeRecoveryRunning         atomic.Bool
 	systemSuspended               atomic.Bool
+	resumeReconnectWanted         atomic.Bool
+	suspendGeneration             atomic.Uint64
 	wifiStandbyApplied            atomic.Bool
 	forceNextAutoTarget           atomic.Bool
 	lastResumeRecoveryUnix        int64

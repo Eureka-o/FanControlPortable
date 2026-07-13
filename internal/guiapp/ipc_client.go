@@ -153,6 +153,25 @@ func (a *App) sendRequest(reqType ipc.RequestType, data any) (*ipc.Response, err
 	return a.sendRequestWithTimeout(reqType, data, 10*time.Second)
 }
 
+func ipcRequestRetryable(reqType ipc.RequestType) bool {
+	switch reqType {
+	case ipc.ReqGetDeviceStatus, ipc.ReqGetCurrentFanData, ipc.ReqRefreshDeviceSettings,
+		ipc.ReqGetConfig, ipc.ReqGetFanCurve, ipc.ReqGetDeviceProfiles,
+		ipc.ReqGetSupportedDeviceProfiles, ipc.ReqGetUserDeviceProfiles,
+		ipc.ReqExportDeviceProfiles, ipc.ReqGetFanCurveProfiles,
+		ipc.ReqExportFanCurveProfiles, ipc.ReqGetAvailableGears,
+		ipc.ReqGetTemperature, ipc.ReqGetTemperatureHistory,
+		ipc.ReqTestTemperatureReading, ipc.ReqGetBridgeProgramStatus,
+		ipc.ReqCheckWindowsAutoStart, ipc.ReqIsRunningAsAdmin,
+		ipc.ReqGetAutoStartMethod, ipc.ReqGetDebugInfo,
+		ipc.ReqExportDiagnostics, ipc.ReqGetDeviceDebugFrames,
+		ipc.ReqPing, ipc.ReqIsAutoStartLaunch:
+		return true
+	default:
+		return false
+	}
+}
+
 func (a *App) connectIPCLocked() error {
 	a.ipcClient.SetEventHandler(a.handleCoreEvent)
 	if a.ipcClient.IsConnected() {
@@ -200,6 +219,11 @@ func (a *App) sendRequestWithTimeout(reqType ipc.RequestType, data any, timeout 
 	if connectErr := a.recoverIPCConnection(requestGeneration); connectErr != nil {
 		wrapped := fmt.Errorf("重新连接核心服务失败: %v；原始错误: %v", connectErr, err)
 		a.emitCoreServiceError(wrapped.Error())
+		return nil, wrapped
+	}
+	if !ipcRequestRetryable(reqType) {
+		wrapped := fmt.Errorf("IPC 请求 %s 可能已执行但响应丢失；已恢复核心连接，为避免重复写入未自动重放: %v", reqType, err)
+		a.emitCoreServiceOK()
 		return nil, wrapped
 	}
 

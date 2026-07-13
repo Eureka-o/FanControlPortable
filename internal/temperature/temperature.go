@@ -212,8 +212,14 @@ func normalizeGPUReadState(state string, gpuTemp int) string {
 func resolveControlTemp(cpuTemp, gpuTemp int, source string) int {
 	switch types.NormalizeTempSource(source) {
 	case types.TempSourceCPU:
+		if cpuTemp <= 0 && gpuTemp > 0 {
+			return gpuTemp
+		}
 		return cpuTemp
 	case types.TempSourceGPU:
+		if gpuTemp <= 0 && cpuTemp > 0 {
+			return cpuTemp
+		}
 		return gpuTemp
 	default:
 		return max(cpuTemp, gpuTemp)

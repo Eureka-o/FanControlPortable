@@ -27,6 +27,18 @@ type fakeBridgeTemperatureProvider struct {
 	calls     int
 }
 
+func TestResolveControlTempFallsBackToAvailableSensor(t *testing.T) {
+	if got := resolveControlTemp(0, 67, types.TempSourceCPU); got != 67 {
+		t.Fatalf("CPU source fallback = %d, want 67", got)
+	}
+	if got := resolveControlTemp(58, 0, types.TempSourceGPU); got != 58 {
+		t.Fatalf("GPU source fallback = %d, want 58", got)
+	}
+	if got := resolveControlTemp(0, 0, types.TempSourceGPU); got != 0 {
+		t.Fatalf("empty fallback = %d, want 0", got)
+	}
+}
+
 func (f *fakeBridgeTemperatureProvider) GetTemperature(types.TemperatureSelection) types.BridgeTemperatureData {
 	if f.calls >= len(f.responses) {
 		return types.BridgeTemperatureData{Success: false, Error: "unexpected bridge call"}
