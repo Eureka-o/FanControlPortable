@@ -422,27 +422,48 @@ func (a *CoreApp) onSystemSuspend() {
 	if !a.systemSuspended.CompareAndSwap(false, true) {
 		return
 	}
+	generation := a.suspendGeneration.Add(1)
 	a.deviceManager.BlockWrites()
 	start := time.Now()
 	a.logInfo("收到系统挂起通知：提前停止监控并断开设备/桥接，避免唤醒后失效句柄导致崩溃")
 
+	a.mutex.RLock()
+	coreConnected := a.isConnected
+	a.mutex.RUnlock()
+	a.resumeReconnectWanted.Store(resumeReconnectWantedOnSuspend(
+		coreConnected,
+		a.deviceManager.IsConnected(),
+		a.reconnectInProgress.Load(),
+		a.autoReconnectSuppressed.Load(),
+	))
 	a.cancelReconnect()
+	a.autoReconnectSuppressed.Store(true)
+	a.mutex.Lock()
+	a.isConnected = false
+	a.deviceSettings = nil
+	a.mutex.Unlock()
 	a.stopTemperatureMonitoring()
 
 	done := make(chan struct{})
 	a.safeGo("suspend-cleanup", func() {
 		defer close(done)
+		if !a.isCurrentSuspendGeneration(generation) {
+			return
+		}
 
 		a.safeRun("suspend-device-disconnect", func() {
 			a.deviceManager.DisconnectSilently()
 		})
-		a.mutex.Lock()
-		a.isConnected = false
-		a.mutex.Unlock()
+		if !a.isCurrentSuspendGeneration(generation) {
+			return
+		}
 
 		a.safeRun("suspend-bridge-stop", func() {
 			a.bridgeManager.Stop()
 		})
+		if !a.isCurrentSuspendGeneration(generation) {
+			return
+		}
 
 		if a.ipcServer != nil {
 			a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
@@ -455,6 +476,24 @@ func (a *CoreApp) onSystemSuspend() {
 	case <-time.After(suspendCleanupGrace):
 		a.logError("挂起前清理超过 %s 仍未完成，转入后台继续执行，避免阻塞系统电源回调", suspendCleanupGrace)
 	}
+}
+
+func resumeReconnectWantedOnSuspend(coreConnected, deviceConnected, reconnectInProgress, autoReconnectSuppressed bool) bool {
+	if autoReconnectSuppressed {
+		return false
+	}
+	return coreConnected || deviceConnected || reconnectInProgress
+}
+
+func shouldReconnectAfterResume(proactivelySuspended, resumeReconnectWanted, autoReconnectSuppressed, forceReconnect bool) bool {
+	if proactivelySuspended {
+		return resumeReconnectWanted
+	}
+	return forceReconnect && !autoReconnectSuppressed
+}
+
+func (a *CoreApp) isCurrentSuspendGeneration(generation uint64) bool {
+	return a.systemSuspended.Load() && a.suspendGeneration.Load() == generation && !a.stopping.Load()
 }
 
 // onSystemResume 收到系统唤醒通知时调用，触发设备与监控的恢复。
@@ -489,9 +528,19 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 		a.logInfo("系统唤醒恢复流程结束（来源=%s，耗时=%s）", source, time.Since(start).Round(time.Millisecond))
 	}()
 
-	// 若之前收到过挂起通知（主动断开），唤醒后必须强制重连，且需要重启已停止的温度监控。
+	// 先让仍在后台阻塞的旧休眠清理失效，避免其覆盖唤醒后的新连接。
 	proactivelySuspended := a.systemSuspended.Swap(false)
-	forceReconnect = forceReconnect || proactivelySuspended
+	resumeReconnectWanted := a.resumeReconnectWanted.Swap(false)
+	if proactivelySuspended {
+		a.suspendGeneration.Add(1)
+	}
+	a.cancelReconnect()
+	forceReconnect = shouldReconnectAfterResume(
+		proactivelySuspended,
+		resumeReconnectWanted,
+		a.autoReconnectSuppressed.Load(),
+		forceReconnect,
+	)
 
 	a.logInfo("检测到系统从睡眠/休眠恢复，来源=%s，挂起时长约=%s，主动挂起=%v，开始执行连接自愈",
 		source, gap.Round(time.Second), proactivelySuspended)
@@ -505,6 +554,10 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 		wasConnected = a.isConnected
 	}
 	a.mutex.RUnlock()
+	if (proactivelySuspended && !resumeReconnectWanted) ||
+		(!proactivelySuspended && a.autoReconnectSuppressed.Load()) {
+		wasConnected = false
+	}
 
 	// 桥接停止与设备断开都涉及外部进程/cgo 调用，唤醒后句柄可能失效，统一兜底防止崩溃。
 	a.safeRun("resume-bridge-stop", func() {
@@ -513,6 +566,9 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 
 	// 主动挂起时温度监控已停止，唤醒后需重新启动（与设备连接解耦）。
 	if proactivelySuspended {
+		if resumeReconnectWanted {
+			a.autoReconnectSuppressed.Store(false)
+		}
 		a.safeGo("resume-temp-monitor", func() {
 			a.startTemperatureMonitoring()
 		})
@@ -528,6 +584,7 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 	})
 	a.mutex.Lock()
 	a.isConnected = false
+	a.deviceSettings = nil
 	a.mutex.Unlock()
 
 	if a.ipcServer != nil {
@@ -538,7 +595,11 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 		systemResumeReconnectDelay,
 		8 * time.Second,
 		15 * time.Second,
+		20 * time.Second,
 		30 * time.Second,
+		30 * time.Second,
+		60 * time.Second,
+		60 * time.Second,
 	})
 }
 

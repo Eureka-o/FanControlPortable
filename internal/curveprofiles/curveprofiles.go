@@ -9,6 +9,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -17,6 +18,8 @@ import (
 )
 
 const exportPrefix = "B2C1."
+
+var generatedIDCounter uint64
 
 type exportPayload struct {
 	V        int                     `json:"v"`
@@ -141,7 +144,7 @@ func NormalizeProfileName(name string, fallback string) string {
 }
 
 func GenerateID() string {
-	return fmt.Sprintf("p%x", time.Now().UnixNano())
+	return fmt.Sprintf("p%x-%x", time.Now().UnixNano(), atomic.AddUint64(&generatedIDCounter, 1))
 }
 
 func AppendImportedProfiles(existing, imported []types.FanCurveProfile, importedActiveID string) ([]types.FanCurveProfile, string) {

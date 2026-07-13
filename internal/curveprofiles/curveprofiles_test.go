@@ -1,10 +1,22 @@
 package curveprofiles
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/TIANLI0/THRM/internal/types"
 )
+
+func TestGenerateIDIncludesCollisionCounter(t *testing.T) {
+	first := GenerateID()
+	second := GenerateID()
+	if !strings.Contains(first, "-") || !strings.Contains(second, "-") {
+		t.Fatalf("generated IDs must include a collision counter: %q, %q", first, second)
+	}
+	if first == second {
+		t.Fatalf("GenerateID() returned duplicate IDs: %q", first)
+	}
+}
 
 func TestNormalizeProfileNameReplacesCorruptedQuestionMarks(t *testing.T) {
 	if got := NormalizeProfileName("????-?", "方案1"); got != "方案1" {
