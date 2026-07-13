@@ -1459,7 +1459,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                             'h-9 cursor-pointer truncate whitespace-nowrap rounded-full border px-4 text-center text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60',
                             isActive
                               ? 'border-primary/40 bg-primary/10 text-primary'
-                              : 'border-border/70 bg-background/55 text-muted-foreground hover:border-border hover:bg-muted/65 hover:text-foreground',
+                              : 'border-border/70 bg-background/55 text-muted-foreground group-hover:border-border group-hover:bg-muted/65 group-hover:text-foreground',
                           )}
                           aria-current={isActive ? 'true' : undefined}
                         >
@@ -1473,12 +1473,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                               setDeleteProfileDialogOpen(true);
                             }}
                             disabled={profileOpLoading}
-                            className={clsx(
-                              'absolute -right-[6px] -top-[1px] z-10 flex h-[13px] w-[13px] cursor-pointer items-center justify-center rounded-full border opacity-0 shadow-sm transition-[color,background-color,border-color,opacity] group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/30 disabled:cursor-not-allowed',
-                              isActive
-                                ? 'border-destructive/50 bg-card text-destructive'
-                                : 'border-border bg-card text-muted-foreground hover:border-destructive/50 hover:text-destructive',
-                            )}
+                            className="absolute -right-[6px] -top-[1px] z-10 flex h-[13px] w-[13px] cursor-pointer items-center justify-center rounded-full border border-border bg-card text-muted-foreground opacity-0 shadow-sm transition-[color,background-color,border-color,opacity] group-hover:opacity-100 group-focus-within:opacity-100 hover:border-destructive/50 hover:text-destructive focus-visible:border-destructive/50 focus-visible:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/30 disabled:cursor-not-allowed"
                             aria-label={t('fanCurve.profiles.deleteProfileLabel', { name: profile.name })}
                             title={t('fanCurve.profiles.deleteProfileLabel', { name: profile.name })}
                           >
