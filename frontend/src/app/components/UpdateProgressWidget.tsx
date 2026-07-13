@@ -183,6 +183,7 @@ export default function UpdateProgressWidget() {
   const handlePointerDown = (event: ReactPointerEvent<HTMLElement>) => {
     const button = (event.target as HTMLElement).closest('button');
     if (button && !button.hasAttribute('data-update-drag-handle')) return;
+    const captureTarget = button ?? event.currentTarget;
     suppressCollapsedClickRef.current = false;
     const rect = event.currentTarget.getBoundingClientRect();
     dragRef.current = {
@@ -192,7 +193,7 @@ export default function UpdateProgressWidget() {
       startY: event.clientY,
       moved: false,
     };
-    event.currentTarget.setPointerCapture(event.pointerId);
+    captureTarget.setPointerCapture(event.pointerId);
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLElement>) => {

@@ -36,6 +36,9 @@ test('reopens the collapsed progress ring and gives the expanded card more room'
   const pointerDownBlock = widgetSource.slice(pointerDownStart, pointerMoveStart);
 
   assert.match(pointerDownBlock, /suppressCollapsedClickRef\.current = false/);
+  assert.match(pointerDownBlock, /const captureTarget = button \?\? event\.currentTarget/);
+  assert.match(pointerDownBlock, /captureTarget\.setPointerCapture\(event\.pointerId\)/);
+  assert.doesNotMatch(pointerDownBlock, /event\.currentTarget\.setPointerCapture/);
   assert.match(widgetSource, /w-\[304px\]/);
 });
 
