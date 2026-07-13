@@ -2,6 +2,8 @@ package guiapp
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,18 +17,45 @@ import (
 )
 
 const (
-	updateInstallerName   = "FanControl-amd64-installer.exe"
-	updateProgressEvent   = "update-download-progress"
-	updateDownloadTimeout = 10 * time.Minute
-	updateMaxDownloadSize = 256 * 1024 * 1024
+	updateInstallerName    = "FanControl-amd64-installer.exe"
+	updateProgressEvent    = "update-download-progress"
+	updateDownloadTimeout  = 10 * time.Minute
+	updateMetadataTimeout  = 12 * time.Second
+	updateMaxDownloadSize  = 256 * 1024 * 1024
+	updateMaxMetadataSize  = 4 * 1024 * 1024
+	updateDownloadAttempts = 3
+	updateStableReleaseAPI = "https://api.github.com/repos/Eureka-o/FanControlPortable/releases/latest"
+	updateReleaseListAPI   = "https://api.github.com/repos/Eureka-o/FanControlPortable/releases?per_page=30"
 )
 
 type updateProgress struct {
-	Percent  int    `json:"percent"`
-	Received int64  `json:"received"`
-	Total    int64  `json:"total"`
-	Stage    string `json:"stage"`
-	Message  string `json:"message"`
+	Percent     int    `json:"percent"`
+	Received    int64  `json:"received"`
+	Total       int64  `json:"total"`
+	Stage       string `json:"stage"`
+	Message     string `json:"message"`
+	Attempt     int    `json:"attempt"`
+	MaxAttempts int    `json:"maxAttempts"`
+}
+
+type UpdateRelease struct {
+	TagName      string `json:"tag_name"`
+	HTMLURL      string `json:"html_url"`
+	Body         string `json:"body"`
+	Prerelease   bool   `json:"prerelease"`
+	InstallerURL string `json:"installer_url"`
+}
+
+type githubRelease struct {
+	TagName    string `json:"tag_name"`
+	HTMLURL    string `json:"html_url"`
+	Body       string `json:"body"`
+	Prerelease bool   `json:"prerelease"`
+	Draft      bool   `json:"draft"`
+	Assets     []struct {
+		Name        string `json:"name"`
+		DownloadURL string `json:"browser_download_url"`
+	} `json:"assets"`
 }
 
 func (a *App) emitUpdateProgress(progress updateProgress) {
@@ -35,8 +64,109 @@ func (a *App) emitUpdateProgress(progress updateProgress) {
 	}
 }
 
-// DownloadAndInstallUpdate downloads a release installer, starts it after the
-// current GUI exits, and lets the existing installer preserve user data.
+// CheckLatestRelease keeps release metadata on the same proxy-aware network
+// path as the installer download.
+func (a *App) CheckLatestRelease(channel string) (UpdateRelease, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), updateMetadataTimeout)
+	defer cancel()
+
+	var lastErr error
+	for attempt := 1; attempt <= 2; attempt++ {
+		release, err := checkLatestRelease(ctx, newUpdateHTTPClient(updateMetadataTimeout, shouldBypassUpdateProxy(attempt, 2)), channel, updateStableReleaseAPI, updateReleaseListAPI)
+		if err == nil {
+			return release, nil
+		}
+		lastErr = err
+		if attempt < 2 {
+			if err := waitForUpdateRetry(ctx, 300*time.Millisecond); err != nil {
+				break
+			}
+		}
+	}
+	return UpdateRelease{}, fmt.Errorf("check for updates failed: %w", lastErr)
+}
+
+func (a *App) UpdateCompletedOnLaunch() bool {
+	return hasUpdateCompletedArg(os.Args)
+}
+
+func hasUpdateCompletedArg(args []string) bool {
+	for _, arg := range args[1:] {
+		if strings.EqualFold(strings.TrimSpace(arg), "--update-complete") {
+			return true
+		}
+	}
+	return false
+}
+
+func checkLatestRelease(ctx context.Context, client *http.Client, channel, stableURL, releasesURL string) (UpdateRelease, error) {
+	isPrerelease := strings.EqualFold(strings.TrimSpace(channel), "prerelease")
+	endpoint := stableURL
+	if isPrerelease {
+		endpoint = releasesURL
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return UpdateRelease{}, err
+	}
+	request.Header.Set("Accept", "application/vnd.github+json")
+	request.Header.Set("User-Agent", "FanControl-Updater")
+
+	response, err := client.Do(request)
+	if err != nil {
+		return UpdateRelease{}, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return UpdateRelease{}, fmt.Errorf("GitHub API returned HTTP %d", response.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(response.Body, updateMaxMetadataSize+1))
+	if err != nil {
+		return UpdateRelease{}, err
+	}
+	if len(body) > updateMaxMetadataSize {
+		return UpdateRelease{}, fmt.Errorf("release metadata exceeds the size limit")
+	}
+
+	var release githubRelease
+	if isPrerelease {
+		var releases []githubRelease
+		if err := json.Unmarshal(body, &releases); err != nil {
+			return UpdateRelease{}, fmt.Errorf("decode release metadata: %w", err)
+		}
+		for _, candidate := range releases {
+			if !candidate.Draft && candidate.Prerelease {
+				release = candidate
+				break
+			}
+		}
+		if release.TagName == "" {
+			return UpdateRelease{}, nil
+		}
+	} else if err := json.Unmarshal(body, &release); err != nil {
+		return UpdateRelease{}, fmt.Errorf("decode release metadata: %w", err)
+	}
+
+	result := UpdateRelease{
+		TagName:    release.TagName,
+		HTMLURL:    release.HTMLURL,
+		Body:       release.Body,
+		Prerelease: release.Prerelease,
+	}
+	for _, asset := range release.Assets {
+		name := strings.ToLower(strings.TrimSpace(asset.Name))
+		if strings.HasPrefix(name, "fancontrol-") && strings.HasSuffix(name, "-amd64-installer.exe") {
+			result.InstallerURL = asset.DownloadURL
+			break
+		}
+	}
+	return result, nil
+}
+
+// DownloadAndInstallUpdate downloads and validates the release first, then
+// starts the CMD installer after the GUI exits.
 func (a *App) DownloadAndInstallUpdate(downloadURL, windowTitle, windowBody, windowRestarting string) error {
 	if strings.TrimSpace(windowTitle) == "" {
 		windowTitle = "FanControl is updating"
@@ -60,34 +190,27 @@ func (a *App) DownloadAndInstallUpdate(downloadURL, windowTitle, windowBody, win
 		return fmt.Errorf("create update directory: %w", err)
 	}
 	installerPath := filepath.Join(updateDir, updateInstallerName)
-	progressPath := filepath.Join(updateDir, "download.progress")
-	failedPath := filepath.Join(updateDir, "download.failed")
 	_ = os.Remove(installerPath)
-	_ = os.Remove(failedPath)
-	if err := os.WriteFile(progressPath, []byte("0\n"), 0o644); err != nil {
-		return fmt.Errorf("prepare update progress: %w", err)
+
+	installerPath, err = a.downloadUpdateInstaller(parsed.String())
+	if err != nil {
+		guiLogger.Errorf("update installer download failed: %v", err)
+		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: err.Error(), MaxAttempts: updateDownloadAttempts})
+		return err
 	}
+
+	a.emitUpdateProgress(updateProgress{Percent: 100, Stage: "installing"})
 
 	exePath, exeErr := os.Executable()
 	if exeErr != nil {
 		guiLogger.Warnf("failed to resolve current executable path: %v", exeErr)
 		exePath = ""
 	}
-	if err := launchUpdateInstaller(installerPath, progressPath, failedPath, exePath, windowTitle, windowBody, windowRestarting); err != nil {
+	if err := launchUpdateInstaller(installerPath, exePath, windowTitle, windowBody, windowRestarting); err != nil {
 		guiLogger.Errorf("failed to launch update installer: %v", err)
 		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: err.Error()})
 		return err
 	}
-
-	_, err = a.downloadUpdateInstaller(parsed.String(), progressPath)
-	if err != nil {
-		guiLogger.Errorf("update installer download failed: %v", err)
-		_ = os.WriteFile(failedPath, []byte(err.Error()+"\n"), 0o644)
-		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: err.Error()})
-		return err
-	}
-
-	a.emitUpdateProgress(updateProgress{Percent: 100, Stage: "installing"})
 
 	go func() {
 		time.Sleep(800 * time.Millisecond)
@@ -126,94 +249,117 @@ func validateReleaseAssetURL(raw string) (*url.URL, error) {
 	return parsed, nil
 }
 
-func (a *App) downloadUpdateInstaller(downloadURL, progressPath string) (string, error) {
+func newUpdateHTTPClient(timeout time.Duration, bypassProxy bool) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if bypassProxy {
+		transport.Proxy = nil
+	} else {
+		enabled, server, err := readUpdateSystemProxy()
+		if err != nil {
+			transport.Proxy = func(*http.Request) (*url.URL, error) {
+				return nil, fmt.Errorf("read Windows proxy settings: %w", err)
+			}
+		} else if enabled && strings.TrimSpace(server) != "" {
+			transport.Proxy = func(request *http.Request) (*url.URL, error) {
+				return parseWindowsProxyServer(server, request.URL.Scheme)
+			}
+		}
+	}
+	return &http.Client{
+		Transport: transport,
+		Timeout:   timeout,
+		CheckRedirect: func(next *http.Request, previous []*http.Request) error {
+			if len(previous) >= 10 {
+				return fmt.Errorf("too many update redirects")
+			}
+			_, err := validateUpdateURL(next.URL.String())
+			return err
+		},
+	}
+}
+
+func parseWindowsProxyServer(value, requestScheme string) (*url.URL, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, fmt.Errorf("Windows proxy server is empty")
+	}
+
+	selected := value
+	selectedKind := "http"
+	if strings.Contains(value, "=") {
+		entries := make(map[string]string)
+		for _, entry := range strings.Split(value, ";") {
+			key, server, ok := strings.Cut(entry, "=")
+			if ok && strings.TrimSpace(server) != "" {
+				entries[strings.ToLower(strings.TrimSpace(key))] = strings.TrimSpace(server)
+			}
+		}
+		requestScheme = strings.ToLower(strings.TrimSpace(requestScheme))
+		if server := entries[requestScheme]; server != "" {
+			selected = server
+			selectedKind = requestScheme
+		} else if server := entries["http"]; server != "" {
+			selected = server
+			selectedKind = "http"
+		} else if server := entries["socks"]; server != "" {
+			selected = server
+			selectedKind = "socks"
+		} else {
+			return nil, fmt.Errorf("Windows proxy has no server for %s", requestScheme)
+		}
+	}
+
+	if !strings.Contains(selected, "://") {
+		if selectedKind == "socks" {
+			selected = "socks5://" + selected
+		} else {
+			selected = "http://" + selected
+		}
+	}
+	proxyURL, err := url.Parse(selected)
+	if err != nil || proxyURL.Hostname() == "" {
+		return nil, fmt.Errorf("invalid Windows proxy server")
+	}
+	return proxyURL, nil
+}
+
+func (a *App) downloadUpdateInstaller(downloadURL string) (string, error) {
 	dir := filepath.Join(os.TempDir(), "FanControl-update")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("create update directory: %w", err)
 	}
 	target := filepath.Join(dir, updateInstallerName)
-	part, err := os.CreateTemp(dir, "download-*.part")
-	if err != nil {
-		return "", fmt.Errorf("create download file: %w", err)
-	}
-	partPath := part.Name()
-	defer os.Remove(partPath)
+	urlHash := sha256.Sum256([]byte(downloadURL))
+	partPath := filepath.Join(dir, fmt.Sprintf("download-%x.part", urlHash[:8]))
 
 	ctx, cancel := context.WithTimeout(context.Background(), updateDownloadTimeout)
 	defer cancel()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
-	if err != nil {
-		_ = part.Close()
-		return "", fmt.Errorf("create download request: %w", err)
-	}
-	request.Header.Set("Accept", "application/octet-stream")
-	client := &http.Client{
-		Timeout: updateDownloadTimeout,
-		CheckRedirect: func(next *http.Request, _ []*http.Request) error {
-			_, err := validateUpdateURL(next.URL.String())
-			return err
-		},
-	}
-	response, err := client.Do(request)
-	if err != nil {
-		_ = part.Close()
-		return "", fmt.Errorf("download failed: %w", err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		_ = part.Close()
-		return "", fmt.Errorf("download failed: HTTP %d", response.StatusCode)
-	}
-	if response.ContentLength > updateMaxDownloadSize {
-		_ = part.Close()
-		return "", fmt.Errorf("update installer exceeds the size limit")
-	}
-
-	total := response.ContentLength
-	writeUpdateProgress(progressPath, 0)
-	a.emitUpdateProgress(updateProgress{Percent: 0, Total: max64(total, 0), Stage: "downloading"})
-	reader := io.LimitReader(response.Body, updateMaxDownloadSize+1)
-	var received int64
 	lastPercent := -1
-	buffer := make([]byte, 64*1024)
-	for {
-		count, readErr := reader.Read(buffer)
-		if count > 0 {
-			if _, writeErr := part.Write(buffer[:count]); writeErr != nil {
-				_ = part.Close()
-				return "", fmt.Errorf("write update installer: %w", writeErr)
-			}
-			received += int64(count)
-			if received > updateMaxDownloadSize {
-				_ = part.Close()
-				return "", fmt.Errorf("update installer exceeds the size limit")
-			}
+	err := downloadWithRetry(
+		ctx,
+		func(attempt int) *http.Client {
+			return newUpdateHTTPClient(updateDownloadTimeout, shouldBypassUpdateProxy(attempt, updateDownloadAttempts))
+		},
+		downloadURL,
+		partPath,
+		updateDownloadAttempts,
+		func(received, total int64) {
 			percent := -1
 			if total > 0 {
 				percent = int(received * 100 / total)
 			}
-			if percent != lastPercent && (percent < 0 || percent == 100 || percent%2 == 0) {
-				lastPercent = percent
-				if percent >= 0 {
-					writeUpdateProgress(progressPath, percent)
-				}
-				a.emitUpdateProgress(updateProgress{Percent: percent, Received: received, Total: max64(total, 0), Stage: "downloading"})
+			if percent == lastPercent || (percent >= 0 && percent != 100 && percent%2 != 0) {
+				return
 			}
-		}
-		if readErr == io.EOF {
-			break
-		}
-		if readErr != nil {
-			_ = part.Close()
-			return "", fmt.Errorf("download interrupted: %w", readErr)
-		}
-	}
-	if err := part.Sync(); err != nil {
-		_ = part.Close()
-		return "", fmt.Errorf("flush update installer: %w", err)
-	}
-	if err := part.Close(); err != nil {
-		return "", fmt.Errorf("close update installer: %w", err)
+			lastPercent = percent
+			a.emitUpdateProgress(updateProgress{Percent: percent, Received: received, Total: max64(total, 0), Stage: "downloading", MaxAttempts: updateDownloadAttempts})
+		},
+		func(attempt int, retryErr error) {
+			a.emitUpdateProgress(updateProgress{Percent: lastPercent, Stage: "retrying", Message: retryErr.Error(), Attempt: attempt, MaxAttempts: updateDownloadAttempts})
+		},
+	)
+	if err != nil {
+		return "", fmt.Errorf("download failed after %d attempts: %w", updateDownloadAttempts, err)
 	}
 	if err := validateInstallerFile(partPath); err != nil {
 		return "", err
@@ -225,11 +371,163 @@ func (a *App) downloadUpdateInstaller(downloadURL, progressPath string) (string,
 	return target, nil
 }
 
-func writeUpdateProgress(path string, percent int) {
-	if path == "" {
-		return
+func downloadWithRetry(
+	ctx context.Context,
+	clientFactory func(attempt int) *http.Client,
+	downloadURL string,
+	partPath string,
+	attempts int,
+	onProgress func(received, total int64),
+	onRetry func(attempt int, err error),
+) error {
+	if attempts < 1 {
+		attempts = 1
 	}
-	_ = os.WriteFile(path, []byte(fmt.Sprintf("%d\n", percent)), 0o644)
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		lastErr = downloadWithResume(ctx, clientFactory(attempt), downloadURL, partPath, onProgress)
+		if lastErr == nil {
+			return nil
+		}
+		if attempt == attempts {
+			break
+		}
+		if onRetry != nil {
+			onRetry(attempt+1, lastErr)
+		}
+		if err := waitForUpdateRetry(ctx, time.Duration(attempt)*350*time.Millisecond); err != nil {
+			return err
+		}
+	}
+	return lastErr
+}
+
+func shouldBypassUpdateProxy(attempt, attempts int) bool {
+	return attempts > 1 && attempt >= attempts
+}
+
+func downloadWithResume(ctx context.Context, client *http.Client, downloadURL, partPath string, onProgress func(received, total int64)) error {
+	part, err := os.OpenFile(partPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return fmt.Errorf("open partial update: %w", err)
+	}
+	defer part.Close()
+	info, err := part.Stat()
+	if err != nil {
+		return err
+	}
+	received := info.Size()
+	if received > updateMaxDownloadSize {
+		return fmt.Errorf("partial update exceeds the size limit")
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+	if err != nil {
+		return fmt.Errorf("create download request: %w", err)
+	}
+	request.Header.Set("Accept", "application/octet-stream")
+	if received > 0 {
+		request.Header.Set("Range", fmt.Sprintf("bytes=%d-", received))
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+
+	var total int64
+	switch response.StatusCode {
+	case http.StatusOK:
+		if err := part.Truncate(0); err != nil {
+			return err
+		}
+		if _, err := part.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		received = 0
+		total = response.ContentLength
+	case http.StatusPartialContent:
+		start, contentTotal, ok := parseDownloadContentRange(response.Header.Get("Content-Range"))
+		if !ok || start != received {
+			_ = part.Truncate(0)
+			return fmt.Errorf("server returned an invalid resume range")
+		}
+		total = contentTotal
+		if _, err := part.Seek(received, io.SeekStart); err != nil {
+			return err
+		}
+	case http.StatusRequestedRangeNotSatisfiable:
+		if totalSize, ok := parseUnsatisfiedContentRange(response.Header.Get("Content-Range")); ok && totalSize == received {
+			return nil
+		}
+		_ = part.Truncate(0)
+		return fmt.Errorf("server rejected the resume range")
+	default:
+		return fmt.Errorf("HTTP %d", response.StatusCode)
+	}
+	if total > updateMaxDownloadSize {
+		return fmt.Errorf("update installer exceeds the size limit")
+	}
+	if onProgress != nil {
+		onProgress(received, total)
+	}
+
+	reader := io.LimitReader(response.Body, updateMaxDownloadSize-received+1)
+	buffer := make([]byte, 64*1024)
+	for {
+		count, readErr := reader.Read(buffer)
+		if count > 0 {
+			if _, writeErr := part.Write(buffer[:count]); writeErr != nil {
+				return fmt.Errorf("write update installer: %w", writeErr)
+			}
+			received += int64(count)
+			if received > updateMaxDownloadSize {
+				return fmt.Errorf("update installer exceeds the size limit")
+			}
+			if onProgress != nil {
+				onProgress(received, total)
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return fmt.Errorf("download interrupted: %w", readErr)
+		}
+	}
+	if total > 0 && received != total {
+		return fmt.Errorf("download interrupted at %d of %d bytes", received, total)
+	}
+	if err := part.Sync(); err != nil {
+		return fmt.Errorf("flush update installer: %w", err)
+	}
+	return nil
+}
+
+func parseDownloadContentRange(value string) (start, total int64, ok bool) {
+	var end int64
+	if _, err := fmt.Sscanf(strings.TrimSpace(value), "bytes %d-%d/%d", &start, &end, &total); err != nil {
+		return 0, 0, false
+	}
+	return start, total, start >= 0 && end >= start && total > end
+}
+
+func parseUnsatisfiedContentRange(value string) (total int64, ok bool) {
+	if _, err := fmt.Sscanf(strings.TrimSpace(value), "bytes */%d", &total); err != nil {
+		return 0, false
+	}
+	return total, total >= 0
+}
+
+func waitForUpdateRetry(ctx context.Context, duration time.Duration) error {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func validateInstallerFile(path string) error {
