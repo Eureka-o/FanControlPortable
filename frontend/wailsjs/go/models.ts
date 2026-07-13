@@ -1,3 +1,28 @@
+export namespace guiapp {
+
+	export class UpdateRelease {
+	    tag_name: string;
+	    html_url: string;
+	    body: string;
+	    prerelease: boolean;
+	    installer_url: string;
+
+	    static createFrom(source: any = {}) {
+	        return new UpdateRelease(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.tag_name = source["tag_name"];
+	        this.html_url = source["html_url"];
+	        this.body = source["body"];
+	        this.prerelease = source["prerelease"];
+	        this.installer_url = source["installer_url"];
+	    }
+	}
+
+}
+
 export namespace theme {
 
 	export class Meta {

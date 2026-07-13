@@ -129,6 +129,25 @@ export interface DeviceScanResult {
   error?: string;
 }
 
+export interface UpdateRelease {
+  tag_name?: string;
+  html_url?: string;
+  body?: string;
+  prerelease?: boolean;
+  draft?: boolean;
+  installer_url?: string;
+}
+
+export interface UpdateProgressPayload {
+  percent: number;
+  received: number;
+  total: number;
+  stage: 'downloading' | 'retrying' | 'installing' | 'error';
+  message: string;
+  attempt?: number;
+  maxAttempts?: number;
+}
+
 class ApiService {
   // 设备连接
   async connectDevice(): Promise<boolean> {
@@ -188,6 +207,15 @@ class ApiService {
     return await GetAppVersion();
   }
 
+  async checkLatestRelease(channel: 'stable' | 'prerelease'): Promise<UpdateRelease | null> {
+    const release = await (window as any).go?.main?.App?.CheckLatestRelease?.(channel);
+    return release && typeof release === 'object' ? release as UpdateRelease : null;
+  }
+
+  async updateCompletedOnLaunch(): Promise<boolean> {
+    return !!(await (window as any).go?.main?.App?.UpdateCompletedOnLaunch?.());
+  }
+
   async downloadAndInstallUpdate(
     downloadURL: string,
     windowTitle: string,
@@ -203,7 +231,7 @@ class ApiService {
   }
 
   onUpdateDownloadProgress(
-    callback: (payload: { percent: number; received: number; total: number; stage: string; message: string }) => void,
+    callback: (payload: UpdateProgressPayload) => void,
   ): () => void {
     return EventsOn('update-download-progress', callback);
   }

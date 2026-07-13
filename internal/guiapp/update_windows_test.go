@@ -7,11 +7,9 @@ import (
 	"testing"
 )
 
-func TestBuildUpdateScriptShowsDownloadProgress(t *testing.T) {
+func TestBuildUpdateScriptWaitsForInstallAndRestartsUpdatedApp(t *testing.T) {
 	script := buildUpdateScript(
 		`C:\Temp\FanControl-update\FanControl-amd64-installer.exe`,
-		`C:\Temp\FanControl-update\download.progress`,
-		`C:\Temp\FanControl-update\download.failed`,
 		`C:\Program Files\FanControl\FanControl.exe`,
 		"FanControl is updating",
 		"Downloading and installing the new version",
@@ -20,14 +18,15 @@ func TestBuildUpdateScriptShowsDownloadProgress(t *testing.T) {
 	)
 
 	for _, expected := range []string{
-		":waitdownload",
-		`set /p "progress="<"%PROGRESS_FILE%"`,
-		`if exist "%FAILED_FILE%" goto downloadfailed`,
-		`if exist "%INSTALLER_FILE%" goto downloaddone`,
-		`start "" "%INSTALLER_FILE%" /S`,
+		`start "" /wait "%INSTALLER_FILE%" /S`,
+		`if not "!INSTALL_EXIT!"=="0" goto installfailed`,
+		`start "" "%EXE_PATH%" --update-complete`,
 	} {
 		if !strings.Contains(script, expected) {
 			t.Fatalf("update script missing %q", expected)
 		}
+	}
+	if strings.Contains(script, ":waitinstall") {
+		t.Fatal("update script still polls the installer process instead of waiting for it")
 	}
 }

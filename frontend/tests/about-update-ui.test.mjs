@@ -8,9 +8,11 @@ const manualCheckSource = source.slice(
   source.indexOf('const handleDownloadInstall'),
 );
 
-test('keeps the update action visible and leaves progress to the updater window', () => {
+test('keeps the update action visible and delegates progress to the global update task', () => {
   assert.doesNotMatch(source, /\{hasNewVersion && installerUrl && \(/);
   assert.doesNotMatch(source, /\{updateStage !== 'idle'[\s\S]*?createPortal\(/);
+  assert.match(source, /useUpdateStore/);
+  assert.match(source, /startUpdate/);
   assert.match(source, /void handleDownloadInstall\(\)/);
 });
 

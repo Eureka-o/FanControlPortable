@@ -30,6 +30,7 @@ import { useTranslation } from 'react-i18next';
 import { BRAND } from '../lib/brand';
 import { clampFanSpeedToRange, fanSpeedUnitLabel, getFanSpeedRange, getFanSpeedUnit, readCurrentFanSpeed } from '../lib/fan-speed';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import UpdateProgressWidget from './UpdateProgressWidget';
 
 const MAIN_TAB_ITEMS = [
   { id: 'status', titleKey: 'appShell.tabs.status', icon: LayoutGrid },
@@ -795,6 +796,7 @@ export default function AppShell({
         <OverlayScrollbar scrollRef={scrollRef} />
         </div>
       </section>
+      <UpdateProgressWidget />
     </div>
   );
 }

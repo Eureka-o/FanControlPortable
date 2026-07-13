@@ -6,6 +6,10 @@ export function AutoScanDevices() {
   return window['go']['main']['App']['AutoScanDevices']();
 }
 
+export function CheckLatestRelease(arg1) {
+  return window['go']['main']['App']['CheckLatestRelease'](arg1);
+}
+
 export function CheckWindowsAutoStart() {
   return window['go']['main']['App']['CheckWindowsAutoStart']();
 }
@@ -308,6 +312,10 @@ export function TestDeviceProfile(arg1) {
 
 export function TestTemperatureReading() {
   return window['go']['main']['App']['TestTemperatureReading']();
+}
+
+export function UpdateCompletedOnLaunch() {
+  return window['go']['main']['App']['UpdateCompletedOnLaunch']();
 }
 
 export function UpdateConfig(arg1) {
