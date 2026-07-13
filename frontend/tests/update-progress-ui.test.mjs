@@ -28,6 +28,15 @@ test('uses a draggable top-right compact progress ring with an internal percenta
   assert.match(widgetSource, /data-update-drag-handle/);
 });
 
+test('reopens the collapsed progress ring and gives the expanded card more room', () => {
+  const pointerDownStart = widgetSource.indexOf('const handlePointerDown');
+  const pointerMoveStart = widgetSource.indexOf('const handlePointerMove');
+  const pointerDownBlock = widgetSource.slice(pointerDownStart, pointerMoveStart);
+
+  assert.match(pointerDownBlock, /suppressCollapsedClickRef\.current = false/);
+  assert.match(widgetSource, /w-\[304px\]/);
+});
+
 test('supports pause, resume, and cancel while preserving resumable progress', () => {
   assert.match(widgetSource, /pauseUpdate/);
   assert.match(widgetSource, /resumeUpdate/);

@@ -195,6 +195,7 @@ export default function UpdateProgressWidget() {
   const handlePointerDown = (event: ReactPointerEvent<HTMLElement>) => {
     const button = (event.target as HTMLElement).closest('button');
     if (button && !button.hasAttribute('data-update-drag-handle')) return;
+    suppressCollapsedClickRef.current = false;
     const rect = event.currentTarget.getBoundingClientRect();
     dragRef.current = {
       offsetX: event.clientX - rect.left,
@@ -285,7 +286,7 @@ export default function UpdateProgressWidget() {
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
-          className={`fixed right-4 top-14 cursor-grab select-none active:cursor-grabbing ${collapsed ? 'rounded-full' : 'w-[272px] rounded-xl'} border border-border/75 bg-card/95 p-2.5 shadow-xl shadow-black/10 backdrop-blur-xl`}
+          className={`fixed right-4 top-14 cursor-grab select-none active:cursor-grabbing ${collapsed ? 'rounded-full' : 'w-[304px] rounded-xl'} border border-border/75 bg-card/95 p-2.5 shadow-xl shadow-black/10 backdrop-blur-xl`}
           style={{ ...positionStyle, zIndex: 'var(--layer-floating-popover)', '--wails-draggable': 'no-drag' } as CSSProperties}
         >
           {collapsed ? (
