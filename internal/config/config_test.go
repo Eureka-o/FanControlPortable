@@ -491,3 +491,94 @@ func TestLoadAppearanceAndPredictionDefaultsPreserveExplicitChoices(t *testing.T
 		}
 	})
 }
+
+func TestManagerConfigSnapshotsDoNotShareMutableState(t *testing.T) {
+	manager := NewManager(t.TempDir(), nil)
+	cfg := types.GetDefaultConfig(false)
+	cfg.ActiveDeviceProfileIDsByTransport[types.DeviceTransportWiFi] = "before"
+	cfg.ManualGearRPM["test"] = map[string]int{"low": 1111}
+	cfg.FanCurve[0].RPM = 21
+	cfg.FanCurveProfiles[0].Curve = append([]types.FanCurvePoint{}, cfg.FanCurveProfiles[0].Curve...)
+	cfg.FanCurveProfiles[0].Curve[0].RPM = 22
+	cfg.SmartControl.LearnedOffsets[0] = 23
+	cfg.SmartControl.LearnedOffsetsByProfile = map[string][]int{"profile": {24}}
+	cfg.LightStrip.Colors[0].R = 25
+	cfg.LegionFnQ.ModeMapping["Quiet"] = types.FanGearTarget{Gear: "quiet", Level: "low"}
+	manager.Set(cfg)
+
+	cfg.ActiveDeviceProfileIDsByTransport[types.DeviceTransportWiFi] = "mutated-input"
+	cfg.ManualGearRPM["test"]["low"] = 9000
+	cfg.FanCurve[0].RPM = 90
+	cfg.FanCurveProfiles[0].Curve[0].RPM = 91
+	cfg.SmartControl.LearnedOffsets[0] = 92
+	cfg.SmartControl.LearnedOffsetsByProfile["profile"][0] = 93
+	cfg.LightStrip.Colors[0].R = 94
+	cfg.LegionFnQ.ModeMapping["Quiet"] = types.FanGearTarget{Gear: "mutated", Level: "high"}
+
+	first := manager.Get()
+	if first.ActiveDeviceProfileIDsByTransport[types.DeviceTransportWiFi] != "before" ||
+		first.ManualGearRPM["test"]["low"] != 1111 ||
+		first.FanCurve[0].RPM != 21 ||
+		first.FanCurveProfiles[0].Curve[0].RPM != 22 ||
+		first.SmartControl.LearnedOffsets[0] != 23 ||
+		first.SmartControl.LearnedOffsetsByProfile["profile"][0] != 24 ||
+		first.LightStrip.Colors[0].R != 25 ||
+		first.LegionFnQ.ModeMapping["Quiet"].Gear != "quiet" {
+		t.Fatalf("manager retained mutable input references: %#v", first)
+	}
+
+	first.ActiveDeviceProfileIDsByTransport[types.DeviceTransportWiFi] = "mutated-output"
+	first.ManualGearRPM["test"]["low"] = 8000
+	first.FanCurve[0].RPM = 80
+	first.FanCurveProfiles[0].Curve[0].RPM = 81
+	first.SmartControl.LearnedOffsets[0] = 82
+	first.SmartControl.LearnedOffsetsByProfile["profile"][0] = 83
+	first.LightStrip.Colors[0].R = 84
+	first.LegionFnQ.ModeMapping["Quiet"] = types.FanGearTarget{Gear: "output", Level: "high"}
+
+	second := manager.Get()
+	if second.ActiveDeviceProfileIDsByTransport[types.DeviceTransportWiFi] != "before" ||
+		second.ManualGearRPM["test"]["low"] != 1111 ||
+		second.FanCurve[0].RPM != 21 ||
+		second.FanCurveProfiles[0].Curve[0].RPM != 22 ||
+		second.SmartControl.LearnedOffsets[0] != 23 ||
+		second.SmartControl.LearnedOffsetsByProfile["profile"][0] != 24 ||
+		second.LightStrip.Colors[0].R != 25 ||
+		second.LegionFnQ.ModeMapping["Quiet"].Gear != "quiet" {
+		t.Fatalf("manager exposed mutable snapshot references: %#v", second)
+	}
+}
+
+func TestManagerMutateIfRevisionRejectsStaleConfigAndPreservesNewerFields(t *testing.T) {
+	manager := NewManager(t.TempDir(), nil)
+	cfg := types.GetDefaultConfig(false)
+	manager.Set(cfg)
+	stale, staleRevision := manager.GetWithRevision()
+
+	newer := stale
+	newer.ThemeMode = "new-theme"
+	newer.CpuSensor = "new-sensor"
+	manager.Set(newer)
+
+	_, _, applied := manager.MutateIfRevision(staleRevision, func(current *types.AppConfig) {
+		current.SmartControl.LearnedOffsets[0] = 99
+	})
+	if applied {
+		t.Fatal("stale config mutation was applied")
+	}
+	afterStale := manager.Get()
+	if afterStale.ThemeMode != "new-theme" || afterStale.CpuSensor != "new-sensor" || afterStale.SmartControl.LearnedOffsets[0] == 99 {
+		t.Fatalf("stale mutation overwrote newer config: %#v", afterStale)
+	}
+
+	_, currentRevision := manager.GetWithRevision()
+	updated, nextRevision, applied := manager.MutateIfRevision(currentRevision, func(current *types.AppConfig) {
+		current.SmartControl.LearnedOffsets[0] = 77
+	})
+	if !applied || nextRevision <= currentRevision {
+		t.Fatalf("current mutation applied=%v revision=%d, want revision > %d", applied, nextRevision, currentRevision)
+	}
+	if updated.ThemeMode != "new-theme" || updated.CpuSensor != "new-sensor" || updated.SmartControl.LearnedOffsets[0] != 77 {
+		t.Fatalf("atomic mutation did not preserve unrelated fields: %#v", updated)
+	}
+}

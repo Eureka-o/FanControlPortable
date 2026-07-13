@@ -2,8 +2,9 @@ package device
 
 // BlockWrites waits for the current device operation and rejects new writes.
 func (m *Manager) BlockWrites() {
-	m.mutex.Lock()
 	m.writesBlocked.Store(true)
+	m.operationControl.cancelActive()
+	m.mutex.Lock()
 	m.mutex.Unlock()
 }
 

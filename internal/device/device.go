@@ -50,21 +50,22 @@ func modelNameForProductID(productID uint16) string {
 
 // Manager 设备管理器
 type Manager struct {
-	device          *hid.Device
-	isConnected     bool
-	productID       uint16 // 当前连接的产品ID
-	deviceType      string // "hid" 或 "ble"
-	deviceTransport string
-	wifiEndpoint    string
-	wifiHTTPClient  *http.Client
-	activeProfile   types.DeviceProfile
-	wifiExecutor    *deviceprofileexec.WiFiExecutor
-	serialDialer    deviceprofileexec.SerialDialer
-	serialExecutor  *deviceprofileexec.SerialExecutor
-	mutex           sync.RWMutex
-	logger          types.Logger
-	currentFanData  atomic.Pointer[types.FanData]
-	writesBlocked   atomic.Bool
+	device           *hid.Device
+	isConnected      bool
+	productID        uint16 // 当前连接的产品ID
+	deviceType       string // "hid" 或 "ble"
+	deviceTransport  string
+	wifiEndpoint     string
+	wifiHTTPClient   *http.Client
+	activeProfile    types.DeviceProfile
+	wifiExecutor     *deviceprofileexec.WiFiExecutor
+	serialDialer     deviceprofileexec.SerialDialer
+	serialExecutor   *deviceprofileexec.SerialExecutor
+	mutex            sync.RWMutex
+	operationControl deviceOperationControl
+	logger           types.Logger
+	currentFanData   atomic.Pointer[types.FanData]
+	writesBlocked    atomic.Bool
 
 	// HID 监控协程生命周期（监控协程是 HID 句柄的唯一拥有者，负责最终关闭）。
 	monitorStop        chan struct{}

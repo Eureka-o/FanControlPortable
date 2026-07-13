@@ -265,8 +265,19 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				smartCfg, smartChanged = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, speedUnit)
 				smartCfgRevision = cfgRevision
 				if smartChanged {
-					cfg.SmartControl = smartCfg
-					a.configManager.Set(cfg)
+					updatedCfg, updatedRevision, applied := a.configManager.MutateIfRevision(cfgRevision, func(current *types.AppConfig) {
+						current.SmartControl = smartCfg
+					})
+					if !applied {
+						cfg, cfgRevision = a.configManager.GetWithRevision()
+						smartCfgRevision = cfgRevision - 1
+						timer.Reset(updateInterval)
+						continue
+					}
+					cfg = updatedCfg
+					cfgRevision = updatedRevision
+					smartCfg = cfg.SmartControl
+					smartCfgRevision = updatedRevision
 					if err := a.configManager.Save(); err != nil {
 						a.logError("保存智能控温配置失败: %v", err)
 					}
@@ -440,10 +451,24 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					if steady.BucketIdx >= 0 && smartcontrol.AllowsSteadyOffsetLearning(steady, smartCfg) {
 						newOffsets, changed := learnSteadyOffsetForActiveUnit(steady.BucketIdx, steady.MeanTemp, steady.MeanPower, steady.HavePower, steady.LocalEff, steady.HaveEff, cfg.FanCurve, smartCfg.LearnedOffsets, smartCfg, speedUnit)
 						if changed {
-							smartCfg.LearnedOffsets = newOffsets
-							cfg.SmartControl = smartCfg
-							storeSmartControlOffsetsForDeviceKey(&cfg, a.activeDeviceCurveScopeKey(cfg))
-							a.configManager.Set(cfg)
+							nextSmartCfg := smartCfg
+							nextSmartCfg.LearnedOffsets = newOffsets
+							scopeKey := a.activeDeviceCurveScopeKey(cfg)
+							updatedCfg, updatedRevision, applied := a.configManager.MutateIfRevision(cfgRevision, func(current *types.AppConfig) {
+								current.SmartControl = nextSmartCfg
+								storeSmartControlOffsetsForDeviceKey(current, scopeKey)
+							})
+							if !applied {
+								cfg, cfgRevision = a.configManager.GetWithRevision()
+								smartCfgRevision = cfgRevision - 1
+								resetSmartControlSampling()
+								timer.Reset(updateInterval)
+								continue
+							}
+							cfg = updatedCfg
+							cfgRevision = updatedRevision
+							smartCfg = cfg.SmartControl
+							smartCfgRevision = updatedRevision
 							learningDirty = true
 						}
 					}

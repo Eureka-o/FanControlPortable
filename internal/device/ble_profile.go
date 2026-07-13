@@ -3,6 +3,7 @@
 package device
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -48,6 +49,10 @@ func (m *Manager) bleConnectedInfoLocked() map[string]string {
 }
 
 func (m *Manager) connectBLELocked() (bool, map[string]string) {
+	return m.connectBLEWithContextLocked(context.Background())
+}
+
+func (m *Manager) connectBLEWithContextLocked(ctx context.Context) (bool, map[string]string) {
 	if !m.shouldUseBLELocked() {
 		return false, nil
 	}
@@ -60,7 +65,7 @@ func (m *Manager) connectBLELocked() (bool, map[string]string) {
 		m.bleExecutor = executor
 	}
 
-	fanData, err := m.readBLEStateLocked()
+	fanData, err := m.readBLEStateWithContextLocked(ctx)
 	if err != nil {
 		m.logError("BLE controller connection failed: %v", err)
 		return false, nil
@@ -151,10 +156,14 @@ func (m *Manager) RefreshBLEState() bool {
 }
 
 func (m *Manager) readBLEStateLocked() (*types.FanData, error) {
+	return m.readBLEStateWithContextLocked(context.Background())
+}
+
+func (m *Manager) readBLEStateWithContextLocked(ctx context.Context) (*types.FanData, error) {
 	if m.bleExecutor == nil {
 		return nil, fmt.Errorf("ble profile executor is not configured")
 	}
-	fanData, err := m.bleExecutor.Open(nil)
+	fanData, err := m.bleExecutor.Open(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -177,6 +186,10 @@ func (m *Manager) refreshBLEStateLocked() (*types.FanData, error) {
 }
 
 func (m *Manager) setBLETargetSpeedLocked(speed types.FanSpeedValue) bool {
+	return m.setBLETargetSpeedWithContextLocked(context.Background(), speed)
+}
+
+func (m *Manager) setBLETargetSpeedWithContextLocked(ctx context.Context, speed types.FanSpeedValue) bool {
 	speed = speed.Normalized()
 	if speed.Unit != types.NormalizeFanSpeedUnit(m.activeProfile.SpeedUnit) {
 		m.logError("BLE speed unit mismatch: got %s, profile expects %s", speed.Unit, m.activeProfile.SpeedUnit)
@@ -187,7 +200,7 @@ func (m *Manager) setBLETargetSpeedLocked(speed types.FanSpeedValue) bool {
 		return false
 	}
 
-	next, err := m.bleExecutor.SetSpeed(nil, speed)
+	next, err := m.bleExecutor.SetSpeed(ctx, speed)
 	if err != nil {
 		m.logError("BLE profile speed command failed: %v", err)
 		return false

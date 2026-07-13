@@ -1,6 +1,7 @@
 package device
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -95,6 +96,10 @@ func (m *Manager) serialConnectedInfoLocked() map[string]string {
 }
 
 func (m *Manager) connectSerialLocked() (bool, map[string]string) {
+	return m.connectSerialWithContextLocked(context.Background())
+}
+
+func (m *Manager) connectSerialWithContextLocked(ctx context.Context) (bool, map[string]string) {
 	if !m.shouldUseSerialLocked() {
 		return false, nil
 	}
@@ -107,7 +112,7 @@ func (m *Manager) connectSerialLocked() (bool, map[string]string) {
 		m.serialExecutor = executor
 	}
 
-	fanData, err := m.readSerialStateLocked()
+	fanData, err := m.readSerialStateWithContextLocked(ctx)
 	if err != nil {
 		m.logError("Serial controller connection failed: %v", err)
 		return false, nil
@@ -167,10 +172,14 @@ func (m *Manager) RefreshSerialState() bool {
 }
 
 func (m *Manager) readSerialStateLocked() (*types.FanData, error) {
+	return m.readSerialStateWithContextLocked(context.Background())
+}
+
+func (m *Manager) readSerialStateWithContextLocked(ctx context.Context) (*types.FanData, error) {
 	if m.serialExecutor == nil {
 		return nil, fmt.Errorf("serial profile executor is not configured")
 	}
-	fanData, err := m.serialExecutor.ReadState(nil)
+	fanData, err := m.serialExecutor.ReadState(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -180,6 +189,10 @@ func (m *Manager) readSerialStateLocked() (*types.FanData, error) {
 }
 
 func (m *Manager) setSerialTargetSpeedLocked(speed types.FanSpeedValue) bool {
+	return m.setSerialTargetSpeedWithContextLocked(context.Background(), speed)
+}
+
+func (m *Manager) setSerialTargetSpeedWithContextLocked(ctx context.Context, speed types.FanSpeedValue) bool {
 	speed = speed.Normalized()
 	if speed.Unit != types.NormalizeFanSpeedUnit(m.activeProfile.SpeedUnit) {
 		m.logError("Serial speed unit mismatch: got %s, profile expects %s", speed.Unit, m.activeProfile.SpeedUnit)
@@ -190,7 +203,7 @@ func (m *Manager) setSerialTargetSpeedLocked(speed types.FanSpeedValue) bool {
 		return false
 	}
 
-	next, err := m.serialExecutor.SetSpeed(nil, speed)
+	next, err := m.serialExecutor.SetSpeed(ctx, speed)
 	if err != nil {
 		m.logError("Serial profile speed command failed: %v", err)
 		return false
