@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,8 +12,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/TIANLI0/THRM/internal/config"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -27,6 +30,125 @@ const (
 	updateStableReleaseAPI = "https://api.github.com/repos/Eureka-o/FanControlPortable/releases/latest"
 	updateReleaseListAPI   = "https://api.github.com/repos/Eureka-o/FanControlPortable/releases?per_page=30"
 )
+
+var errUpdateCanceled = errors.New("update download canceled")
+
+type updateDownloadControl struct {
+	mutex    sync.Mutex
+	paused   bool
+	canceled bool
+	wake     chan struct{}
+	cancel   context.CancelFunc
+	done     chan struct{}
+	doneOnce sync.Once
+}
+
+func newUpdateDownloadControl() *updateDownloadControl {
+	return &updateDownloadControl{
+		wake: make(chan struct{}),
+		done: make(chan struct{}),
+	}
+}
+
+func (c *updateDownloadControl) signalLocked() {
+	close(c.wake)
+	c.wake = make(chan struct{})
+}
+
+func (c *updateDownloadControl) Pause() bool {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	if c.canceled || c.paused {
+		return false
+	}
+	c.paused = true
+	c.signalLocked()
+	return true
+}
+
+func (c *updateDownloadControl) Resume() bool {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	if c.canceled || !c.paused {
+		return false
+	}
+	c.paused = false
+	c.signalLocked()
+	return true
+}
+
+func (c *updateDownloadControl) Cancel() {
+	c.mutex.Lock()
+	if c.canceled {
+		c.mutex.Unlock()
+		return
+	}
+	c.canceled = true
+	c.paused = false
+	cancel := c.cancel
+	c.signalLocked()
+	c.mutex.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (c *updateDownloadControl) setCancel(cancel context.CancelFunc) {
+	c.mutex.Lock()
+	if c.canceled {
+		c.mutex.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+		return
+	}
+	c.cancel = cancel
+	c.mutex.Unlock()
+}
+
+func (c *updateDownloadControl) Wait(ctx context.Context) error {
+	for {
+		c.mutex.Lock()
+		if c.canceled {
+			c.mutex.Unlock()
+			return errUpdateCanceled
+		}
+		if !c.paused {
+			c.mutex.Unlock()
+			return nil
+		}
+		wake := c.wake
+		c.mutex.Unlock()
+
+		select {
+		case <-ctx.Done():
+			c.mutex.Lock()
+			canceled := c.canceled
+			c.mutex.Unlock()
+			if canceled {
+				return errUpdateCanceled
+			}
+			return ctx.Err()
+		case <-wake:
+		}
+	}
+}
+
+func (c *updateDownloadControl) IsCanceled() bool {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	return c.canceled
+}
+
+func (c *updateDownloadControl) finish() {
+	c.doneOnce.Do(func() { close(c.done) })
+}
+
+type partialDownloadMetadata struct {
+	URL          string `json:"url"`
+	ETag         string `json:"etag,omitempty"`
+	LastModified string `json:"lastModified,omitempty"`
+}
 
 type updateProgress struct {
 	Percent     int    `json:"percent"`
@@ -97,6 +219,97 @@ func hasUpdateCompletedArg(args []string) bool {
 		}
 	}
 	return false
+}
+
+func updateDownloadDirectory(installDir string) string {
+	return filepath.Join(installDir, "updates")
+}
+
+func updatePartPath(updateDir, downloadURL string) string {
+	urlHash := sha256.Sum256([]byte(downloadURL))
+	return filepath.Join(updateDir, fmt.Sprintf("download-%x.part", urlHash[:8]))
+}
+
+func partialDownloadMetadataPath(partPath string) string {
+	return partPath + ".json"
+}
+
+func cleanupPartialDownload(partPath string) error {
+	var errs []error
+	for _, path := range []string{partPath, partialDownloadMetadataPath(partPath)} {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (a *App) beginUpdateDownload() (*updateDownloadControl, error) {
+	a.updateMutex.Lock()
+	defer a.updateMutex.Unlock()
+	if a.updateControl != nil {
+		return nil, fmt.Errorf("an update download is already running")
+	}
+	control := newUpdateDownloadControl()
+	a.updateControl = control
+	return control, nil
+}
+
+func (a *App) finishUpdateDownload(control *updateDownloadControl) {
+	control.finish()
+	a.updateMutex.Lock()
+	if a.updateControl == control {
+		a.updateControl = nil
+	}
+	a.updateMutex.Unlock()
+}
+
+func (a *App) PauseUpdateDownload() bool {
+	a.updateMutex.Lock()
+	control := a.updateControl
+	a.updateMutex.Unlock()
+	if control == nil || !control.Pause() {
+		return false
+	}
+	a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "paused"})
+	return true
+}
+
+func (a *App) ResumeUpdateDownload() bool {
+	a.updateMutex.Lock()
+	control := a.updateControl
+	a.updateMutex.Unlock()
+	if control == nil || !control.Resume() {
+		return false
+	}
+	a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "downloading"})
+	return true
+}
+
+func (a *App) CancelUpdateDownload(downloadURL string) error {
+	parsed, err := validateReleaseAssetURL(downloadURL)
+	if err != nil {
+		return err
+	}
+	updateDir := updateDownloadDirectory(config.GetInstallDir())
+	partPath := updatePartPath(updateDir, parsed.String())
+
+	a.updateMutex.Lock()
+	control := a.updateControl
+	a.updateMutex.Unlock()
+	if control != nil {
+		control.Cancel()
+		select {
+		case <-control.done:
+		case <-time.After(3 * time.Second):
+			return fmt.Errorf("timed out while canceling update download")
+		}
+	}
+	if err := cleanupPartialDownload(partPath); err != nil {
+		return fmt.Errorf("remove partial update: %w", err)
+	}
+	a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "canceled"})
+	return nil
 }
 
 func checkLatestRelease(ctx context.Context, client *http.Client, channel, stableURL, releasesURL string) (UpdateRelease, error) {
@@ -183,17 +396,26 @@ func (a *App) DownloadAndInstallUpdate(downloadURL, windowTitle, windowBody, win
 		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: err.Error()})
 		return err
 	}
+	control, err := a.beginUpdateDownload()
+	if err != nil {
+		return err
+	}
+	defer a.finishUpdateDownload(control)
 
-	updateDir := filepath.Join(os.TempDir(), "FanControl-update")
+	updateDir := updateDownloadDirectory(config.GetInstallDir())
 	if err := os.MkdirAll(updateDir, 0o755); err != nil {
 		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: err.Error()})
 		return fmt.Errorf("create update directory: %w", err)
 	}
 	installerPath := filepath.Join(updateDir, updateInstallerName)
-	_ = os.Remove(installerPath)
 
-	installerPath, err = a.downloadUpdateInstaller(parsed.String())
+	installerPath, err = a.downloadUpdateInstaller(parsed.String(), updateDir, control)
 	if err != nil {
+		if errors.Is(err, errUpdateCanceled) {
+			_ = cleanupPartialDownload(updatePartPath(updateDir, parsed.String()))
+			a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "canceled"})
+			return err
+		}
 		guiLogger.Errorf("update installer download failed: %v", err)
 		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: err.Error(), MaxAttempts: updateDownloadAttempts})
 		return err
@@ -323,19 +545,15 @@ func parseWindowsProxyServer(value, requestScheme string) (*url.URL, error) {
 	return proxyURL, nil
 }
 
-func (a *App) downloadUpdateInstaller(downloadURL string) (string, error) {
-	dir := filepath.Join(os.TempDir(), "FanControl-update")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("create update directory: %w", err)
-	}
-	target := filepath.Join(dir, updateInstallerName)
-	urlHash := sha256.Sum256([]byte(downloadURL))
-	partPath := filepath.Join(dir, fmt.Sprintf("download-%x.part", urlHash[:8]))
+func (a *App) downloadUpdateInstaller(downloadURL, updateDir string, control *updateDownloadControl) (string, error) {
+	target := filepath.Join(updateDir, updateInstallerName)
+	partPath := updatePartPath(updateDir, downloadURL)
 
 	ctx, cancel := context.WithTimeout(context.Background(), updateDownloadTimeout)
 	defer cancel()
+	control.setCancel(cancel)
 	lastPercent := -1
-	err := downloadWithRetry(
+	err := downloadWithRetryControlled(
 		ctx,
 		func(attempt int) *http.Client {
 			return newUpdateHTTPClient(updateDownloadTimeout, shouldBypassUpdateProxy(attempt, updateDownloadAttempts))
@@ -343,6 +561,7 @@ func (a *App) downloadUpdateInstaller(downloadURL string) (string, error) {
 		downloadURL,
 		partPath,
 		updateDownloadAttempts,
+		control,
 		func(received, total int64) {
 			percent := -1
 			if total > 0 {
@@ -368,6 +587,7 @@ func (a *App) downloadUpdateInstaller(downloadURL string) (string, error) {
 	if err := os.Rename(partPath, target); err != nil {
 		return "", fmt.Errorf("prepare update installer: %w", err)
 	}
+	_ = os.Remove(partialDownloadMetadataPath(partPath))
 	return target, nil
 }
 
@@ -380,14 +600,35 @@ func downloadWithRetry(
 	onProgress func(received, total int64),
 	onRetry func(attempt int, err error),
 ) error {
+	return downloadWithRetryControlled(ctx, clientFactory, downloadURL, partPath, attempts, nil, onProgress, onRetry)
+}
+
+func downloadWithRetryControlled(
+	ctx context.Context,
+	clientFactory func(attempt int) *http.Client,
+	downloadURL string,
+	partPath string,
+	attempts int,
+	control *updateDownloadControl,
+	onProgress func(received, total int64),
+	onRetry func(attempt int, err error),
+) error {
 	if attempts < 1 {
 		attempts = 1
 	}
 	var lastErr error
 	for attempt := 1; attempt <= attempts; attempt++ {
-		lastErr = downloadWithResume(ctx, clientFactory(attempt), downloadURL, partPath, onProgress)
+		if control != nil {
+			if err := control.Wait(ctx); err != nil {
+				return err
+			}
+		}
+		lastErr = downloadWithResume(ctx, control, clientFactory(attempt), downloadURL, partPath, onProgress)
 		if lastErr == nil {
 			return nil
+		}
+		if errors.Is(lastErr, errUpdateCanceled) || (control != nil && control.IsCanceled()) {
+			return errUpdateCanceled
 		}
 		if attempt == attempts {
 			break
@@ -406,7 +647,46 @@ func shouldBypassUpdateProxy(attempt, attempts int) bool {
 	return attempts > 1 && attempt >= attempts
 }
 
-func downloadWithResume(ctx context.Context, client *http.Client, downloadURL, partPath string, onProgress func(received, total int64)) error {
+func loadPartialDownloadMetadata(path string) (partialDownloadMetadata, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return partialDownloadMetadata{}, err
+	}
+	var metadata partialDownloadMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return partialDownloadMetadata{}, err
+	}
+	return metadata, nil
+}
+
+func savePartialDownloadMetadata(path string, metadata partialDownloadMetadata) error {
+	data, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+func responseDownloadMetadata(downloadURL string, response *http.Response) partialDownloadMetadata {
+	etag := strings.TrimSpace(response.Header.Get("ETag"))
+	if strings.HasPrefix(strings.ToUpper(etag), "W/") {
+		etag = ""
+	}
+	return partialDownloadMetadata{
+		URL:          downloadURL,
+		ETag:         etag,
+		LastModified: strings.TrimSpace(response.Header.Get("Last-Modified")),
+	}
+}
+
+func partialDownloadValidator(metadata partialDownloadMetadata) string {
+	if metadata.ETag != "" {
+		return metadata.ETag
+	}
+	return metadata.LastModified
+}
+
+func downloadWithResume(ctx context.Context, control *updateDownloadControl, client *http.Client, downloadURL, partPath string, onProgress func(received, total int64)) error {
 	part, err := os.OpenFile(partPath, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return fmt.Errorf("open partial update: %w", err)
@@ -420,6 +700,22 @@ func downloadWithResume(ctx context.Context, client *http.Client, downloadURL, p
 	if received > updateMaxDownloadSize {
 		return fmt.Errorf("partial update exceeds the size limit")
 	}
+	metadataPath := partialDownloadMetadataPath(partPath)
+	metadata := partialDownloadMetadata{}
+	if received > 0 {
+		metadata, err = loadPartialDownloadMetadata(metadataPath)
+		if err != nil || metadata.URL != downloadURL || partialDownloadValidator(metadata) == "" {
+			if err := part.Truncate(0); err != nil {
+				return err
+			}
+			if _, err := part.Seek(0, io.SeekStart); err != nil {
+				return err
+			}
+			received = 0
+			metadata = partialDownloadMetadata{}
+			_ = os.Remove(metadataPath)
+		}
+	}
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	if err != nil {
@@ -428,6 +724,7 @@ func downloadWithResume(ctx context.Context, client *http.Client, downloadURL, p
 	request.Header.Set("Accept", "application/octet-stream")
 	if received > 0 {
 		request.Header.Set("Range", fmt.Sprintf("bytes=%d-", received))
+		request.Header.Set("If-Range", partialDownloadValidator(metadata))
 	}
 	response, err := client.Do(request)
 	if err != nil {
@@ -436,6 +733,7 @@ func downloadWithResume(ctx context.Context, client *http.Client, downloadURL, p
 	defer response.Body.Close()
 
 	var total int64
+	responseMetadata := responseDownloadMetadata(downloadURL, response)
 	switch response.StatusCode {
 	case http.StatusOK:
 		if err := part.Truncate(0); err != nil {
@@ -446,21 +744,27 @@ func downloadWithResume(ctx context.Context, client *http.Client, downloadURL, p
 		}
 		received = 0
 		total = response.ContentLength
+		if partialDownloadValidator(responseMetadata) != "" {
+			if err := savePartialDownloadMetadata(metadataPath, responseMetadata); err != nil {
+				return fmt.Errorf("save partial update metadata: %w", err)
+			}
+		} else {
+			_ = os.Remove(metadataPath)
+		}
 	case http.StatusPartialContent:
 		start, contentTotal, ok := parseDownloadContentRange(response.Header.Get("Content-Range"))
-		if !ok || start != received {
+		if !ok || start != received || partialDownloadValidator(responseMetadata) == "" || partialDownloadValidator(responseMetadata) != partialDownloadValidator(metadata) {
 			_ = part.Truncate(0)
-			return fmt.Errorf("server returned an invalid resume range")
+			_ = os.Remove(metadataPath)
+			return fmt.Errorf("server returned an invalid or stale resume range")
 		}
 		total = contentTotal
 		if _, err := part.Seek(received, io.SeekStart); err != nil {
 			return err
 		}
 	case http.StatusRequestedRangeNotSatisfiable:
-		if totalSize, ok := parseUnsatisfiedContentRange(response.Header.Get("Content-Range")); ok && totalSize == received {
-			return nil
-		}
 		_ = part.Truncate(0)
+		_ = os.Remove(metadataPath)
 		return fmt.Errorf("server rejected the resume range")
 	default:
 		return fmt.Errorf("HTTP %d", response.StatusCode)
@@ -475,8 +779,18 @@ func downloadWithResume(ctx context.Context, client *http.Client, downloadURL, p
 	reader := io.LimitReader(response.Body, updateMaxDownloadSize-received+1)
 	buffer := make([]byte, 64*1024)
 	for {
+		if control != nil {
+			if err := control.Wait(ctx); err != nil {
+				return err
+			}
+		}
 		count, readErr := reader.Read(buffer)
 		if count > 0 {
+			if control != nil {
+				if err := control.Wait(ctx); err != nil {
+					return err
+				}
+			}
 			if _, writeErr := part.Write(buffer[:count]); writeErr != nil {
 				return fmt.Errorf("write update installer: %w", writeErr)
 			}
@@ -492,6 +806,9 @@ func downloadWithResume(ctx context.Context, client *http.Client, downloadURL, p
 			break
 		}
 		if readErr != nil {
+			if control != nil && control.IsCanceled() {
+				return errUpdateCanceled
+			}
 			return fmt.Errorf("download interrupted: %w", readErr)
 		}
 	}

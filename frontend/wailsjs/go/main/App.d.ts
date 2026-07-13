@@ -7,6 +7,8 @@ import {context} from '../models';
 
 export function AutoScanDevices():Promise<Record<string, any>>;
 
+export function CancelUpdateDownload(arg1:string):Promise<void>;
+
 export function CheckLatestRelease(arg1:string):Promise<guiapp.UpdateRelease>;
 
 export function CheckWindowsAutoStart():Promise<boolean>;
@@ -93,6 +95,8 @@ export function OnWindowClosing(arg1:context.Context):Promise<boolean>;
 
 export function OpenThemesFolder():Promise<void>;
 
+export function PauseUpdateDownload():Promise<boolean>;
+
 export function ProbeBLEGATT(arg1:types.BLEGATTProbeParams):Promise<types.BLEGATTProbeResult>;
 
 export function QuitAll():Promise<void>;
@@ -106,6 +110,8 @@ export function ReinstallPawnIO():Promise<Record<string, any>>;
 export function ResetLearnedOffsets():Promise<void>;
 
 export function RestartPawnIO():Promise<types.BridgeTemperatureData>;
+
+export function ResumeUpdateDownload():Promise<boolean>;
 
 export function SaveDeviceProfile(arg1:types.DeviceProfile,arg2:boolean):Promise<types.DeviceProfile>;
 

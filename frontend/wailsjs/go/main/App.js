@@ -6,6 +6,10 @@ export function AutoScanDevices() {
   return window['go']['main']['App']['AutoScanDevices']();
 }
 
+export function CancelUpdateDownload(arg1) {
+  return window['go']['main']['App']['CancelUpdateDownload'](arg1);
+}
+
 export function CheckLatestRelease(arg1) {
   return window['go']['main']['App']['CheckLatestRelease'](arg1);
 }
@@ -178,6 +182,10 @@ export function OpenThemesFolder() {
   return window['go']['main']['App']['OpenThemesFolder']();
 }
 
+export function PauseUpdateDownload() {
+  return window['go']['main']['App']['PauseUpdateDownload']();
+}
+
 export function ProbeBLEGATT(arg1) {
   return window['go']['main']['App']['ProbeBLEGATT'](arg1);
 }
@@ -204,6 +212,10 @@ export function ResetLearnedOffsets() {
 
 export function RestartPawnIO() {
   return window['go']['main']['App']['RestartPawnIO']();
+}
+
+export function ResumeUpdateDownload() {
+  return window['go']['main']['App']['ResumeUpdateDownload']();
 }
 
 export function SaveDeviceProfile(arg1, arg2) {

@@ -3,7 +3,7 @@
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Minus, RotateCcw } from 'lucide-react';
+import { Minus, Pause, Play, RotateCcw, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { create } from 'zustand';
@@ -29,10 +29,14 @@ interface UpdateState {
   request: UpdateRequest | null;
   startUpdate: (request: UpdateRequest) => Promise<void>;
   retryUpdate: () => Promise<void>;
+  pauseUpdate: () => Promise<void>;
+  resumeUpdate: () => Promise<void>;
+  cancelUpdate: () => Promise<void>;
+  dismissUpdate: () => void;
   handleProgress: (progress: UpdateProgressPayload) => void;
 }
 
-const isBusy = (stage: UpdateStage) => stage === 'downloading' || stage === 'retrying' || stage === 'installing';
+const isBusy = (stage: UpdateStage) => stage === 'downloading' || stage === 'paused' || stage === 'retrying' || stage === 'installing';
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
@@ -65,7 +69,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         request.windowRestarting,
       );
     } catch (error) {
-      if (get().stage !== 'error') {
+      if (get().stage !== 'error' && get().stage !== 'canceled') {
         set({ stage: 'error', message: errorMessage(error) });
       }
     }
@@ -74,8 +78,31 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     const request = get().request;
     if (request) await get().startUpdate(request);
   },
+  pauseUpdate: async () => {
+    if (get().stage !== 'downloading' && get().stage !== 'retrying') return;
+    if (await apiService.pauseUpdateDownload()) {
+      set({ stage: 'paused' });
+    }
+  },
+  resumeUpdate: async () => {
+    if (get().stage !== 'paused') return;
+    if (await apiService.resumeUpdateDownload()) {
+      set({ stage: 'downloading' });
+    }
+  },
+  cancelUpdate: async () => {
+    const request = get().request;
+    if (!request || get().stage === 'installing') return;
+    await apiService.cancelUpdateDownload(request.downloadURL);
+    set({ stage: 'canceled', percent: 0, received: 0, total: 0, message: '' });
+  },
+  dismissUpdate: () => set({ stage: 'idle', percent: 0, received: 0, total: 0, message: '', request: null }),
   handleProgress: (progress) => {
     if (!progress || !progress.stage) return;
+    if (progress.stage === 'canceled') {
+      set({ stage: 'canceled', percent: 0, received: 0, total: 0, message: '' });
+      return;
+    }
     set((state) => ({
       stage: progress.stage,
       percent: progress.percent >= 0 ? Math.max(0, Math.min(100, progress.percent)) : state.percent,
@@ -133,11 +160,17 @@ export default function UpdateProgressWidget() {
   const attempt = useUpdateStore((state) => state.attempt);
   const maxAttempts = useUpdateStore((state) => state.maxAttempts);
   const retryUpdate = useUpdateStore((state) => state.retryUpdate);
+  const pauseUpdate = useUpdateStore((state) => state.pauseUpdate);
+  const resumeUpdate = useUpdateStore((state) => state.resumeUpdate);
+  const cancelUpdate = useUpdateStore((state) => state.cancelUpdate);
+  const dismissUpdate = useUpdateStore((state) => state.dismissUpdate);
   const handleProgress = useUpdateStore((state) => state.handleProgress);
   const [collapsed, setCollapsed] = useState(false);
+  const [commandPending, setCommandPending] = useState(false);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const widgetRef = useRef<HTMLElement | null>(null);
-  const dragRef = useRef<{ offsetX: number; offsetY: number } | null>(null);
+  const dragRef = useRef<{ offsetX: number; offsetY: number; startX: number; startY: number; moved: boolean } | null>(null);
+  const suppressCollapsedClickRef = useRef(false);
   const completionCheckedRef = useRef(false);
 
   useEffect(() => apiService.onUpdateDownloadProgress(handleProgress), [handleProgress]);
@@ -157,9 +190,16 @@ export default function UpdateProgressWidget() {
   }, [stage]);
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLElement>) => {
-    if ((event.target as HTMLElement).closest('button')) return;
+    const button = (event.target as HTMLElement).closest('button');
+    if (button && !button.hasAttribute('data-update-drag-handle')) return;
     const rect = event.currentTarget.getBoundingClientRect();
-    dragRef.current = { offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top };
+    dragRef.current = {
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+    };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -168,6 +208,9 @@ export default function UpdateProgressWidget() {
     const widget = widgetRef.current;
     if (!drag || !widget) return;
     const rect = widget.getBoundingClientRect();
+    if (Math.abs(event.clientX - drag.startX) > 3 || Math.abs(event.clientY - drag.startY) > 3) {
+      drag.moved = true;
+    }
     setPosition({
       x: Math.max(8, Math.min(event.clientX - drag.offsetX, window.innerWidth - rect.width - 8)),
       y: Math.max(48, Math.min(event.clientY - drag.offsetY, window.innerHeight - rect.height - 8)),
@@ -175,6 +218,9 @@ export default function UpdateProgressWidget() {
   };
 
   const handlePointerUp = (event: ReactPointerEvent<HTMLElement>) => {
+    if (dragRef.current?.moved) {
+      suppressCollapsedClickRef.current = true;
+    }
     dragRef.current = null;
     try {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -183,14 +229,34 @@ export default function UpdateProgressWidget() {
     }
   };
 
-  const titleKey = stage === 'retrying'
+  const runCommand = async (command: () => Promise<void>) => {
+    if (commandPending) return;
+    setCommandPending(true);
+    try {
+      await command();
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
+      setCommandPending(false);
+    }
+  };
+
+  const titleKey = stage === 'paused'
+    ? 'aboutPanel.version.progressPaused'
+    : stage === 'canceled'
+      ? 'aboutPanel.version.progressCanceled'
+      : stage === 'retrying'
     ? 'aboutPanel.version.progressRetrying'
     : stage === 'installing'
       ? 'aboutPanel.version.progressInstalling'
       : stage === 'error'
         ? 'aboutPanel.version.progressFailed'
         : 'aboutPanel.version.progressDownloading';
-  const detail = stage === 'retrying'
+  const detail = stage === 'paused'
+    ? t('aboutPanel.version.pausedHint')
+    : stage === 'canceled'
+      ? t('aboutPanel.version.canceledHint')
+      : stage === 'retrying'
     ? t('aboutPanel.version.retryingHint', { attempt, max: maxAttempts })
     : stage === 'installing'
       ? t('aboutPanel.version.installingHint')
@@ -222,9 +288,16 @@ export default function UpdateProgressWidget() {
           {collapsed ? (
             <button
               type="button"
+              data-update-drag-handle
               aria-label={t(titleKey)}
               title={t(titleKey)}
-              onClick={() => setCollapsed(false)}
+              onClick={() => {
+                if (suppressCollapsedClickRef.current) {
+                  suppressCollapsedClickRef.current = false;
+                  return;
+                }
+                setCollapsed(false);
+              }}
               className="block cursor-pointer rounded-full"
             >
               <ProgressRing percent={percent} error={stage === 'error'} />
@@ -250,6 +323,41 @@ export default function UpdateProgressWidget() {
                     className="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-destructive transition-colors hover:bg-destructive/10"
                   >
                     <RotateCcw className="size-3.5" />
+                  </button>
+                )}
+                {(stage === 'downloading' || stage === 'retrying' || stage === 'paused') && (
+                  <button
+                    type="button"
+                    aria-label={t(stage === 'paused' ? 'aboutPanel.version.resumeDownload' : 'aboutPanel.version.pauseDownload')}
+                    title={t(stage === 'paused' ? 'aboutPanel.version.resumeDownload' : 'aboutPanel.version.pauseDownload')}
+                    disabled={commandPending}
+                    onClick={() => void runCommand(stage === 'paused' ? resumeUpdate : pauseUpdate)}
+                    className="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {stage === 'paused' ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
+                  </button>
+                )}
+                {(stage === 'downloading' || stage === 'retrying' || stage === 'paused' || stage === 'error') && (
+                  <button
+                    type="button"
+                    aria-label={t('aboutPanel.version.cancelDownload')}
+                    title={t('aboutPanel.version.cancelDownload')}
+                    disabled={commandPending}
+                    onClick={() => void runCommand(cancelUpdate)}
+                    className="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                )}
+                {stage === 'canceled' && (
+                  <button
+                    type="button"
+                    aria-label={t('common.actions.close')}
+                    title={t('common.actions.close')}
+                    onClick={dismissUpdate}
+                    className="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <X className="size-3.5" />
                   </button>
                 )}
                 <button

@@ -21,6 +21,8 @@ func TestBuildUpdateScriptWaitsForInstallAndRestartsUpdatedApp(t *testing.T) {
 		`start "" /wait "%INSTALLER_FILE%" /S`,
 		`if not "!INSTALL_EXIT!"=="0" goto installfailed`,
 		`start "" "%EXE_PATH%" --update-complete`,
+		`del "%INSTALLER_FILE%" >nul 2>&1`,
+		`rmdir "%~dp0" >nul 2>&1`,
 	} {
 		if !strings.Contains(script, expected) {
 			t.Fatalf("update script missing %q", expected)

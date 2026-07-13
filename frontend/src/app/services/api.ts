@@ -6,6 +6,9 @@ import {
   GetDeviceStatus,
   GetConfig,
   DownloadAndInstallUpdate,
+  PauseUpdateDownload,
+  ResumeUpdateDownload,
+  CancelUpdateDownload,
   UpdateConfig,
   SetFanCurve,
   ResetLearnedOffsets,
@@ -142,7 +145,7 @@ export interface UpdateProgressPayload {
   percent: number;
   received: number;
   total: number;
-  stage: 'downloading' | 'retrying' | 'installing' | 'error';
+  stage: 'downloading' | 'paused' | 'retrying' | 'installing' | 'error' | 'canceled';
   message: string;
   attempt?: number;
   maxAttempts?: number;
@@ -228,6 +231,18 @@ class ApiService {
       windowBody,
       windowRestarting,
     );
+  }
+
+  async pauseUpdateDownload(): Promise<boolean> {
+    return await PauseUpdateDownload();
+  }
+
+  async resumeUpdateDownload(): Promise<boolean> {
+    return await ResumeUpdateDownload();
+  }
+
+  async cancelUpdateDownload(downloadURL: string): Promise<void> {
+    return await CancelUpdateDownload(downloadURL);
   }
 
   onUpdateDownloadProgress(

@@ -3,6 +3,7 @@ package guiapp
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestValidateUpdateURL(t *testing.T) {
@@ -75,6 +77,7 @@ func TestDownloadWithRetryResumesPartialFile(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		requestNumber := requests.Add(1)
 		if requestNumber == 1 {
+			response.Header().Set("ETag", `"release-v1"`)
 			response.Header().Set("Content-Length", fmt.Sprint(len(payload)))
 			response.WriteHeader(http.StatusOK)
 			_, _ = response.Write(payload[:len(payload)/2])
@@ -87,6 +90,11 @@ func TestDownloadWithRetryResumesPartialFile(t *testing.T) {
 			response.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		if ifRange := request.Header.Get("If-Range"); ifRange != `"release-v1"` {
+			t.Errorf("retry request If-Range = %q, want release validator", ifRange)
+			response.WriteHeader(http.StatusPreconditionFailed)
+			return
+		}
 		var start int
 		if _, err := fmt.Sscanf(rangeHeader, "bytes=%d-", &start); err != nil {
 			t.Errorf("parse Range %q: %v", rangeHeader, err)
@@ -94,6 +102,7 @@ func TestDownloadWithRetryResumesPartialFile(t *testing.T) {
 			return
 		}
 		resumed.Store(true)
+		response.Header().Set("ETag", `"release-v1"`)
 		response.Header().Set("Content-Length", fmt.Sprint(len(payload)-start))
 		response.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, len(payload)-1, len(payload)))
 		response.WriteHeader(http.StatusPartialContent)
@@ -123,6 +132,129 @@ func TestDownloadWithRetryResumesPartialFile(t *testing.T) {
 	}
 	if !bytes.Equal(downloaded, payload) {
 		t.Fatalf("downloaded payload length = %d, want %d", len(downloaded), len(payload))
+	}
+}
+
+func TestControlledDownloadPausesAndResumes(t *testing.T) {
+	payload := append([]byte{'M', 'Z'}, bytes.Repeat([]byte("pause-resume"), 32768)...)
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.Header().Set("ETag", `"pause-v1"`)
+		response.Header().Set("Content-Length", fmt.Sprint(len(payload)))
+		_, _ = response.Write(payload)
+	}))
+	defer server.Close()
+
+	control := newUpdateDownloadControl()
+	partPath := filepath.Join(t.TempDir(), "update.part")
+	paused := make(chan struct{}, 1)
+	var didPause atomic.Bool
+	done := make(chan error, 1)
+	go func() {
+		done <- downloadWithRetryControlled(
+			context.Background(),
+			func(int) *http.Client { return server.Client() },
+			server.URL,
+			partPath,
+			1,
+			control,
+			func(received, _ int64) {
+				if received > 0 && didPause.CompareAndSwap(false, true) && control.Pause() {
+					select {
+					case paused <- struct{}{}:
+					default:
+					}
+				}
+			},
+			nil,
+		)
+	}()
+
+	select {
+	case <-paused:
+	case <-time.After(2 * time.Second):
+		t.Fatal("download did not reach the paused state")
+	}
+	select {
+	case err := <-done:
+		t.Fatalf("download completed while paused: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if !control.Resume() {
+		t.Fatal("resume was rejected")
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("controlled download failed after resume: %v", err)
+	}
+	got, err := os.ReadFile(partPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("downloaded payload length = %d, want %d", len(got), len(payload))
+	}
+}
+
+func TestControlledDownloadCancelStopsAndCleanupRemovesPartialFiles(t *testing.T) {
+	payload := append([]byte{'M', 'Z'}, bytes.Repeat([]byte("cancel"), 65536)...)
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.Header().Set("ETag", `"cancel-v1"`)
+		response.Header().Set("Content-Length", fmt.Sprint(len(payload)))
+		_, _ = response.Write(payload)
+	}))
+	defer server.Close()
+
+	control := newUpdateDownloadControl()
+	partPath := filepath.Join(t.TempDir(), "update.part")
+	paused := make(chan struct{}, 1)
+	var didPause atomic.Bool
+	done := make(chan error, 1)
+	go func() {
+		done <- downloadWithRetryControlled(
+			context.Background(),
+			func(int) *http.Client { return server.Client() },
+			server.URL,
+			partPath,
+			3,
+			control,
+			func(received, _ int64) {
+				if received > 0 && didPause.CompareAndSwap(false, true) && control.Pause() {
+					select {
+					case paused <- struct{}{}:
+					default:
+					}
+				}
+			},
+			nil,
+		)
+	}()
+
+	select {
+	case <-paused:
+	case <-time.After(2 * time.Second):
+		t.Fatal("download did not reach the paused state")
+	}
+	control.Cancel()
+	if err := <-done; !errors.Is(err, errUpdateCanceled) {
+		t.Fatalf("cancel error = %v, want errUpdateCanceled", err)
+	}
+	metadataPath := partialDownloadMetadataPath(partPath)
+	if err := os.WriteFile(metadataPath, []byte(`{"etag":"cancel-v1"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := cleanupPartialDownload(partPath); err != nil {
+		t.Fatalf("cleanupPartialDownload() error = %v", err)
+	}
+	for _, path := range []string{partPath, metadataPath} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("temporary update file still exists: %s", path)
+		}
+	}
+}
+
+func TestUpdateDownloadDirectoryLivesUnderInstallDirectory(t *testing.T) {
+	installDir := filepath.Join("C:\\", "FanControl")
+	if got, want := updateDownloadDirectory(installDir), filepath.Join(installDir, "updates"); got != want {
+		t.Fatalf("updateDownloadDirectory() = %q, want %q", got, want)
 	}
 }
 

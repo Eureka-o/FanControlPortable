@@ -25,6 +25,18 @@ test('uses a draggable top-right compact progress ring with an internal percenta
   assert.match(widgetSource, /<svg/);
   assert.match(widgetSource, /<circle/);
   assert.match(widgetSource, /\{percent\}%/);
+  assert.match(widgetSource, /data-update-drag-handle/);
+});
+
+test('supports pause, resume, and cancel while preserving resumable progress', () => {
+  assert.match(widgetSource, /pauseUpdate/);
+  assert.match(widgetSource, /resumeUpdate/);
+  assert.match(widgetSource, /cancelUpdate/);
+  assert.match(widgetSource, /pauseUpdateDownload/);
+  assert.match(widgetSource, /resumeUpdateDownload/);
+  assert.match(widgetSource, /cancelUpdateDownload/);
+  assert.match(widgetSource, /stage === 'paused'/);
+  assert.match(widgetSource, /stage === 'canceled'/);
 });
 
 test('offers a manual retry after a resumable download fails', () => {
