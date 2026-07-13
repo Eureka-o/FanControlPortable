@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useRef, useState } from 'react';
 import { apiService } from '../services/api';
 import {
   appendSampledHistoryPoint,
@@ -37,16 +37,18 @@ export function useTemperatureHistory() {
 
       const nextEnabled = payload?.enabled !== false;
       setEnabledState(nextEnabled);
-      setPoints(nextEnabled
-        ? normalizeHistoryPoints((payload?.points || []) as TemperatureHistoryPoint[])
-        : sessionPointsRef.current);
+      startTransition(() => {
+        setPoints(nextEnabled
+          ? normalizeHistoryPoints((payload?.points || []) as TemperatureHistoryPoint[])
+          : sessionPointsRef.current);
+      });
     } catch {
       if (activeGuard && !activeGuard.active) {
         return;
       }
 
       setEnabledState(false);
-      setPoints(sessionPointsRef.current);
+      startTransition(() => setPoints(sessionPointsRef.current));
     }
   }, []);
 

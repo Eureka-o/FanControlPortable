@@ -33,8 +33,8 @@ import { getFanSpeedUnit, getFanSpeedRange, getFanSpeedTicks, fanSpeedUnitLabel 
 import { type HistorySeriesKey } from '../lib/temperature-history';
 import type { CurveFocusTarget } from '../store/app-store';
 import { types } from '../../../wailsjs/go/models';
+import { ClipboardSetText } from '../../../wailsjs/runtime/runtime';
 import { useTranslation } from 'react-i18next';
-import FanCurveProfileSelect from './FanCurveProfileSelect';
 import { toast } from 'sonner';
 import {
   ToggleSwitch,
@@ -428,8 +428,15 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const [profileNameInput, setProfileNameInput] = useState('');
   const [isProfileNameComposing, setIsProfileNameComposing] = useState(false);
   const [profileOpLoading, setProfileOpLoading] = useState(false);
-  const [exportCode, setExportCode] = useState('');
+  const [createProfileDialogOpen, setCreateProfileDialogOpen] = useState(false);
+  const [manageProfilesDialogOpen, setManageProfilesDialogOpen] = useState(false);
+  const [profileSwitchDialogOpen, setProfileSwitchDialogOpen] = useState(false);
+  const [deleteProfileDialogOpen, setDeleteProfileDialogOpen] = useState(false);
+  const [pendingProfileId, setPendingProfileId] = useState('');
+  const [pendingDeleteProfileId, setPendingDeleteProfileId] = useState('');
+  const [newProfileNameInput, setNewProfileNameInput] = useState('');
   const [importCode, setImportCode] = useState('');
+  const [isImportDragging, setIsImportDragging] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -448,8 +455,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     resetPreferences: resetHistoryDisplayPreferences,
   } = useHistoryDisplayPreferences();
   const chartRef = useRef<HTMLDivElement>(null);
+  const profileFileInputRef = useRef<HTMLInputElement>(null);
   const curveEditorRef = useRef<HTMLDivElement>(null);
   const historyDetailsRef = useRef<HTMLElement>(null);
+  const initialFocusTarget = useRef(focusTarget).current;
   const chartBoundsRef = useRef<{ top: number; bottom: number; left: number; right: number; yMin: number; yMax: number } | null>(null);
   const dragFrameRef = useRef<number | null>(null);
   const pendingDragYRef = useRef<number | null>(null);
@@ -490,6 +499,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   } = useTemperatureHistory();
 
   const activeProfile = useMemo(() => curveProfiles.find((p) => p.id === activeProfileId) ?? null, [curveProfiles, activeProfileId]);
+  const pendingDeleteProfile = useMemo(
+    () => curveProfiles.find((profile) => profile.id === pendingDeleteProfileId) ?? null,
+    [curveProfiles, pendingDeleteProfileId],
+  );
   const externalActiveProfileId = ((config as any).activeFanCurveProfileId || '') as string;
   const externalDeviceCurveKey = [
     ((config as any).deviceTransport || '') as string,
@@ -1000,7 +1013,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     setProfileNameInput(trimProfileNameToLimit(value));
   }, [trimProfileNameToLimit]);
 
-  const switchProfile = useCallback(async (id: string) => {
+  const applyProfileSwitch = useCallback(async (id: string) => {
     try {
       setProfileOpLoading(true);
       await apiService.setActiveFanCurveProfile(id);
@@ -1013,6 +1026,28 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       setProfileOpLoading(false);
     }
   }, [loadCurveProfiles, syncConfigFromBackend, t]);
+
+  const switchProfile = useCallback(async (id: string) => {
+    if (!id || id === activeProfileId) return;
+    if (hasUnsavedChanges) {
+      setPendingProfileId(id);
+      setProfileSwitchDialogOpen(true);
+      return;
+    }
+    await applyProfileSwitch(id);
+  }, [activeProfileId, applyProfileSwitch, hasUnsavedChanges]);
+
+  const confirmProfileSwitch = useCallback(async (action: 'save' | 'discard') => {
+    if (!pendingProfileId) return;
+    if (action === 'save') {
+      const saved = await persistCurrentCurve();
+      if (!saved) return;
+    }
+    const nextProfileId = pendingProfileId;
+    setProfileSwitchDialogOpen(false);
+    setPendingProfileId('');
+    await applyProfileSwitch(nextProfileId);
+  }, [applyProfileSwitch, pendingProfileId, persistCurrentCurve]);
 
   const saveCurrentProfileName = useCallback(async () => {
     const fallbackName = activeProfile?.name || t('fanCurve.profiles.currentCurveName');
@@ -1032,41 +1067,46 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   }, [activeProfile?.curve, activeProfile?.name, activeProfileId, getSafeProfileName, loadCurveProfiles, localCurve, profileNameInput, syncConfigFromBackend, t]);
 
   const createNewProfile = useCallback(async () => {
-    const rawName = (profileNameInput || '').trim();
-    const activeName = (activeProfile?.name || '').trim();
-    const shouldUseDefaultNewName = !rawName || rawName === activeName;
     const newProfileName = t('fanCurve.profiles.newCurveName');
-    const safeName = shouldUseDefaultNewName ? newProfileName : getSafeProfileName(rawName, newProfileName);
+    const safeName = getSafeProfileName(newProfileNameInput, newProfileName);
     try {
       setProfileOpLoading(true);
       await apiService.saveFanCurveProfile('', safeName, localCurve, true);
       await loadCurveProfiles();
       await syncConfigFromBackend();
-      setProfileNameInput('');
+      setNewProfileNameInput('');
+      setCreateProfileDialogOpen(false);
       toast.success(t('fanCurve.toast.profileSavedAsNew'));
     } catch (e) {
       toast.error(t('fanCurve.toast.saveAsFailed', { error: getErrorMessage(e) }));
     } finally {
       setProfileOpLoading(false);
     }
-  }, [activeProfile?.name, getSafeProfileName, loadCurveProfiles, localCurve, profileNameInput, syncConfigFromBackend, t]);
+  }, [getSafeProfileName, loadCurveProfiles, localCurve, newProfileNameInput, syncConfigFromBackend, t]);
 
-  const removeActiveProfile = useCallback(async () => {
-    if (!activeProfileId) return;
+  const removeProfile = useCallback(async () => {
+    if (!pendingDeleteProfileId) return;
+    const deletingActiveProfile = pendingDeleteProfileId === activeProfileId;
     try {
       setProfileOpLoading(true);
-      await apiService.deleteFanCurveProfile(activeProfileId);
-      await loadCurveProfiles();
+      await apiService.deleteFanCurveProfile(pendingDeleteProfileId);
+      if (deletingActiveProfile) {
+        await loadCurveProfiles();
+      } else {
+        setCurveProfiles((profiles) => profiles.filter((profile) => profile.id !== pendingDeleteProfileId));
+      }
       await syncConfigFromBackend();
+      setDeleteProfileDialogOpen(false);
+      setPendingDeleteProfileId('');
       toast.success(t('fanCurve.toast.profileDeleted'));
     } catch (e) {
       toast.error(t('fanCurve.toast.deleteFailed', { error: getErrorMessage(e) }));
     } finally {
       setProfileOpLoading(false);
     }
-  }, [activeProfileId, loadCurveProfiles, syncConfigFromBackend, t]);
+  }, [activeProfileId, loadCurveProfiles, pendingDeleteProfileId, syncConfigFromBackend, t]);
 
-  const exportProfiles = useCallback(async () => {
+  const exportProfiles = useCallback(async (destination: 'clipboard' | 'file') => {
     try {
       if (hasUnsavedChanges) {
         const ok = await persistCurrentCurve();
@@ -1074,24 +1114,51 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
           return;
         }
       }
+      if (destination === 'file') {
+        const savedPath = await apiService.exportFanCurveProfilesToFile();
+        if (!savedPath) return;
+        toast.success(t('fanCurve.toast.exportFileCreated'));
+        return;
+      }
       const code = await apiService.exportFanCurveProfiles();
-      setExportCode(code);
       if (navigator?.clipboard?.writeText) {
         await navigator.clipboard.writeText(code);
-        toast.success(t('fanCurve.toast.exportCopied'));
       } else {
-        toast.success(t('fanCurve.toast.exportGenerated'));
+        await ClipboardSetText(code);
       }
+      toast.success(t('fanCurve.toast.exportCopied'));
     } catch (e) {
       toast.error(t('fanCurve.toast.exportFailed', { error: getErrorMessage(e) }));
     }
-  }, [hasUnsavedChanges, loadCurveProfiles, persistCurrentCurve, t]);
+  }, [hasUnsavedChanges, persistCurrentCurve, t]);
+
+  const loadProfileImportFile = useCallback(async (file?: File) => {
+    if (!file) return;
+    try {
+      const code = (await file.text()).trim();
+      if (!code) throw new Error(t('fanCurve.importExport.emptyFile'));
+      setImportCode(code);
+      toast.success(t('fanCurve.toast.importFileLoaded', { name: file.name }));
+    } catch (error) {
+      toast.error(t('fanCurve.toast.importFileFailed', { error: getErrorMessage(error) }));
+    }
+  }, [t]);
+
+  const handleProfileFileDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsImportDragging(false);
+    void loadProfileImportFile(event.dataTransfer.files?.[0]);
+  }, [loadProfileImportFile]);
 
   const importProfiles = useCallback(async () => {
     const code = importCode.trim();
     if (!code) {
       toast.error(t('fanCurve.toast.importMissingCode'));
       return;
+    }
+    if (hasUnsavedChanges) {
+      const saved = await persistCurrentCurve();
+      if (!saved) return;
     }
     try {
       setProfileOpLoading(true);
@@ -1105,7 +1172,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     } finally {
       setProfileOpLoading(false);
     }
-  }, [importCode, loadCurveProfiles, syncConfigFromBackend, t]);
+  }, [hasUnsavedChanges, importCode, loadCurveProfiles, persistCurrentCurve, syncConfigFromBackend, t]);
 
   const resetCurve = useCallback(() => {
     setLocalCurve(normalizeFanCurve(defaultCurve, speedRange.min, speedRange.max, defaultCurve));
@@ -1357,15 +1424,19 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   }, [dragIndex, handleDragStart, speedUnitSuffix]);
 
   return (
-    <div data-theme-section="curve-page" data-page-reveal="cards" className="relative space-y-4 px-1 pb-2">
+    <div
+      data-theme-section="curve-page"
+      data-page-reveal={initialFocusTarget === 'history-details' ? 'cards-reverse' : initialFocusTarget ? undefined : 'cards'}
+      className="relative space-y-4 px-1 pb-2"
+    >
         <motion.div
           data-theme-card="curve-header"
-          initial={{ opacity: 0, y: 8 }}
+          initial={initialFocusTarget ? false : { opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.2 }}
           className="relative px-1 py-1"
         >
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-3">
             <div className="flex items-center gap-2">
               <Spline className="h-4 w-4 text-primary" />
               <h2 className="text-base font-semibold text-foreground">{t('fanCurve.title')}</h2>
@@ -1373,19 +1444,73 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
               {isInteracting && <Badge variant="info">{t('fanCurve.badges.editing')}</Badge>}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <FanCurveProfileSelect
-                profiles={curveProfiles}
-                activeProfileId={activeProfileId}
-                onChange={switchProfile}
-                loading={profileOpLoading}
-              />
-              <ToggleSwitch enabled={config.autoControl} onChange={handleAutoControlChange} label={t('fanCurve.actions.smartControl')} size="sm" color="blue" />
-              <div className="flex items-center gap-2">
-                <Button variant="secondary" size="sm" onClick={resetCurve} icon={<RotateCw className="h-3.5 w-3.5" />}>
+            <div data-curve-profile-row className="flex min-w-0 items-center gap-3">
+              <div data-curve-profile-toolbar className="flex min-w-0 flex-1 items-center gap-1.5 rounded-xl border border-border/70 bg-card/70 p-1.5 shadow-sm shadow-black/5">
+                <div data-curve-profile-list className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto px-0.5 py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {curveProfiles.map((profile) => {
+                    const isActive = profile.id === activeProfileId;
+                    return (
+                      <div key={profile.id} className="group flex shrink-0 items-start gap-0">
+                        <button
+                          type="button"
+                          onClick={() => void switchProfile(profile.id)}
+                          disabled={profileOpLoading}
+                          className={clsx(
+                            'h-9 cursor-pointer truncate whitespace-nowrap rounded-full border px-4 text-center text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60',
+                            isActive
+                              ? 'border-primary/40 bg-primary/10 text-primary'
+                              : 'border-border/70 bg-background/55 text-muted-foreground hover:border-border hover:bg-muted/65 hover:text-foreground',
+                          )}
+                          aria-current={isActive ? 'true' : undefined}
+                        >
+                          {profile.name}
+                        </button>
+                        {curveProfiles.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPendingDeleteProfileId(profile.id);
+                              setDeleteProfileDialogOpen(true);
+                            }}
+                            disabled={profileOpLoading}
+                            className="-ml-px flex h-[13px] w-[13px] cursor-pointer items-center justify-center rounded-full border border-transparent bg-muted/60 text-muted-foreground/80 opacity-0 transition-colors group-hover:opacity-100 group-focus-within:opacity-100 hover:border-destructive/30 hover:bg-destructive/15 hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed"
+                            aria-label={t('fanCurve.profiles.deleteProfileLabel', { name: profile.name })}
+                            title={t('fanCurve.profiles.deleteProfileLabel', { name: profile.name })}
+                          >
+                            <X className="h-2 w-2" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="shrink-0 rounded-lg"
+                  onClick={() => setCreateProfileDialogOpen(true)}
+                  disabled={profileOpLoading}
+                  icon={<Plus className="h-3.5 w-3.5" />}
+                >
+                  {t('fanCurve.profiles.add')}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 rounded-lg"
+                  onClick={() => setManageProfilesDialogOpen(true)}
+                  disabled={profileOpLoading || curveProfiles.length === 0}
+                  icon={<Settings2 className="h-3.5 w-3.5" />}
+                >
+                  {t('fanCurve.profiles.manage')}
+                </Button>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                <ToggleSwitch enabled={config.autoControl} onChange={handleAutoControlChange} label={t('fanCurve.actions.smartControl')} size="sm" color="blue" />
+                <Button variant="secondary" size="sm" className="rounded-lg" onClick={resetCurve} icon={<RotateCw className="h-3.5 w-3.5" />}>
                   {t('fanCurve.actions.reset')}
                 </Button>
-                <Button variant="primary" size="sm" onClick={saveCurve} disabled={!hasUnsavedChanges} loading={isSaving} icon={<Check className="h-3.5 w-3.5" />}>
+                <Button variant="primary" size="sm" className="rounded-lg" onClick={saveCurve} disabled={!hasUnsavedChanges} loading={isSaving} icon={<Check className="h-3.5 w-3.5" />}>
                   {t('common.actions.save')}
                 </Button>
               </div>
@@ -1396,7 +1521,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
         <AnimatePresence>
           {!config.autoControl && isConnected && supportsManualGears && (
             <motion.div
-              initial={{ opacity: 0, height: 0 }}
+              initial={initialFocusTarget ? false : { opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden"
@@ -2004,100 +2129,206 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
           )}
         </section>
 
-        <section data-theme-card="curve-profiles" className="rounded-2xl border border-border/70 bg-card p-4 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">{t('fanCurve.profiles.title')}</span>
-            </div>
-          </div>
+        <Dialog open={createProfileDialogOpen} onOpenChange={setCreateProfileDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t('fanCurve.profiles.createTitle')}</DialogTitle>
+              <DialogDescription>{t('fanCurve.profiles.createDescription')}</DialogDescription>
+            </DialogHeader>
+            <Input
+              value={newProfileNameInput}
+              onChange={(event) => setNewProfileNameInput(trimProfileNameToLimit(event.target.value))}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !profileOpLoading) void createNewProfile();
+              }}
+              placeholder={t('fanCurve.profiles.newNamePlaceholder')}
+              className="h-10"
+              autoFocus
+            />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setCreateProfileDialogOpen(false)} disabled={profileOpLoading}>
+                {t('common.actions.cancel')}
+              </Button>
+              <Button type="button" onClick={() => void createNewProfile()} loading={profileOpLoading} icon={<Plus className="h-3.5 w-3.5" />}>
+                {t('fanCurve.profiles.createAction')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-          <div className="flex flex-wrap gap-2">
-            {curveProfiles.map((profile) => {
-              const isActive = profile.id === activeProfileId;
-              return (
-                <Button
-                  key={profile.id}
-                  variant={isActive ? 'primary' : 'outline'}
-                  size="sm"
-                  onClick={() => switchProfile(profile.id)}
-                  disabled={profileOpLoading}
-                >
-                  {profile.name}
-                </Button>
-              );
-            })}
-          </div>
+        <Dialog open={manageProfilesDialogOpen} onOpenChange={setManageProfilesDialogOpen}>
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>{t('fanCurve.profiles.manageTitle')}</DialogTitle>
+              <DialogDescription>{t('fanCurve.profiles.manageDescription')}</DialogDescription>
+            </DialogHeader>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="min-w-[220px] flex-1">
-              <Input
-                value={profileNameInput}
-                onChange={(e) => handleProfileNameInputChange(e.target.value, Boolean((e.nativeEvent as InputEvent).isComposing))}
-                onCompositionStart={handleProfileNameCompositionStart}
-                onCompositionEnd={(e) => handleProfileNameCompositionEnd(e.currentTarget.value)}
-                placeholder={t('fanCurve.profiles.namePlaceholder')}
-                className="h-10"
-              />
-            </div>
-            <Button variant="secondary" size="sm" onClick={saveCurrentProfileName} loading={profileOpLoading} icon={<Check className="h-3.5 w-3.5" />}>{t('fanCurve.profiles.saveName')}</Button>
-            <Button variant="secondary" size="sm" onClick={createNewProfile} loading={profileOpLoading} icon={<Plus className="h-3.5 w-3.5" />}>{t('fanCurve.profiles.saveAsNew')}</Button>
-            <Button variant="danger" size="sm" onClick={removeActiveProfile} loading={profileOpLoading} icon={<Trash2 className="h-3.5 w-3.5" />} disabled={curveProfiles.length <= 1}>{t('fanCurve.profiles.deleteCurrent')}</Button>
-          </div>
-        </section>
-
-        <section data-theme-card="curve-import-export" className="rounded-2xl border border-border/70 bg-card p-4 space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-sm font-medium">{t('fanCurve.importExport.title')}</span>
-            <span className="text-xs text-muted-foreground">{t('fanCurve.importExport.description')}</span>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div className="space-y-2 rounded-xl border border-border/70 bg-background/30 p-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">{t('fanCurve.importExport.exportTitle')}</span>
-                <div className="flex items-center gap-2">
-                  <Button variant="secondary" size="sm" onClick={exportProfiles} icon={<Download className="h-3.5 w-3.5" />}>{t('fanCurve.importExport.generate')}</Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={async () => {
-                      if (!exportCode) return;
-                      if (navigator?.clipboard?.writeText) {
-                        await navigator.clipboard.writeText(exportCode);
-                        toast.success(t('fanCurve.toast.exportCopiedAgain'));
-                      }
-                    }}
-                    icon={<Clipboard className="h-3.5 w-3.5" />}
-                    disabled={!exportCode}
-                  >
-                    {t('common.actions.copy')}
+            <div className="space-y-5">
+              <section className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground" htmlFor="curve-profile-name">
+                  {t('fanCurve.profiles.renameLabel')}
+                </label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    id="curve-profile-name"
+                    value={profileNameInput}
+                    onChange={(e) => handleProfileNameInputChange(e.target.value, Boolean((e.nativeEvent as InputEvent).isComposing))}
+                    onCompositionStart={handleProfileNameCompositionStart}
+                    onCompositionEnd={(e) => handleProfileNameCompositionEnd(e.currentTarget.value)}
+                    placeholder={t('fanCurve.profiles.namePlaceholder')}
+                    className="h-10 min-w-[220px] flex-1"
+                  />
+                  <Button variant="secondary" size="sm" onClick={() => void saveCurrentProfileName()} loading={profileOpLoading} icon={<Pencil className="h-3.5 w-3.5" />}>
+                    {t('fanCurve.profiles.saveName')}
                   </Button>
                 </div>
-              </div>
-              <textarea
-                value={exportCode}
-                readOnly
-                rows={3}
-                className="w-full rounded-lg border border-border/70 bg-background px-3 py-2 text-xs leading-relaxed"
-                placeholder={t('fanCurve.importExport.exportPlaceholder')}
-              />
-            </div>
+              </section>
 
-            <div className="space-y-2 rounded-xl border border-border/70 bg-background/30 p-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">{t('fanCurve.importExport.importTitle')}</span>
-                <Button variant="secondary" size="sm" onClick={importProfiles} loading={profileOpLoading} icon={<Upload className="h-3.5 w-3.5" />}>{t('common.actions.import')}</Button>
-              </div>
-              <textarea
-                value={importCode}
-                onChange={(e) => setImportCode(e.target.value)}
-                rows={3}
-                className="w-full rounded-lg border border-border/70 bg-background px-3 py-2 text-xs leading-relaxed"
-                placeholder={t('fanCurve.importExport.importPlaceholder')}
-              />
+              <section data-profile-transfer className="space-y-3 border-t border-border/70 pt-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-medium">{t('fanCurve.importExport.title')}</span>
+                  <span className="text-xs text-muted-foreground">{t('fanCurve.importExport.description')}</span>
+                </div>
+                <div className="space-y-3">
+                  <div data-profile-export-section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border/70 bg-background/30 p-4">
+                    <div className="min-w-[220px] flex-1">
+                      <span className="text-xs font-medium text-muted-foreground">{t('fanCurve.importExport.exportTitle')}</span>
+                      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{t('fanCurve.importExport.exportHint')}</p>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <Button variant="secondary" size="sm" onClick={() => void exportProfiles('clipboard')} icon={<Clipboard className="h-3.5 w-3.5" />}>
+                        {t('fanCurve.importExport.copyCode')}
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => void exportProfiles('file')} icon={<Upload className="h-3.5 w-3.5" />}>
+                        {t('fanCurve.importExport.exportFile')}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div
+                    data-profile-import-section
+                    onDragEnter={(event) => { event.preventDefault(); setIsImportDragging(true); }}
+                    onDragOver={(event) => { event.preventDefault(); setIsImportDragging(true); }}
+                    onDragLeave={() => setIsImportDragging(false)}
+                    onDrop={handleProfileFileDrop}
+                    className={clsx(
+                      'space-y-3 rounded-xl border border-border/70 bg-background/30 p-4 transition-colors',
+                      isImportDragging && 'border-primary bg-primary/5',
+                    )}
+                  >
+                    <input
+                      ref={profileFileInputRef}
+                      type="file"
+                      accept=".fcurve,.fancontrolcurve,.b2curve,.txt,text/plain"
+                      className="hidden"
+                      onChange={(event) => {
+                        void loadProfileImportFile(event.target.files?.[0]);
+                        event.target.value = '';
+                      }}
+                    />
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-muted-foreground">{t('fanCurve.importExport.importTitle')}</span>
+                      <Button variant="outline" size="sm" onClick={() => profileFileInputRef.current?.click()} icon={<Download className="h-3.5 w-3.5" />}>
+                        {t('fanCurve.importExport.chooseFile')}
+                      </Button>
+                    </div>
+                    <textarea
+                      value={importCode}
+                      onChange={(e) => setImportCode(e.target.value)}
+                      rows={3}
+                      className="w-full resize-none rounded-lg border border-border/70 bg-background px-3 py-2 text-xs leading-relaxed"
+                      placeholder={t('fanCurve.importExport.importPlaceholder')}
+                    />
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[11px] text-muted-foreground">{t('fanCurve.importExport.dropHint')}</span>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          if (!importCode.trim()) {
+                            toast.error(t('fanCurve.toast.importMissingCode'));
+                            return;
+                          }
+                          void importProfiles();
+                        }}
+                        loading={profileOpLoading}
+                        icon={<Download className="h-3.5 w-3.5" />}
+                      >
+                        {t('fanCurve.importExport.importAction')}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </section>
             </div>
-          </div>
-        </section>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={profileSwitchDialogOpen}
+          onOpenChange={(open) => {
+            setProfileSwitchDialogOpen(open);
+            if (!open) setPendingProfileId('');
+          }}
+        >
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t('fanCurve.profiles.unsavedSwitchTitle')}</DialogTitle>
+              <DialogDescription>{t('fanCurve.profiles.unsavedSwitchDescription')}</DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="sm:justify-between">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setProfileSwitchDialogOpen(false);
+                  setPendingProfileId('');
+                }}
+                disabled={isSaving || profileOpLoading}
+              >
+                {t('common.actions.cancel')}
+              </Button>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button type="button" variant="secondary" onClick={() => void confirmProfileSwitch('discard')} disabled={isSaving || profileOpLoading}>
+                  {t('fanCurve.profiles.discardAndSwitch')}
+                </Button>
+                <Button type="button" onClick={() => void confirmProfileSwitch('save')} loading={isSaving || profileOpLoading} icon={<Check className="h-3.5 w-3.5" />}>
+                  {t('fanCurve.profiles.saveAndSwitch')}
+                </Button>
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={deleteProfileDialogOpen}
+          onOpenChange={(open) => {
+            setDeleteProfileDialogOpen(open);
+            if (!open) setPendingDeleteProfileId('');
+          }}
+        >
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t('fanCurve.profiles.deleteConfirmTitle')}</DialogTitle>
+              <DialogDescription>
+                {t(
+                  hasUnsavedChanges && pendingDeleteProfileId === activeProfileId
+                    ? 'fanCurve.profiles.deleteUnsavedDescription'
+                    : 'fanCurve.profiles.deleteDescription',
+                  { name: pendingDeleteProfile?.name || '' },
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setDeleteProfileDialogOpen(false)} disabled={profileOpLoading}>
+                {t('common.actions.cancel')}
+              </Button>
+              <Button type="button" variant="danger" onClick={() => void removeProfile()} loading={profileOpLoading} icon={<Trash2 className="h-3.5 w-3.5" />}>
+                {t('common.actions.delete')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
       </div>
   );

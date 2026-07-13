@@ -119,7 +119,7 @@ export default function Home() {
             onConnect={connectDevice}
             onDisconnect={disconnectDevice}
             onConfigChange={setConfig}
-            onOpenCurveEditor={() => openCurveTab('curve-editor')}
+            onOpenCurveEditor={() => setActiveTab('curve')}
             onOpenHistoryDetails={() => openCurveTab('history-details')}
             diagnosticsExporting={diagnosticsExporting}
             onExportDiagnostics={exportDiagnostics}

@@ -459,7 +459,8 @@ html[data-window-blur="on"]:not([data-theme]) {
   }
 }
 
-[data-page-reveal="cards"] > * {
+[data-page-reveal="cards"] > *,
+[data-page-reveal="cards-reverse"] > * {
   animation: glacier-page-card-fade 0.285s ease-out both;
 }
 
@@ -479,8 +480,33 @@ html[data-window-blur="on"]:not([data-theme]) {
   animation-delay: 0.32s;
 }
 
+[data-page-reveal="cards-reverse"] > :nth-last-child(2) {
+  animation-delay: 0.06s;
+}
+
+[data-page-reveal="cards-reverse"] > :nth-last-child(3) {
+  animation-delay: 0.12s;
+}
+
+[data-page-reveal="cards-reverse"] > :nth-last-child(4) {
+  animation-delay: 0.18s;
+}
+
+[data-page-reveal="cards-reverse"] > :nth-last-child(5) {
+  animation-delay: 0.24s;
+}
+
+[data-page-reveal="cards-reverse"] > :nth-last-child(6) {
+  animation-delay: 0.3s;
+}
+
+[data-page-reveal="cards-reverse"] > :nth-last-child(7) {
+  animation-delay: 0.36s;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  [data-page-reveal="cards"] > * {
+  [data-page-reveal="cards"] > *,
+  [data-page-reveal="cards-reverse"] > * {
     animation: none;
   }
 }
@@ -730,6 +756,11 @@ html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="c
   isolation: isolate;
   background-clip: padding-box;
   clip-path: inset(0 round var(--theme-curve-editor-radius, var(--theme-card-radius)));
+}
+
+.glacier-shell [data-theme-card="curve-history"] [data-theme-ui="switch"],
+.glacier-shell [data-theme-card="curve-history"] [data-theme-ui="switch-thumb"] {
+  transition: none;
 }
 
 [data-slot="dialog-overlay"] {

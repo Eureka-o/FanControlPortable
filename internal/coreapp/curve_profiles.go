@@ -268,13 +268,19 @@ func (a *CoreApp) ImportFanCurveProfiles(code string) error {
 	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
-	cfg.FanCurveProfiles = curveprofiles.CloneProfiles(profiles)
-	cfg.ActiveFanCurveProfileID = activeID
 	unit := a.activeDeviceSpeedUnit(&cfg)
-	if curveprofiles.NormalizeConfigForUnit(&cfg, unit) {
-		// normalized in place
+	runtimeDeviceKey := a.activeDeviceCurveScopeKey(cfg)
+	curveprofiles.NormalizeConfigForUnit(&cfg, unit)
+	storeSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey)
+
+	merged, importedActiveID := curveprofiles.AppendImportedProfiles(cfg.FanCurveProfiles, profiles, activeID)
+	if importedActiveID == "" {
+		return fmt.Errorf("导入数据中没有可用的曲线方案")
 	}
-	syncSmartControlOffsetsForDeviceKey(&cfg, a.activeDeviceCurveScopeKey(cfg))
+	cfg.FanCurveProfiles = merged
+	cfg.ActiveFanCurveProfileID = importedActiveID
+	curveprofiles.NormalizeConfigForUnit(&cfg, unit)
+	syncSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey)
 
 	return a.applyCurveProfilesConfig(cfg)
 }
