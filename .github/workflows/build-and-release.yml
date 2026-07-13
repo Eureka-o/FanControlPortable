@@ -237,6 +237,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-bun-
 
+      - name: Install and test frontend
+        shell: pwsh
+        working-directory: frontend
+        run: |
+          bun install --frozen-lockfile
+          node --test tests/*.test.mjs
+
       - name: Build TempBridge
         shell: cmd
         run: build_bridge.bat
