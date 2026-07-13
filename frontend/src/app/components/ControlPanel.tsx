@@ -3,8 +3,13 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
+  Cpu,
+  Gpu,
+  Radio,
   Settings,
+  Thermometer,
   TriangleAlert,
+  Zap,
 } from 'lucide-react';
 import { apiService } from '../services/api';
 import { types } from '../../../wailsjs/go/models';
@@ -46,6 +51,8 @@ interface ControlPanelProps {
   onDeviceContextRefresh?: () => Promise<unknown>;
 }
 
+type SettingsTab = 'device' | 'fan' | 'system';
+
 const SMART_START_STOP_OPTIONS = [
   { value: 'off', labelKey: 'controlPanel.options.smartStartStop.off.label', descriptionKey: 'controlPanel.options.smartStartStop.off.description' },
   { value: 'immediate', labelKey: 'controlPanel.options.smartStartStop.immediate.label', descriptionKey: 'controlPanel.options.smartStartStop.immediate.description' },
@@ -55,6 +62,18 @@ const WIFI_SMART_START_STOP_STANDBY_SPEED_OPTIONS = [1, 2, 5, 10, 15, 20];
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function formatOverviewTemperature(value?: number, unavailable = false) {
+  return !unavailable && Number.isFinite(value) && Number(value) > 0
+    ? `${Math.round(Number(value))}\u00b0C`
+    : '--';
+}
+
+function formatOverviewPower(value?: number, unavailable = false) {
+  const watts = Number(value || 0);
+  if (unavailable || !Number.isFinite(watts) || watts <= 0) return '--';
+  return `${watts < 10 ? Math.round(watts * 10) / 10 : Math.round(watts)} W`;
 }
 
 export default function ControlPanel({
@@ -70,6 +89,7 @@ export default function ControlPanel({
   const { t } = useTranslation();
   const { locale } = useLocale();
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
+  const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('device');
   const overviewRuntimeProfile = isConnected ? runtimeDeviceProfile : null;
   const overviewSpeedUnit = getFanSpeedUnit(fanData as any, config as any, overviewRuntimeProfile as any);
   const overviewSpeedLabel = fanSpeedUnitLabel(overviewSpeedUnit);
@@ -156,10 +176,27 @@ export default function ControlPanel({
 
   const gpuReadState = (((temperature as any)?.gpuReadState as string) || 'unknown');
   const gpuNotPolled = gpuReadState === 'notPolled';
-  const cpuOverviewTemperature = temperature?.cpuTemp && temperature.cpuTemp > 0 ? `${temperature.cpuTemp}\u00b0C` : '--';
-  const gpuOverviewTemperature = gpuNotPolled
-    ? t('controlPanel.fan.gpuNotReadShort')
-    : (temperature?.gpuTemp && temperature.gpuTemp > 0 ? `${temperature.gpuTemp}\u00b0C` : '--');
+  const overviewThermals = [
+    {
+      id: 'cpu',
+      label: 'CPU',
+      Icon: Cpu,
+      temperatureValue: formatOverviewTemperature(temperature?.cpuTemp),
+      powerValue: formatOverviewPower(temperature?.cpuPowerWatts),
+    },
+    {
+      id: 'gpu',
+      label: 'GPU',
+      Icon: Gpu,
+      temperatureValue: formatOverviewTemperature(temperature?.gpuTemp, gpuNotPolled),
+      powerValue: formatOverviewPower(temperature?.gpuPowerWatts, gpuNotPolled),
+    },
+  ];
+  const settingsTabs: Array<{ id: SettingsTab; label: string }> = [
+    { id: 'device', label: t('controlPanel.device.sectionTitle') },
+    { id: 'fan', label: t('controlPanel.fan.sectionTitle') },
+    { id: 'system', label: t('controlPanel.system.sectionTitle') },
+  ];
   const smartStartStopOptions = useMemo(
     () => SMART_START_STOP_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey), description: t(item.descriptionKey) })),
     [locale, t],
@@ -301,82 +338,162 @@ export default function ControlPanel({
             <Settings className="h-4 w-4 text-muted-foreground" />
             <h3 className="text-base font-semibold text-foreground">{t('controlPanel.overview.title')}</h3>
           </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div data-theme-card="settings-overview-temperature" className="rounded-xl border border-border/70 bg-muted/30 p-4 text-center">
-              <div className="text-sm text-muted-foreground">{t('controlPanel.overview.currentTemperature')}</div>
-              <div className={clsx(
-                'mt-1 text-2xl font-semibold tabular-nums',
-                (temperature?.maxTemp ?? 0) > 80 ? 'text-red-500' : (temperature?.maxTemp ?? 0) > 70 ? 'text-amber-500' : 'text-primary'
-              )}>
-                {temperature?.maxTemp ?? '--'}°C
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(220px,0.8fr)]">
+            <div data-theme-card="settings-overview-temperature" className="divide-y divide-border/55 rounded-xl border border-border/70 bg-muted/30 px-4">
+              {overviewThermals.map(({ id, label, Icon, temperatureValue, powerValue }) => (
+                <div key={id} className="flex min-w-0 items-center gap-3 py-4">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-background/65 text-muted-foreground shadow-inner shadow-white/15">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-base font-semibold text-foreground">{label}</div>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Thermometer className="h-3.5 w-3.5" />
+                        {t('controlPanel.overview.temperatureMetric')}
+                        <span className="font-semibold tabular-nums text-foreground">{temperatureValue}</span>
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Zap className="h-3.5 w-3.5" />
+                        {t('controlPanel.overview.powerMetric')}
+                        <span className="font-semibold tabular-nums text-foreground">{powerValue}</span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div data-theme-card="settings-overview-device" className="flex min-h-[11rem] flex-col rounded-xl border border-border/70 bg-muted/30 p-4">
+              <div className="flex min-w-0 items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-background/65 text-muted-foreground shadow-inner shadow-white/15">
+                  <Radio className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-base font-semibold text-foreground">{overviewConnectionName}</div>
+                  <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                    <span className={clsx('h-2 w-2 shrink-0 rounded-full', isConnected ? 'bg-emerald-500' : 'bg-muted-foreground/45')} />
+                    <span className="truncate">{overviewConnectionDetail}</span>
+                  </div>
+                </div>
               </div>
-              <div className="mt-1 text-xs text-muted-foreground">{t('controlPanel.overview.cpuGpuTemperatureFormatted', { cpu: cpuOverviewTemperature, gpu: gpuOverviewTemperature })}</div>
-            </div>
-            <div data-theme-card="settings-overview-speed" className="rounded-xl border border-border/70 bg-muted/30 p-4 text-center">
-              <div className="text-sm text-muted-foreground">{t('controlPanel.overview.currentRpm')}</div>
-              <div className="mt-1 text-2xl font-semibold tabular-nums text-primary">{overviewFanSpeed ?? '--'}{overviewSpeedLabel}</div>
-              <div className="mt-1 text-xs text-muted-foreground">{config.autoControl ? t('appShell.status.smartControl') : t('appShell.status.manualMode')}</div>
-            </div>
-            <div data-theme-card="settings-overview-device" className="rounded-xl border border-border/70 bg-muted/30 p-4 text-center">
-              <div className="text-sm text-muted-foreground">{t('controlPanel.system.deviceConnection.overviewLabel')}</div>
-              <div className="mx-auto mt-1 max-w-full truncate text-2xl font-semibold text-primary">{overviewConnectionName}</div>
-              <div className="mx-auto mt-1 max-w-full truncate text-xs text-muted-foreground">{overviewConnectionDetail}</div>
+
+              <div className="mt-auto grid grid-cols-2 gap-4 border-t border-border/55 pt-4">
+                <div className="min-w-0">
+                  <div className="text-xs text-muted-foreground">{t('controlPanel.overview.currentRpm')}</div>
+                  <div className="mt-1 truncate text-lg font-semibold tabular-nums text-foreground">{overviewFanSpeed ?? '--'}{overviewSpeedLabel}</div>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs text-muted-foreground">{t('controlPanel.overview.controlModeMetric')}</div>
+                  <div className="mt-1 truncate text-sm font-semibold text-foreground">
+                    {config.autoControl ? t('appShell.status.smartControl') : t('appShell.status.manualMode')}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
-        <DeviceFeaturePanel
-          config={config}
-          isConnected={isConnected}
-          refreshing={deviceContextRefreshing}
-          deviceProfile={effectiveDeviceProfile || null}
-          loadingStates={loadingStates}
-          supportsGearLight={currentDeviceSupportsGearLight}
-          supportsPowerOnStart={currentDeviceSupportsPowerOnStart}
-          supportsSmartStartStop={currentDeviceSupportsSmartStartStop}
-          supportsWiFiSmartStartStopStandbySpeed={currentDeviceSupportsWiFiSmartStartStopStandbySpeed}
-          supportsScreen={currentDeviceSupportsScreen}
-          smartStartStopOptions={smartStartStopOptions}
-          wifiSmartStartStopStandbySpeedOptions={wifiSmartStartStopStandbySpeedOptions}
-          onGearLightChange={handleGearLightChange}
-          onPowerOnStartChange={handlePowerOnStartChange}
-          onSmartStartStopChange={handleSmartStartStopChange}
-          onWiFiSmartStartStopStandbySpeedChange={handleWiFiSmartStartStopStandbySpeedChange}
-          lightingControls={currentDeviceSupportsLighting ? (
-            <DeviceLightingControls
-              config={config}
-              onConfigChange={onConfigChange}
-              isConnected={isConnected}
-              supportsBrightness={currentDeviceSupportsBrightness}
-            />
-          ) : undefined}
-        />
+        <div
+          data-theme-ui="settings-tabs"
+          role="tablist"
+          aria-label={t('controlPanel.system.sectionTitle')}
+          className="grid grid-cols-3 gap-1 rounded-[18px] border border-border/70 bg-card/92 p-1.5 shadow-sm shadow-black/5 backdrop-blur-xl"
+        >
+          {settingsTabs.map(({ id, label }) => (
+            <button
+              key={id}
+              id={`settings-tab-${id}`}
+              type="button"
+              role="tab"
+              aria-selected={activeSettingsTab === id}
+              aria-controls={`settings-panel-${id}`}
+              onClick={() => setActiveSettingsTab(id)}
+              className={clsx(
+                'min-w-0 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors duration-150',
+                activeSettingsTab === id
+                  ? 'bg-background text-foreground shadow-sm ring-1 ring-border/55'
+                  : 'text-muted-foreground hover:bg-muted/45 hover:text-foreground',
+              )}
+            >
+              <span className="block truncate">{label}</span>
+            </button>
+          ))}
+        </div>
 
-        <FanControlSection
-          config={config}
-          onConfigChange={onConfigChange}
-          isConnected={isConnected}
-          fanData={fanData}
-          temperature={temperature}
-          runtimeDeviceProfile={effectiveDeviceProfile || null}
-          supportsCustomSpeed={currentDeviceSupportsCustomSpeed}
-          supportsManualGears={currentDeviceSupportsManualGears}
-          configuredDeviceCurveKey={configuredDeviceCurveKey}
-        />
+        <div
+          id="settings-panel-device"
+          role="tabpanel"
+          aria-labelledby="settings-tab-device"
+          hidden={activeSettingsTab !== 'device'}
+        >
+          <DeviceFeaturePanel
+            config={config}
+            isConnected={isConnected}
+            refreshing={deviceContextRefreshing}
+            deviceProfile={effectiveDeviceProfile || null}
+            loadingStates={loadingStates}
+            supportsGearLight={currentDeviceSupportsGearLight}
+            supportsPowerOnStart={currentDeviceSupportsPowerOnStart}
+            supportsSmartStartStop={currentDeviceSupportsSmartStartStop}
+            supportsWiFiSmartStartStopStandbySpeed={currentDeviceSupportsWiFiSmartStartStopStandbySpeed}
+            supportsScreen={currentDeviceSupportsScreen}
+            smartStartStopOptions={smartStartStopOptions}
+            wifiSmartStartStopStandbySpeedOptions={wifiSmartStartStopStandbySpeedOptions}
+            onGearLightChange={handleGearLightChange}
+            onPowerOnStartChange={handlePowerOnStartChange}
+            onSmartStartStopChange={handleSmartStartStopChange}
+            onWiFiSmartStartStopStandbySpeedChange={handleWiFiSmartStartStopStandbySpeedChange}
+            lightingControls={currentDeviceSupportsLighting ? (
+              <DeviceLightingControls
+                config={config}
+                onConfigChange={onConfigChange}
+                isConnected={isConnected}
+                supportsBrightness={currentDeviceSupportsBrightness}
+              />
+            ) : undefined}
+          />
+        </div>
 
-        <SystemSettingsSection
-          config={config}
-          availableDeviceProfiles={availableDeviceProfiles}
-          activeDeviceProfileId={activeDeviceProfileId}
-          activeDeviceProfileIdsByTransport={activeDeviceProfileIdsByTransport}
-          connectedDeviceProfile={connectedDeviceProfile}
-          connectedDeviceTransport={connectedDeviceTransport}
-          onConfigChange={onConfigChange}
-          onActiveDeviceProfileIdChange={setActiveDeviceProfileId}
-          refreshDeviceConfig={refreshDeviceConfig}
-          loadDeviceProfiles={loadDeviceProfiles}
-          refreshConnectedDeviceContext={refreshConnectedDeviceContext}
-        />
+        <div
+          id="settings-panel-fan"
+          role="tabpanel"
+          aria-labelledby="settings-tab-fan"
+          hidden={activeSettingsTab !== 'fan'}
+        >
+          <FanControlSection
+            config={config}
+            onConfigChange={onConfigChange}
+            isConnected={isConnected}
+            fanData={fanData}
+            temperature={temperature}
+            runtimeDeviceProfile={effectiveDeviceProfile || null}
+            supportsCustomSpeed={currentDeviceSupportsCustomSpeed}
+            supportsManualGears={currentDeviceSupportsManualGears}
+            configuredDeviceCurveKey={configuredDeviceCurveKey}
+          />
+        </div>
+
+        <div
+          id="settings-panel-system"
+          role="tabpanel"
+          aria-labelledby="settings-tab-system"
+          hidden={activeSettingsTab !== 'system'}
+        >
+          <SystemSettingsSection
+            config={config}
+            availableDeviceProfiles={availableDeviceProfiles}
+            activeDeviceProfileId={activeDeviceProfileId}
+            activeDeviceProfileIdsByTransport={activeDeviceProfileIdsByTransport}
+            connectedDeviceProfile={connectedDeviceProfile}
+            connectedDeviceTransport={connectedDeviceTransport}
+            onConfigChange={onConfigChange}
+            onActiveDeviceProfileIdChange={setActiveDeviceProfileId}
+            refreshDeviceConfig={refreshDeviceConfig}
+            loadDeviceProfiles={loadDeviceProfiles}
+            refreshConnectedDeviceContext={refreshConnectedDeviceContext}
+          />
+        </div>
         {!isConnected && (
           <div data-theme-card="settings-offline-tip" className="flex items-center gap-2 rounded-xl border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
             <TriangleAlert className="h-4 w-4 shrink-0" />
