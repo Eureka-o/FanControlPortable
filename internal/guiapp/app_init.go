@@ -2,8 +2,12 @@ package guiapp
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/TIANLI0/THRM/internal/appmeta"
+	"github.com/TIANLI0/THRM/internal/config"
 	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/TIANLI0/THRM/internal/theme"
 	"github.com/TIANLI0/THRM/internal/types"
@@ -30,6 +34,13 @@ func (a *App) Startup(ctx context.Context) {
 	}
 
 	guiLogger.Infof("=== %s GUI 启动 ===", appmeta.AppName)
+	if err := cleanupStaleUpdateArtifacts(
+		filepath.Join(os.TempDir(), "FanControl-update"),
+		updateDownloadDirectory(config.GetInstallDir()),
+		time.Now().Add(-7*24*time.Hour),
+	); err != nil {
+		guiLogger.Warnf("clean stale update files failed: %v", err)
+	}
 
 	if err := a.ensureIPCConnected(); err != nil {
 		guiLogger.Error("核心服务不可用，GUI 将进入受限状态")

@@ -3,6 +3,7 @@ package guiapp
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,7 +23,7 @@ import (
 const (
 	updateInstallerName    = "FanControl-amd64-installer.exe"
 	updateProgressEvent    = "update-download-progress"
-	updateDownloadTimeout  = 10 * time.Minute
+	updateResponseTimeout  = 30 * time.Second
 	updateMetadataTimeout  = 12 * time.Second
 	updateMaxDownloadSize  = 256 * 1024 * 1024
 	updateMaxMetadataSize  = 4 * 1024 * 1024
@@ -161,11 +162,12 @@ type updateProgress struct {
 }
 
 type UpdateRelease struct {
-	TagName      string `json:"tag_name"`
-	HTMLURL      string `json:"html_url"`
-	Body         string `json:"body"`
-	Prerelease   bool   `json:"prerelease"`
-	InstallerURL string `json:"installer_url"`
+	TagName         string `json:"tag_name"`
+	HTMLURL         string `json:"html_url"`
+	Body            string `json:"body"`
+	Prerelease      bool   `json:"prerelease"`
+	InstallerURL    string `json:"installer_url"`
+	InstallerSHA256 string `json:"installer_sha256"`
 }
 
 type githubRelease struct {
@@ -177,6 +179,7 @@ type githubRelease struct {
 	Assets     []struct {
 		Name        string `json:"name"`
 		DownloadURL string `json:"browser_download_url"`
+		Digest      string `json:"digest"`
 	} `json:"assets"`
 }
 
@@ -194,7 +197,7 @@ func (a *App) CheckLatestRelease(channel string) (UpdateRelease, error) {
 
 	var lastErr error
 	for attempt := 1; attempt <= 2; attempt++ {
-		release, err := checkLatestRelease(ctx, newUpdateHTTPClient(updateMetadataTimeout, shouldBypassUpdateProxy(attempt, 2)), channel, updateStableReleaseAPI, updateReleaseListAPI)
+		release, err := checkLatestRelease(ctx, newUpdateHTTPClient(updateMetadataTimeout, updateMetadataTimeout, shouldBypassUpdateProxy(attempt, 2)), channel, updateStableReleaseAPI, updateReleaseListAPI)
 		if err == nil {
 			return release, nil
 		}
@@ -238,6 +241,69 @@ func cleanupPartialDownload(partPath string) error {
 	var errs []error
 	for _, path := range []string{partPath, partialDownloadMetadataPath(partPath)} {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func cleanupSupersededPartialDownloads(updateDir, keepPartPath string) error {
+	entries, err := os.ReadDir(updateDir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	keepMetadataPath := partialDownloadMetadataPath(keepPartPath)
+	var errs []error
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasPrefix(name, "download-") ||
+			(!strings.HasSuffix(name, ".part") && !strings.HasSuffix(name, ".part.json")) {
+			continue
+		}
+		path := filepath.Join(updateDir, name)
+		if path == keepPartPath || path == keepMetadataPath {
+			continue
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func cleanupStaleUpdateArtifacts(legacyDir, updateDir string, cutoff time.Time) error {
+	var errs []error
+	if err := os.RemoveAll(legacyDir); err != nil {
+		errs = append(errs, err)
+	}
+
+	entries, err := os.ReadDir(updateDir)
+	if os.IsNotExist(err) {
+		return errors.Join(errs...)
+	}
+	if err != nil {
+		return errors.Join(append(errs, err)...)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		knownPart := strings.HasPrefix(name, "download-") &&
+			(strings.HasSuffix(name, ".part") || strings.HasSuffix(name, ".part.json"))
+		if entry.IsDir() || (!knownPart && name != updateInstallerName && !strings.EqualFold(name, "run-update.bat")) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if !info.ModTime().Before(cutoff) {
+			continue
+		}
+		if err := os.Remove(filepath.Join(updateDir, name)); err != nil && !os.IsNotExist(err) {
 			errs = append(errs, err)
 		}
 	}
@@ -371,7 +437,12 @@ func checkLatestRelease(ctx context.Context, client *http.Client, channel, stabl
 	for _, asset := range release.Assets {
 		name := strings.ToLower(strings.TrimSpace(asset.Name))
 		if strings.HasPrefix(name, "fancontrol-") && strings.HasSuffix(name, "-amd64-installer.exe") {
+			digest, err := normalizeSHA256Digest(asset.Digest)
+			if err != nil {
+				return UpdateRelease{}, fmt.Errorf("invalid installer digest: %w", err)
+			}
 			result.InstallerURL = asset.DownloadURL
+			result.InstallerSHA256 = digest
 			break
 		}
 	}
@@ -380,7 +451,7 @@ func checkLatestRelease(ctx context.Context, client *http.Client, channel, stabl
 
 // DownloadAndInstallUpdate downloads and validates the release first, then
 // starts the CMD installer after the GUI exits.
-func (a *App) DownloadAndInstallUpdate(downloadURL, windowTitle, windowBody, windowRestarting string) error {
+func (a *App) DownloadAndInstallUpdate(downloadURL, windowTitle, windowBody, windowRestarting, expectedSHA256 string) error {
 	if strings.TrimSpace(windowTitle) == "" {
 		windowTitle = "FanControl is updating"
 	}
@@ -392,6 +463,11 @@ func (a *App) DownloadAndInstallUpdate(downloadURL, windowTitle, windowBody, win
 	}
 
 	parsed, err := validateReleaseAssetURL(downloadURL)
+	if err != nil {
+		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: err.Error()})
+		return err
+	}
+	expectedSHA256, err = normalizeSHA256Digest(expectedSHA256)
 	if err != nil {
 		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: err.Error()})
 		return err
@@ -409,7 +485,7 @@ func (a *App) DownloadAndInstallUpdate(downloadURL, windowTitle, windowBody, win
 	}
 	installerPath := filepath.Join(updateDir, updateInstallerName)
 
-	installerPath, err = a.downloadUpdateInstaller(parsed.String(), updateDir, control)
+	installerPath, err = a.downloadUpdateInstaller(parsed.String(), updateDir, expectedSHA256, control)
 	if err != nil {
 		if errors.Is(err, errUpdateCanceled) {
 			_ = cleanupPartialDownload(updatePartPath(updateDir, parsed.String()))
@@ -471,8 +547,9 @@ func validateReleaseAssetURL(raw string) (*url.URL, error) {
 	return parsed, nil
 }
 
-func newUpdateHTTPClient(timeout time.Duration, bypassProxy bool) *http.Client {
+func newUpdateHTTPClient(timeout, responseHeaderTimeout time.Duration, bypassProxy bool) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = responseHeaderTimeout
 	if bypassProxy {
 		transport.Proxy = nil
 	} else {
@@ -545,18 +622,21 @@ func parseWindowsProxyServer(value, requestScheme string) (*url.URL, error) {
 	return proxyURL, nil
 }
 
-func (a *App) downloadUpdateInstaller(downloadURL, updateDir string, control *updateDownloadControl) (string, error) {
+func (a *App) downloadUpdateInstaller(downloadURL, updateDir, expectedSHA256 string, control *updateDownloadControl) (string, error) {
 	target := filepath.Join(updateDir, updateInstallerName)
 	partPath := updatePartPath(updateDir, downloadURL)
+	if err := cleanupSupersededPartialDownloads(updateDir, partPath); err != nil {
+		guiLogger.Warnf("clean superseded update downloads failed: %v", err)
+	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), updateDownloadTimeout)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	control.setCancel(cancel)
 	lastPercent := -1
 	err := downloadWithRetryControlled(
 		ctx,
 		func(attempt int) *http.Client {
-			return newUpdateHTTPClient(updateDownloadTimeout, shouldBypassUpdateProxy(attempt, updateDownloadAttempts))
+			return newUpdateHTTPClient(0, updateResponseTimeout, shouldBypassUpdateProxy(attempt, updateDownloadAttempts))
 		},
 		downloadURL,
 		partPath,
@@ -580,7 +660,8 @@ func (a *App) downloadUpdateInstaller(downloadURL, updateDir string, control *up
 	if err != nil {
 		return "", fmt.Errorf("download failed after %d attempts: %w", updateDownloadAttempts, err)
 	}
-	if err := validateInstallerFile(partPath); err != nil {
+	if err := validateInstallerFile(partPath, expectedSHA256); err != nil {
+		_ = cleanupPartialDownload(partPath)
 		return "", err
 	}
 	_ = os.Remove(target)
@@ -847,7 +928,25 @@ func waitForUpdateRetry(ctx context.Context, duration time.Duration) error {
 	}
 }
 
-func validateInstallerFile(path string) error {
+func normalizeSHA256Digest(digest string) (string, error) {
+	digest = strings.TrimSpace(digest)
+	if digest == "" {
+		return "", nil
+	}
+	if algorithm, value, ok := strings.Cut(digest, ":"); ok {
+		if !strings.EqualFold(strings.TrimSpace(algorithm), "sha256") {
+			return "", fmt.Errorf("unsupported digest algorithm")
+		}
+		digest = strings.TrimSpace(value)
+	}
+	decoded, err := hex.DecodeString(digest)
+	if err != nil || len(decoded) != sha256.Size {
+		return "", fmt.Errorf("invalid SHA-256 digest")
+	}
+	return strings.ToLower(digest), nil
+}
+
+func validateInstallerFile(path, expectedSHA256 string) error {
 	file, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("read update installer: %w", err)
@@ -856,6 +955,23 @@ func validateInstallerFile(path string) error {
 	var signature [2]byte
 	if _, err := io.ReadFull(file, signature[:]); err != nil || signature != [2]byte{'M', 'Z'} {
 		return fmt.Errorf("downloaded update is not a Windows installer")
+	}
+	expectedSHA256, err = normalizeSHA256Digest(expectedSHA256)
+	if err != nil {
+		return err
+	}
+	if expectedSHA256 == "" {
+		return nil
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("read update installer: %w", err)
+	}
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return fmt.Errorf("hash update installer: %w", err)
+	}
+	if hex.EncodeToString(hash.Sum(nil)) != expectedSHA256 {
+		return fmt.Errorf("downloaded update failed SHA-256 verification")
 	}
 	return nil
 }
