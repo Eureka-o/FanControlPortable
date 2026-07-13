@@ -23,8 +23,6 @@ interface DeviceConnectionScanPanelProps {
   isNormalScanning: boolean;
   isDeepScanning: boolean;
   hasConnectedDevice: boolean;
-  currentDeviceName: string;
-  currentDeviceDetail: string;
   onScan: () => void;
   onConnectCandidate: (candidate: DeviceCandidate) => void;
 }
@@ -41,8 +39,6 @@ export function DeviceConnectionScanPanel({
   isNormalScanning,
   isDeepScanning,
   hasConnectedDevice,
-  currentDeviceName,
-  currentDeviceDetail,
   onScan,
   onConnectCandidate,
 }: DeviceConnectionScanPanelProps) {
@@ -66,14 +62,6 @@ export function DeviceConnectionScanPanel({
               </span>
             </div>
             <div className="text-sm text-muted-foreground line-clamp-2">{t('controlPanel.system.deviceConnection.description')}</div>
-            <div className="mt-2 inline-flex max-w-full items-center gap-2 rounded-full border border-border/70 bg-background/70 px-3 py-1.5 text-xs shadow-sm shadow-black/5">
-              <span className={clsx(
-                'h-2.5 w-2.5 shrink-0 rounded-full',
-                hasConnectedDevice ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.14)]' : 'bg-muted-foreground/45',
-              )} />
-              <span className="min-w-0 truncate font-medium text-foreground">{currentDeviceName}</span>
-              <span className="hidden min-w-0 truncate text-muted-foreground sm:inline">{currentDeviceDetail}</span>
-            </div>
           </div>
         </div>
 

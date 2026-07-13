@@ -1170,7 +1170,8 @@
       "autoStartFailed": "Failed to configure auto start: {{error}}",
       "lightStripFailed": "Failed to apply light strip settings: {{error}}",
       "deviceCommandFailed": "Failed to send the device command. Check logs or export diagnostics.",
-      "deviceCommandFailedWithError": "Failed to send the device command: {{error}}"
+      "deviceCommandFailedWithError": "Failed to send the device command: {{error}}",
+      "settingsOperationFailed": "Settings operation failed: {{error}}"
     },
     "options": {
       "smartStartStop": {

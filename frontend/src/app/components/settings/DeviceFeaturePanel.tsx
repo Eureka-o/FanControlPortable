@@ -57,6 +57,7 @@ export default function DeviceFeaturePanel({
   onPowerOnStartChange,
   onSmartStartStopChange,
   onWiFiSmartStartStopStandbySpeedChange,
+  children,
 }: {
   config: types.AppConfig;
   isConnected: boolean;
@@ -75,18 +76,21 @@ export default function DeviceFeaturePanel({
   onPowerOnStartChange: (enabled: boolean) => void;
   onSmartStartStopChange: (mode: string) => void;
   onWiFiSmartStartStopStandbySpeedChange: (value: string | number) => void;
+  children?: ReactNode;
 }) {
   const { t } = useTranslation();
   const hasBasicFeatures = supportsGearLight || supportsPowerOnStart || supportsScreen;
   const hasSmartStartStopFeatures = supportsSmartStartStop;
   const deviceName = deviceProfile?.displayName || deviceProfile?.model || t('deviceStatus.device.unknown');
 
-  if (!hasBasicFeatures && !hasSmartStartStopFeatures && !lightingControls && !refreshing) {
+  if (!hasBasicFeatures && !hasSmartStartStopFeatures && !lightingControls && !refreshing && !children) {
     return null;
   }
 
   return (
     <Section title={t('controlPanel.device.sectionTitle')} icon={Zap}>
+      {children}
+
       <AnimatePresence initial={false}>
         {refreshing && (
           <motion.div

@@ -62,7 +62,7 @@ const TAB_CONTENT_VARIANTS: Variants = {
     opacity: 1,
     y: 0,
     transition: {
-      duration: 0.19,
+      duration: 0.18,
       ease: [0.22, 1, 0.36, 1],
     },
   },
@@ -70,7 +70,7 @@ const TAB_CONTENT_VARIANTS: Variants = {
     opacity: 0,
     y: direction === 0 ? -6 : direction * -14,
     transition: {
-      duration: 0.16,
+      duration: 0.15,
       ease: [0.22, 1, 0.36, 1],
     },
   }),

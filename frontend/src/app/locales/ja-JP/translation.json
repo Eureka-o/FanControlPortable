@@ -1170,7 +1170,8 @@
       "autoStartFailed": "スタートアップの設定に失敗しました: {{error}}",
       "lightStripFailed": "ライティングの設定に失敗しました: {{error}}",
       "deviceCommandFailed": "デバイス指令の送信に失敗しました。ログを確認するか診断情報をエクスポートしてください。",
-      "deviceCommandFailedWithError": "デバイス指令の送信に失敗しました: {{error}}"
+      "deviceCommandFailedWithError": "デバイス指令の送信に失敗しました: {{error}}",
+      "settingsOperationFailed": "設定操作に失敗しました: {{error}}"
     },
     "options": {
       "smartStartStop": {
