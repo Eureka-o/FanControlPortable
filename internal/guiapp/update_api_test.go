@@ -375,7 +375,7 @@ func TestCheckLatestReleaseSelectsPrerelease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("checkLatestRelease() error = %v", err)
 	}
-	if release.TagName != "v2.6.0-beta.1" || release.InstallerURL == "" || release.InstallerSHA256 != "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" || !release.Prerelease {
+	if release.TagName != "v2.6.0-beta.1" || release.InstallerURL == "" || release.InstallerSHA256 != "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" || !release.Prerelease || !release.UpdateAvailable {
 		t.Fatalf("unexpected release: %+v", release)
 	}
 }

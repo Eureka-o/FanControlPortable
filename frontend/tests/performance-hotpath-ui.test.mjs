@@ -12,3 +12,9 @@ test('skips a store update when session history sampling keeps the same points',
 test('limits WiFi scan progress rendering to twice per second', () => {
   assert.match(wifiDiscovery, /setInterval\(\(\) => \{\s*setNow\(Date\.now\(\)\);\s*\}, 500\)/);
 });
+
+test('app store calls the shared API service without pass-through service modules', () => {
+  assert.doesNotMatch(store, /configService|deviceService/);
+  assert.match(store, /apiService\.getConfig\(\)/);
+  assert.match(store, /apiService\.getDeviceStatus\(\)/);
+});

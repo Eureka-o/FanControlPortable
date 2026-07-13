@@ -137,6 +137,7 @@ export interface UpdateRelease {
   html_url?: string;
   body?: string;
   prerelease?: boolean;
+  update_available?: boolean;
   draft?: boolean;
   installer_url?: string;
   installer_sha256?: string;
