@@ -58,6 +58,10 @@ export function ExportFanCurveProfiles() {
   return window['go']['main']['App']['ExportFanCurveProfiles']();
 }
 
+export function ExportFanCurveProfilesToFile() {
+  return window['go']['main']['App']['ExportFanCurveProfilesToFile']();
+}
+
 export function GetAppVersion() {
   return window['go']['main']['App']['GetAppVersion']();
 }

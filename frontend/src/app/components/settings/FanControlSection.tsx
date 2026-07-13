@@ -66,6 +66,13 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function parseCustomSpeedDraft(value: unknown) {
+  const text = String(value ?? '').trim();
+  if (!text) return undefined;
+  const numeric = Number(text);
+  return Number.isFinite(numeric) ? Math.round(numeric) : undefined;
+}
+
 function normalizeSampleCount(count: string | number) {
   const parsed = typeof count === 'number' ? count : Number(count);
   return SAMPLE_COUNT_OPTIONS.some((item) => item.value === parsed) ? parsed : 1;
@@ -104,9 +111,9 @@ export default function FanControlSection({
   const [curveProfileLoading, setCurveProfileLoading] = useState(false);
   const [temperatureHistoryEnabled, setTemperatureHistoryEnabled] = useState(false);
 
-  const customSpeedInputValue = useMemo(
-    () => clampFanSpeedToRange(customSpeedInput, overviewSpeedRange, defaultCustomSpeed) ?? defaultCustomSpeed,
-    [customSpeedInput, defaultCustomSpeed, overviewSpeedRange],
+  const customSpeedDraftValue = useMemo(
+    () => parseCustomSpeedDraft(customSpeedInput),
+    [customSpeedInput],
   );
   const customSpeedMinLabel = `${formatFanSpeedValue(overviewSpeedRange.min)}${overviewSpeedLabel}`;
   const customSpeedMaxLabel = `${formatFanSpeedValue(overviewSpeedRange.max)}${overviewSpeedLabel}`;
@@ -201,21 +208,34 @@ export default function FanControlSection({
   }, [fanData, manualGearDraft, manualLevelDraft, onConfigChange, runWithLoading, supportsManualGears, t]);
 
   const handleCustomSpeedApply = useCallback(async (enabled: boolean, speed: unknown) => {
+    const safeSpeed = enabled
+      ? parseCustomSpeedDraft(speed)
+      : clampFanSpeedToRange((config as any).customSpeedRPM, overviewSpeedRange, defaultCustomSpeed) ?? defaultCustomSpeed;
+    if (safeSpeed === undefined || safeSpeed < overviewSpeedRange.min || safeSpeed > overviewSpeedRange.max) {
+      toast.error(t('controlPanel.fan.customSpeedInvalid', {
+        min: customSpeedMinLabel,
+        max: customSpeedMaxLabel,
+      }));
+      return false;
+    }
+    let applied = false;
     await runWithLoading('customSpeed', async () => {
-      const safeSpeed = clampFanSpeedToRange(speed, overviewSpeedRange, defaultCustomSpeed) ?? defaultCustomSpeed;
       try {
         await apiService.setCustomSpeed(enabled, safeSpeed);
+        setCustomSpeedInput(String(safeSpeed));
         onConfigChange(types.AppConfig.createFrom({
           ...config,
           customSpeedEnabled: enabled,
           customSpeedRPM: safeSpeed,
           autoControl: enabled ? false : config.autoControl,
         }));
+        applied = true;
       } catch (error) {
         toast.error(getErrorMessage(error));
       }
     });
-  }, [config, defaultCustomSpeed, onConfigChange, overviewSpeedRange, runWithLoading]);
+    return applied;
+  }, [config, customSpeedMaxLabel, customSpeedMinLabel, defaultCustomSpeed, onConfigChange, overviewSpeedRange, runWithLoading, t]);
 
   const handleCustomSpeedToggle = useCallback((enabled: boolean) => {
     if (enabled) setShowCustomSpeedWarning(true);
@@ -579,8 +599,6 @@ export default function FanControlSection({
                       value={customSpeedInput}
                       onChange={(event) => setCustomSpeedInput(event.target.value)}
                       className="flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-transparent focus:ring-2 focus:ring-amber-500/50"
-                      min={overviewSpeedRange.min}
-                      max={overviewSpeedRange.max}
                       step={overviewSpeedRange.step}
                     />
                     <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">{overviewSpeedLabel}</span>
@@ -634,7 +652,7 @@ export default function FanControlSection({
 
               <div className="mb-5 rounded-xl bg-muted/60 p-3 text-center">
                 <span className="text-xs text-muted-foreground">{t('controlPanel.customSpeedDialog.speedLabel')}</span>
-                <div className="text-xl font-bold text-amber-600">{formatFanSpeedValue(customSpeedInputValue)}{overviewSpeedLabel}</div>
+                <div className="text-xl font-bold text-amber-600">{formatFanSpeedValue(customSpeedDraftValue)}{overviewSpeedLabel}</div>
               </div>
 
               <div className="flex gap-3">
@@ -643,7 +661,11 @@ export default function FanControlSection({
                 </Button>
                 <Button
                   variant="primary"
-                  onClick={() => { setShowCustomSpeedWarning(false); void handleCustomSpeedApply(true, customSpeedInput); }}
+                  onClick={async () => {
+                    if (await handleCustomSpeedApply(true, customSpeedInput)) {
+                      setShowCustomSpeedWarning(false);
+                    }
+                  }}
                   className="flex-1 bg-amber-600 text-white hover:bg-amber-700"
                   icon={<CheckCircle2 className="h-4 w-4" />}
                 >

@@ -302,6 +302,10 @@ class ApiService {
     return await (window as any).go?.main?.App?.ExportFanCurveProfiles();
   }
 
+  async exportFanCurveProfilesToFile(): Promise<string> {
+    return await (window as any).go?.main?.App?.ExportFanCurveProfilesToFile?.();
+  }
+
   async importFanCurveProfiles(code: string): Promise<void> {
     return await (window as any).go?.main?.App?.ImportFanCurveProfiles(code);
   }
