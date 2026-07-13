@@ -3,6 +3,7 @@ package guiapp
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net/http"
@@ -258,12 +259,114 @@ func TestUpdateDownloadDirectoryLivesUnderInstallDirectory(t *testing.T) {
 	}
 }
 
+func TestCleanupSupersededPartialDownloadsKeepsCurrentTarget(t *testing.T) {
+	updateDir := t.TempDir()
+	currentPart := updatePartPath(updateDir, "https://github.com/Eureka-o/FanControlPortable/releases/download/v2.5.2/FanControl-2.5.2-amd64-installer.exe")
+	oldPart := updatePartPath(updateDir, "https://github.com/Eureka-o/FanControlPortable/releases/download/v2.5.1/FanControl-2.5.1-amd64-installer.exe")
+	unrelated := filepath.Join(updateDir, "keep.txt")
+	for _, path := range []string{currentPart, partialDownloadMetadataPath(currentPart), oldPart, partialDownloadMetadataPath(oldPart), unrelated} {
+		if err := os.WriteFile(path, []byte("data"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := cleanupSupersededPartialDownloads(updateDir, currentPart); err != nil {
+		t.Fatalf("cleanupSupersededPartialDownloads() error = %v", err)
+	}
+	for _, path := range []string{currentPart, partialDownloadMetadataPath(currentPart), unrelated} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("preserved file missing: %s: %v", path, err)
+		}
+	}
+	for _, path := range []string{oldPart, partialDownloadMetadataPath(oldPart)} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("superseded partial download still exists: %s", path)
+		}
+	}
+}
+
+func TestUpdateDownloadClientHasNoWallClockTimeout(t *testing.T) {
+	client := newUpdateHTTPClient(0, updateResponseTimeout, true)
+	if client.Timeout != 0 {
+		t.Fatalf("download client timeout = %v, want no wall clock timeout", client.Timeout)
+	}
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("download transport type = %T", client.Transport)
+	}
+	if transport.ResponseHeaderTimeout != updateResponseTimeout {
+		t.Fatalf("response header timeout = %v, want %v", transport.ResponseHeaderTimeout, updateResponseTimeout)
+	}
+}
+
+func TestCleanupStaleUpdateArtifactsRemovesOnlyOldUpdaterFiles(t *testing.T) {
+	root := t.TempDir()
+	legacyDir := filepath.Join(root, "FanControl-update")
+	updateDir := filepath.Join(root, "updates")
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "old.tmp"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(updateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	oldPart := filepath.Join(updateDir, "download-old.part")
+	oldMetadata := partialDownloadMetadataPath(oldPart)
+	oldInstaller := filepath.Join(updateDir, updateInstallerName)
+	freshPart := filepath.Join(updateDir, "download-fresh.part")
+	unrelated := filepath.Join(updateDir, "keep.txt")
+	for _, path := range []string{oldPart, oldMetadata, oldInstaller, freshPart, unrelated} {
+		if err := os.WriteFile(path, []byte("data"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cutoff := time.Now().Add(-7 * 24 * time.Hour)
+	oldTime := cutoff.Add(-time.Hour)
+	for _, path := range []string{oldPart, oldMetadata, oldInstaller, unrelated} {
+		if err := os.Chtimes(path, oldTime, oldTime); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := cleanupStaleUpdateArtifacts(legacyDir, updateDir, cutoff); err != nil {
+		t.Fatalf("cleanupStaleUpdateArtifacts() error = %v", err)
+	}
+	for _, path := range []string{legacyDir, oldPart, oldMetadata, oldInstaller} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("stale update artifact still exists: %s", path)
+		}
+	}
+	for _, path := range []string{freshPart, unrelated} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("preserved file missing: %s: %v", path, err)
+		}
+	}
+}
+
+func TestValidateInstallerFileChecksReleaseSHA256(t *testing.T) {
+	payload := append([]byte{'M', 'Z'}, bytes.Repeat([]byte("verified-installer"), 64)...)
+	path := filepath.Join(t.TempDir(), "FanControl-installer.exe")
+	if err := os.WriteFile(path, payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	digest := fmt.Sprintf("%x", sha256.Sum256(payload))
+	if err := validateInstallerFile(path, digest); err != nil {
+		t.Fatalf("valid installer rejected: %v", err)
+	}
+	if err := validateInstallerFile(path, strings.Repeat("0", 64)); err == nil {
+		t.Fatal("installer with mismatched release digest was accepted")
+	}
+}
+
 func TestCheckLatestReleaseSelectsPrerelease(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		response.Header().Set("Content-Type", "application/json")
 		_, _ = response.Write([]byte(`[
 			{"tag_name":"v2.5.0","draft":false,"prerelease":false},
-			{"tag_name":"v2.6.0-beta.1","html_url":"https://github.com/Eureka-o/FanControlPortable/releases/tag/v2.6.0-beta.1","body":"beta","draft":false,"prerelease":true,"assets":[{"name":"FanControl-2.6.0-beta.1-amd64-installer.exe","browser_download_url":"https://github.com/Eureka-o/FanControlPortable/releases/download/v2.6.0-beta.1/FanControl-2.6.0-beta.1-amd64-installer.exe"}]}
+			{"tag_name":"v2.6.0-beta.1","html_url":"https://github.com/Eureka-o/FanControlPortable/releases/tag/v2.6.0-beta.1","body":"beta","draft":false,"prerelease":true,"assets":[{"name":"FanControl-2.6.0-beta.1-amd64-installer.exe","browser_download_url":"https://github.com/Eureka-o/FanControlPortable/releases/download/v2.6.0-beta.1/FanControl-2.6.0-beta.1-amd64-installer.exe","digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}]}
 		]`))
 	}))
 	defer server.Close()
@@ -272,7 +375,7 @@ func TestCheckLatestReleaseSelectsPrerelease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("checkLatestRelease() error = %v", err)
 	}
-	if release.TagName != "v2.6.0-beta.1" || release.InstallerURL == "" || !release.Prerelease {
+	if release.TagName != "v2.6.0-beta.1" || release.InstallerURL == "" || release.InstallerSHA256 != "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" || !release.Prerelease {
 		t.Fatalf("unexpected release: %+v", release)
 	}
 }

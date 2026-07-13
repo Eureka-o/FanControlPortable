@@ -6,6 +6,7 @@ export namespace guiapp {
 	    body: string;
 	    prerelease: boolean;
 	    installer_url: string;
+	    installer_sha256: string;
 
 	    static createFrom(source: any = {}) {
 	        return new UpdateRelease(source);
@@ -18,6 +19,7 @@ export namespace guiapp {
 	        this.body = source["body"];
 	        this.prerelease = source["prerelease"];
 	        this.installer_url = source["installer_url"];
+	        this.installer_sha256 = source["installer_sha256"];
 	    }
 	}
 

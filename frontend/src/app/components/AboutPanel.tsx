@@ -84,6 +84,7 @@ export default function AboutPanel() {
   const [latestReleaseBody, setLatestReleaseBody] = useState('');
   const [latestReleaseIsPrerelease, setLatestReleaseIsPrerelease] = useState(false);
   const [installerUrl, setInstallerUrl] = useState('');
+  const [installerSHA256, setInstallerSHA256] = useState('');
   const [releaseLoading, setReleaseLoading] = useState(false);
   const [releaseError, setReleaseError] = useState('');
   const updateStage = useUpdateStore((state) => state.stage);
@@ -143,6 +144,7 @@ export default function AboutPanel() {
         setLatestReleaseBody('');
         setLatestReleaseIsPrerelease(false);
         setInstallerUrl('');
+        setInstallerSHA256('');
         setReleaseError(channel === 'prerelease'
           ? t('aboutPanel.version.noPrereleaseFound')
           : t('aboutPanel.version.checkFailed'));
@@ -154,6 +156,7 @@ export default function AboutPanel() {
       setLatestReleaseBody(typeof targetRelease?.body === 'string' ? targetRelease.body.trim() : '');
       setLatestReleaseIsPrerelease(!!targetRelease?.prerelease);
       setInstallerUrl(targetRelease.installer_url || '');
+      setInstallerSHA256(targetRelease.installer_sha256 || '');
       return targetRelease;
     } catch (error) {
       setLatestReleaseTag('');
@@ -161,6 +164,7 @@ export default function AboutPanel() {
       setLatestReleaseBody('');
       setLatestReleaseIsPrerelease(false);
       setInstallerUrl('');
+      setInstallerSHA256('');
       setReleaseError(`${t('aboutPanel.version.checkFailed')}: ${error instanceof Error ? error.message : String(error)}`);
       return null;
     } finally {
@@ -221,11 +225,13 @@ export default function AboutPanel() {
     if (updateStarting) return;
     let targetTag = latestReleaseTag;
     let targetInstallerUrl = installerUrl;
+    let targetInstallerSHA256 = installerSHA256;
     if (!targetTag || !targetInstallerUrl) {
       const release = await checkLatestRelease(releaseChannel);
       if (!release) return;
       targetTag = release.tag_name || '';
       targetInstallerUrl = release.installer_url || '';
+      targetInstallerSHA256 = release.installer_sha256 || '';
     }
     if (targetTag && appVersion && isLatestVersion(appVersion, targetTag)) {
       toast.success(t('aboutPanel.version.upToDate'));
@@ -237,11 +243,12 @@ export default function AboutPanel() {
     }
     void startUpdate({
       downloadURL: targetInstallerUrl,
+      expectedSHA256: targetInstallerSHA256,
       windowTitle: t('aboutPanel.version.updaterWindowTitle'),
       windowBody: t('aboutPanel.version.updaterWindowBody'),
       windowRestarting: t('aboutPanel.version.updaterWindowRestarting'),
     });
-  }, [appVersion, checkLatestRelease, installerUrl, latestReleaseTag, releaseChannel, startUpdate, t, updateStarting]);
+  }, [appVersion, checkLatestRelease, installerSHA256, installerUrl, latestReleaseTag, releaseChannel, startUpdate, t, updateStarting]);
 
   const isSponsorOpen = isSponsorHovered || isSponsorPinned;
 

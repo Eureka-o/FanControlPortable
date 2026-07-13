@@ -37,6 +37,7 @@ test('supports pause, resume, and cancel while preserving resumable progress', (
   assert.match(widgetSource, /cancelUpdateDownload/);
   assert.match(widgetSource, /stage === 'paused'/);
   assert.match(widgetSource, /stage === 'canceled'/);
+  assert.match(widgetSource, /expectedSHA256/);
 });
 
 test('offers a manual retry after a resumable download fails', () => {

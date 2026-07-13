@@ -13,6 +13,7 @@ type UpdateStage = 'idle' | UpdateProgressPayload['stage'];
 
 export interface UpdateRequest {
   downloadURL: string;
+  expectedSHA256: string;
   windowTitle: string;
   windowBody: string;
   windowRestarting: string;
@@ -51,7 +52,8 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   request: null,
   startUpdate: async (request) => {
     if (isBusy(get().stage)) return;
-    const sameDownload = get().request?.downloadURL === request.downloadURL;
+    const sameDownload = get().request?.downloadURL === request.downloadURL
+      && get().request?.expectedSHA256 === request.expectedSHA256;
     set({
       stage: 'downloading',
       percent: sameDownload ? get().percent : 0,
@@ -67,6 +69,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         request.windowTitle,
         request.windowBody,
         request.windowRestarting,
+        request.expectedSHA256,
       );
     } catch (error) {
       if (get().stage !== 'error' && get().stage !== 'canceled') {

@@ -139,6 +139,7 @@ export interface UpdateRelease {
   prerelease?: boolean;
   draft?: boolean;
   installer_url?: string;
+  installer_sha256?: string;
 }
 
 export interface UpdateProgressPayload {
@@ -224,12 +225,14 @@ class ApiService {
     windowTitle: string,
     windowBody: string,
     windowRestarting: string,
+    expectedSHA256: string,
   ): Promise<void> {
     return await DownloadAndInstallUpdate(
       downloadURL,
       windowTitle,
       windowBody,
       windowRestarting,
+      expectedSHA256,
     );
   }
 
