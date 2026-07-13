@@ -16,8 +16,10 @@ test('keeps profile selection, creation, and management in the curve header', ()
   assert.match(source, /group relative flex shrink-0 hover:z-10 focus-within:z-10/);
   assert.match(source, /absolute -right-\[6px\] -top-\[1px\] z-10 flex h-\[13px\] w-\[13px\]/);
   assert.match(source, /opacity-0[^']*group-hover:opacity-100/);
-  assert.match(source, /border-destructive\/50 bg-card text-destructive/);
-  assert.match(source, /border-border bg-card text-muted-foreground hover:border-destructive\/50 hover:text-destructive/);
+  assert.match(source, /group-hover:border-border group-hover:bg-muted\/65 group-hover:text-foreground/);
+  assert.match(source, /border-border bg-card text-muted-foreground[^\"]*hover:border-destructive\/50 hover:text-destructive/);
+  assert.match(source, /focus-visible:border-destructive\/50 focus-visible:text-destructive/);
+  assert.doesNotMatch(source, /isActive\s*\?\s*'border-destructive\/50 bg-card text-destructive'/);
   assert.doesNotMatch(source, /bg-destructive\/10|opacity-100 hover:bg/);
   assert.doesNotMatch(source, /-ml-px flex h-\[13px\]/);
   assert.match(source, /<X className="h-2 w-2" \/>/);
