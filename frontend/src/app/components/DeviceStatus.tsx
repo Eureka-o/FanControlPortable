@@ -51,7 +51,6 @@ interface DeviceStatusProps {
   fanData: types.FanData | null;
   temperature: types.TemperatureData | null;
   runtimeDeviceProfile?: types.DeviceProfile | null;
-  runtimeDeviceCapabilities?: types.DeviceCapabilities | null;
   config: types.AppConfig;
   coreServiceError?: string | null;
   onConnect: () => void;
@@ -678,7 +677,6 @@ export default function DeviceStatus({
   fanData,
   temperature,
   runtimeDeviceProfile,
-  runtimeDeviceCapabilities,
   config,
   coreServiceError,
   onConnect,
@@ -869,14 +867,6 @@ export default function DeviceStatus({
                   ? t('deviceStatus.bridgeState.notStarted')
                   : '';
   const maxTempStatus = getTempStatus(temperature?.maxTemp || 0);
-  const capabilityLabels = useMemo(() => [
-    runtimeDeviceCapabilities?.supportsReadState ? t('advancedDevices.capabilities.read') : '',
-    runtimeDeviceCapabilities?.supportsSetSpeed ? t('advancedDevices.capabilities.setSpeed') : '',
-    runtimeDeviceCapabilities?.supportsManualGears ? t('advancedDevices.capabilities.manualGears') : '',
-    runtimeDeviceCapabilities?.supportsLighting ? t('advancedDevices.capabilities.lighting') : '',
-    runtimeDeviceCapabilities?.supportsScreen ? t('advancedDevices.capabilities.screen') : '',
-  ].filter(Boolean), [runtimeDeviceCapabilities, t]);
-
   return (
     <div data-page-reveal="cards" className="space-y-3">
       {/* ── Device header card ── */}
@@ -928,13 +918,6 @@ export default function DeviceStatus({
                     )}
                     <span>{t('deviceStatus.hero.modeLine', { mode: modeTitle, description: modeDesc })}</span>
                   </div>
-                  {capabilityLabels.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-1.5" aria-label={t('deviceStatus.capabilities.title')}>
-                      {capabilityLabels.map((label) => (
-                        <span key={label} className="rounded-md bg-muted/65 px-1.5 py-0.5 text-[10px] font-medium text-foreground/75">{label}</span>
-                      ))}
-                    </div>
-                  )}
                 </div>
               )}
               {!isConnected && (

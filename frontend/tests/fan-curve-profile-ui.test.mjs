@@ -13,9 +13,13 @@ test('keeps profile selection, creation, and management in the curve header', ()
   assert.match(source, /data-curve-profile-list/);
   assert.match(source, /px-4 text-center text-xs font-medium/);
   assert.match(source, /\[&::\-webkit-scrollbar\]:hidden/);
-  assert.match(source, /group flex shrink-0 items-start gap-0/);
-  assert.match(source, /-ml-px flex h-\[13px\] w-\[13px\] cursor-pointer items-center justify-center rounded-full border/);
-  assert.match(source, /hover:bg-destructive\/15 hover:text-destructive/);
+  assert.match(source, /group relative flex shrink-0 hover:z-10 focus-within:z-10/);
+  assert.match(source, /absolute -right-\[6px\] -top-\[1px\] z-10 flex h-\[13px\] w-\[13px\]/);
+  assert.match(source, /opacity-0[^']*group-hover:opacity-100/);
+  assert.match(source, /border-destructive\/50 bg-card text-destructive/);
+  assert.match(source, /border-border bg-card text-muted-foreground hover:border-destructive\/50 hover:text-destructive/);
+  assert.doesNotMatch(source, /bg-destructive\/10|opacity-100 hover:bg/);
+  assert.doesNotMatch(source, /-ml-px flex h-\[13px\]/);
   assert.match(source, /<X className="h-2 w-2" \/>/);
   assert.match(source, /setCreateProfileDialogOpen\(true\)/);
   assert.match(source, /setManageProfilesDialogOpen\(true\)/);
@@ -28,6 +32,15 @@ test('stacks export and import sections in the profile manager', () => {
   assert.match(source, /data-profile-export-section/);
   assert.match(source, /data-profile-import-section/);
   assert.doesNotMatch(source, /grid-cols-1 gap-3 md:grid-cols-2/);
+});
+
+test('keeps profile rename and transfer actions compact and aligned', () => {
+  assert.match(source, /DialogContent className="max-w-\[620px\]"/);
+  assert.match(source, /data-profile-rename-row/);
+  assert.match(source, /sm:grid-cols-\[minmax\(0,1fr\)_auto\]/);
+  assert.match(source, /data-profile-transfer-header className="space-y-1"/);
+  assert.match(source, /data-profile-export-actions className="grid grid-cols-1 gap-2 sm:grid-cols-2"/);
+  assert.match(source, /rows=\{2\}/);
 });
 
 test('guards profile switches when the current curve has unsaved changes', () => {

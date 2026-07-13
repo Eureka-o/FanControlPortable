@@ -1170,7 +1170,8 @@
       "autoStartFailed": "设置自启动失败: {{error}}",
       "lightStripFailed": "设置灯带失败: {{error}}",
       "deviceCommandFailed": "设备指令发送失败，请查看日志或导出诊断信息",
-      "deviceCommandFailedWithError": "设备指令发送失败: {{error}}"
+      "deviceCommandFailedWithError": "设备指令发送失败: {{error}}",
+      "settingsOperationFailed": "设置操作失败: {{error}}"
     },
     "options": {
       "smartStartStop": {

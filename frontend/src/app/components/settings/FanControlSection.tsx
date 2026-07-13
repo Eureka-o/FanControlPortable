@@ -9,8 +9,6 @@ import {
   Pause,
   Play,
   Settings,
-  Sparkles,
-  Spline,
   TriangleAlert,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -25,14 +23,7 @@ import {
   getFanSpeedUnit,
 } from '../../lib/fan-speed';
 import { useLocale } from '../../lib/i18n';
-import {
-  getFlyDigiRuntimeCapability,
-  getManualGearLabel,
-  getManualLevelLabel,
-  isManualGearAllowedForFlyDigi,
-} from '../../lib/manualGearPresets';
 import { apiService } from '../../services/api';
-import FanCurveProfileSelect from '../FanCurveProfileSelect';
 import { Button, Select, ToggleSwitch } from '../ui';
 import { Section, SettingRow } from './SettingLayout';
 import TemperatureBaselineSection, { normalizeTemperatureSource } from './TemperatureBaselineSection';
@@ -45,14 +36,7 @@ interface FanControlSectionProps {
   temperature: types.TemperatureData | null;
   runtimeDeviceProfile?: types.DeviceProfile | null;
   supportsCustomSpeed: boolean;
-  supportsManualGears: boolean;
-  configuredDeviceCurveKey: string;
 }
-
-type CurveProfile = { id: string; name: string; curve: types.FanCurvePoint[] };
-
-const FAN_GEAR_VALUES = ['静音', '标准', '强劲', '超频'] as const;
-const FAN_LEVEL_VALUES = ['低', '中', '高'] as const;
 
 const SAMPLE_COUNT_OPTIONS = [
   { value: 1, labelKey: 'controlPanel.options.sampleCount.1' },
@@ -86,8 +70,6 @@ export default function FanControlSection({
   temperature,
   runtimeDeviceProfile,
   supportsCustomSpeed,
-  supportsManualGears,
-  configuredDeviceCurveKey,
 }: FanControlSectionProps) {
   const { t } = useTranslation();
   const { locale } = useLocale();
@@ -104,12 +86,6 @@ export default function FanControlSection({
   const [customSpeedInput, setCustomSpeedInput] = useState<string>(
     () => String(clampFanSpeedToRange((config as any).customSpeedRPM, overviewSpeedRange, defaultCustomSpeed) ?? defaultCustomSpeed),
   );
-  const [manualGearDraft, setManualGearDraft] = useState<string>(() => ((config as any).manualGear || '标准') as string);
-  const [manualLevelDraft, setManualLevelDraft] = useState<string>(() => ((config as any).manualLevel || '中') as string);
-  const [curveProfiles, setCurveProfiles] = useState<CurveProfile[]>([]);
-  const [curveActiveProfileId, setCurveActiveProfileId] = useState('');
-  const [curveProfileLoading, setCurveProfileLoading] = useState(false);
-  const [temperatureHistoryEnabled, setTemperatureHistoryEnabled] = useState(false);
 
   const customSpeedDraftValue = useMemo(
     () => parseCustomSpeedDraft(customSpeedInput),
@@ -117,23 +93,7 @@ export default function FanControlSection({
   );
   const customSpeedMinLabel = `${formatFanSpeedValue(overviewSpeedRange.min)}${overviewSpeedLabel}`;
   const customSpeedMaxLabel = `${formatFanSpeedValue(overviewSpeedRange.max)}${overviewSpeedLabel}`;
-  const activeCurveProfileId = curveActiveProfileId || (((config as any).activeFanCurveProfileId || '') as string);
 
-  const fanGearOptions = useMemo(
-    () => {
-      const capability = getFlyDigiRuntimeCapability(fanData as any);
-      return FAN_GEAR_VALUES.map((value) => ({
-        value,
-        label: getManualGearLabel(value),
-        disabled: !isManualGearAllowedForFlyDigi(value, capability),
-      }));
-    },
-    [fanData, locale],
-  );
-  const fanLevelOptions = useMemo(
-    () => FAN_LEVEL_VALUES.map((value) => ({ value, label: getManualLevelLabel(value) })),
-    [locale],
-  );
   const sampleCountOptions = useMemo(
     () => SAMPLE_COUNT_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey) })),
     [locale, t],
@@ -141,6 +101,10 @@ export default function FanControlSection({
   const setLoading = useCallback((key: string, value: boolean) => {
     setLoadingStates((prev) => ({ ...prev, [key]: value }));
   }, []);
+
+  const reportSettingsError = useCallback((error: unknown) => {
+    toast.error(t('controlPanel.alerts.settingsOperationFailed', { error: getErrorMessage(error) }));
+  }, [t]);
 
   const runWithLoading = useCallback(async (key: string, task: () => Promise<void>) => {
     setLoading(key, true);
@@ -174,38 +138,6 @@ export default function FanControlSection({
       }
     });
   }, [onConfigChange, runWithLoading, t]);
-
-  const handleManualGearApply = useCallback(async () => {
-    if (!supportsManualGears) {
-      toast.error(t('controlPanel.fan.manualGearUnavailable'));
-      return;
-    }
-    const gear = FAN_GEAR_VALUES.includes(manualGearDraft as any) ? manualGearDraft : '标准';
-    const level = FAN_LEVEL_VALUES.includes(manualLevelDraft as any) ? manualLevelDraft : '中';
-    const capability = getFlyDigiRuntimeCapability(fanData as any);
-    if (!isManualGearAllowedForFlyDigi(gear, capability)) {
-      const limit = capability?.maxGearLabel && capability?.maxRpm
-        ? t('fanCurve.manualGear.runtimeLimit', { gear: getManualGearLabel(capability.maxGearLabel), rpm: capability.maxRpm })
-        : '';
-      toast.error(t('fanCurve.manualGear.runtimeUnavailable', { gear: getManualGearLabel(gear), limit }));
-      return;
-    }
-    await runWithLoading('manualGear', async () => {
-      try {
-        const ok = await apiService.setManualGear(gear, level);
-        if (!ok) {
-          throw new Error(t('controlPanel.fan.manualGearUnavailable'));
-        }
-        const latest = types.AppConfig.createFrom(await apiService.getConfig());
-        setManualGearDraft(((latest as any).manualGear || gear) as string);
-        setManualLevelDraft(((latest as any).manualLevel || level) as string);
-        onConfigChange(latest);
-        toast.success(t('controlPanel.fan.manualGearApplied'));
-      } catch (error) {
-        toast.error(t('controlPanel.fan.manualGearApplyFailed', { error: getErrorMessage(error) }));
-      }
-    });
-  }, [fanData, manualGearDraft, manualLevelDraft, onConfigChange, runWithLoading, supportsManualGears, t]);
 
   const handleCustomSpeedApply = useCallback(async (enabled: boolean, speed: unknown) => {
     const safeSpeed = enabled
@@ -245,20 +177,20 @@ export default function FanControlSection({
   const handleSampleCountChange = useCallback(async (count: string | number) => {
     try {
       await saveConfigPatch({ tempSampleCount: normalizeSampleCount(count) });
-    } catch {
-      /* noop */
+    } catch (error) {
+      reportSettingsError(error);
     }
-  }, [saveConfigPatch]);
+  }, [reportSettingsError, saveConfigPatch]);
 
   const handleTempSourceChange = useCallback(async (source: string) => {
     await runWithLoading('tempSource', async () => {
       try {
         await saveConfigPatch({ tempSource: normalizeTemperatureSource(source) });
-      } catch {
-        /* noop */
+      } catch (error) {
+        reportSettingsError(error);
       }
     });
-  }, [runWithLoading, saveConfigPatch]);
+  }, [reportSettingsError, runWithLoading, saveConfigPatch]);
 
   const handleGpuDeviceChange = useCallback(async (deviceKey: string) => {
     await runWithLoading('gpuDevice', async () => {
@@ -268,33 +200,33 @@ export default function FanControlSection({
           gpuSensor: 'auto',
           gpuPowerSensor: 'auto',
         });
-      } catch {
-        /* noop */
+      } catch (error) {
+        reportSettingsError(error);
       }
     });
-  }, [runWithLoading, saveConfigPatch]);
+  }, [reportSettingsError, runWithLoading, saveConfigPatch]);
 
   const handleTempSensorChange = useCallback(async (kind: 'cpu' | 'gpu', sensorKey: string) => {
     const loadingKey = kind === 'cpu' ? 'cpuSensor' : 'gpuSensor';
     await runWithLoading(loadingKey, async () => {
       try {
         await saveConfigPatch(kind === 'cpu' ? { cpuSensor: sensorKey } : { gpuSensor: sensorKey });
-      } catch {
-        /* noop */
+      } catch (error) {
+        reportSettingsError(error);
       }
     });
-  }, [runWithLoading, saveConfigPatch]);
+  }, [reportSettingsError, runWithLoading, saveConfigPatch]);
 
   const handlePowerSensorChange = useCallback(async (kind: 'cpu' | 'gpu', sensorKey: string) => {
     const loadingKey = kind === 'cpu' ? 'cpuPowerSensor' : 'gpuPowerSensor';
     await runWithLoading(loadingKey, async () => {
       try {
         await saveConfigPatch(kind === 'cpu' ? { cpuPowerSensor: sensorKey } : { gpuPowerSensor: sensorKey });
-      } catch {
-        /* noop */
+      } catch (error) {
+        reportSettingsError(error);
       }
     });
-  }, [runWithLoading, saveConfigPatch]);
+  }, [reportSettingsError, runWithLoading, saveConfigPatch]);
 
   const handleGpuReadModeChange = useCallback(async (mode: string) => {
     const normalizedMode = mode === 'always' ? 'always' : 'auto';
@@ -304,11 +236,11 @@ export default function FanControlSection({
           gpuReadMode: normalizedMode,
           gpuLowPowerProtection: normalizedMode !== 'always',
         });
-      } catch {
-        /* noop */
+      } catch (error) {
+        reportSettingsError(error);
       }
     });
-  }, [runWithLoading, saveConfigPatch]);
+  }, [reportSettingsError, runWithLoading, saveConfigPatch]);
 
   const handleTransientSpikeFilterChange = useCallback(async (enabled: boolean) => {
     await runWithLoading('transientSpikeFilter', async () => {
@@ -319,95 +251,15 @@ export default function FanControlSection({
             filterTransientSpike: enabled,
           }),
         });
-      } catch {
-        /* noop */
+      } catch (error) {
+        reportSettingsError(error);
       }
     });
-  }, [config.smartControl, runWithLoading, saveConfigPatch]);
+  }, [config.smartControl, reportSettingsError, runWithLoading, saveConfigPatch]);
 
-  const handleLearningToggle = useCallback(async (enabled: boolean) => {
-    await runWithLoading('learning', async () => {
-      try {
-        await saveConfigPatch({
-          smartControl: types.SmartControlConfig.createFrom({
-            ...(config.smartControl || {}),
-            learning: enabled,
-          }),
-        });
-      } catch {
-        /* noop */
-      }
-    });
-  }, [config.smartControl, runWithLoading, saveConfigPatch]);
-
-  const handleTemperatureHistoryChange = useCallback(async (enabled: boolean) => {
-    await runWithLoading('temperatureHistory', async () => {
-      try {
-        await apiService.setTemperatureHistoryEnabled(enabled);
-        setTemperatureHistoryEnabled(enabled);
-      } catch {
-        /* noop */
-      }
-    });
-  }, [runWithLoading]);
-
-  const loadCurveProfiles = useCallback(async () => {
-    try {
-      const payload = await apiService.getFanCurveProfiles();
-      const profiles = Array.isArray(payload?.profiles) ? payload.profiles : [];
-      setCurveProfiles(profiles);
-      setCurveActiveProfileId(payload?.activeId || profiles[0]?.id || '');
-    } catch {
-      setCurveProfiles([]);
-      setCurveActiveProfileId('');
-    }
-  }, []);
-
-  const handleCurveProfileChange = useCallback(async (profileId: string) => {
-    if (!profileId || profileId === activeCurveProfileId) return;
-    try {
-      setCurveProfileLoading(true);
-      await apiService.setActiveFanCurveProfile(profileId);
-      setCurveActiveProfileId(profileId);
-      onConfigChange(types.AppConfig.createFrom(await apiService.getConfig()));
-      await loadCurveProfiles();
-      toast.success(t('controlPanel.fan.toasts.profileSwitched'));
-    } catch (error) {
-      toast.error(t('controlPanel.fan.toasts.profileSwitchFailed', { error: getErrorMessage(error) }));
-    } finally {
-      setCurveProfileLoading(false);
-    }
-  }, [activeCurveProfileId, loadCurveProfiles, onConfigChange, t]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const loadTelemetryState = async () => {
-      try {
-        const payload = await apiService.getTemperatureHistory();
-        if (!cancelled) {
-          setTemperatureHistoryEnabled(payload?.enabled !== false);
-        }
-      } catch {
-        if (!cancelled) {
-          setTemperatureHistoryEnabled(false);
-        }
-      }
-    };
-
-    loadTelemetryState();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => { loadCurveProfiles(); }, [configuredDeviceCurveKey, loadCurveProfiles]);
   useEffect(() => {
     setCustomSpeedInput(String(clampFanSpeedToRange((config as any).customSpeedRPM, overviewSpeedRange, defaultCustomSpeed) ?? defaultCustomSpeed));
   }, [(config as any).customSpeedRPM, defaultCustomSpeed, overviewSpeedRange]);
-  useEffect(() => {
-    setManualGearDraft(((config as any).manualGear || '标准') as string);
-    setManualLevelDraft(((config as any).manualLevel || '中') as string);
-  }, [(config as any).manualGear, (config as any).manualLevel]);
 
   return (
     <>
@@ -454,43 +306,6 @@ export default function FanControlSection({
           )}
         </AnimatePresence>
 
-        {supportsManualGears && (
-          <SettingRow
-            icon={<Settings className="h-4 w-4" />}
-            title={t('controlPanel.fan.manualGearTitle')}
-            description={isConnected ? t('controlPanel.fan.manualGearDescription') : t('controlPanel.fan.manualGearDisconnected')}
-            disabled={!isConnected}
-          >
-            <div className="grid w-full grid-cols-1 gap-2 sm:w-[27rem] sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-              <Select
-                value={manualGearDraft}
-                onChange={(value: string | number) => setManualGearDraft(String(value))}
-                options={fanGearOptions}
-                size="sm"
-                disabled={!isConnected || loadingStates.manualGear}
-              />
-              <Select
-                value={manualLevelDraft}
-                onChange={(value: string | number) => setManualLevelDraft(String(value))}
-                options={fanLevelOptions}
-                size="sm"
-                disabled={!isConnected || loadingStates.manualGear}
-              />
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleManualGearApply}
-                loading={loadingStates.manualGear}
-                disabled={!isConnected}
-                icon={<CheckCircle2 className="h-3.5 w-3.5" />}
-                className="w-full sm:w-auto"
-              >
-                {t('common.actions.apply')}
-              </Button>
-            </div>
-          </SettingRow>
-        )}
-
         <TemperatureBaselineSection
           config={config}
           temperature={temperature}
@@ -514,49 +329,6 @@ export default function FanControlSection({
             size="sm"
             color="blue"
             srLabel={t('controlPanel.fan.transientSpikeFilterAria')}
-          />
-        </SettingRow>
-
-        <SettingRow
-          icon={<Sparkles className={clsx('h-4 w-4', (config.smartControl as any)?.learning ? 'text-amber-500' : 'text-muted-foreground')} />}
-          title={t('controlPanel.fan.learningTitle')}
-          description={t('controlPanel.fan.learningDescription')}
-        >
-          <ToggleSwitch
-            enabled={!!(config.smartControl as any)?.learning}
-            onChange={handleLearningToggle}
-            loading={loadingStates.learning}
-            size="sm"
-            color="purple"
-            srLabel={t('controlPanel.fan.learningAria')}
-          />
-        </SettingRow>
-
-        <SettingRow
-          icon={<BarChart3 className="h-4 w-4" />}
-          title={t('controlPanel.fan.temperatureHistoryTitle')}
-          description={t('controlPanel.fan.temperatureHistoryDescription')}
-        >
-          <ToggleSwitch
-            enabled={temperatureHistoryEnabled}
-            onChange={handleTemperatureHistoryChange}
-            loading={loadingStates.temperatureHistory}
-            size="sm"
-            color="blue"
-            srLabel={t('controlPanel.fan.temperatureHistoryAria')}
-          />
-        </SettingRow>
-
-        <SettingRow
-          icon={<Spline className="h-4 w-4" />}
-          title={t('controlPanel.fan.curveProfileTitle')}
-          description={t('controlPanel.fan.curveProfileDescription')}
-        >
-          <FanCurveProfileSelect
-            profiles={curveProfiles}
-            activeProfileId={activeCurveProfileId}
-            onChange={handleCurveProfileChange}
-            loading={curveProfileLoading}
           />
         </SettingRow>
 

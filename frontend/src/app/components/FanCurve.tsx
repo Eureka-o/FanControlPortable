@@ -1450,7 +1450,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                   {curveProfiles.map((profile) => {
                     const isActive = profile.id === activeProfileId;
                     return (
-                      <div key={profile.id} className="group flex shrink-0 items-start gap-0">
+                      <div key={profile.id} className="group relative flex shrink-0 hover:z-10 focus-within:z-10">
                         <button
                           type="button"
                           onClick={() => void switchProfile(profile.id)}
@@ -1473,7 +1473,12 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                               setDeleteProfileDialogOpen(true);
                             }}
                             disabled={profileOpLoading}
-                            className="-ml-px flex h-[13px] w-[13px] cursor-pointer items-center justify-center rounded-full border border-transparent bg-muted/60 text-muted-foreground/80 opacity-0 transition-colors group-hover:opacity-100 group-focus-within:opacity-100 hover:border-destructive/30 hover:bg-destructive/15 hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed"
+                            className={clsx(
+                              'absolute -right-[6px] -top-[1px] z-10 flex h-[13px] w-[13px] cursor-pointer items-center justify-center rounded-full border opacity-0 shadow-sm transition-[color,background-color,border-color,opacity] group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/30 disabled:cursor-not-allowed',
+                              isActive
+                                ? 'border-destructive/50 bg-card text-destructive'
+                                : 'border-border bg-card text-muted-foreground hover:border-destructive/50 hover:text-destructive',
+                            )}
                             aria-label={t('fanCurve.profiles.deleteProfileLabel', { name: profile.name })}
                             title={t('fanCurve.profiles.deleteProfileLabel', { name: profile.name })}
                           >
@@ -2157,18 +2162,18 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
         </Dialog>
 
         <Dialog open={manageProfilesDialogOpen} onOpenChange={setManageProfilesDialogOpen}>
-          <DialogContent className="max-w-xl">
+          <DialogContent className="max-w-[620px]">
             <DialogHeader>
               <DialogTitle>{t('fanCurve.profiles.manageTitle')}</DialogTitle>
               <DialogDescription>{t('fanCurve.profiles.manageDescription')}</DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-5">
+            <div className="space-y-4">
               <section className="space-y-2">
                 <label className="text-xs font-medium text-muted-foreground" htmlFor="curve-profile-name">
                   {t('fanCurve.profiles.renameLabel')}
                 </label>
-                <div className="flex flex-wrap items-center gap-2">
+                <div data-profile-rename-row className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                   <Input
                     id="curve-profile-name"
                     value={profileNameInput}
@@ -2176,30 +2181,30 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                     onCompositionStart={handleProfileNameCompositionStart}
                     onCompositionEnd={(e) => handleProfileNameCompositionEnd(e.currentTarget.value)}
                     placeholder={t('fanCurve.profiles.namePlaceholder')}
-                    className="h-10 min-w-[220px] flex-1"
+                    className="h-10 w-full"
                   />
-                  <Button variant="secondary" size="sm" onClick={() => void saveCurrentProfileName()} loading={profileOpLoading} icon={<Pencil className="h-3.5 w-3.5" />}>
+                  <Button className="h-10 w-full sm:w-auto" variant="secondary" size="sm" onClick={() => void saveCurrentProfileName()} loading={profileOpLoading} icon={<Pencil className="h-3.5 w-3.5" />}>
                     {t('fanCurve.profiles.saveName')}
                   </Button>
                 </div>
               </section>
 
               <section data-profile-transfer className="space-y-3 border-t border-border/70 pt-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm font-medium">{t('fanCurve.importExport.title')}</span>
-                  <span className="text-xs text-muted-foreground">{t('fanCurve.importExport.description')}</span>
+                <div data-profile-transfer-header className="space-y-1">
+                  <div className="text-sm font-medium">{t('fanCurve.importExport.title')}</div>
+                  <div className="text-xs leading-relaxed text-muted-foreground">{t('fanCurve.importExport.description')}</div>
                 </div>
                 <div className="space-y-3">
-                  <div data-profile-export-section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border/70 bg-background/30 p-4">
-                    <div className="min-w-[220px] flex-1">
+                  <div data-profile-export-section className="space-y-3 rounded-xl border border-border/70 bg-background/30 p-4">
+                    <div>
                       <span className="text-xs font-medium text-muted-foreground">{t('fanCurve.importExport.exportTitle')}</span>
-                      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{t('fanCurve.importExport.exportHint')}</p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t('fanCurve.importExport.exportHint')}</p>
                     </div>
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                      <Button variant="secondary" size="sm" onClick={() => void exportProfiles('clipboard')} icon={<Clipboard className="h-3.5 w-3.5" />}>
+                    <div data-profile-export-actions className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <Button className="w-full" variant="secondary" size="sm" onClick={() => void exportProfiles('clipboard')} icon={<Clipboard className="h-3.5 w-3.5" />}>
                         {t('fanCurve.importExport.copyCode')}
                       </Button>
-                      <Button variant="outline" size="sm" onClick={() => void exportProfiles('file')} icon={<Upload className="h-3.5 w-3.5" />}>
+                      <Button className="w-full" variant="outline" size="sm" onClick={() => void exportProfiles('file')} icon={<Upload className="h-3.5 w-3.5" />}>
                         {t('fanCurve.importExport.exportFile')}
                       </Button>
                     </div>
@@ -2228,20 +2233,21 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                     />
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-xs font-medium text-muted-foreground">{t('fanCurve.importExport.importTitle')}</span>
-                      <Button variant="outline" size="sm" onClick={() => profileFileInputRef.current?.click()} icon={<Download className="h-3.5 w-3.5" />}>
+                      <Button className="shrink-0" variant="outline" size="sm" onClick={() => profileFileInputRef.current?.click()} icon={<Download className="h-3.5 w-3.5" />}>
                         {t('fanCurve.importExport.chooseFile')}
                       </Button>
                     </div>
                     <textarea
                       value={importCode}
                       onChange={(e) => setImportCode(e.target.value)}
-                      rows={3}
-                      className="w-full resize-none rounded-lg border border-border/70 bg-background px-3 py-2 text-xs leading-relaxed"
+                      rows={2}
+                      className="min-h-20 w-full resize-none rounded-lg border border-border/70 bg-background px-3 py-2 text-xs leading-relaxed"
                       placeholder={t('fanCurve.importExport.importPlaceholder')}
                     />
-                    <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <span className="text-[11px] text-muted-foreground">{t('fanCurve.importExport.dropHint')}</span>
                       <Button
+                        className="w-full sm:w-auto"
                         variant="secondary"
                         size="sm"
                         onClick={() => {

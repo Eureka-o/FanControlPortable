@@ -2,8 +2,8 @@
 
 import { types } from '../../../../../wailsjs/go/models';
 import { type DeviceCandidate, type WiFiDiscoveredDevice } from '../../../services/api';
-import { formatSpeedRange, normalizeTransport, summarizeConnection } from '../../devices/profile-utils';
-import { profileConnection, profileLabel, wifiDiscoverySourceKey } from '../device-connection-utils';
+import { normalizeTransport } from '../../devices/profile-utils';
+import { profileConnection, wifiDiscoverySourceKey } from '../device-connection-utils';
 
 export function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -100,38 +100,6 @@ export function candidateBadges(candidate: DeviceCandidate, t: (key: string, opt
     badges.push(t('controlPanel.system.deviceConnection.wifiScanLatency', { latency: candidate.latencyMs }));
   }
   return badges;
-}
-
-export function currentDeviceSummary({
-  connectedDeviceProfile,
-  connectedDeviceTransport,
-  t,
-}: {
-  connectedDeviceProfile: types.DeviceProfile | null;
-  connectedDeviceTransport: string;
-  t: (key: string) => string;
-}) {
-  if (connectedDeviceProfile) {
-    return {
-      hasConnectedDevice: true,
-      name: profileLabel(connectedDeviceProfile),
-      detail: `${summarizeConnection(connectedDeviceProfile)} · ${formatSpeedRange(connectedDeviceProfile)}`,
-    };
-  }
-
-  if (connectedDeviceTransport) {
-    return {
-      hasConnectedDevice: true,
-      name: transportLabel(connectedDeviceTransport, t),
-      detail: t('controlPanel.system.deviceConnection.statusConnected'),
-    };
-  }
-
-  return {
-    hasConnectedDevice: false,
-    name: t('controlPanel.system.deviceConnection.connectedDevicesEmpty'),
-    detail: t('controlPanel.system.deviceConnection.statusDisconnected'),
-  };
 }
 
 export function profileEndpoint(profile: types.DeviceProfile | null | undefined) {
