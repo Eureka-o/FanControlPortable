@@ -31,7 +31,7 @@ import { useHistoryDisplayPreferences } from '../hooks/useHistoryDisplayPreferen
 import { useLocale } from '../lib/i18n';
 import { getFanSpeedUnit, getFanSpeedRange, getFanSpeedTicks, fanSpeedUnitLabel } from '../lib/fan-speed';
 import { type HistorySeriesKey } from '../lib/temperature-history';
-import type { CurveFocusTarget } from '../store/app-store';
+import { useAppStore, type CurveFocusTarget } from '../store/app-store';
 import { types } from '../../../wailsjs/go/models';
 import { ClipboardSetText } from '../../../wailsjs/runtime/runtime';
 import { useTranslation } from 'react-i18next';
@@ -438,6 +438,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const [importCode, setImportCode] = useState('');
   const [isImportDragging, setIsImportDragging] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const pendingTab = useAppStore((state) => state.pendingTab);
+  const setCurveDraftDirty = useAppStore((state) => state.setCurveDraftDirty);
+  const completePendingTabChange = useAppStore((state) => state.completePendingTabChange);
+  const cancelPendingTabChange = useAppStore((state) => state.cancelPendingTabChange);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [learningConfigLoading, setLearningConfigLoading] = useState(false);
@@ -605,6 +609,17 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const currentLearningBias = normalizeLearningBias((smartControl as any).learningBias);
   const currentLearningBiasOption = learningBiasOptions.find((option) => option.value === currentLearningBias) ?? learningBiasOptions[0];
   const [targetTempDraft, setTargetTempDraft] = useState(() => normalizeTargetTemp((config.smartControl as any)?.targetTemp ?? 68));
+
+  useEffect(() => {
+    setCurveDraftDirty(hasUnsavedChanges);
+  }, [hasUnsavedChanges, setCurveDraftDirty]);
+
+  useEffect(() => {
+    if (pendingTab) {
+      setPendingProfileId('');
+      setProfileSwitchDialogOpen(true);
+    }
+  }, [pendingTab]);
 
   useEffect(() => {
     setTargetTempDraft(normalizeTargetTemp((smartControl as any).targetTemp ?? 68));
@@ -1038,16 +1053,21 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   }, [activeProfileId, applyProfileSwitch, hasUnsavedChanges]);
 
   const confirmProfileSwitch = useCallback(async (action: 'save' | 'discard') => {
-    if (!pendingProfileId) return;
+    if (!pendingProfileId && !pendingTab) return;
     if (action === 'save') {
       const saved = await persistCurrentCurve();
       if (!saved) return;
+    }
+    if (pendingTab) {
+      setProfileSwitchDialogOpen(false);
+      completePendingTabChange();
+      return;
     }
     const nextProfileId = pendingProfileId;
     setProfileSwitchDialogOpen(false);
     setPendingProfileId('');
     await applyProfileSwitch(nextProfileId);
-  }, [applyProfileSwitch, pendingProfileId, persistCurrentCurve]);
+  }, [applyProfileSwitch, completePendingTabChange, pendingProfileId, pendingTab, persistCurrentCurve]);
 
   const saveCurrentProfileName = useCallback(async () => {
     const fallbackName = activeProfile?.name || t('fanCurve.profiles.currentCurveName');
@@ -2269,7 +2289,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
           open={profileSwitchDialogOpen}
           onOpenChange={(open) => {
             setProfileSwitchDialogOpen(open);
-            if (!open) setPendingProfileId('');
+            if (!open) {
+              setPendingProfileId('');
+              cancelPendingTabChange();
+            }
           }}
         >
           <DialogContent className="max-w-md">
@@ -2284,6 +2307,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                 onClick={() => {
                   setProfileSwitchDialogOpen(false);
                   setPendingProfileId('');
+                  cancelPendingTabChange();
                 }}
                 disabled={isSaving || profileOpLoading}
               >
