@@ -48,6 +48,12 @@ test('uses a slightly faster page-style transition for settings sections', () =>
   assert.doesNotMatch(styles, /glacier-settings-panel-rise|settings-panel-switch/);
 });
 
+test('keeps the active settings panel in layout while switching sections', () => {
+  assert.doesNotMatch(source, /transitionEnd:\s*\{\s*display:\s*'none'\s*\}/);
+  assert.doesNotMatch(source, /active:\s*\{[\s\S]*?display:\s*'block'/);
+  assert.match(source, /active \? 'relative' : 'pointer-events-none absolute inset-x-0 top-0'/);
+});
+
 test('omits curve-owned learning and temperature history controls from settings', () => {
   assert.doesNotMatch(fanControlSource, /controlPanel\.fan\.learningTitle/);
   assert.doesNotMatch(fanControlSource, /controlPanel\.fan\.temperatureHistoryTitle/);

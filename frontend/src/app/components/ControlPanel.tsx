@@ -67,7 +67,6 @@ function createSettingsPanelVariants(reduceMotion: boolean): Variants {
     active: {
       opacity: reduceMotion ? 1 : [0, 1],
       y: reduceMotion ? 0 : [8, 0],
-      display: 'block',
       transition: {
         duration: reduceMotion ? 0 : SETTINGS_PANEL_ENTER_DURATION,
         ease: [0.22, 1, 0.36, 1],
@@ -80,7 +79,6 @@ function createSettingsPanelVariants(reduceMotion: boolean): Variants {
         duration: reduceMotion ? 0 : SETTINGS_PANEL_EXIT_DURATION,
         ease: [0.22, 1, 0.36, 1],
       },
-      transitionEnd: { display: 'none' },
     },
   };
 }
