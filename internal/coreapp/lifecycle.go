@@ -130,6 +130,21 @@ func (a *CoreApp) Start() error {
 		a.powerNotifyStop = stop
 		a.logInfo("已注册系统睡眠/唤醒通知")
 	}
+	if stop, err := powernotify.RegisterHIDInterfaceArrivalNotifications(
+		types.FlyDigiHIDVendorID,
+		[]uint16{
+			types.FlyDigiBS2ProductID,
+			types.FlyDigiBS2PROProductID,
+			types.FlyDigiBS3ProductID,
+			types.FlyDigiBS3PROProductID,
+		},
+		a.onSupportedHIDArrival,
+	); err != nil {
+		a.logDebug("注册飞智 HID 到达通知失败，将继续使用分阶段重连: %v", err)
+	} else {
+		a.hidNotifyStop = stop
+		a.logInfo("已注册飞智 HID 接口到达通知")
+	}
 
 	// 启动健康监控
 	if cfg.GuiMonitoring {
@@ -177,6 +192,10 @@ func (a *CoreApp) Stop() {
 	if a.powerNotifyStop != nil {
 		a.safeRun("power-notify-unregister", a.powerNotifyStop)
 		a.powerNotifyStop = nil
+	}
+	if a.hidNotifyStop != nil {
+		a.safeRun("hid-notify-unregister", a.hidNotifyStop)
+		a.hidNotifyStop = nil
 	}
 	a.stopTemperatureMonitoring()
 	a.monitoringMutex.Lock()

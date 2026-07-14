@@ -242,6 +242,56 @@ func TestReconnectTransportUsesCompatibilityFastPathAfterCompatibilitySuccess(t 
 	}
 }
 
+func TestReconnectNativeTransportKeepsLastSuccessfulProfile(t *testing.T) {
+	profile := types.FlyDigiBS2PROProfile()
+	profileCalls := 0
+	autoCalls := 0
+	connected, info := reconnectNativeTransport(
+		true,
+		profile,
+		func(got types.DeviceProfile) (bool, map[string]string) {
+			profileCalls++
+			if got.ID != profile.ID {
+				t.Fatalf("reconnect profile = %q, want %q", got.ID, profile.ID)
+			}
+			return true, map[string]string{"transport": got.Transport}
+		},
+		func() (bool, map[string]string) {
+			autoCalls++
+			return false, nil
+		},
+	)
+	if !connected || info["transport"] != types.DeviceTransportHID || profileCalls != 1 || autoCalls != 0 {
+		t.Fatalf("connected=%v info=%#v profileCalls=%d autoCalls=%d", connected, info, profileCalls, autoCalls)
+	}
+}
+
+func TestSupportedHIDArrivalReconnectPolicy(t *testing.T) {
+	if !shouldReconnectOnHIDArrival(false, false, false, false, false) {
+		t.Fatal("available HID arrival should trigger reconnect")
+	}
+	for _, test := range []struct {
+		name       string
+		stopping   bool
+		suspended  bool
+		suppressed bool
+		core       bool
+		manager    bool
+	}{
+		{name: "stopping", stopping: true},
+		{name: "suspended", suspended: true},
+		{name: "manual disconnect", suppressed: true},
+		{name: "core connected", core: true},
+		{name: "manager connected", manager: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if shouldReconnectOnHIDArrival(test.stopping, test.suspended, test.suppressed, test.core, test.manager) {
+				t.Fatal("HID arrival should not trigger reconnect")
+			}
+		})
+	}
+}
+
 func TestReapplyConfigAfterReconnectKeepsNativeRuntimeProfile(t *testing.T) {
 	cfg := types.GetDefaultConfig(false)
 	cfg.AutoControl = true

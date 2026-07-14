@@ -98,6 +98,28 @@ func TestResumeReconnectWantedOnSuspend(t *testing.T) {
 	}
 }
 
+func TestSystemResumeReconnectDelaysAreStaged(t *testing.T) {
+	want := []time.Duration{
+		3 * time.Second,
+		8 * time.Second,
+		15 * time.Second,
+		20 * time.Second,
+		30 * time.Second,
+		30 * time.Second,
+		60 * time.Second,
+		60 * time.Second,
+	}
+	got := systemResumeReconnectDelays()
+	if len(got) != len(want) {
+		t.Fatalf("resume reconnect delays = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("resume reconnect delays = %v, want %v", got, want)
+		}
+	}
+}
+
 func TestCurrentSuspendGenerationRequiresActiveSuspend(t *testing.T) {
 	app := &CoreApp{}
 	generation := app.suspendGeneration.Add(1)

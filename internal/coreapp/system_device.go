@@ -139,6 +139,19 @@ func defaultReconnectDelays() []time.Duration {
 	}
 }
 
+func systemResumeReconnectDelays() []time.Duration {
+	return []time.Duration{
+		systemResumeReconnectDelay,
+		8 * time.Second,
+		15 * time.Second,
+		20 * time.Second,
+		30 * time.Second,
+		30 * time.Second,
+		60 * time.Second,
+		60 * time.Second,
+	}
+}
+
 func cloneReconnectDelays(delays []time.Duration) []time.Duration {
 	if len(delays) == 0 {
 		return defaultReconnectDelays()
@@ -354,11 +367,20 @@ func (a *CoreApp) reconnectDevice() reconnectAttemptResult {
 
 	cfg := a.configManager.Get()
 	types.NormalizeDeviceProfileConfig(&cfg)
+	lastConnectionWasNative := a.lastConnectionWasNative.Load()
+	activeProfile := a.deviceManager.ActiveProfile()
 	connected, deviceInfo := reconnectTransport(
 		a.hasSuccessfulConnection.Load(),
-		a.lastConnectionWasNative.Load(),
+		lastConnectionWasNative,
 		func() (bool, map[string]string) {
-			return a.deviceManager.AutoConnectNativeProfiles(cfg.DeviceProfiles)
+			return reconnectNativeTransport(
+				lastConnectionWasNative,
+				activeProfile,
+				a.deviceManager.ConnectNativeProfile,
+				func() (bool, map[string]string) {
+					return a.deviceManager.AutoConnectNativeProfiles(cfg.DeviceProfiles)
+				},
+			)
 		},
 		func() (bool, map[string]string) {
 			a.configureDeviceManager(cfg)
@@ -371,6 +393,19 @@ func (a *CoreApp) reconnectDevice() reconnectAttemptResult {
 		disconnect:  a.deviceManager.DisconnectSilently,
 		isConnected: a.deviceManager.IsConnected,
 	}
+}
+
+func reconnectNativeTransport(
+	lastConnectionWasNative bool,
+	activeProfile types.DeviceProfile,
+	tryProfile func(types.DeviceProfile) (bool, map[string]string),
+	tryAll func() (bool, map[string]string),
+) (bool, map[string]string) {
+	activeProfile = types.NormalizeDeviceProfile(activeProfile, "")
+	if lastConnectionWasNative && types.IsNativeDeviceTransport(activeProfile.Transport) {
+		return tryProfile(activeProfile)
+	}
+	return tryAll()
 }
 
 func reconnectTransport(
@@ -502,6 +537,28 @@ func (a *CoreApp) onSystemResume() {
 	a.triggerResumeRecovery("power-event", 0, true)
 }
 
+func shouldReconnectOnHIDArrival(stopping, suspended, suppressed, coreConnected, managerConnected bool) bool {
+	return !stopping && !suspended && !suppressed && !coreConnected && !managerConnected
+}
+
+func (a *CoreApp) onSupportedHIDArrival(devicePath string) {
+	a.mutex.RLock()
+	coreConnected := a.isConnected
+	a.mutex.RUnlock()
+	if !shouldReconnectOnHIDArrival(
+		a.stopping.Load(),
+		a.systemSuspended.Load(),
+		a.autoReconnectSuppressed.Load(),
+		coreConnected,
+		a.deviceManager.IsConnected(),
+	) {
+		return
+	}
+
+	a.logInfo("检测到飞智 HID 接口已就绪，立即触发重连: %s", devicePath)
+	a.requestReconnect("hid-interface-arrival", []time.Duration{0})
+}
+
 // triggerResumeRecovery 以节流方式触发唤醒恢复，避免电源事件与基于时间间隔的检测重复执行。
 func (a *CoreApp) triggerResumeRecovery(source string, gap time.Duration, forceReconnect bool) {
 	nowUnix := time.Now().UnixNano()
@@ -544,6 +601,12 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 
 	a.logInfo("检测到系统从睡眠/休眠恢复，来源=%s，挂起时长约=%s，主动挂起=%v，开始执行连接自愈",
 		source, gap.Round(time.Second), proactivelySuspended)
+	if a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent(ipc.EventSystemResume, map[string]any{
+			"timestamp": time.Now().UnixMilli(),
+			"source":    source,
+		})
+	}
 
 	// 唤醒后 Explorer 可能重启或通知区域被重建，主动刷新托盘图标避免图标丢失/无响应。
 	a.refreshTrayAfterResume()
@@ -580,7 +643,7 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 	}
 
 	a.safeRun("resume-device-disconnect", func() {
-		a.deviceManager.DisconnectSilently()
+		a.deviceManager.DisconnectForRecovery()
 	})
 	a.mutex.Lock()
 	a.isConnected = false
@@ -591,16 +654,7 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 		a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
 	}
 
-	a.requestReconnect("system-resume", []time.Duration{
-		systemResumeReconnectDelay,
-		8 * time.Second,
-		15 * time.Second,
-		20 * time.Second,
-		30 * time.Second,
-		30 * time.Second,
-		60 * time.Second,
-		60 * time.Second,
-	})
+	a.requestReconnect("system-resume", systemResumeReconnectDelays())
 }
 
 // refreshTrayAfterResume 在系统唤醒后刷新托盘图标。

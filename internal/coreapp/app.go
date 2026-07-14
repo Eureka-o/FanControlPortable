@@ -78,6 +78,7 @@ type CoreApp struct {
 	healthConsecutiveFailureCount int32
 
 	powerNotifyStop func()
+	hidNotifyStop   func()
 
 	guiLastResponse   int64
 	guiMonitorEnabled bool

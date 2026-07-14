@@ -49,6 +49,7 @@ type Manager struct {
 	logger           types.Logger
 	currentFanData   atomic.Pointer[types.FanData]
 	writesBlocked    atomic.Bool
+	connectionGen    atomic.Uint64
 
 	onFanDataUpdate func(data *types.FanData)
 	onDisconnect    func()
@@ -137,6 +138,10 @@ func (m *Manager) DisconnectSilently() {
 	m.disconnect(false)
 }
 
+func (m *Manager) DisconnectForRecovery() {
+	m.disconnect(false)
+}
+
 func (m *Manager) disconnect(notify bool) {
 	m.operationControl.cancelActive()
 	m.mutex.Lock()
@@ -167,6 +172,10 @@ func (m *Manager) IsConnected() bool {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 	return m.isConnected
+}
+
+func (m *Manager) ConnectionGeneration() uint64 {
+	return m.connectionGen.Load()
 }
 
 func (m *Manager) GetProductID() uint16 {

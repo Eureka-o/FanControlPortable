@@ -118,6 +118,12 @@ func (a *App) handleCoreEvent(event ipc.Event) {
 			runtime.EventsEmit(a.ctx, "config-update", cfg)
 		}
 
+	case ipc.EventSystemResume:
+		var payload map[string]any
+		if err := json.Unmarshal(event.Data, &payload); err == nil {
+			runtime.EventsEmit(a.ctx, "system-resume", payload)
+		}
+
 	case ipc.EventHotkeyTriggered:
 		var payload map[string]any
 		if err := json.Unmarshal(event.Data, &payload); err == nil {

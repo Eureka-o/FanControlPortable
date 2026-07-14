@@ -50,12 +50,13 @@ func (m *Manager) connectFlyDigiHIDLocked() (bool, map[string]string) {
 	}
 
 	m.flyDigiHID = dev
+	generation := m.connectionGen.Add(1)
 	m.deviceType = types.DeviceTransportHID
 	m.productID = dev.productID
 	if profile, ok := types.FlyDigiProfileForHIDProductID(dev.productID); ok {
 		m.activeProfile = profile
 	}
-	ready := m.startFlyDigiHIDReaderLocked(dev)
+	ready := m.startFlyDigiHIDReaderLocked(dev, generation)
 	if !waitForFlyDigiHIDReady(ready, flyDigiHIDReadyTimeout) {
 		m.logWarn("FlyDigi HID opened but no valid status frame arrived within %s", flyDigiHIDReadyTimeout)
 		m.closeFlyDigiHIDLocked()
@@ -88,18 +89,19 @@ func (m *Manager) closeFlyDigiHIDLocked() {
 	if m.flyDigiHID == nil {
 		return
 	}
+	m.connectionGen.Add(1)
 	m.stopFlyDigiHIDReaderLocked()
 	m.flyDigiHID = nil
 }
 
-func (m *Manager) startFlyDigiHIDReaderLocked(dev *flyDigiHIDDevice) <-chan struct{} {
+func (m *Manager) startFlyDigiHIDReaderLocked(dev *flyDigiHIDDevice, generation uint64) <-chan struct{} {
 	m.stopFlyDigiHIDReaderLocked()
 	stop := make(chan struct{})
 	done := make(chan struct{})
 	ready := make(chan struct{})
 	m.flyDigiHIDStop = stop
 	m.flyDigiHIDDone = done
-	go m.readFlyDigiHIDLoop(dev, stop, done, ready)
+	go m.readFlyDigiHIDLoop(dev, generation, stop, done, ready)
 	return ready
 }
 
@@ -133,7 +135,7 @@ func (m *Manager) stopFlyDigiHIDReaderLocked() {
 	}
 }
 
-func (m *Manager) readFlyDigiHIDLoop(dev *flyDigiHIDDevice, stop <-chan struct{}, done chan<- struct{}, ready chan<- struct{}) {
+func (m *Manager) readFlyDigiHIDLoop(dev *flyDigiHIDDevice, generation uint64, stop <-chan struct{}, done chan<- struct{}, ready chan<- struct{}) {
 	defer close(done)
 	if dev == nil {
 		return
@@ -180,7 +182,7 @@ func (m *Manager) readFlyDigiHIDLoop(dev *flyDigiHIDDevice, stop <-chan struct{}
 		if len(raw) == 0 {
 			continue
 		}
-		if m.handleFlyDigiHIDRX(raw) && !readySent {
+		if m.handleFlyDigiHIDRX(generation, raw) && !readySent {
 			close(ready)
 			readySent = true
 		}
@@ -214,6 +216,7 @@ func (m *Manager) handleFlyDigiHIDReaderFailure(dev *flyDigiHIDDevice) {
 	m.flyDigiHID = nil
 	m.flyDigiHIDStop = nil
 	m.flyDigiHIDDone = nil
+	m.connectionGen.Add(1)
 	m.currentFanData.Store(nil)
 	m.mutex.Unlock()
 
@@ -222,12 +225,28 @@ func (m *Manager) handleFlyDigiHIDReaderFailure(dev *flyDigiHIDDevice) {
 	}
 }
 
-func (m *Manager) handleFlyDigiHIDRX(raw []byte) bool {
+func (m *Manager) handleFlyDigiHIDRX(generation uint64, raw []byte) bool {
+	if m.connectionGen.Load() != generation {
+		return false
+	}
+
 	m.recordDebugFrame("rx", types.DeviceTransportHID, raw)
 	if fanData := parseFlyDigiFanData(raw); fanData != nil {
+		if m.connectionGen.Load() != generation {
+			return false
+		}
 		m.currentFanData.Store(fanData)
-		if m.onFanDataUpdate != nil {
-			go m.onFanDataUpdate(fanData)
+		if m.connectionGen.Load() != generation {
+			m.currentFanData.CompareAndSwap(fanData, nil)
+			return false
+		}
+		callback := m.onFanDataUpdate
+		if callback != nil {
+			go func() {
+				if m.connectionGen.Load() == generation {
+					callback(fanData)
+				}
+			}()
 		}
 		return true
 	}

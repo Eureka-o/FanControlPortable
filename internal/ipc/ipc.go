@@ -160,6 +160,7 @@ const (
 	EventDeviceError              = "device-error"
 	EventDeviceSettingsUpdate     = "device-settings-update"
 	EventConfigUpdate             = "config-update"
+	EventSystemResume             = "system-resume"
 	EventHotkeyTriggered          = "hotkey-triggered"
 	EventLegionPowerModeUpdate    = "legion-power-mode-update"
 	EventLegionFnQSupportUpdate   = "legion-fnq-support-update"
