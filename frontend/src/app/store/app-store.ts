@@ -1,10 +1,12 @@
 import { create } from 'zustand';
 import {
   LatestRequestGate,
+  appendTimelineEvent,
   cancelPendingTabChange as cancelTabChange,
   completePendingTabChange as completeTabChange,
   requestTabChange,
   type AppTab,
+  type TimelineEvent,
 } from './app-store-logic.mts';
 import { types } from '../../../wailsjs/go/models';
 import { apiService } from '../services/api';
@@ -189,6 +191,7 @@ interface AppStore {
   pendingTab: ActiveTab | null;
   curveFocusTarget: CurveFocusTarget | null;
   sessionHistoryPoints: TemperatureHistoryPoint[];
+  timelineEvents: TimelineEvent[];
 
   setActiveTab: (tab: ActiveTab) => void;
   setCurveDraftDirty: (dirty: boolean) => void;
@@ -230,6 +233,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   pendingTab: null,
   curveFocusTarget: null,
   sessionHistoryPoints: [],
+  timelineEvents: [],
 
   setActiveTab: (tab) => set((state) => ({
     ...requestTabChange(state, tab),
@@ -340,13 +344,32 @@ export const useAppStore = create<AppStore>((set, get) => ({
     deviceContextRequestGate.invalidate();
     try {
       await apiService.disconnectDevice();
-      set({ isConnected: false, deviceRuntimeState: 'disconnected', deviceProductId: null, deviceModel: null, deviceSettings: null, runtimeDeviceProfile: null, runtimeDeviceCapabilities: null, fanData: null });
+      set((state) => ({
+        isConnected: false,
+        deviceRuntimeState: 'disconnected',
+        deviceProductId: null,
+        deviceModel: null,
+        deviceSettings: null,
+        runtimeDeviceProfile: null,
+        runtimeDeviceCapabilities: null,
+        fanData: null,
+        timelineEvents: appendTimelineEvent(state.timelineEvents, { timestamp: Date.now(), type: 'disconnect' }),
+      }));
     } catch (error) {
       console.error('断开连接失败:', error);
     }
   },
 
-  setConfig: (config) => set({ config }),
+  setConfig: (config) => set((state) => {
+    const previousProfileId = ((state.config as any)?.activeFanCurveProfileId || '') as string;
+    const nextProfileId = ((config as any)?.activeFanCurveProfileId || '') as string;
+    return {
+      config,
+      timelineEvents: previousProfileId && nextProfileId && previousProfileId !== nextProfileId
+        ? appendTimelineEvent(state.timelineEvents, { timestamp: Date.now(), type: 'profile' })
+        : state.timelineEvents,
+    };
+  }),
 
   refreshDeviceContext: async () => {
     const requestGeneration = deviceContextRequestGate.begin();
@@ -446,7 +469,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           info.deviceProfile?.model,
           info.model,
         ].map((value) => (typeof value === 'string' ? value.trim() : '')).find(Boolean);
-        set({
+        set((state) => ({
           isConnected: true,
           deviceRuntimeState: info.runtime?.state || 'capabilities',
           deviceProductId: info.productId || null,
@@ -457,7 +480,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
           fanData: info.currentData || null,
           coreServiceError: null,
           error: null,
-        });
+          timelineEvents: appendTimelineEvent(state.timelineEvents, { timestamp: Date.now(), type: 'reconnect' }),
+        }));
         if (connectedDeviceName) {
           toast.success(i18n.t('store.device.connectedTitle'), {
             description: i18n.t('store.device.connectedDescription', { device: connectedDeviceName }),
@@ -473,6 +497,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
         deviceContextRequestGate.invalidate();
         console.log('设备已断开');
         clearPendingDisconnect();
+        set((state) => ({
+          timelineEvents: appendTimelineEvent(state.timelineEvents, { timestamp: Date.now(), type: 'disconnect' }),
+        }));
         if (!get().isConnected) {
           set({ isConnected: false, deviceRuntimeState: 'disconnected', deviceProductId: null, deviceModel: null, deviceSettings: null, runtimeDeviceProfile: null, runtimeDeviceCapabilities: null, fanData: null });
           return;
@@ -515,7 +542,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     unsubscribers.push(
       apiService.onConfigUpdate((updatedConfig) => {
-        set({ config: updatedConfig });
+        get().setConfig(updatedConfig);
+      })
+    );
+
+    unsubscribers.push(
+      apiService.onSystemResume((payload) => {
+        const timestamp = Number(payload?.timestamp || 0) || Date.now();
+        set((state) => ({
+          timelineEvents: appendTimelineEvent(state.timelineEvents, { timestamp, type: 'resume' }),
+        }));
       })
     );
 

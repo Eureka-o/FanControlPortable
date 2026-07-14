@@ -1007,12 +1007,33 @@ export default function DeviceStatus({
           <h3 className="mb-1.5 text-lg font-semibold">
             {t('deviceStatus.disconnected.title')}
           </h3>
-          <p className="mb-5 text-base text-muted-foreground">
+          <p className="mb-4 text-base text-muted-foreground">
             {t('deviceStatus.disconnected.description')}
           </p>
-          <Button onClick={onConnect} size="md" icon={<RotateCw className="h-4 w-4" />}>
-            {t('deviceStatus.actions.connectDevice')}
-          </Button>
+          <ol
+            data-device-recovery="connection"
+            className="mx-auto mb-5 max-w-xl list-decimal space-y-1.5 pl-5 text-left text-sm text-muted-foreground"
+          >
+            <li>{t('deviceStatus.recovery.deviceAvailable')}</li>
+            <li>{t('deviceStatus.recovery.releaseCompetingTools')}</li>
+            <li>{t('deviceStatus.recovery.retryOrExport')}</li>
+          </ol>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Button onClick={onConnect} size="md" icon={<RotateCw className="h-4 w-4" />}>
+              {t('deviceStatus.actions.connectDevice')}
+            </Button>
+            {onExportDiagnostics && (
+              <Button
+                variant="secondary"
+                size="md"
+                disabled={diagnosticsExporting}
+                onClick={onExportDiagnostics}
+                icon={<Download className="h-4 w-4" />}
+              >
+                {diagnosticsExporting ? t('appShell.diagnostics.exporting') : t('appShell.diagnostics.export')}
+              </Button>
+            )}
+          </div>
         </motion.div>
       )}
 
@@ -1028,6 +1049,14 @@ export default function DeviceStatus({
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <div className="flex-1">
                 <p>{temperature?.bridgeMessage || t('deviceStatus.bridgeWarning.default')}</p>
+                <ol
+                  data-device-recovery="temperature"
+                  className="mt-2 list-decimal space-y-1 pl-5 text-xs text-amber-700/90 dark:text-amber-200/80"
+                >
+                  <li>{t('deviceStatus.bridgeWarning.recovery.checkServices')}</li>
+                  <li>{t('deviceStatus.bridgeWarning.recovery.releaseCompetingTools')}</li>
+                  <li>{t('deviceStatus.bridgeWarning.recovery.retryOrExport')}</li>
+                </ol>
                 {bridgeStatus && (
                   <div className="mt-2 space-y-1 text-xs text-amber-700/90 dark:text-amber-200/80">
                     {bridgeStateLabel && (

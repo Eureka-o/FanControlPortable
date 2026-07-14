@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   LatestRequestGate,
+  appendTimelineEvent,
   cancelPendingTabChange,
   completePendingTabChange,
   requestTabChange,
@@ -50,4 +51,16 @@ test('only the latest device context request may commit', () => {
   assert.equal(gate.isCurrent(second), true);
   gate.invalidate();
   assert.equal(gate.isCurrent(second), false);
+});
+
+test('keeps recent timeline events while deduplicating repeated backend notifications', () => {
+  const first = appendTimelineEvent([], { timestamp: 1_000, type: 'disconnect' });
+  assert.deepEqual(first, [{ timestamp: 1_000, type: 'disconnect' }]);
+  assert.equal(appendTimelineEvent(first, { timestamp: 2_000, type: 'disconnect' }), first);
+
+  const reconnect = appendTimelineEvent(first, { timestamp: 2_100, type: 'reconnect' });
+  assert.deepEqual(reconnect.at(-1), { timestamp: 2_100, type: 'reconnect' });
+
+  const many = Array.from({ length: 105 }, (_, index) => ({ timestamp: index * 3_000, type: 'resume' }));
+  assert.equal(many.reduce(appendTimelineEvent, []).length, 100);
 });

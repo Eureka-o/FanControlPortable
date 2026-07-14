@@ -482,6 +482,11 @@
       "titleWithDevice": "{{name}} is not connected",
       "descriptionWithDevice": "{{name}} is the enabled device. Check its connection type and address, then connect."
     },
+    "recovery": {
+      "deviceAvailable": "Confirm the device is powered on and visible in Windows.",
+      "releaseCompetingTools": "Close other hardware or fan-control tools that may be using it.",
+      "retryOrExport": "Retry the connection; export diagnostics if it still fails."
+    },
     "bridgeWarning": {
       "default": "The temperature bridge failed to read data. Try reinitializing temperature monitoring and try again.",
       "stateLine": "Bridge status: {{state}}",
@@ -489,7 +494,12 @@
       "sharedProcess": "This instance is reusing a shared process",
       "pipeLine": "Named pipe: {{pipe}}",
       "diagnosticsLine": "Diagnostics: {{message}}",
-      "reinitialize": "Reinitialize temperature monitoring"
+      "reinitialize": "Reinitialize temperature monitoring",
+      "recovery": {
+        "checkServices": "Confirm FanControl Core and the temperature bridge are running.",
+        "releaseCompetingTools": "Close other sensor or hardware-monitoring tools.",
+        "retryOrExport": "Reinitialize monitoring; export diagnostics if readings do not recover."
+      }
     },
     "controlProtection": "Control and protection",
     "stats": {
@@ -697,6 +707,13 @@
       "emptyEnabled": "Background recording is enabled. Waiting for more temperature and fan samples.",
       "emptyDisabled": "Background recording is currently disabled. You can enable it on this page.",
       "recentTrend": "Recent trend",
+      "powerTrend": "Power trend",
+      "events": {
+        "disconnect": "Device disconnected",
+        "reconnect": "Device connected",
+        "resume": "System resumed",
+        "profile": "Curve profile switched"
+      },
       "waitingMoreSamples": "1 sample recorded. Waiting for more data before drawing the trend chart.",
       "series": {
         "cpu": "CPU temp",

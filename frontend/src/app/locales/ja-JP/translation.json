@@ -482,6 +482,11 @@
       "titleWithDevice": "{{name}} は未接続です",
       "descriptionWithDevice": "現在有効なデバイスは {{name}} です。接続方式とアドレスを確認してから接続してください。"
     },
+    "recovery": {
+      "deviceAvailable": "デバイスの電源が入り、Windows で認識されていることを確認します。",
+      "releaseCompetingTools": "デバイスを使用している可能性のある他のハードウェア・ファン制御ツールを終了します。",
+      "retryOrExport": "接続を再試行し、失敗する場合は診断情報を出力します。"
+    },
     "bridgeWarning": {
       "default": "温度ブリッジの読み取りに失敗しました。温度モニタリングを初期化してから再試行してください。",
       "stateLine": "ブリッジ状態: {{state}}",
@@ -489,7 +494,12 @@
       "sharedProcess": "現在のインスタンスは共有プロセスを再利用しています",
       "pipeLine": "名前付きパイプ: {{pipe}}",
       "diagnosticsLine": "診断情報: {{message}}",
-      "reinitialize": "温度モニタリングを初期化"
+      "reinitialize": "温度モニタリングを初期化",
+      "recovery": {
+        "checkServices": "FanControl Core と温度ブリッジが動作していることを確認します。",
+        "releaseCompetingTools": "他のセンサー・ハードウェア監視ツールを終了します。",
+        "retryOrExport": "温度監視を初期化し、復旧しない場合は診断情報を出力します。"
+      }
     },
     "controlProtection": "制御と保護",
     "stats": {
@@ -697,6 +707,13 @@
       "emptyEnabled": "バックグラウンド記録は有効です。さらなる温度とファンのサンプルを待っています。",
       "emptyDisabled": "バックグラウンド記録は無効です。このタブで有効にできます。",
       "recentTrend": "最近の推移",
+      "powerTrend": "電力トレンド",
+      "events": {
+        "disconnect": "デバイス切断",
+        "reconnect": "デバイス接続",
+        "resume": "システム復帰",
+        "profile": "カーブプロファイル切替"
+      },
       "waitingMoreSamples": "サンプルを 1 件記録しました。推移グラフを表示するにはさらなるデータが必要です。",
       "series": {
         "cpu": "CPU 温度",
