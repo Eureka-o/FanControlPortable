@@ -6,3 +6,7 @@ package powernotify
 func RegisterSuspendResumeNotifications(_, _ func()) (func(), error) {
 	return func() {}, nil
 }
+
+func RegisterHIDInterfaceArrivalNotifications(uint16, []uint16, func(string)) (func(), error) {
+	return func() {}, nil
+}
