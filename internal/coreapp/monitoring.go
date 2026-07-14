@@ -12,6 +12,40 @@ import (
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
+const temperatureSafetyFallbackThreshold = 3
+
+type temperatureSafetyFallback struct {
+	invalidSamples int
+	active         bool
+}
+
+func (s *temperatureSafetyFallback) observe(autoControl, inputReady bool) (apply, recovered bool) {
+	if !autoControl {
+		*s = temperatureSafetyFallback{}
+		return false, false
+	}
+	if inputReady {
+		recovered = s.active
+		*s = temperatureSafetyFallback{}
+		return false, recovered
+	}
+	s.invalidSamples++
+	return s.invalidSamples >= temperatureSafetyFallbackThreshold && !s.active, false
+}
+
+func (s *temperatureSafetyFallback) markApplied() {
+	s.active = true
+}
+
+func temperatureSafetyFallbackTarget(curve []types.FanCurvePoint, unit string, fanData *types.FanData) int {
+	if len(curve) == 0 {
+		return 0
+	}
+	_, target := smartcontrol.GetCurveRPMBounds(smartcontrol.CurveForUnit(curve, unit))
+	target, _ = applyFlyDigiRuntimeCapabilityToTarget(target, fanData, unit)
+	return target
+}
+
 const staleBridgeUpdateThreshold = 3
 
 // idleTemperatureMonitorInterval 是后台空闲（无 GUI 连接且未开启智能控温）时的温度采样间隔下限。
@@ -108,6 +142,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 		rawTempHistory = append(rawTempHistory, initialTemp.ControlTemp)
 	}
 	lastTargetRPM := -1
+	var safetyFallback temperatureSafetyFallback
 	learningDirty := false
 	defer func() {
 		if learningDirty {
@@ -290,10 +325,28 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			lastSmartTelemetryUsable = advancedTelemetryUsable
 
 			inputReady := automaticControlInputReady(temp)
+			applySafetyFallback, safetyFallbackRecovered := safetyFallback.observe(cfg.AutoControl, inputReady)
+			if safetyFallbackRecovered {
+				a.forceNextAutoTarget.Store(true)
+				a.logInfo("温度遥测已恢复，退出安全转速并恢复正常自动控制")
+			}
 			if cfg.AutoControl && inputReady && !lastAutoControl {
 				a.forceNextAutoTarget.Store(true)
 			}
 			controlReady := a.deviceControlReady()
+			if applySafetyFallback && controlReady {
+				speedUnit = a.activeDeviceSpeedUnit(&cfg)
+				target := temperatureSafetyFallbackTarget(cfg.FanCurve, speedUnit, fanData)
+				if target > 0 {
+					if a.deviceManager.SetTargetSpeed(target, speedUnit) {
+						safetyFallback.markApplied()
+						lastTargetRPM = target
+						a.logError("连续 %d 次未获得可信温度，已切换到安全转速: %d%s", safetyFallback.invalidSamples, displaySpeedForLog(target, speedUnit), types.FanSpeedDisplaySuffix(speedUnit))
+					} else {
+						a.logError("温度失效安全转速下发失败，将在下个周期重试: %d%s", displaySpeedForLog(target, speedUnit), types.FanSpeedDisplaySuffix(speedUnit))
+					}
+				}
+			}
 			if cfg.AutoControl && inputReady && controlReady {
 				speedUnit = a.activeDeviceSpeedUnit(&cfg)
 				sampleContext := newSmartControlSampleContext(cachedSelection, speedUnit)

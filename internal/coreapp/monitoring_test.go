@@ -430,3 +430,46 @@ func TestApplyFlyDigiRuntimeCapabilityToTargetLeavesNonFlyDigiPathsAlone(t *test
 		t.Fatalf("percent target should not be limited: (%d, %v)", got, limited)
 	}
 }
+
+func TestTemperatureSafetyFallbackTransitions(t *testing.T) {
+	var state temperatureSafetyFallback
+	for sample := 1; sample < temperatureSafetyFallbackThreshold; sample++ {
+		apply, recovered := state.observe(true, false)
+		if apply || recovered {
+			t.Fatalf("invalid sample %d transitioned early: apply=%v recovered=%v", sample, apply, recovered)
+		}
+	}
+	apply, recovered := state.observe(true, false)
+	if !apply || recovered {
+		t.Fatalf("threshold transition = apply %v recovered %v, want true/false", apply, recovered)
+	}
+	state.markApplied()
+	if apply, _ := state.observe(true, false); apply {
+		t.Fatal("active safety fallback requested a duplicate write")
+	}
+	apply, recovered = state.observe(true, true)
+	if apply || !recovered {
+		t.Fatalf("recovery transition = apply %v recovered %v, want false/true", apply, recovered)
+	}
+	if apply, recovered = state.observe(false, false); apply || recovered || state.invalidSamples != 0 || state.active {
+		t.Fatalf("disabled automatic control did not reset fallback state: %#v", state)
+	}
+}
+
+func TestTemperatureSafetyFallbackTargetUsesCurveMaximumAndDeviceLimit(t *testing.T) {
+	curve := []types.FanCurvePoint{{Temperature: 40, RPM: 1200}, {Temperature: 80, RPM: 4000}}
+	capability := types.DecodeFlyDigiRuntimeCapabilityFromGearSettings(0x4A, nil)
+	fanData := &types.FanData{
+		Transport:         types.DeviceTransportHID,
+		SpeedUnit:         types.FanSpeedUnitRPM,
+		GearSettings:      0x4A,
+		FlyDigiCapability: &capability,
+	}
+	if got := temperatureSafetyFallbackTarget(curve, types.FanSpeedUnitRPM, fanData); got != 3300 {
+		t.Fatalf("RPM safety target = %d, want capability-limited 3300", got)
+	}
+	percentCurve := []types.FanCurvePoint{{Temperature: 40, RPM: 30}, {Temperature: 80, RPM: 100}}
+	if got := temperatureSafetyFallbackTarget(percentCurve, types.FanSpeedUnitPercent, nil); got != 1000 {
+		t.Fatalf("percent safety target = %d, want 1000 ticks", got)
+	}
+}
