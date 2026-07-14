@@ -482,6 +482,11 @@
       "titleWithDevice": "{{name}} 未连接",
       "descriptionWithDevice": "当前启用设备为 {{name}}，确认连接方式和地址后即可连接。"
     },
+    "recovery": {
+      "deviceAvailable": "确认设备已通电，并且 Windows 可以识别。",
+      "releaseCompetingTools": "退出可能占用设备的其他硬件或风扇控制工具。",
+      "retryOrExport": "重试连接；仍然失败时导出诊断信息。"
+    },
     "bridgeWarning": {
       "default": "温度桥接程序读取失败，可重新初始化温度监控后重试。",
       "stateLine": "桥接状态：{{state}}",
@@ -489,7 +494,12 @@
       "sharedProcess": "当前实例复用共享进程",
       "pipeLine": "命名管道：{{pipe}}",
       "diagnosticsLine": "诊断信息：{{message}}",
-      "reinitialize": "重新初始化温度监控"
+      "reinitialize": "重新初始化温度监控",
+      "recovery": {
+        "checkServices": "确认 FanControl Core 和温度桥接程序正在运行。",
+        "releaseCompetingTools": "退出其他传感器或硬件监控工具。",
+        "retryOrExport": "重新初始化温度监控；仍未恢复时导出诊断信息。"
+      }
     },
     "controlProtection": "控制与保护",
     "stats": {
@@ -697,6 +707,13 @@
       "emptyEnabled": "后台记录已开启，等待更多温度与风扇样本。",
       "emptyDisabled": "后台记录当前已关闭，可在本页开启。",
       "recentTrend": "最近趋势",
+      "powerTrend": "功耗趋势",
+      "events": {
+        "disconnect": "设备断开",
+        "reconnect": "设备连接",
+        "resume": "系统恢复",
+        "profile": "曲线方案切换"
+      },
       "waitingMoreSamples": "已记录 1 条样本，等待更多数据后展示趋势图。",
       "series": {
         "cpu": "CPU 温度",

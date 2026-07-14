@@ -499,6 +499,10 @@ class ApiService {
     return EventsOn('config-update', callback);
   }
 
+  onSystemResume(callback: (payload: { timestamp?: number; source?: string }) => void): () => void {
+    return EventsOn('system-resume', callback);
+  }
+
   onHotkeyTriggered(callback: (payload: { action: string; shortcut: string; success: boolean; message: string }) => void): () => void {
     return EventsOn('hotkey-triggered', callback);
   }

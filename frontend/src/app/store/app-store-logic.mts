@@ -1,4 +1,18 @@
 export type AppTab = 'status' | 'curve' | 'control' | 'devices' | 'about';
+export type TimelineEventType = 'disconnect' | 'reconnect' | 'resume' | 'profile';
+
+export interface TimelineEvent {
+  timestamp: number;
+  type: TimelineEventType;
+}
+
+export function appendTimelineEvent(events: TimelineEvent[], event: TimelineEvent) {
+  const previous = events.at(-1);
+  if (previous?.type === event.type && Math.abs(event.timestamp - previous.timestamp) < 1_500) {
+    return events;
+  }
+  return [...events, event].slice(-100);
+}
 
 export interface TabNavigationState {
   activeTab: AppTab;

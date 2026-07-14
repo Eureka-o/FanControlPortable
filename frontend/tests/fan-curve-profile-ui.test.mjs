@@ -84,3 +84,20 @@ test('uses normal curve navigation and keeps history hydration out of the entry 
   assert.match(historyHookSource, /startTransition\(\(\) => \{/);
   assert.match(styles, /\[data-theme-card="curve-history"\] \[data-theme-ui="switch-thumb"\][^}]+transition: none;/s);
 });
+
+test('splits power history into an aligned conditional chart with a shared full-point tooltip', () => {
+  assert.match(source, /data-history-chart="thermal-fan"/);
+  assert.match(source, /data-history-chart="power"/);
+  assert.match(source, /const renderHistoryTooltip = useCallback/);
+  assert.match(source, /const point = payload\?\.\[0\]\?\.payload/);
+  assert.match(source, /const showHistoryPowerChart = historyHasPower && \(historySeriesVisibility\.cpuPower \|\| historySeriesVisibility\.gpuPower\)/);
+  assert.equal([...source.matchAll(/margin=\{\{ top: 12, right: 16, left: 4, bottom: 8 \}\}/g)].length, 2);
+});
+
+test('defers the offscreen power chart until history approaches the viewport', () => {
+  assert.match(source, /const \[historyPowerChartReady, setHistoryPowerChartReady\] = useState\(false\)/);
+  assert.match(source, /new IntersectionObserver/);
+  assert.match(source, /observer\.observe\(historyDetailsRef\.current\)/);
+  assert.match(source, /showHistoryPowerChart && \(/);
+  assert.match(source, /historyPowerChartReady \? \(\s*<ResponsiveContainer/s);
+});

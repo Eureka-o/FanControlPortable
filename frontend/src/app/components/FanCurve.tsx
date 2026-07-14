@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, memo, useMemo, useRef } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   RotateCw,
@@ -439,6 +439,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const [isImportDragging, setIsImportDragging] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const pendingTab = useAppStore((state) => state.pendingTab);
+  const timelineEvents = useAppStore((state) => state.timelineEvents);
   const setCurveDraftDirty = useAppStore((state) => state.setCurveDraftDirty);
   const completePendingTabChange = useAppStore((state) => state.completePendingTabChange);
   const cancelPendingTabChange = useAppStore((state) => state.cancelPendingTabChange);
@@ -449,6 +450,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [isInteracting, setIsInteracting] = useState(false);
   const [historyDisplayDialogOpen, setHistoryDisplayDialogOpen] = useState(false);
+  const [historyPowerChartReady, setHistoryPowerChartReady] = useState(false);
   const [draggedHistorySeries, setDraggedHistorySeries] = useState<HistorySeriesKey | null>(null);
   const {
     orderedSeries,
@@ -645,6 +647,23 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     };
   }, [focusTarget, onFocusHandled]);
 
+  useEffect(() => {
+    if (historyPowerChartReady) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setHistoryPowerChartReady(true);
+      return;
+    }
+    if (!historyDetailsRef.current) return;
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry?.isIntersecting) return;
+      setHistoryPowerChartReady(true);
+      observer.disconnect();
+    }, { rootMargin: '360px 0px' });
+    observer.observe(historyDetailsRef.current);
+    return () => observer.disconnect();
+  }, [historyPowerChartReady]);
+
   const learnedOffsetSummary = useMemo(() => {
     const sourceCurve = localCurve.length > 0 ? localCurve : (config.fanCurve || []);
     return (smartControl.learnedOffsets || [])
@@ -766,6 +785,33 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const historyChartData = historyChartStats.data;
   const historyPowerMax = historyChartStats.powerMax;
   const historyHasPower = historyChartStats.hasPower;
+  const visibleTimelineEvents = useMemo(() => {
+    const firstTimestamp = detailHistoryPoints[0]?.timestamp ?? 0;
+    if (!firstTimestamp) return [];
+    return timelineEvents.filter((event) => event.timestamp >= firstTimestamp).slice(-12);
+  }, [detailHistoryPoints, timelineEvents]);
+  const historyTimeDomain = useMemo<[number, number]>(() => {
+    const firstTimestamp = detailHistoryPoints[0]?.timestamp ?? 0;
+    const lastSampleTimestamp = detailHistoryPoints[detailHistoryPoints.length - 1]?.timestamp ?? firstTimestamp;
+    const lastEventTimestamp = visibleTimelineEvents[visibleTimelineEvents.length - 1]?.timestamp ?? firstTimestamp;
+    return [firstTimestamp, Math.max(firstTimestamp + 1, lastSampleTimestamp, lastEventTimestamp)];
+  }, [detailHistoryPoints, visibleTimelineEvents]);
+  const timelineEventLayout = useMemo(() => {
+    const [firstTimestamp, lastTimestamp] = historyTimeDomain;
+    const range = Math.max(1, lastTimestamp - firstTimestamp);
+    const minGap = range * 0.07;
+    const rowLastTimestamps: number[] = [];
+    return visibleTimelineEvents.map((event) => {
+      let row = rowLastTimestamps.findIndex((timestamp) => event.timestamp - timestamp >= minGap);
+      if (row === -1) {
+        row = rowLastTimestamps.length < 4
+          ? rowLastTimestamps.length
+          : rowLastTimestamps.reduce((best, timestamp, index) => (timestamp < rowLastTimestamps[best] ? index : best), 0);
+      }
+      rowLastTimestamps[row] = event.timestamp;
+      return { event, row, anchorEnd: (event.timestamp - firstTimestamp) / range > 0.55 };
+    });
+  }, [historyTimeDomain, visibleTimelineEvents]);
 
   const historySeriesMeta = useMemo(() => {
     const meta: Record<HistorySeriesKey, { key: HistorySeriesKey; label: string; color: string; dataKey: string; axisId: 'temp' | 'fan' | 'power' }> = {
@@ -777,16 +823,56 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     };
     return orderedSeries.map((key) => meta[key]).filter(Boolean);
   }, [orderedSeries, t, locale]);
+  const showHistoryPowerChart = historyHasPower && (historySeriesVisibility.cpuPower || historySeriesVisibility.gpuPower);
 
-  const historySeriesByDataKey = useMemo(() => {
-    const entries = historySeriesMeta.map((series) => [series.dataKey, series] as const);
-    return new Map(entries);
-  }, [historySeriesMeta]);
+  const renderHistoryTooltip = useCallback(({ active, label, payload }: any) => {
+    const point = payload?.[0]?.payload;
+    if (!active || !point) {
+      return null;
+    }
 
-  const historySeriesOrderByDataKey = useMemo(() => {
-    const entries = historySeriesMeta.map((series, index) => [series.dataKey, index] as const);
-    return new Map(entries);
-  }, [historySeriesMeta]);
+    const rows = historySeriesMeta.flatMap((series) => {
+      if (!historySeriesVisibility[series.key]) {
+        return [];
+      }
+      const numericValue = Number(point[series.dataKey] ?? 0);
+      if (!Number.isFinite(numericValue) || numericValue <= 0) {
+        return [];
+      }
+      const value = series.key === 'fan'
+        ? `${formatSpeedValue(numericValue)}${speedUnitSuffix}`
+        : series.axisId === 'power'
+          ? `${formatPowerValue(numericValue)} W`
+          : `${numericValue} °C`;
+      return [{ key: series.key, label: series.label, value, color: series.color }];
+    });
+
+    if (rows.length === 0) {
+      return null;
+    }
+
+    return (
+      <div
+        className="rounded-lg border px-3 py-2 text-sm shadow-lg"
+        style={{
+          backgroundColor: 'var(--chart-tooltip-bg)',
+          borderColor: 'var(--chart-tooltip-border)',
+          boxShadow: 'var(--chart-tooltip-shadow)',
+          color: 'var(--chart-tooltip-text)',
+        }}
+      >
+        <div className="mb-2 font-semibold">{formatHistoryDateTime(Number(label), locale)}</div>
+        <div className="space-y-1.5">
+          {rows.map((row) => (
+            <div key={row.key} className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: row.color }} />
+              <span>{row.label}：{row.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }, [historySeriesMeta, historySeriesVisibility, locale, speedUnitSuffix]);
 
   const handleHistorySeriesPointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>, key: HistorySeriesKey) => {
     if (event.pointerType === 'mouse' && event.button !== 0) {
@@ -1930,141 +2016,174 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                 {historyChartData.length < 2 ? (
                   <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">{t('fanCurve.history.waitingMoreSamples')}</div>
                 ) : (
-                  <div className="h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={historyChartData} margin={{ top: 12, right: 16, left: 4, bottom: 8 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-                        <XAxis
-                          dataKey="timestamp"
-                          type="number"
-                          domain={['dataMin', 'dataMax']}
-                          tickFormatter={(value) => formatHistoryTime(Number(value), locale)}
-                          tickLine={false}
-                          minTickGap={24}
-                          axisLine={{ stroke: 'var(--chart-axis)' }}
-                          tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
-                        />
-                        <YAxis
-                          yAxisId="fan"
-                          type="number"
-                          domain={[speedRange.min, speedRange.max]}
-                          ticks={speedRange.ticks}
-                          allowDataOverflow
-                          tickFormatter={(value) => `${formatSpeedValue(Number(value))}${speedUnitSuffix}`}
-                          tickLine={false}
-                          axisLine={{ stroke: 'var(--chart-axis)' }}
-                          tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
-                          width={64}
-                        />
-                        <YAxis
-                          yAxisId="temp"
-                          orientation="right"
-                          type="number"
-                          domain={[temperatureRange.min, temperatureRange.max]}
-                          ticks={temperatureRange.ticks.filter((value) => value === temperatureRange.max || (value - temperatureRange.min) % (FAN_CURVE_TEMP_STEP * 4) === 0)}
-                          allowDataOverflow
-                          tickFormatter={(value) => `${Number(value)}°C`}
-                          tickLine={false}
-                          axisLine={{ stroke: 'var(--chart-axis)' }}
-                          tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
-                          width={44}
-                        />
-                        {historyHasPower && <YAxis
-                          yAxisId="power"
-                          orientation="right"
-                          type="number"
-                          domain={[0, historyPowerMax]}
-                          tickFormatter={(value) => Number(value) === 0 ? '0 W' : `${formatPowerValue(Number(value))} W`}
-                          tickLine={false}
-                          axisLine={{ stroke: 'var(--chart-axis)' }}
-                          tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
-                          width={54}
-                        />}
-                        <RechartsTooltip
-                          content={({ active, label, payload }) => {
-                            if (!active || !Array.isArray(payload) || payload.length === 0) {
-                              return null;
-                            }
-
-                            const rows = payload
-                              .map((item) => {
-                                const dataKey = String(item.name ?? item.dataKey ?? '');
-                                const series = historySeriesByDataKey.get(dataKey);
-                                const numericValue = Number(item.value ?? 0);
-                                if (!series || !Number.isFinite(numericValue) || numericValue <= 0) {
-                                  return null;
-                                }
-
-                                const value = series.key === 'fan'
-                                  ? `${formatSpeedValue(numericValue)}${speedUnitSuffix}`
-                                  : series.key === 'cpuPower' || series.key === 'gpuPower'
-                                    ? `${formatPowerValue(numericValue)} W`
-                                    : `${numericValue} °C`;
-
-                                return {
-                                  key: series.key,
-                                  label: series.label,
-                                  value,
-                                  color: series.color,
-                                  order: historySeriesOrderByDataKey.get(series.dataKey) ?? Number.MAX_SAFE_INTEGER,
-                                };
-                              })
-                              .filter((row): row is { key: HistorySeriesKey; label: string; value: string; color: string; order: number } => row !== null)
-                              .sort((left, right) => left.order - right.order);
-
-                            if (rows.length === 0) {
-                              return null;
-                            }
-
+                  <>
+                    <div data-history-chart="thermal-fan" className="h-72">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={historyChartData} margin={{ top: 12, right: 16, left: 4, bottom: 8 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                          <XAxis
+                            dataKey="timestamp"
+                            type="number"
+                            domain={historyTimeDomain}
+                            allowDataOverflow
+                            tickFormatter={(value) => formatHistoryTime(Number(value), locale)}
+                            tickLine={false}
+                            minTickGap={24}
+                            axisLine={{ stroke: 'var(--chart-axis)' }}
+                            tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
+                          />
+                          <YAxis
+                            yAxisId="fan"
+                            type="number"
+                            domain={[speedRange.min, speedRange.max]}
+                            ticks={speedRange.ticks}
+                            allowDataOverflow
+                            tickFormatter={(value) => `${formatSpeedValue(Number(value))}${speedUnitSuffix}`}
+                            tickLine={false}
+                            axisLine={{ stroke: 'var(--chart-axis)' }}
+                            tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
+                            width={64}
+                          />
+                          <YAxis
+                            yAxisId="temp"
+                            orientation="right"
+                            type="number"
+                            domain={[temperatureRange.min, temperatureRange.max]}
+                            ticks={temperatureRange.ticks.filter((value) => value === temperatureRange.max || (value - temperatureRange.min) % (FAN_CURVE_TEMP_STEP * 4) === 0)}
+                            allowDataOverflow
+                            tickFormatter={(value) => `${Number(value)}°C`}
+                            tickLine={false}
+                            axisLine={{ stroke: 'var(--chart-axis)' }}
+                            tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
+                            width={44}
+                          />
+                          <RechartsTooltip content={renderHistoryTooltip} />
+                          {timelineEventLayout.map(({ event, row, anchorEnd }, index) => {
+                            const markerColor = event.type === 'disconnect'
+                              ? '#ef4444'
+                              : event.type === 'reconnect'
+                                ? '#10b981'
+                                : event.type === 'resume'
+                                  ? '#8b5cf6'
+                                  : '#0ea5e9';
                             return (
-                              <div
-                                className="rounded-lg border px-3 py-2 text-sm shadow-lg"
-                                style={{
-                                  backgroundColor: 'var(--chart-tooltip-bg)',
-                                  borderColor: 'var(--chart-tooltip-border)',
-                                  boxShadow: 'var(--chart-tooltip-shadow)',
-                                  color: 'var(--chart-tooltip-text)',
+                              <ReferenceLine
+                                key={`${event.timestamp}-${event.type}-${index}`}
+                                x={event.timestamp}
+                                yAxisId="fan"
+                                stroke={markerColor}
+                                strokeDasharray="4 3"
+                                label={(labelProps: { viewBox?: { x?: number; y?: number } }) => {
+                                  const x = labelProps.viewBox?.x ?? 0;
+                                  const y = labelProps.viewBox?.y ?? 0;
+                                  return (
+                                    <text
+                                      x={x}
+                                      y={y + 10 + row * 12}
+                                      dx={anchorEnd ? -5 : 5}
+                                      textAnchor={anchorEnd ? 'end' : 'start'}
+                                      fontSize={10}
+                                      fontWeight={500}
+                                      fill={markerColor}
+                                    >
+                                      {t(`fanCurve.history.events.${event.type}`)}
+                                    </text>
+                                  );
                                 }}
-                              >
-                                <div className="mb-2 font-semibold">{formatHistoryDateTime(Number(label), locale)}</div>
-                                <div className="space-y-1.5">
-                                  {rows.map((row) => (
-                                    <div key={row.key} className="flex items-center gap-2">
-                                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: row.color }} />
-                                      <span>{row.label}：{row.value}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
+                              />
                             );
-                          }}
-                        />
-                        {historySeriesMeta.map((series) => {
-                          if (!historySeriesVisibility[series.key]) {
-                            return null;
-                          }
-                          if ((series.key === 'cpuPower' || series.key === 'gpuPower') && !historyHasPower) {
-                            return null;
-                          }
-                          return (
-                            <Line
-                              key={series.key}
-                              yAxisId={series.axisId}
-                              type="monotone"
-                              dataKey={series.dataKey}
-                              name={series.dataKey}
-                              stroke={series.color}
-                              strokeWidth={series.key === 'fan' ? 2 : 2.3}
-                              dot={false}
-                              activeDot={false}
-                              isAnimationActive={false}
-                              connectNulls={false}
-                            />
-                          );
-                        })}
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
+                          })}
+                          {historySeriesMeta.map((series) => {
+                            if (series.axisId === 'power' || !historySeriesVisibility[series.key]) {
+                              return null;
+                            }
+                            return (
+                              <Line
+                                key={series.key}
+                                yAxisId={series.axisId}
+                                type="monotone"
+                                dataKey={series.dataKey}
+                                name={series.dataKey}
+                                stroke={series.color}
+                                strokeWidth={series.key === 'fan' ? 2 : 2.3}
+                                dot={false}
+                                activeDot={false}
+                                isAnimationActive={false}
+                                connectNulls={false}
+                              />
+                            );
+                          })}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    {showHistoryPowerChart && (
+                      <div data-history-chart="power" className="border-t border-border/60 pt-3">
+                        <div className="mb-2 text-xs font-medium text-muted-foreground">{t('fanCurve.history.powerTrend')}</div>
+                        <div className="h-48">
+                          {historyPowerChartReady ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <LineChart data={historyChartData} margin={{ top: 12, right: 16, left: 4, bottom: 8 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                                <XAxis
+                                  dataKey="timestamp"
+                                  type="number"
+                                  domain={historyTimeDomain}
+                                  allowDataOverflow
+                                  tickFormatter={(value) => formatHistoryTime(Number(value), locale)}
+                                  tickLine={false}
+                                  minTickGap={24}
+                                  axisLine={{ stroke: 'var(--chart-axis)' }}
+                                  tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
+                                />
+                                <YAxis
+                                  yAxisId="power"
+                                  type="number"
+                                  domain={[0, historyPowerMax]}
+                                  tickFormatter={(value) => Number(value) === 0 ? '0 W' : `${formatPowerValue(Number(value))} W`}
+                                  tickLine={false}
+                                  axisLine={{ stroke: 'var(--chart-axis)' }}
+                                  tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
+                                  width={64}
+                                />
+                                <YAxis
+                                  yAxisId="powerSpacer"
+                                  orientation="right"
+                                  type="number"
+                                  domain={[0, historyPowerMax]}
+                                  tick={false}
+                                  tickLine={false}
+                                  axisLine={false}
+                                  width={44}
+                                />
+                                <RechartsTooltip content={renderHistoryTooltip} />
+                                {historySeriesMeta.map((series) => {
+                                  if (series.axisId !== 'power' || !historySeriesVisibility[series.key]) {
+                                    return null;
+                                  }
+                                  return (
+                                    <Line
+                                      key={series.key}
+                                      yAxisId="power"
+                                      type="monotone"
+                                      dataKey={series.dataKey}
+                                      name={series.dataKey}
+                                      stroke={series.color}
+                                      strokeWidth={2.3}
+                                      dot={false}
+                                      activeDot={false}
+                                      isAnimationActive={false}
+                                      connectNulls={false}
+                                    />
+                                  );
+                                })}
+                              </LineChart>
+                            </ResponsiveContainer>
+                          ) : null}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
               <Dialog open={historyDisplayDialogOpen} onOpenChange={setHistoryDisplayDialogOpen}>
