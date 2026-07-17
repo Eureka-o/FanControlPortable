@@ -43,6 +43,7 @@ import {
   Select,
   Slider,
   NumberInput,
+  FanCurveEditor,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -222,57 +223,6 @@ function normalizeFanCurve(curve: types.FanCurvePoint[] | null | undefined, minS
   }));
 }
 
-function syncCurveSpeedAtIndex(
-  curve: types.FanCurvePoint[],
-  index: number,
-  targetSpeed: number,
-  minSpeed: number,
-  maxSpeed: number,
-) {
-  const currentPoint = curve[index];
-  if (!currentPoint) {
-    return { curve, changed: false };
-  }
-
-  const normalizedSpeed = normalizeSpeedValue(targetSpeed, minSpeed, maxSpeed);
-  const nextCurve = [...curve];
-  let changed = false;
-
-  if (currentPoint.rpm !== normalizedSpeed) {
-    nextCurve[index] = { ...currentPoint, rpm: normalizedSpeed };
-    changed = true;
-  }
-
-  for (let left = index - 1; left >= 0; left -= 1) {
-    if (nextCurve[left].rpm <= nextCurve[left + 1].rpm) {
-      break;
-    }
-
-    nextCurve[left] = {
-      ...nextCurve[left],
-      rpm: nextCurve[left + 1].rpm,
-    };
-    changed = true;
-  }
-
-  for (let right = index + 1; right < nextCurve.length; right += 1) {
-    if (nextCurve[right].rpm >= nextCurve[right - 1].rpm) {
-      break;
-    }
-
-    nextCurve[right] = {
-      ...nextCurve[right],
-      rpm: nextCurve[right - 1].rpm,
-    };
-    changed = true;
-  }
-
-  return {
-    curve: nextCurve,
-    changed,
-  };
-}
-
 interface FanCurveProps {
   config: types.AppConfig;
   onConfigChange: (config: types.AppConfig) => void;
@@ -323,50 +273,6 @@ function formatHistoryDuration(
     : t('fanCurve.history.duration.hours', { hours });
 }
 
-/* ── Temperature indicator overlay (memo, doesn't re-render chart) ── */
-
-const TemperatureIndicator = memo(function TemperatureIndicator({
-  temperature,
-  chartRef,
-  temperatureRange,
-}: {
-  temperature: number | null;
-  chartRef: React.RefObject<HTMLDivElement | null>;
-  temperatureRange: { min: number; max: number };
-}) {
-  const { t } = useTranslation();
-  const [position, setPosition] = useState<{ x: number; top: number; height: number } | null>(null);
-
-  useEffect(() => {
-    if (temperature === null || !chartRef.current) { setPosition(null); return; }
-    const updatePosition = () => {
-      const chartArea = chartRef.current?.querySelector('.recharts-cartesian-grid');
-      if (!chartArea) return;
-      const rect = chartArea.getBoundingClientRect();
-      const containerRect = chartRef.current!.querySelector('.recharts-responsive-container')?.getBoundingClientRect();
-      if (!containerRect) return;
-      const chartWidth = rect.width;
-      const chartLeft = rect.left - containerRect.left;
-      const tempPercent = (temperature - temperatureRange.min) / (temperatureRange.max - temperatureRange.min);
-      const x = chartLeft + tempPercent * chartWidth;
-      setPosition({ x, top: rect.top - containerRect.top, height: rect.height });
-    };
-    updatePosition();
-    window.addEventListener('resize', updatePosition);
-    return () => window.removeEventListener('resize', updatePosition);
-  }, [temperature, chartRef, temperatureRange]);
-
-  if (!position || temperature === null) return null;
-
-  return (
-    <svg className="absolute inset-0 pointer-events-none overflow-visible" style={{ width: '100%', height: '100%' }}>
-      <line x1={position.x} y1={position.top} x2={position.x} y2={position.top + position.height} stroke="var(--chart-temperature-indicator)" strokeWidth={2} strokeDasharray="5 5" />
-      <rect x={position.x - 45} y={position.top - 22} width={90} height={20} rx={4} fill="var(--chart-temperature-indicator)" />
-      <text x={position.x} y={position.top - 8} textAnchor="middle" fill="white" fontSize={11} fontWeight={500}>{t('fanCurve.chart.currentTemperature', { temperature })}</text>
-    </svg>
-  );
-});
-
 /* ── Tooltip label helper ── */
 
 const ConfigTooltipLabel = memo(function ConfigTooltipLabel({ label, description }: { label: string; description: string }) {
@@ -384,34 +290,6 @@ const ConfigTooltipLabel = memo(function ConfigTooltipLabel({ label, description
         <TooltipContent className="max-w-[260px] leading-relaxed">{description}</TooltipContent>
       </Tooltip>
     </span>
-  );
-});
-
-/* ── Draggable chart point ── */
-
-const DraggablePoint = memo(function DraggablePoint({
-  cx, cy, index, speed, unitSuffix, onDragStart, isActive,
-}: {
-  cx: number; cy: number; index: number; temperature: number; speed: number; unitSuffix: string;
-  onDragStart: (index: number) => void; isActive: boolean;
-}) {
-  const handleMouseDown = useCallback((e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); onDragStart(index); }, [index, onDragStart]);
-  const handleTouchStart = useCallback((e: React.TouchEvent) => { e.preventDefault(); e.stopPropagation(); onDragStart(index); }, [index, onDragStart]);
-
-  return (
-    <g>
-      <circle cx={cx} cy={cy} r={isActive ? 14 : 10} fill="transparent" stroke="transparent" style={{ cursor: 'ns-resize' }} onMouseDown={handleMouseDown} onTouchStart={handleTouchStart} />
-      <circle cx={cx} cy={cy} r={isActive ? 8 : 6} fill={isActive ? 'var(--chart-primary-active)' : 'var(--chart-primary)'} stroke="var(--card)" strokeWidth={2}
-        style={{ cursor: 'ns-resize', transition: isActive ? 'none' : 'all 0.2s ease', filter: isActive ? 'drop-shadow(0 4px 8px var(--chart-primary-glow))' : 'drop-shadow(0 2px 4px var(--chart-point-shadow))' }}
-        onMouseDown={handleMouseDown} onTouchStart={handleTouchStart}
-      />
-      {isActive && (
-        <g>
-          <rect x={cx - 35} y={cy - 35} width={70} height={24} rx={4} fill="var(--chart-primary-active)" opacity={0.95} />
-          <text x={cx} y={cy - 19} textAnchor="middle" fill="white" fontSize={12} fontWeight={600}>{formatSpeedValue(speed)}{unitSuffix}</text>
-        </g>
-      )}
-    </g>
   );
 });
 
@@ -447,7 +325,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const [isSaving, setIsSaving] = useState(false);
   const [learningConfigLoading, setLearningConfigLoading] = useState(false);
   const [learningResetLoading, setLearningResetLoading] = useState(false);
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [isInteracting, setIsInteracting] = useState(false);
   const [historyDisplayDialogOpen, setHistoryDisplayDialogOpen] = useState(false);
   const [historyPowerChartReady, setHistoryPowerChartReady] = useState(false);
@@ -460,14 +337,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     reorderSeries,
     resetPreferences: resetHistoryDisplayPreferences,
   } = useHistoryDisplayPreferences();
-  const chartRef = useRef<HTMLDivElement>(null);
   const profileFileInputRef = useRef<HTMLInputElement>(null);
   const curveEditorRef = useRef<HTMLDivElement>(null);
   const historyDetailsRef = useRef<HTMLElement>(null);
   const initialFocusTarget = useRef(focusTarget).current;
-  const chartBoundsRef = useRef<{ top: number; bottom: number; left: number; right: number; yMin: number; yMax: number } | null>(null);
-  const dragFrameRef = useRef<number | null>(null);
-  const pendingDragYRef = useRef<number | null>(null);
   const historySeriesItemRefs = useRef<Partial<Record<HistorySeriesKey, HTMLDivElement>>>({});
   const historySeriesDragRef = useRef<{ key: HistorySeriesKey; target?: HistorySeriesKey; placement?: 'before' | 'after' } | null>(null);
   const historySeriesDragCleanupRef = useRef<(() => void) | null>(null);
@@ -956,15 +829,13 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
 
   /* ── Chart data ── */
 
-  const chartData = useMemo(() => {
+  const learnedCurvePoints = useMemo(() => {
     const offsets = smartControl.learnedOffsets || [];
     return localCurve.map((point, index) => {
       const offset = learnedOffsetForDisplay(constrainOffsetByLearningBias(offsets[index] ?? 0, currentLearningBias), speedUnit);
       return {
         temperature: point.temperature,
-        rpm: point.rpm,
-        coupledRpm: Math.max(curveSpeedBounds.min, Math.min(curveSpeedBounds.max, point.rpm + offset)),
-        index,
+        rpm: Math.max(curveSpeedBounds.min, Math.min(curveSpeedBounds.max, point.rpm + offset)),
       };
     });
   }, [curveSpeedBounds.max, curveSpeedBounds.min, currentLearningBias, localCurve, smartControl.learnedOffsets, speedUnit]);
@@ -972,93 +843,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const hasLearnedOffsets = learnedOffsetSummary.length > 0;
   const showCoupledCurve = config.autoControl && !!smartControl.learning && hasLearnedOffsets;
 
-  /* ── Point update + drag ── */
-
-  const updatePoint = useCallback((index: number, newRpm: number) => {
-    let didChange = false;
-
-    setLocalCurve((prev) => {
-      const nextState = syncCurveSpeedAtIndex(prev, index, newRpm, speedRange.min, speedRange.max);
-
-      if (!nextState.changed) {
-        return prev;
-      }
-
-      didChange = true;
-      return nextState.curve;
-    });
-
-    if (didChange) {
-      setHasUnsavedChanges(true);
-    }
-  }, [speedRange]);
-
-  const handleDragStart = useCallback((index: number) => {
-    setDragIndex(index);
-    setIsInteracting(true);
-    if (chartRef.current) {
-      const chartArea = chartRef.current.querySelector('.recharts-cartesian-grid');
-      if (chartArea) {
-        const rect = chartArea.getBoundingClientRect();
-        chartBoundsRef.current = { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, yMin: speedRange.min, yMax: speedRange.max };
-      }
-    }
-  }, [speedRange]);
-
-  const handleDrag = useCallback((clientY: number) => {
-    if (dragIndex === null || !chartBoundsRef.current) return;
-    const bounds = chartBoundsRef.current;
-    const relativeY = Math.max(0, Math.min(1, (bounds.bottom - clientY) / (bounds.bottom - bounds.top)));
-    updatePoint(dragIndex, bounds.yMin + relativeY * (bounds.yMax - bounds.yMin));
-  }, [dragIndex, updatePoint]);
-
-  const scheduleDrag = useCallback((clientY: number) => {
-    pendingDragYRef.current = clientY;
-    if (dragFrameRef.current !== null) {
-      return;
-    }
-
-    dragFrameRef.current = window.requestAnimationFrame(() => {
-      dragFrameRef.current = null;
-      const nextClientY = pendingDragYRef.current;
-      pendingDragYRef.current = null;
-      if (nextClientY !== null) {
-        handleDrag(nextClientY);
-      }
-    });
-  }, [handleDrag]);
-
-  const handleDragEnd = useCallback(() => {
-    if (dragFrameRef.current !== null) {
-      window.cancelAnimationFrame(dragFrameRef.current);
-      dragFrameRef.current = null;
-    }
-    pendingDragYRef.current = null;
-    setDragIndex(null);
-    setTimeout(() => setIsInteracting(false), 100);
+  const handleCurveChange = useCallback((points: types.FanCurvePoint[]) => {
+    setLocalCurve(points);
+    setHasUnsavedChanges(true);
   }, []);
-
-  useEffect(() => {
-    if (dragIndex === null) return;
-    const mm = (e: MouseEvent) => { e.preventDefault(); scheduleDrag(e.clientY); };
-    const tm = (e: TouchEvent) => { if (e.touches.length > 0) scheduleDrag(e.touches[0].clientY); };
-    const end = () => handleDragEnd();
-    document.addEventListener('mousemove', mm);
-    document.addEventListener('mouseup', end);
-    document.addEventListener('touchmove', tm, { passive: false });
-    document.addEventListener('touchend', end);
-    return () => {
-      document.removeEventListener('mousemove', mm);
-      document.removeEventListener('mouseup', end);
-      document.removeEventListener('touchmove', tm);
-      document.removeEventListener('touchend', end);
-      if (dragFrameRef.current !== null) {
-        window.cancelAnimationFrame(dragFrameRef.current);
-        dragFrameRef.current = null;
-      }
-      pendingDragYRef.current = null;
-    };
-  }, [dragIndex, handleDragEnd, scheduleDrag]);
 
   /* ── Save / Reset ── */
 
@@ -1523,12 +1311,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     }
   }, [config, draftGearRpm, manualGearValueRange.max, manualGearValueRange.min, onConfigChange, speedUnit, supportsManualGears, t]);
 
-  const CustomDot = useCallback((props: any): React.ReactElement<SVGElement> => {
-    const { cx, cy, index, payload } = props;
-    if (cx === undefined || cy === undefined) return <g />;
-    return <DraggablePoint key={`dot-${index}`} cx={cx} cy={cy} index={index} temperature={payload.temperature} speed={payload.rpm} unitSuffix={speedUnitSuffix} onDragStart={handleDragStart} isActive={dragIndex === index} />;
-  }, [dragIndex, handleDragStart, speedUnitSuffix]);
-
   return (
     <div
       data-theme-section="curve-page"
@@ -1766,33 +1548,26 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
         </Dialog>}
 
         <div ref={curveEditorRef} data-theme-card="curve-editor">
-          <div
-            ref={chartRef}
-            className={clsx('relative rounded-3xl border bg-card p-4 shadow-sm', dragIndex !== null ? 'ring-2 ring-primary/40 border-primary/30' : 'border-border/70')}
-          >
-            <div className="h-80 md:h-96 relative">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-                  <XAxis dataKey="temperature" type="number" domain={[temperatureRange.min, temperatureRange.max]} ticks={temperatureRange.ticks} interval={0} minTickGap={0} tickLine={false} axisLine={{ stroke: 'var(--chart-axis)' }} tick={{ fill: 'var(--chart-tick)', fontSize: 10 }} label={{ value: t('fanCurve.chart.axes.temperature'), position: 'insideBottom', offset: -10, fill: 'var(--chart-tick)', fontSize: 12 }} />
-                  <YAxis type="number" domain={[speedRange.min, speedRange.max]} ticks={speedRange.ticks} tickLine={false} axisLine={{ stroke: 'var(--chart-axis)' }} tick={{ fill: 'var(--chart-tick)', fontSize: 11 }} label={{ value: `速度（${speedUnitSuffix}）`, angle: -90, position: 'insideLeft', fill: 'var(--chart-tick)', fontSize: 12 }} />
-                  <RechartsTooltip
-                    formatter={(value, name) => {
-                      const numericValue = Number(value ?? 0);
-                      return name === 'coupledRpm' ? [`${formatSpeedValue(numericValue)}${speedUnitSuffix}`, '学习曲线'] : [`${formatSpeedValue(numericValue)}${speedUnitSuffix}`, '基础曲线'];
-                    }}
-                    labelFormatter={(v) => t('fanCurve.chart.temperatureLabel', { temperature: v })}
-                    contentStyle={{ backgroundColor: 'var(--chart-tooltip-bg)', border: '1px solid', borderColor: 'var(--chart-tooltip-border)', borderRadius: '8px', boxShadow: 'var(--chart-tooltip-shadow)', padding: '8px 12px', color: 'var(--chart-tooltip-text)' }}
-                    labelStyle={{ color: 'var(--chart-tooltip-text)', fontWeight: 600 }}
-                    itemStyle={{ color: 'var(--chart-tooltip-text)' }}
-                  />
-                  <Line type="monotone" dataKey="rpm" stroke="var(--chart-primary)" strokeWidth={3} dot={CustomDot} activeDot={false} isAnimationActive={false} />
-                  {showCoupledCurve && <Line type="monotone" dataKey="coupledRpm" stroke="var(--chart-primary)" strokeWidth={2} strokeDasharray="6 4" dot={false} activeDot={false} isAnimationActive={false} />}
-                </LineChart>
-              </ResponsiveContainer>
-              <TemperatureIndicator temperature={referenceTemp} chartRef={chartRef} temperatureRange={temperatureRange} />
-            </div>
-          </div>
+          <FanCurveEditor
+            points={localCurve}
+            onChange={handleCurveChange}
+            minTemperature={temperatureRange.min}
+            maxTemperature={temperatureRange.max}
+            temperatureTicks={temperatureRange.ticks}
+            minSpeed={speedRange.min}
+            maxSpeed={speedRange.max}
+            speedTicks={speedRange.ticks}
+            speedUnit={speedUnitSuffix}
+            temperatureAxisLabel={t('fanCurve.chart.axes.temperature')}
+            speedAxisLabel={`速度（${speedUnitSuffix}）`}
+            temperatureLabel={(value) => t('fanCurve.chart.temperatureLabel', { temperature: value })}
+            baseCurveLabel={t('fanCurve.chart.series.base')}
+            secondaryPoints={showCoupledCurve ? learnedCurvePoints : undefined}
+            secondaryCurveLabel={t('fanCurve.chart.series.learned')}
+            currentTemperature={referenceTemp}
+            currentTemperatureLabel={referenceTemp === null ? undefined : t('fanCurve.chart.currentTemperature', { temperature: referenceTemp })}
+            onInteractionChange={setIsInteracting}
+          />
         </div>
 
         <section data-theme-card="curve-prediction" className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm">

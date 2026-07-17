@@ -29,24 +29,29 @@ func (m *Manager) Register(plugin Plugin) {
 
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
+	if m.findLocked(plugin.ID()) != nil {
+		return
+	}
 	m.plugins = append(m.plugins, plugin)
 }
 
 func (m *Manager) StartAll(parent context.Context) error {
 	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
 	if m.ctx != nil {
+		m.mutex.Unlock()
 		return nil
 	}
 	if parent == nil {
 		parent = context.Background()
 	}
 	m.ctx, m.cancel = context.WithCancel(parent)
+	ctx := m.ctx
+	registered := append([]Plugin(nil), m.plugins...)
+	m.mutex.Unlock()
 
 	var firstErr error
-	for _, plugin := range m.plugins {
-		if err := plugin.Start(m.ctx); err != nil {
+	for _, plugin := range registered {
+		if err := plugin.Start(ctx); err != nil {
 			m.logError("plugin start failed: %s (%s): %v", plugin.Name(), plugin.ID(), err)
 			if firstErr == nil {
 				firstErr = fmt.Errorf("%s: %w", plugin.ID(), err)
@@ -61,17 +66,16 @@ func (m *Manager) StartAll(parent context.Context) error {
 
 func (m *Manager) Start(pluginID string) error {
 	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
 	if m.ctx == nil {
 		m.ctx, m.cancel = context.WithCancel(context.Background())
 	}
-
 	plugin := m.findLocked(pluginID)
+	ctx := m.ctx
+	m.mutex.Unlock()
 	if plugin == nil {
 		return fmt.Errorf("plugin not registered: %s", pluginID)
 	}
-	if err := plugin.Start(m.ctx); err != nil {
+	if err := plugin.Start(ctx); err != nil {
 		m.logError("plugin start failed: %s (%s): %v", plugin.Name(), plugin.ID(), err)
 		return err
 	}
@@ -81,9 +85,8 @@ func (m *Manager) Start(pluginID string) error {
 
 func (m *Manager) Stop(pluginID string) error {
 	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
 	plugin := m.findLocked(pluginID)
+	m.mutex.Unlock()
 	if plugin == nil {
 		return fmt.Errorf("plugin not registered: %s", pluginID)
 	}
@@ -96,28 +99,29 @@ func (m *Manager) Stop(pluginID string) error {
 
 func (m *Manager) StopAll() {
 	m.mutex.Lock()
-	defer m.mutex.Unlock()
+	cancel := m.cancel
+	registered := append([]Plugin(nil), m.plugins...)
+	m.ctx = nil
+	m.cancel = nil
+	m.mutex.Unlock()
 
-	if m.cancel != nil {
-		m.cancel()
+	if cancel != nil {
+		cancel()
 	}
-
-	for _, plugin := range m.plugins {
+	for _, plugin := range registered {
 		if err := plugin.Stop(); err != nil {
 			m.logError("plugin stop failed: %s (%s): %v", plugin.Name(), plugin.ID(), err)
 		}
 	}
-
-	m.ctx = nil
-	m.cancel = nil
 }
 
 func (m *Manager) Statuses() []Status {
 	m.mutex.Lock()
-	defer m.mutex.Unlock()
+	registered := append([]Plugin(nil), m.plugins...)
+	m.mutex.Unlock()
 
-	statuses := make([]Status, 0, len(m.plugins))
-	for _, plugin := range m.plugins {
+	statuses := make([]Status, 0, len(registered))
+	for _, plugin := range registered {
 		statuses = append(statuses, plugin.Status())
 	}
 	return statuses

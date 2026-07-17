@@ -19,6 +19,7 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		a.handleAutostartIPCRequest,
 		a.handleWindowIPCRequest,
 		a.handleDebugIPCRequest,
+		a.handlePluginIPCRequest,
 		a.handleSystemIPCRequest,
 	} {
 		if resp, ok := route(req); ok {

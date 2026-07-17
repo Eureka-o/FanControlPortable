@@ -67,6 +67,12 @@
       "exportFailed": "Failed to export diagnostics: {{error}}"
     }
   },
+  "pluginHost": {
+    "loading": "Loading plugin page...",
+    "loadFailed": "Plugin page failed to load",
+    "retry": "Retry",
+    "unavailable": "The plugin was disabled or became unavailable. Returned to Status."
+  },
   "advancedDevices": {
     "title": "Supported devices",
     "subtitle": "Manage WiFi/virtual serial compatibility devices and user BLE/HID native profiles. BLE/HID profiles are auto-traversed by native connect and are not manually enabled here.",
@@ -1158,6 +1164,68 @@
         "scanRunning": "Scanning devices...",
         "deviceStatusUnavailable": "Unavailable",
         "wifiManualSaveAction": "Save and connect"
+      }
+    },
+    "plugins": {
+      "sectionTitle": "Plugins",
+      "get": {
+        "title": "Get plugins",
+        "officialTitle": "Official plugins",
+        "description": "Download official plugin installers from the FanControl repository Releases.",
+        "openReleases": "Open Releases",
+        "openFolder": "Open plugin folder"
+      },
+      "management": {
+        "title": "Plugin management",
+        "refresh": "Refresh plugin list",
+        "loading": "Loading plugins...",
+        "emptyTitle": "No plugins installed",
+        "emptyDescription": "Download an official plugin from Releases, then restart FanControl or refresh this list after installation.",
+        "toggleAria": "Toggle the enabled configuration for {{name}}",
+        "reset": "Reset plugin data",
+        "delete": "Delete plugin",
+        "disableBeforeAction": "Disable the plugin first"
+      },
+      "states": {
+        "invalid": "Invalid manifest",
+        "incompatible": "Incompatible",
+        "enabledConfigured": "Set to enabled",
+        "starting": "Starting",
+        "ready": "Running",
+        "suspending": "Suspending",
+        "suspended": "Suspended",
+        "restarting": "Reconnecting",
+        "unsupported": "Unsupported hardware",
+        "failed": "Start failed",
+        "disabled": "Disabled"
+      },
+      "errors": {
+        "apiUnavailable": "Plugin management is unavailable. Fully restart FanControl and try again."
+      },
+      "confirm": {
+        "delete": {
+          "title": "Delete {{name}}?",
+          "description": "This removes the plugin installation files. Saved plugin data is kept and can be reused after reinstalling.",
+          "confirm": "Delete plugin"
+        },
+        "reset": {
+          "title": "Reset {{name}}?",
+          "description": "This deletes the plugin's saved settings and learning data. This action cannot be undone.",
+          "confirm": "Reset data"
+        }
+      },
+      "toasts": {
+        "refreshed": "Plugin list refreshed",
+        "refreshFailed": "Failed to refresh plugins: {{error}}",
+        "openFolderFailed": "Failed to open the plugin folder: {{error}}",
+        "enabled": "{{name}} is set to enabled",
+        "disabled": "{{name}} is disabled",
+        "startFailed": "Plugin failed to start: {{error}}",
+        "toggleFailed": "Failed to change plugin state: {{error}}",
+        "deleted": "Deleted {{name}}",
+        "deleteFailed": "Failed to delete plugin: {{error}}",
+        "reset": "Reset data for {{name}}",
+        "resetFailed": "Failed to reset plugin data: {{error}}"
       }
     },
     "offline": {

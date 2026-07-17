@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo, type ReactNode } from 'react';
+import { useState, useCallback, useEffect, useMemo, type ComponentType, type ReactNode } from 'react';
 import { motion, useReducedMotion, type Variants } from 'framer-motion';
 import {
   Cpu,
+  Blocks,
+  Fan,
   Gpu,
   Radio,
   Settings,
@@ -37,6 +39,8 @@ import DeviceFeaturePanel from './settings/DeviceFeaturePanel';
 import DeviceLightingControls from './settings/DeviceLightingControls';
 import DeviceConnectionSection from './settings/DeviceConnectionSection';
 import SystemSettingsSection from './settings/SystemSettingsSection';
+import PluginManagementSection from './settings/PluginManagementSection';
+import { RealtimeOverview } from './ui';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 
@@ -51,7 +55,7 @@ interface ControlPanelProps {
   onDeviceContextRefresh?: () => Promise<unknown>;
 }
 
-type SettingsTab = 'device' | 'fan' | 'system';
+type SettingsTab = 'device' | 'fan' | 'system' | 'plugins';
 
 const SMART_START_STOP_OPTIONS = [
   { value: 'off', labelKey: 'controlPanel.options.smartStartStop.off.label', descriptionKey: 'controlPanel.options.smartStartStop.off.description' },
@@ -118,6 +122,7 @@ export default function ControlPanel({
     device: true,
     fan: false,
     system: false,
+    plugins: false,
   });
   const overviewRuntimeProfile = isConnected ? runtimeDeviceProfile : null;
   const overviewSpeedUnit = getFanSpeedUnit(fanData as any, config as any, overviewRuntimeProfile as any);
@@ -218,10 +223,11 @@ export default function ControlPanel({
       powerValue: formatOverviewPower(temperature?.gpuPowerWatts, gpuNotPolled),
     },
   ];
-  const settingsTabs: Array<{ id: SettingsTab; label: string }> = [
-    { id: 'device', label: t('controlPanel.device.sectionTitle') },
-    { id: 'fan', label: t('controlPanel.fan.sectionTitle') },
-    { id: 'system', label: t('controlPanel.system.sectionTitle') },
+  const settingsTabs: Array<{ id: SettingsTab; label: string; Icon: ComponentType<{ className?: string }> }> = [
+    { id: 'device', label: t('controlPanel.device.sectionTitle'), Icon: Radio },
+    { id: 'fan', label: t('controlPanel.fan.sectionTitle'), Icon: Fan },
+    { id: 'system', label: t('controlPanel.system.sectionTitle'), Icon: Settings },
+    { id: 'plugins', label: t('controlPanel.plugins.sectionTitle'), Icon: Blocks },
   ];
   const smartStartStopOptions = useMemo(
     () => SMART_START_STOP_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey), description: t(item.descriptionKey) })),
@@ -417,89 +423,62 @@ export default function ControlPanel({
         onConfigChange={onConfigChange}
       />
     ),
+    plugins: <PluginManagementSection />,
   };
 
   return (
     <>
       <div data-theme-section="settings-page" data-page-reveal="cards" className="space-y-4">
-        <section data-theme-card="settings-overview" className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-          <div className="mb-4 flex items-center gap-2">
-            <Settings className="h-4 w-4 text-muted-foreground" />
-            <h3 className="text-base font-semibold text-foreground">{t('controlPanel.overview.title')}</h3>
-          </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(220px,0.8fr)]">
-            <div data-theme-card="settings-overview-temperature" className="grid min-h-[10rem] grid-rows-2 divide-y divide-border/55 rounded-xl border border-border/70 bg-muted/30 px-4">
-              {overviewThermals.map(({ id, label, model, Icon, temperatureValue, powerValue }) => (
-                <div key={id} className="flex min-w-0 items-center gap-3 py-3.5">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background/65 text-muted-foreground shadow-inner shadow-white/15">
-                    <Icon className="h-4.5 w-4.5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex min-h-5 min-w-0 items-center gap-2">
-                      <div className="shrink-0 text-sm font-semibold text-foreground">{label}</div>
-                      {model && (
-                        <span
-                          data-theme-ui="settings-overview-model"
-                          title={model}
-                          className="ml-auto min-w-0 max-w-[min(68%,22rem)] truncate rounded-full border border-primary/20 bg-background/80 px-2 py-0.5 text-[10px] font-medium leading-4 text-foreground/75 shadow-sm shadow-black/15 backdrop-blur-md"
-                        >
-                          {model}
-                        </span>
-                      )}
-                    </div>
-                    <div
-                      data-theme-ui="settings-overview-metrics"
-                      className="mt-1.5 grid min-w-0 grid-cols-[1rem_2.25rem_minmax(3.25rem,1fr)_1rem_2.25rem_minmax(3.25rem,1fr)] items-center gap-x-1.5 text-[11px] leading-none text-muted-foreground"
-                    >
-                      <Thermometer className="h-3.5 w-3.5" />
-                      <span className="whitespace-nowrap">{t('controlPanel.overview.temperatureMetric')}</span>
-                      <span className="whitespace-nowrap text-sm font-semibold tabular-nums text-foreground">{temperatureValue}</span>
-                      <Zap className="h-3.5 w-3.5" />
-                      <span className="whitespace-nowrap">{t('controlPanel.overview.powerMetric')}</span>
-                      <span className="whitespace-nowrap text-sm font-semibold tabular-nums text-foreground">{powerValue}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div data-theme-card="settings-overview-device" className="grid min-h-[10rem] grid-rows-2 divide-y divide-border/55 rounded-xl border border-border/70 bg-muted/30 px-4">
-              <div className="flex min-w-0 items-center gap-3 py-3.5">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background/65 text-muted-foreground shadow-inner shadow-white/15">
-                  <Radio className="h-4.5 w-4.5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div title={overviewConnectionName} className="line-clamp-2 break-words text-sm font-semibold leading-snug text-foreground">{overviewConnectionName}</div>
-                  <div className="mt-1.5 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
-                    <span className={clsx('h-2 w-2 shrink-0 rounded-full', isConnected ? 'bg-emerald-500' : 'bg-muted-foreground/45')} />
-                    <span className="truncate">{overviewConnectionDetail}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 items-center gap-4 py-3.5">
-                <div className="min-w-0">
-                  <div className="text-[11px] text-muted-foreground">{t('controlPanel.overview.currentRpm')}</div>
-                  <div className="mt-0.5 truncate text-base font-semibold tabular-nums text-foreground">{overviewFanSpeed ?? '--'}{overviewSpeedLabel}</div>
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[11px] text-muted-foreground">{t('controlPanel.overview.controlModeMetric')}</div>
-                  <div className="mt-0.5 truncate text-sm font-semibold text-foreground">
-                    {config.autoControl ? t('appShell.status.smartControl') : t('appShell.status.manualMode')}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+        <RealtimeOverview
+          title={t('controlPanel.overview.title')}
+          titleIcon={<Settings className="h-4 w-4" />}
+          hardware={overviewThermals.map(({ id, label, model, Icon, temperatureValue, powerValue }) => ({
+            id,
+            label,
+            model,
+            icon: <Icon className="h-4.5 w-4.5" />,
+            metrics: [
+              {
+                id: 'temperature',
+                icon: <Thermometer className="h-3.5 w-3.5" />,
+                label: t('controlPanel.overview.temperatureMetric'),
+                value: temperatureValue,
+              },
+              {
+                id: 'power',
+                icon: <Zap className="h-3.5 w-3.5" />,
+                label: t('controlPanel.overview.powerMetric'),
+                value: powerValue,
+              },
+            ],
+          }))}
+          device={{
+            icon: <Radio className="h-4.5 w-4.5" />,
+            name: overviewConnectionName,
+            connected: isConnected,
+            connectionLabel: overviewConnectionDetail,
+            details: [
+              {
+                id: 'speed',
+                label: t('controlPanel.overview.currentRpm'),
+                value: `${overviewFanSpeed ?? '--'}${overviewSpeedLabel}`,
+              },
+              {
+                id: 'mode',
+                label: t('controlPanel.overview.controlModeMetric'),
+                value: config.autoControl ? t('appShell.status.smartControl') : t('appShell.status.manualMode'),
+              },
+            ],
+          }}
+        />
 
         <div
           data-theme-ui="settings-tabs"
           role="tablist"
           aria-label={t('controlPanel.system.sectionTitle')}
-          className="grid grid-cols-3 gap-1 rounded-[18px] border border-border/70 bg-card/92 p-1.5 shadow-sm shadow-black/5 backdrop-blur-xl"
+          className="grid grid-cols-2 gap-1 rounded-[18px] border border-border/70 bg-card/92 p-1.5 shadow-sm shadow-black/5 backdrop-blur-xl sm:grid-cols-4"
         >
-          {settingsTabs.map(({ id, label }) => (
+          {settingsTabs.map(({ id, label, Icon }) => (
             <button
               key={id}
               id={`settings-tab-${id}`}
@@ -520,7 +499,10 @@ export default function ControlPanel({
                   : 'text-sidebar-foreground/62 hover:bg-sidebar-accent hover:text-sidebar-foreground',
               )}
             >
-              <span className="block truncate">{label}</span>
+              <span className="flex min-w-0 items-center justify-center gap-2">
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className="truncate">{label}</span>
+              </span>
             </button>
           ))}
         </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { types } from '../../wailsjs/go/models';
@@ -15,7 +15,12 @@ import DeviceStatus from './components/DeviceStatus';
 import FanCurve from './components/FanCurve';
 import { useAppBootstrap } from './hooks/useAppBootstrap';
 import { apiService } from './services/api';
+import { PluginPageOutlet, useOfficialPluginCatalog } from './plugins/plugin-host';
+import { pluginAssetURL, pluginPageTabId } from './plugins/plugin-host-logic.mts';
+import { PLUGIN_ICONS } from './plugins/plugin-icons';
+import type { PluginIconName } from './plugins/plugin-host-types';
 import { useAppStore } from './store/app-store';
+import { isPluginAppTab } from './store/app-store-logic.mts';
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -27,6 +32,7 @@ export default function Home() {
   useAppBootstrap();
   const { t } = useTranslation();
   const [diagnosticsExporting, setDiagnosticsExporting] = useState(false);
+  const { plugins } = useOfficialPluginCatalog();
 
   const view = useAppStore(
     useShallow((state) => ({
@@ -63,6 +69,25 @@ export default function Home() {
     () => view.config || new types.AppConfig(),
     [view.config],
   );
+
+  const pluginTabs = useMemo(() => plugins.map((plugin) => ({
+    id: pluginPageTabId(plugin),
+    title: plugin.page.title,
+    icon: PLUGIN_ICONS[plugin.page.icon as PluginIconName] || PLUGIN_ICONS.plug,
+    iconAsset: plugin.page.iconAsset
+      ? pluginAssetURL(plugin.id, plugin.page.iconAsset, plugin.version)
+      : undefined,
+  })), [plugins]);
+  const selectedPlugin = useMemo(() => {
+    if (!isPluginAppTab(view.activeTab)) return null;
+    return plugins.find((plugin) => pluginPageTabId(plugin) === view.activeTab) || null;
+  }, [plugins, view.activeTab]);
+
+  useEffect(() => {
+    if (!isPluginAppTab(view.activeTab) || selectedPlugin) return;
+    setActiveTab('status');
+    toast.info(t('pluginHost.unavailable'));
+  }, [selectedPlugin, setActiveTab, t, view.activeTab]);
 
   const exportDiagnostics = useCallback(async () => {
     if (diagnosticsExporting) return;
@@ -157,8 +182,11 @@ export default function Home() {
             onConfigChange={setConfig}
           />
         }
+        pluginTabs={pluginTabs}
+        pluginContent={selectedPlugin ? <PluginPageOutlet plugin={selectedPlugin} /> : null}
         aboutContent={<AboutPanel />}
       />
     </>
   );
+
 }

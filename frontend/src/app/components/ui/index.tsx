@@ -410,3 +410,12 @@ export {
   DialogTrigger,
 } from '@/components/ui/dialog';
 export { Skeleton } from '@/components/ui/skeleton';
+export { FanCurveEditor } from './FanCurveEditor';
+export type { FanCurveEditorPoint, FanCurveEditorProps } from './FanCurveEditor';
+export { resampleFanCurve, updateFanCurvePointSpeed } from './fan-curve-editor-logic.mts';
+export { RealtimeOverview } from './RealtimeOverview';
+export type {
+  RealtimeOverviewDevice,
+  RealtimeOverviewHardware,
+  RealtimeOverviewMetric,
+} from './RealtimeOverview';

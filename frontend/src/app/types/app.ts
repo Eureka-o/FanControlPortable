@@ -85,6 +85,7 @@ export interface PowerSensor {
 export interface AppConfig {
   legionFnQ?: LegionFnQConfig;
   legionFnQSupport?: LegionFnQSupportCache;
+  pluginEnabled?: Record<string, boolean>;
   deviceTransport?: string;
   fanControlDeviceIp?: string;
   wifiSmartStartStopEnabled?: boolean;
@@ -288,6 +289,56 @@ export interface ThemeMeta {
   description?: string;
   layer?: 'basic' | 'advanced' | string; // basic | advanced
   source: string;      // user | install | builtin
+}
+
+export type PluginCatalogState =
+  | 'discovered'
+  | 'disabled'
+  | 'starting'
+  | 'ready'
+  | 'suspending'
+  | 'suspended'
+  | 'restarting'
+  | 'unsupported'
+  | 'failed'
+  | 'invalid'
+  | 'incompatible';
+
+export interface PluginPageManifest {
+  id: string;
+  title: string;
+  icon: string;
+  iconAsset?: string;
+  order: number;
+}
+
+export interface PluginCatalogEntry {
+  id: string;
+  name: string;
+  description?: string;
+  version?: string;
+  platform?: string;
+  enabled: boolean;
+  state: PluginCatalogState;
+  lastError?: string;
+  capabilities?: string[];
+  runtimeCapabilities?: string[];
+  telemetryInputs?: string[];
+  frontend?: string;
+  style?: string;
+  page: PluginPageManifest;
+}
+
+export interface PluginCatalogSnapshot {
+  revision: number;
+  plugins: PluginCatalogEntry[];
+  error?: string;
+}
+
+export interface PluginEventPayload {
+  pluginId: string;
+  event: string;
+  payload: unknown;
 }
 
 // 设备信息

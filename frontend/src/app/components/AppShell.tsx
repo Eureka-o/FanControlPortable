@@ -22,6 +22,7 @@ import {
   Bluetooth,
   Boxes,
   Usb,
+  type LucideIcon,
 } from 'lucide-react';
 import { Environment, Quit, WindowIsMaximised, WindowMinimise, WindowToggleMaximise } from '../../../wailsjs/runtime/runtime';
 import { types } from '../../../wailsjs/go/models';
@@ -31,6 +32,7 @@ import { BRAND } from '../lib/brand';
 import { clampFanSpeedToRange, fanSpeedUnitLabel, getFanSpeedRange, getFanSpeedUnit, readCurrentFanSpeed } from '../lib/fan-speed';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import UpdateProgressWidget from './UpdateProgressWidget';
+import { isPluginAppTab, type AppTab, type BuiltinAppTab, type PluginAppTab } from '../store/app-store-logic.mts';
 
 const MAIN_TAB_ITEMS = [
   { id: 'status', titleKey: 'appShell.tabs.status', icon: LayoutGrid },
@@ -41,17 +43,43 @@ const MAIN_TAB_ITEMS = [
 
 const ABOUT_TAB = { id: 'about', titleKey: 'appShell.tabs.about', icon: Info } as const;
 
-type ActiveTab = (typeof MAIN_TAB_ITEMS)[number]['id'] | typeof ABOUT_TAB.id;
-
-const TAB_TRANSITION_ORDER: ActiveTab[] = [...MAIN_TAB_ITEMS.map((tab) => tab.id), ABOUT_TAB.id];
-
-function getTabTransitionDirection(fromTab: ActiveTab, toTab: ActiveTab) {
-  const fromIndex = TAB_TRANSITION_ORDER.indexOf(fromTab);
-  const toIndex = TAB_TRANSITION_ORDER.indexOf(toTab);
+function getTabTransitionDirection(order: AppTab[], fromTab: AppTab, toTab: AppTab) {
+	const fromIndex = order.indexOf(fromTab);
+	const toIndex = order.indexOf(toTab);
   if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
     return 0;
   }
   return toIndex > fromIndex ? 1 : -1;
+}
+
+export interface PluginNavigationTab {
+  id: PluginAppTab;
+  title: string;
+  icon: LucideIcon;
+  iconAsset?: string;
+}
+
+function PluginNavigationIcon({ icon: Icon, iconAsset, active }: Pick<PluginNavigationTab, 'icon' | 'iconAsset'> & { active: boolean }) {
+  const [assetFailed, setAssetFailed] = useState(false);
+
+  useEffect(() => setAssetFailed(false), [iconAsset]);
+
+  if (iconAsset && !assetFailed) {
+    return (
+      <img
+        src={iconAsset}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        onError={() => setAssetFailed(true)}
+        className={clsx(
+          'relative z-10 h-5 w-5 object-contain transition-opacity duration-200',
+          active ? 'opacity-100' : 'opacity-70 group-hover:opacity-90',
+        )}
+      />
+    );
+  }
+  return <Icon className="relative z-10 h-4.5 w-4.5" />;
 }
 
 const TAB_CONTENT_VARIANTS: Variants = {
@@ -78,8 +106,8 @@ const TAB_CONTENT_VARIANTS: Variants = {
 };
 
 interface AppShellProps {
-  activeTab: ActiveTab;
-  onTabChange: (tab: ActiveTab) => void;
+  activeTab: AppTab;
+  onTabChange: (tab: AppTab) => void;
   isConnected: boolean;
   fanData: types.FanData | null;
   temperature: types.TemperatureData | null;
@@ -95,6 +123,8 @@ interface AppShellProps {
   curveContent: ReactNode;
   controlContent: ReactNode;
   devicesContent: ReactNode;
+  pluginTabs: PluginNavigationTab[];
+  pluginContent: ReactNode;
   aboutContent: ReactNode;
 }
 
@@ -471,6 +501,8 @@ export default function AppShell({
   curveContent,
   controlContent,
   devicesContent,
+  pluginTabs,
+  pluginContent,
   aboutContent,
 }: AppShellProps) {
   const { t } = useTranslation();
@@ -479,7 +511,7 @@ export default function AppShell({
   ));
   const [isMaximised, setIsMaximised] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const previousActiveTabRef = useRef<ActiveTab>(activeTab);
+  const previousActiveTabRef = useRef<AppTab>(activeTab);
 
   const syncWindowState = useCallback(async () => {
     try {
@@ -561,19 +593,25 @@ export default function AppShell({
     }
   }, []);
 
-  const handleTabChange = (tab: ActiveTab) => {
+  const handleTabChange = (tab: AppTab) => {
     if (tab === activeTab) return;
     onTabChange(tab);
   };
 
-  const contentMap: Record<ActiveTab, ReactNode> = {
+  const contentMap: Record<BuiltinAppTab, ReactNode> = {
     status: statusContent,
     curve: curveContent,
     control: controlContent,
     devices: devicesContent,
     about: aboutContent,
   };
-  const transitionDirection = getTabTransitionDirection(previousActiveTabRef.current, activeTab);
+  const transitionOrder: AppTab[] = [
+    ...MAIN_TAB_ITEMS.map((tab) => tab.id),
+    ...pluginTabs.map((tab) => tab.id),
+    ABOUT_TAB.id,
+  ];
+  const activeContent = isPluginAppTab(activeTab) ? pluginContent : contentMap[activeTab];
+  const transitionDirection = getTabTransitionDirection(transitionOrder, previousActiveTabRef.current, activeTab);
   const windowBlurMode = String((config as any)?.windowBlur || 'acrylic');
 
   useEffect(() => {
@@ -658,6 +696,34 @@ export default function AppShell({
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right">{tabTitle}</TooltipContent>
+              </Tooltip>
+            );
+          })}
+          {pluginTabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <Tooltip key={tab.id}>
+                <TooltipTrigger asChild>
+                  <button
+                    role="tab"
+                    data-theme-ui="sidebar-item"
+                    data-theme-tab={tab.id}
+                    aria-label={tab.title}
+                    aria-selected={isActive}
+                    onClick={() => handleTabChange(tab.id)}
+                    className={clsx(
+                      'group relative flex h-11 w-11 cursor-pointer items-center justify-center overflow-hidden rounded-xl transition-colors duration-200',
+                      isActive
+                        ? 'text-primary'
+                        : 'text-sidebar-foreground/62 hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                    )}
+                  >
+                    {isActive && <span className="pointer-events-none absolute inset-0 rounded-xl" />}
+                    <PluginNavigationIcon icon={Icon} iconAsset={tab.iconAsset} active={isActive} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">{tab.title}</TooltipContent>
               </Tooltip>
             );
           })}
@@ -785,7 +851,7 @@ export default function AppShell({
                 exit="exit"
                 className="w-full min-w-0 px-1 pb-2 will-change-transform"
               >
-                {contentMap[activeTab]}
+                {activeContent}
               </motion.div>
             </AnimatePresence>
           </main>

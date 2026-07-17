@@ -67,6 +67,12 @@
       "exportFailed": "診断ログの出力に失敗しました: {{error}}"
     }
   },
+  "pluginHost": {
+    "loading": "\u30d7\u30e9\u30b0\u30a4\u30f3\u30da\u30fc\u30b8\u3092\u8aad\u307f\u8fbc\u3093\u3067\u3044\u307e\u3059...",
+    "loadFailed": "\u30d7\u30e9\u30b0\u30a4\u30f3\u30da\u30fc\u30b8\u306e\u8aad\u307f\u8fbc\u307f\u306b\u5931\u6557\u3057\u307e\u3057\u305f",
+    "retry": "\u518d\u8a66\u884c",
+    "unavailable": "\u30d7\u30e9\u30b0\u30a4\u30f3\u304c\u7121\u52b9\u307e\u305f\u306f\u4e00\u6642\u7684\u306b\u5229\u7528\u3067\u304d\u306a\u3044\u305f\u3081\u3001\u30b9\u30c6\u30fc\u30bf\u30b9\u306b\u623b\u308a\u307e\u3057\u305f\u3002"
+  },
   "advancedDevices": {
     "title": "対応デバイス",
     "subtitle": "WiFi/仮想シリアル互換デバイスとユーザー BLE/HID ネイティブプロファイルを管理します。BLE/HID はネイティブ接続時に自動で順番に試され、ここで手動有効化しません。",
@@ -1158,6 +1164,68 @@
         "scanRunning": "デバイスをスキャン中...",
         "deviceStatusUnavailable": "利用不可",
         "wifiManualSaveAction": "保存して接続"
+      }
+    },
+    "plugins": {
+      "sectionTitle": "プラグイン",
+      "get": {
+        "title": "プラグインを入手",
+        "officialTitle": "公式プラグイン",
+        "description": "FanControl リポジトリの Releases から公式プラグインのインストーラーをダウンロードします。",
+        "openReleases": "Releases を開く",
+        "openFolder": "プラグインフォルダーを開く"
+      },
+      "management": {
+        "title": "プラグイン管理",
+        "refresh": "プラグイン一覧を更新",
+        "loading": "プラグインを読み込み中...",
+        "emptyTitle": "プラグインがインストールされていません",
+        "emptyDescription": "Releases から公式プラグインをダウンロードし、インストール後に FanControl を再起動するか、この一覧を更新してください。",
+        "toggleAria": "{{name}} の有効設定を切り替える",
+        "reset": "プラグインデータをリセット",
+        "delete": "プラグインを削除",
+        "disableBeforeAction": "先にプラグインを無効にしてください"
+      },
+      "states": {
+        "invalid": "マニフェストが無効",
+        "incompatible": "互換性なし",
+        "enabledConfigured": "有効に設定済み",
+        "starting": "起動中",
+        "ready": "実行中",
+        "suspending": "一時停止中",
+        "suspended": "一時停止済み",
+        "restarting": "再接続中",
+        "unsupported": "ハードウェア非対応",
+        "failed": "起動失敗",
+        "disabled": "無効"
+      },
+      "errors": {
+        "apiUnavailable": "プラグイン管理を利用できません。FanControl を完全に再起動して再試行してください。"
+      },
+      "confirm": {
+        "delete": {
+          "title": "{{name}} を削除しますか？",
+          "description": "プラグインのインストールファイルを削除します。保存済みデータは保持され、再インストール後に再利用できます。",
+          "confirm": "プラグインを削除"
+        },
+        "reset": {
+          "title": "{{name}} をリセットしますか？",
+          "description": "プラグインの保存済み設定と学習データを削除します。この操作は元に戻せません。",
+          "confirm": "データをリセット"
+        }
+      },
+      "toasts": {
+        "refreshed": "プラグイン一覧を更新しました",
+        "refreshFailed": "プラグイン一覧の更新に失敗しました：{{error}}",
+        "openFolderFailed": "プラグインフォルダーを開けませんでした：{{error}}",
+        "enabled": "{{name}} を有効に設定しました",
+        "disabled": "{{name}} を無効にしました",
+        "startFailed": "プラグインの起動に失敗しました：{{error}}",
+        "toggleFailed": "プラグインの状態変更に失敗しました：{{error}}",
+        "deleted": "{{name}} を削除しました",
+        "deleteFailed": "プラグインの削除に失敗しました：{{error}}",
+        "reset": "{{name}} のデータをリセットしました",
+        "resetFailed": "プラグインデータのリセットに失敗しました：{{error}}"
       }
     },
     "offline": {

@@ -83,6 +83,15 @@ func (a *CoreApp) Start() error {
 		}
 	}
 	a.syncManualGearLevelMemory(cfg)
+	if a.pluginCatalog != nil {
+		a.pluginCatalog.SetEnabledState(cfg.PluginEnabled)
+		snapshot := a.refreshPluginCatalog(false)
+		if snapshot.Error != "" {
+			a.logError("扫描插件目录失败: %s", snapshot.Error)
+		} else {
+			a.logInfo("插件目录扫描完成: %d 个条目", len(snapshot.Plugins))
+		}
+	}
 	a.configureDeviceManager(cfg)
 	a.logInfo("配置加载完成，配置路径: %s", cfg.ConfigPath)
 
@@ -112,6 +121,13 @@ func (a *CoreApp) Start() error {
 	if err := a.ipcServer.Start(); err != nil {
 		a.logError("启动 IPC 服务器失败: %v", err)
 		return err
+	}
+	if a.pluginSupervisor != nil {
+		a.pluginSupervisor.Start(a.ctx)
+		snapshot := a.currentPluginSnapshot()
+		a.safeGo("start-enabled-external-plugins@startup", func() {
+			a.startEnabledPluginRuntimes(snapshot)
+		})
 	}
 	if !a.legionFnQSupportChecked.Load() {
 		a.startLegionFnQSupportDetection()
@@ -210,6 +226,11 @@ func (a *CoreApp) Stop() {
 	}
 	if a.hotkeyManager != nil {
 		a.hotkeyManager.Stop()
+	}
+	if a.pluginSupervisor != nil {
+		if err := a.pluginSupervisor.StopAll("shutdown"); err != nil {
+			a.logError("停止外部插件后端时恢复未确认: %v", err)
+		}
 	}
 	if a.pluginManager != nil {
 		a.pluginManager.StopAll()

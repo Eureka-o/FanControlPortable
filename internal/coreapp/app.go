@@ -21,26 +21,30 @@ import (
 	"github.com/TIANLI0/THRM/internal/temperature"
 	"github.com/TIANLI0/THRM/internal/tray"
 	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/TIANLI0/THRM/internal/version"
 )
 
 // CoreApp 核心应用结构
 type CoreApp struct {
 	ctx context.Context
 
-	deviceManager    *device.Manager
-	bridgeManager    *bridge.Manager
-	tempReader       *temperature.Reader
-	tempHistory      *temperature.HistoryRecorder
-	configManager    *config.Manager
-	trayManager      *tray.Manager
-	hotkeyManager    *hotkeysvc.Manager
-	notifier         *notifier.Manager
-	autostartManager *autostart.Manager
-	pluginManager    *plugins.Manager
-	logger           *logger.CustomLogger
-	ipcServer        *ipc.Server
-	wifiScanControl  *types.WiFiDiscoveryControl
-	wifiScanRunning  atomic.Bool
+	deviceManager           *device.Manager
+	bridgeManager           *bridge.Manager
+	tempReader              *temperature.Reader
+	tempHistory             *temperature.HistoryRecorder
+	configManager           *config.Manager
+	trayManager             *tray.Manager
+	hotkeyManager           *hotkeysvc.Manager
+	notifier                *notifier.Manager
+	autostartManager        *autostart.Manager
+	pluginManager           *plugins.Manager
+	pluginCatalog           *plugins.Catalog
+	pluginSupervisor        *plugins.Supervisor
+	logger                  *logger.CustomLogger
+	ipcServer               *ipc.Server
+	wifiScanControl         *types.WiFiDiscoveryControl
+	wifiScanRunning         atomic.Bool
+	pluginTelemetrySequence atomic.Uint64
 
 	isConnected                   bool
 	monitoringTemp                atomic.Bool
@@ -159,6 +163,7 @@ func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 	trayMgr := tray.NewManager(customLogger, iconData)
 	autostartMgr := autostart.NewManager(customLogger)
 	pluginMgr := plugins.NewManager(customLogger)
+	pluginCatalog := plugins.NewCatalog(filepath.Join(installDir, "plugins"), version.Get())
 
 	app := &CoreApp{
 		ctx:                context.Background(),
@@ -171,6 +176,7 @@ func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 		trayManager:        trayMgr,
 		autostartManager:   autostartMgr,
 		pluginManager:      pluginMgr,
+		pluginCatalog:      pluginCatalog,
 		logger:             customLogger,
 		wifiScanControl:    types.NewWiFiDiscoveryControl(),
 		isConnected:        false,
@@ -191,6 +197,12 @@ func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 	}
 	app.notifier = notifier.NewManager(customLogger, iconData)
 	app.hotkeyManager = hotkeysvc.NewManager(customLogger, app.handleHotkeyAction)
+	app.pluginSupervisor = plugins.NewSupervisor(plugins.SupervisorOptions{
+		Logger:   customLogger,
+		DataRoot: filepath.Join(installDir, "config", "plugins"),
+		OnStatus: app.handlePluginRuntimeStatus,
+		OnEvent:  app.handlePluginRuntimeEvent,
+	})
 
 	return app
 }

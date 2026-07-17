@@ -111,12 +111,35 @@ const (
 	ReqGetDeviceDebugFrames   RequestType = "GetDeviceDebugFrames"
 	ReqUpdateGuiResponseTime  RequestType = "UpdateGuiResponseTime"
 
+	// 插件管理相关
+	ReqGetPluginSnapshot RequestType = "GetPluginSnapshot"
+	ReqRefreshPlugins    RequestType = "RefreshPlugins"
+	ReqSetPluginEnabled  RequestType = "SetPluginEnabled"
+	ReqDeletePlugin      RequestType = "DeletePlugin"
+	ReqResetPlugin       RequestType = "ResetPlugin"
+	ReqInvokePlugin      RequestType = "InvokePlugin"
+
 	// 系统相关
 	ReqPing              RequestType = "Ping"
 	ReqIsAutoStartLaunch RequestType = "IsAutoStartLaunch"
 	ReqSubscribeEvents   RequestType = "SubscribeEvents"
 	ReqUnsubscribeEvents RequestType = "UnsubscribeEvents"
 )
+
+type PluginIDParams struct {
+	ID string `json:"id"`
+}
+
+type SetPluginEnabledParams struct {
+	ID      string `json:"id"`
+	Enabled bool   `json:"enabled"`
+}
+
+type InvokePluginParams struct {
+	ID      string          `json:"id"`
+	Method  string          `json:"method"`
+	Payload json.RawMessage `json:"payload"`
+}
 
 // Request IPC 请求
 type Request struct {
@@ -164,6 +187,8 @@ const (
 	EventHotkeyTriggered          = "hotkey-triggered"
 	EventLegionPowerModeUpdate    = "legion-power-mode-update"
 	EventLegionFnQSupportUpdate   = "legion-fnq-support-update"
+	EventPluginStatusUpdate       = "plugin-status-update"
+	EventPluginEvent              = "plugin-event"
 	EventHealthPing               = "health-ping"
 	EventHeartbeat                = "heartbeat"
 )

@@ -7,6 +7,7 @@ import (
 
 	"github.com/TIANLI0/THRM/internal/appmeta"
 	"github.com/TIANLI0/THRM/internal/ipc"
+	"github.com/TIANLI0/THRM/internal/plugins"
 	"github.com/TIANLI0/THRM/internal/types"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -134,6 +135,18 @@ func (a *App) handleCoreEvent(event ipc.Event) {
 		var payload map[string]any
 		if err := json.Unmarshal(event.Data, &payload); err == nil {
 			runtime.EventsEmit(a.ctx, "legion-power-mode-update", payload)
+		}
+
+	case ipc.EventPluginStatusUpdate:
+		var snapshot plugins.CatalogSnapshot
+		if err := json.Unmarshal(event.Data, &snapshot); err == nil {
+			runtime.EventsEmit(a.ctx, "plugin-status-update", snapshot)
+		}
+
+	case ipc.EventPluginEvent:
+		var payload plugins.RuntimeEvent
+		if err := json.Unmarshal(event.Data, &payload); err == nil {
+			runtime.EventsEmit(a.ctx, "plugin-event", payload)
 		}
 
 	case ipc.EventHealthPing:

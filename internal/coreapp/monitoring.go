@@ -281,6 +281,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			temp = mergeTemperatureHardwareMetadata(previousTemp, temp)
 			a.currentTemp = temp
 			a.mutex.Unlock()
+			a.submitPluginTelemetry(temp)
 
 			fanData := a.deviceManager.GetCurrentFanData()
 			historyPoint, recorded := a.tempHistory.Add(temp, fanData)

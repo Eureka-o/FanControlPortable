@@ -67,6 +67,12 @@
       "exportFailed": "导出诊断日志失败：{{error}}"
     }
   },
+  "pluginHost": {
+    "loading": "\u6b63\u5728\u52a0\u8f7d\u63d2\u4ef6\u9875\u9762...",
+    "loadFailed": "\u63d2\u4ef6\u9875\u9762\u52a0\u8f7d\u5931\u8d25",
+    "retry": "\u91cd\u8bd5",
+    "unavailable": "\u63d2\u4ef6\u5df2\u505c\u7528\u6216\u6682\u65f6\u4e0d\u53ef\u7528\uff0c\u5df2\u8fd4\u56de\u72b6\u6001\u9875"
+  },
   "advancedDevices": {
     "title": "已支持设备",
     "subtitle": "管理 WiFi/虚拟串口兼容设备和用户 BLE/HID 原生档案。BLE/HID 会在连接原生设备时自动遍历，不在这里手动启用。",
@@ -1158,6 +1164,68 @@
         "scanRunning": "正在扫描设备...",
         "deviceStatusUnavailable": "不可用",
         "wifiManualSaveAction": "保存并连接"
+      }
+    },
+    "plugins": {
+      "sectionTitle": "插件",
+      "get": {
+        "title": "获取插件",
+        "officialTitle": "官方插件",
+        "description": "从 FanControl 仓库的 Releases 下载官方插件安装包。",
+        "openReleases": "打开 Releases",
+        "openFolder": "打开插件目录"
+      },
+      "management": {
+        "title": "插件管理",
+        "refresh": "刷新插件列表",
+        "loading": "正在读取插件...",
+        "emptyTitle": "尚未安装插件",
+        "emptyDescription": "可前往 Releases 下载官方插件，安装后重新启动 FanControl 或刷新此列表。",
+        "toggleAria": "切换 {{name}} 的启用配置",
+        "reset": "重置插件数据",
+        "delete": "删除插件",
+        "disableBeforeAction": "请先停用插件"
+      },
+      "states": {
+        "invalid": "清单无效",
+        "incompatible": "不兼容",
+        "enabledConfigured": "已设为启用",
+        "starting": "正在启动",
+        "ready": "运行中",
+        "suspending": "正在暂停",
+        "suspended": "已暂停",
+        "restarting": "正在重连",
+        "unsupported": "硬件不支持",
+        "failed": "启动失败",
+        "disabled": "已停用"
+      },
+      "errors": {
+        "apiUnavailable": "插件管理接口不可用，请完全重启 FanControl 后重试。"
+      },
+      "confirm": {
+        "delete": {
+          "title": "删除 {{name}}？",
+          "description": "将删除该插件的安装文件。已保存的插件数据会保留，重新安装后仍可继续使用。",
+          "confirm": "删除插件"
+        },
+        "reset": {
+          "title": "重置 {{name}}？",
+          "description": "将删除该插件保存的设置和学习数据，此操作无法撤销。",
+          "confirm": "重置数据"
+        }
+      },
+      "toasts": {
+        "refreshed": "插件列表已刷新",
+        "refreshFailed": "刷新插件列表失败：{{error}}",
+        "openFolderFailed": "打开插件目录失败：{{error}}",
+        "enabled": "已将 {{name}} 设为启用",
+        "disabled": "已停用 {{name}}",
+        "startFailed": "插件启动失败：{{error}}",
+        "toggleFailed": "修改插件启用状态失败：{{error}}",
+        "deleted": "已删除 {{name}}",
+        "deleteFailed": "删除插件失败：{{error}}",
+        "reset": "已重置 {{name}} 的数据",
+        "resetFailed": "重置插件数据失败：{{error}}"
       }
     },
     "offline": {

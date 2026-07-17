@@ -485,6 +485,14 @@ func (a *CoreApp) onSystemSuspend() {
 		if !a.isCurrentSuspendGeneration(generation) {
 			return
 		}
+		if a.pluginSupervisor != nil {
+			if err := a.pluginSupervisor.SuspendAll(); err != nil {
+				a.logError("挂起前停止外部插件后端时恢复未确认: %v", err)
+			}
+		}
+		if !a.isCurrentSuspendGeneration(generation) {
+			return
+		}
 
 		a.safeRun("suspend-device-disconnect", func() {
 			a.deviceManager.DisconnectSilently()
@@ -629,6 +637,14 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 
 	// 主动挂起时温度监控已停止，唤醒后需重新启动（与设备连接解耦）。
 	if proactivelySuspended {
+		if a.pluginSupervisor != nil {
+			cfg := a.configManager.Get()
+			a.safeGo("resume-external-plugins", func() {
+				if err := a.pluginSupervisor.ResumeEnabled(cfg.PluginEnabled); err != nil {
+					a.logError("唤醒后恢复外部插件后端失败: %v", err)
+				}
+			})
+		}
 		if resumeReconnectWanted {
 			a.autoReconnectSuppressed.Store(false)
 		}

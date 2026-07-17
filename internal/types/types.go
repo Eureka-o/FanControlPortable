@@ -529,6 +529,7 @@ type SmartControlConfig struct {
 type AppConfig struct {
 	LegionFnQ                         LegionFnQConfig                        `json:"legionFnQ"`
 	LegionFnQSupport                  LegionFnQSupportCache                  `json:"legionFnQSupport"`
+	PluginEnabled                     map[string]bool                        `json:"pluginEnabled,omitempty"`
 	ActiveDeviceProfileID             string                                 `json:"activeDeviceProfileId"`
 	ActiveDeviceProfileIDsByTransport map[string]string                      `json:"activeDeviceProfileIdsByTransport,omitempty"`
 	DeviceProfiles                    []DeviceProfile                        `json:"deviceProfiles,omitempty"`
@@ -1070,5 +1071,6 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		LightStrip:              GetDefaultLightStripConfig(),
 		LegionFnQ:               GetDefaultLegionFnQConfig(),
 		LegionFnQSupport:        LegionFnQSupportCache{},
+		PluginEnabled:           map[string]bool{},
 	}
 }

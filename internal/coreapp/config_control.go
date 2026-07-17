@@ -94,6 +94,9 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 		cfg.ActiveDeviceProfileID = oldCfg.ActiveDeviceProfileID
 	}
 	cfg.LegionFnQSupport = oldCfg.LegionFnQSupport
+	if cfg.PluginEnabled == nil {
+		cfg.PluginEnabled = oldCfg.PluginEnabled
+	}
 	cfg.ManualGearLevels = cloneManualGearLevels(oldCfg.ManualGearLevels)
 	cfg.LightStrip, _ = normalizeLightStripConfig(cfg.LightStrip)
 	cfg.ThemeMode = types.NormalizeThemeMode(cfg.ThemeMode)

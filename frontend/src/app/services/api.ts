@@ -46,6 +46,8 @@ import type {
   DebugInfo,
   LegionFnQSupportPayload,
   LegionPowerModePayload,
+  PluginCatalogSnapshot,
+  PluginEventPayload,
   ThemeMeta,
 } from '../types/app';
 
@@ -556,6 +558,42 @@ class ApiService {
   // 在系统文件管理器中打开主题文件夹，便于用户编辑/新增主题。
   async openThemesFolder(): Promise<void> {
     return await (window as any).go?.main?.App?.OpenThemesFolder?.();
+  }
+
+  async getPluginSnapshot(): Promise<PluginCatalogSnapshot> {
+    return await (window as any).go?.main?.App?.GetPluginSnapshot?.() as PluginCatalogSnapshot;
+  }
+
+  async refreshPlugins(): Promise<PluginCatalogSnapshot> {
+    return await (window as any).go?.main?.App?.RefreshPlugins?.() as PluginCatalogSnapshot;
+  }
+
+  async setPluginEnabled(id: string, enabled: boolean): Promise<PluginCatalogSnapshot> {
+    return await (window as any).go?.main?.App?.SetPluginEnabled?.(id, enabled) as PluginCatalogSnapshot;
+  }
+
+  async deletePlugin(id: string): Promise<PluginCatalogSnapshot> {
+    return await (window as any).go?.main?.App?.DeletePlugin?.(id) as PluginCatalogSnapshot;
+  }
+
+  async resetPlugin(id: string): Promise<PluginCatalogSnapshot> {
+    return await (window as any).go?.main?.App?.ResetPlugin?.(id) as PluginCatalogSnapshot;
+  }
+
+  async openPluginsFolder(): Promise<void> {
+    return await (window as any).go?.main?.App?.OpenPluginsFolder?.();
+  }
+
+  async invokePlugin<T = unknown>(id: string, method: string, payload: unknown = {}): Promise<T> {
+    return await (window as any).go?.main?.App?.InvokePlugin?.(id, method, payload) as T;
+  }
+
+  onPluginStatusUpdate(callback: (snapshot: PluginCatalogSnapshot) => void): () => void {
+    return EventsOn('plugin-status-update', callback);
+  }
+
+  onPluginEvent(callback: (event: PluginEventPayload) => void): () => void {
+    return EventsOn('plugin-event', callback);
   }
 
   // 调试事件监听

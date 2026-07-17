@@ -6,8 +6,17 @@ import {
   appendTimelineEvent,
   cancelPendingTabChange,
   completePendingTabChange,
+  isPluginAppTab,
+  pluginAppTab,
   requestTabChange,
 } from '../src/app/store/app-store-logic.mts';
+
+test('accepts manifest-scoped plugin tabs without changing built-in navigation', () => {
+  const tab = pluginAppTab('fake-plugin', 'control');
+  assert.equal(tab, 'plugin:fake-plugin:control');
+  assert.equal(isPluginAppTab(tab), true);
+  assert.equal(isPluginAppTab('control'), false);
+});
 
 test('keeps the curve page mounted while a dirty draft awaits navigation confirmation', () => {
   const state = requestTabChange({

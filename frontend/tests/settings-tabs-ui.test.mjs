@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const source = readFileSync(new URL('../src/app/components/ControlPanel.tsx', import.meta.url), 'utf8');
+const realtimeOverviewUrl = new URL('../src/app/components/ui/RealtimeOverview.tsx', import.meta.url);
+const realtimeOverviewSource = existsSync(realtimeOverviewUrl) ? readFileSync(realtimeOverviewUrl, 'utf8') : '';
 const appShellSource = readFileSync(new URL('../src/app/components/AppShell.tsx', import.meta.url), 'utf8');
 const fanCurveSource = readFileSync(new URL('../src/app/components/FanCurve.tsx', import.meta.url), 'utf8');
 const fanControlSource = readFileSync(new URL('../src/app/components/settings/FanControlSection.tsx', import.meta.url), 'utf8');
@@ -87,7 +89,7 @@ test('reports user-triggered settings failures', () => {
 
 test('keeps the initial settings reveal ordered while section switches stay below the tabs', () => {
   assert.match(source, /data-theme-section="settings-page" data-page-reveal="cards"/);
-  const overview = source.indexOf('data-theme-card="settings-overview"');
+  const overview = source.indexOf('<RealtimeOverview');
   const tabs = source.indexOf('data-theme-ui="settings-tabs"');
   const panels = source.indexOf('data-theme-ui="settings-panels"');
   const debugPanel = source.indexOf('<DeviceDebugPanel');
@@ -100,26 +102,26 @@ test('uses existing telemetry and theme hooks without waking an idle GPU', () =>
   assert.match(source, /temperature\?\.cpuPowerWatts/);
   assert.match(source, /temperature\?\.gpuPowerWatts/);
   assert.match(source, /gpuNotPolled/);
-  assert.match(source, /data-theme-card="settings-overview-temperature"/);
-  assert.match(source, /data-theme-card="settings-overview-device"/);
-  assert.doesNotMatch(source, /data-theme-card="settings-overview-speed"/);
+  assert.match(source, /<RealtimeOverview/);
+  assert.match(realtimeOverviewSource, /data-theme-card="settings-overview-temperature"/);
+  assert.match(realtimeOverviewSource, /data-theme-card="settings-overview-device"/);
+  assert.doesNotMatch(realtimeOverviewSource, /data-theme-card="settings-overview-speed"/);
 });
 
 test('balances both overview cards and protects long device names', () => {
-  assert.match(source, /data-theme-card="settings-overview-temperature" className="grid min-h-\[10rem\] grid-rows-2/);
-  assert.match(source, /data-theme-card="settings-overview-device" className="grid min-h-\[10rem\] grid-rows-2/);
-  assert.match(source, /title=\{overviewConnectionName\}/);
-  assert.match(source, /line-clamp-2 break-words text-sm font-semibold leading-snug/);
-  assert.doesNotMatch(source, /className="mt-auto grid grid-cols-2/);
+  assert.notEqual(realtimeOverviewSource, '', 'shared RealtimeOverview component should exist');
+  assert.match(realtimeOverviewSource, /data-theme-card="settings-overview-temperature"/);
+  assert.match(realtimeOverviewSource, /data-theme-card="settings-overview-device"/);
+  assert.match(realtimeOverviewSource, /title=\{device\.name\}/);
+  assert.match(realtimeOverviewSource, /line-clamp-2 break-words text-sm font-semibold leading-snug/);
+  assert.match(source, /device=\{\{/);
 });
 
 test('aligns thermal metrics and keeps hardware model pills at the right edge', () => {
   assert.match(source, /model: temperature\?\.cpuModel\?\.trim\(\) \|\| ''/);
   assert.match(source, /model: temperature\?\.gpuModel\?\.trim\(\) \|\| ''/);
-  assert.match(source, /data-theme-ui="settings-overview-model"/);
-  assert.match(source, /title=\{model\}/);
-  assert.match(source, /border-primary\/20 bg-background\/80/);
-  assert.match(source, /shadow-black\/15 backdrop-blur-md/);
-  assert.match(source, /data-theme-ui="settings-overview-metrics"/);
-  assert.match(source, /grid-cols-\[1rem_2\.25rem_minmax\(3\.25rem,1fr\)_1rem_2\.25rem_minmax\(3\.25rem,1fr\)\]/);
+  assert.match(realtimeOverviewSource, /data-theme-ui="settings-overview-model"/);
+  assert.match(realtimeOverviewSource, /title=\{item\.model\}/);
+  assert.match(realtimeOverviewSource, /data-theme-ui="settings-overview-metrics"/);
+  assert.match(realtimeOverviewSource, /item\.metrics\.map/);
 });

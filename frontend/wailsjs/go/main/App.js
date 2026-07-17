@@ -42,6 +42,10 @@ export function DeleteFanCurveProfile(arg1) {
   return window['go']['main']['App']['DeleteFanCurveProfile'](arg1);
 }
 
+export function DeletePlugin(arg1) {
+  return window['go']['main']['App']['DeletePlugin'](arg1);
+}
+
 export function DisconnectDevice() {
   return window['go']['main']['App']['DisconnectDevice']();
 }
@@ -118,6 +122,10 @@ export function GetFanCurveProfiles() {
   return window['go']['main']['App']['GetFanCurveProfiles']();
 }
 
+export function GetPluginSnapshot() {
+  return window['go']['main']['App']['GetPluginSnapshot']();
+}
+
 export function GetSupportedDeviceProfiles() {
   return window['go']['main']['App']['GetSupportedDeviceProfiles']();
 }
@@ -154,6 +162,10 @@ export function InitSystemTray() {
   return window['go']['main']['App']['InitSystemTray']();
 }
 
+export function InvokePlugin(arg1, arg2, arg3) {
+  return window['go']['main']['App']['InvokePlugin'](arg1, arg2, arg3);
+}
+
 export function IsAutoStartLaunch() {
   return window['go']['main']['App']['IsAutoStartLaunch']();
 }
@@ -176,6 +188,10 @@ export function ManualSetFanSpeed(arg1) {
 
 export function OnWindowClosing(arg1) {
   return window['go']['main']['App']['OnWindowClosing'](arg1);
+}
+
+export function OpenPluginsFolder() {
+  return window['go']['main']['App']['OpenPluginsFolder']();
 }
 
 export function OpenThemesFolder() {
@@ -202,12 +218,20 @@ export function RefreshDeviceSettings() {
   return window['go']['main']['App']['RefreshDeviceSettings']();
 }
 
+export function RefreshPlugins() {
+  return window['go']['main']['App']['RefreshPlugins']();
+}
+
 export function ReinstallPawnIO() {
   return window['go']['main']['App']['ReinstallPawnIO']();
 }
 
 export function ResetLearnedOffsets() {
   return window['go']['main']['App']['ResetLearnedOffsets']();
+}
+
+export function ResetPlugin(arg1) {
+  return window['go']['main']['App']['ResetPlugin'](arg1);
 }
 
 export function RestartPawnIO() {
@@ -284,6 +308,10 @@ export function SetLightStrip(arg1) {
 
 export function SetManualGear(arg1, arg2) {
   return window['go']['main']['App']['SetManualGear'](arg1, arg2);
+}
+
+export function SetPluginEnabled(arg1, arg2) {
+  return window['go']['main']['App']['SetPluginEnabled'](arg1, arg2);
 }
 
 export function SetPowerOnStart(arg1) {

@@ -1,0 +1,22 @@
+{
+  "id": "omen-fan",
+  "name": "HP OMEN Fan Control",
+  "description": "HP OMEN control-page preview with an in-memory backend and no hardware writes.",
+  "version": "0.1.0",
+  "platform": "windows-amd64",
+  "minCoreVersion": "2.5.2-preview.3",
+  "protocolVersion": 1,
+  "backend": "backend/omen-fan-driver.exe",
+  "frontend": "ui/index.js",
+  "style": "ui/index.css",
+  "hostApiVersion": 1,
+  "capabilities": ["status", "fan-control"],
+  "telemetryInputs": ["cpu-temp", "gpu-temp", "cpu-power", "gpu-power"],
+  "page": {
+    "id": "control",
+    "title": "HP OMEN",
+    "icon": "fan",
+    "iconAsset": "ui/assets/omen.png",
+    "order": 500
+  }
+}

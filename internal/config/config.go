@@ -660,6 +660,17 @@ func cloneStringMapExact(input map[string]string) map[string]string {
 	return out
 }
 
+func cloneBoolMapExact(input map[string]bool) map[string]bool {
+	if input == nil {
+		return nil
+	}
+	out := make(map[string]bool, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
+}
+
 func cloneNestedIntMapExact(input map[string]map[string]int) map[string]map[string]int {
 	if input == nil {
 		return nil
@@ -762,6 +773,7 @@ func cloneAppConfig(input types.AppConfig) types.AppConfig {
 		}
 		return out
 	}()
+	input.PluginEnabled = cloneBoolMapExact(input.PluginEnabled)
 	input.ActiveDeviceProfileIDsByTransport = cloneStringMapExact(input.ActiveDeviceProfileIDsByTransport)
 	input.DeviceProfiles = cloneDeviceProfilesExact(input.DeviceProfiles)
 	input.ManualGearLevels = cloneStringMapExact(input.ManualGearLevels)
