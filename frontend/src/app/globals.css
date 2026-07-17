@@ -5,7 +5,7 @@
 
 :root {
   --font-ui-sans: "Manrope", "Segoe UI Variable Text", "Segoe UI", sans-serif;
-  --font-ui-cjk: "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-ui-cjk: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   --font-geist-mono: "Geist Mono", "Cascadia Mono", Consolas, monospace;
   --background: #f6f8fc;
   --foreground: #111827;
