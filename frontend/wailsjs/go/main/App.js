@@ -6,6 +6,14 @@ export function AutoScanDevices() {
   return window['go']['main']['App']['AutoScanDevices']();
 }
 
+export function CancelUpdateDownload(arg1) {
+  return window['go']['main']['App']['CancelUpdateDownload'](arg1);
+}
+
+export function CheckLatestRelease(arg1) {
+  return window['go']['main']['App']['CheckLatestRelease'](arg1);
+}
+
 export function CheckWindowsAutoStart() {
   return window['go']['main']['App']['CheckWindowsAutoStart']();
 }
@@ -34,16 +42,16 @@ export function DeleteFanCurveProfile(arg1) {
   return window['go']['main']['App']['DeleteFanCurveProfile'](arg1);
 }
 
-export function DisablePlugin(arg1) {
-  return window['go']['main']['App']['DisablePlugin'](arg1);
+export function DeletePlugin(arg1) {
+  return window['go']['main']['App']['DeletePlugin'](arg1);
 }
 
 export function DisconnectDevice() {
   return window['go']['main']['App']['DisconnectDevice']();
 }
 
-export function EnablePlugin(arg1) {
-  return window['go']['main']['App']['EnablePlugin'](arg1);
+export function DownloadAndInstallUpdate(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['DownloadAndInstallUpdate'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function ExportDeviceProfiles() {
@@ -62,6 +70,10 @@ export function ExportFanCurveProfiles() {
   return window['go']['main']['App']['ExportFanCurveProfiles']();
 }
 
+export function ExportFanCurveProfilesToFile() {
+  return window['go']['main']['App']['ExportFanCurveProfilesToFile']();
+}
+
 export function GetAppVersion() {
   return window['go']['main']['App']['GetAppVersion']();
 }
@@ -72,10 +84,6 @@ export function GetAutoStartMethod() {
 
 export function GetAvailableGears() {
   return window['go']['main']['App']['GetAvailableGears']();
-}
-
-export function GetAvailablePlugins() {
-  return window['go']['main']['App']['GetAvailablePlugins']();
 }
 
 export function GetBridgeProgramStatus() {
@@ -114,20 +122,8 @@ export function GetFanCurveProfiles() {
   return window['go']['main']['App']['GetFanCurveProfiles']();
 }
 
-export function GetPluginFrontendAsset(arg1) {
-  return window['go']['main']['App']['GetPluginFrontendAsset'](arg1);
-}
-
-export function GetPluginFrontendAssetPath(arg1, arg2) {
-  return window['go']['main']['App']['GetPluginFrontendAssetPath'](arg1, arg2);
-}
-
-export function GetPluginFrontendHTML(arg1) {
-  return window['go']['main']['App']['GetPluginFrontendHTML'](arg1);
-}
-
-export function GetPluginStatus(arg1) {
-  return window['go']['main']['App']['GetPluginStatus'](arg1);
+export function GetPluginSnapshot() {
+  return window['go']['main']['App']['GetPluginSnapshot']();
 }
 
 export function GetSupportedDeviceProfiles() {
@@ -166,6 +162,10 @@ export function InitSystemTray() {
   return window['go']['main']['App']['InitSystemTray']();
 }
 
+export function InvokePlugin(arg1, arg2, arg3) {
+  return window['go']['main']['App']['InvokePlugin'](arg1, arg2, arg3);
+}
+
 export function IsAutoStartLaunch() {
   return window['go']['main']['App']['IsAutoStartLaunch']();
 }
@@ -190,8 +190,16 @@ export function OnWindowClosing(arg1) {
   return window['go']['main']['App']['OnWindowClosing'](arg1);
 }
 
+export function OpenPluginsFolder() {
+  return window['go']['main']['App']['OpenPluginsFolder']();
+}
+
 export function OpenThemesFolder() {
   return window['go']['main']['App']['OpenThemesFolder']();
+}
+
+export function PauseUpdateDownload() {
+  return window['go']['main']['App']['PauseUpdateDownload']();
 }
 
 export function ProbeBLEGATT(arg1) {
@@ -210,8 +218,8 @@ export function RefreshDeviceSettings() {
   return window['go']['main']['App']['RefreshDeviceSettings']();
 }
 
-export function RefreshPluginDiscovery() {
-  return window['go']['main']['App']['RefreshPluginDiscovery']();
+export function RefreshPlugins() {
+  return window['go']['main']['App']['RefreshPlugins']();
 }
 
 export function ReinstallPawnIO() {
@@ -222,8 +230,16 @@ export function ResetLearnedOffsets() {
   return window['go']['main']['App']['ResetLearnedOffsets']();
 }
 
+export function ResetPlugin(arg1) {
+  return window['go']['main']['App']['ResetPlugin'](arg1);
+}
+
 export function RestartPawnIO() {
   return window['go']['main']['App']['RestartPawnIO']();
+}
+
+export function ResumeUpdateDownload() {
+  return window['go']['main']['App']['ResumeUpdateDownload']();
 }
 
 export function SaveDeviceProfile(arg1, arg2) {
@@ -294,6 +310,10 @@ export function SetManualGear(arg1, arg2) {
   return window['go']['main']['App']['SetManualGear'](arg1, arg2);
 }
 
+export function SetPluginEnabled(arg1, arg2) {
+  return window['go']['main']['App']['SetPluginEnabled'](arg1, arg2);
+}
+
 export function SetPowerOnStart(arg1) {
   return window['go']['main']['App']['SetPowerOnStart'](arg1);
 }
@@ -304,6 +324,10 @@ export function SetSmartStartStop(arg1) {
 
 export function SetTemperatureHistoryEnabled(arg1) {
   return window['go']['main']['App']['SetTemperatureHistoryEnabled'](arg1);
+}
+
+export function SetWiFiSmartStartStopStandbySpeed(arg1) {
+  return window['go']['main']['App']['SetWiFiSmartStartStopStandbySpeed'](arg1);
 }
 
 export function SetWindowsAutoStart(arg1) {
@@ -328,6 +352,10 @@ export function TestDeviceProfile(arg1) {
 
 export function TestTemperatureReading() {
   return window['go']['main']['App']['TestTemperatureReading']();
+}
+
+export function UpdateCompletedOnLaunch() {
+  return window['go']['main']['App']['UpdateCompletedOnLaunch']();
 }
 
 export function UpdateConfig(arg1) {

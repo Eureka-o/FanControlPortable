@@ -2,56 +2,114 @@ package plugins
 
 import (
 	"context"
+	"sync"
 	"testing"
+	"time"
 )
 
-type fakeManagerPlugin struct {
-	id     string
-	starts int
-	stops  int
+type blockingPlugin struct {
+	id            string
+	startEntered  chan struct{}
+	startRelease  chan struct{}
+	statusEntered chan struct{}
+	statusRelease chan struct{}
+	onceStart     sync.Once
+	onceStatus    sync.Once
 }
 
-func (p *fakeManagerPlugin) ID() string {
-	return p.id
-}
+func (p *blockingPlugin) ID() string   { return p.id }
+func (p *blockingPlugin) Name() string { return p.id }
 
-func (p *fakeManagerPlugin) Name() string {
-	return p.id
-}
-
-func (p *fakeManagerPlugin) Start(context.Context) error {
-	p.starts++
+func (p *blockingPlugin) Start(context.Context) error {
+	p.onceStart.Do(func() { close(p.startEntered) })
+	<-p.startRelease
 	return nil
 }
 
-func (p *fakeManagerPlugin) Stop() error {
-	p.stops++
-	return nil
+func (p *blockingPlugin) Stop() error { return nil }
+
+func (p *blockingPlugin) Status() Status {
+	p.onceStatus.Do(func() { close(p.statusEntered) })
+	<-p.statusRelease
+	return Status{ID: p.id, Name: p.id, Running: true}
 }
 
-func (p *fakeManagerPlugin) Status() Status {
-	return Status{ID: p.id, Name: p.id}
-}
+type idlePlugin struct{ id string }
 
-func TestManagerPluginReturnsRegisteredPlugin(t *testing.T) {
+func (p *idlePlugin) ID() string                  { return p.id }
+func (p *idlePlugin) Name() string                { return p.id }
+func (p *idlePlugin) Start(context.Context) error { return nil }
+func (p *idlePlugin) Stop() error                 { return nil }
+func (p *idlePlugin) Status() Status              { return Status{ID: p.id, Name: p.id} }
+
+func TestStartDoesNotHoldManagerLock(t *testing.T) {
 	manager := NewManager(nil)
-	plugin := &fakeManagerPlugin{id: "registered"}
-
+	plugin := &blockingPlugin{
+		id:           "blocking",
+		startEntered: make(chan struct{}),
+		startRelease: make(chan struct{}),
+	}
 	manager.Register(plugin)
 
-	got := manager.Plugin("registered")
-	if got != plugin {
-		t.Fatalf("Plugin() = %#v, want registered plugin", got)
+	startDone := make(chan struct{})
+	go func() {
+		_ = manager.Start(plugin.id)
+		close(startDone)
+	}()
+	<-plugin.startEntered
+
+	registerDone := make(chan struct{})
+	go func() {
+		manager.Register(&idlePlugin{id: "second"})
+		close(registerDone)
+	}()
+	select {
+	case <-registerDone:
+	case <-time.After(time.Second):
+		t.Fatal("Register blocked behind plugin Start")
 	}
-	if plugin.starts != 0 || plugin.stops != 0 {
-		t.Fatalf("Plugin() invoked lifecycle methods: starts=%d stops=%d", plugin.starts, plugin.stops)
-	}
+
+	close(plugin.startRelease)
+	<-startDone
 }
 
-func TestManagerPluginMissingReturnsNil(t *testing.T) {
+func TestStatusesDoesNotHoldManagerLock(t *testing.T) {
 	manager := NewManager(nil)
+	plugin := &blockingPlugin{
+		id:            "blocking",
+		statusEntered: make(chan struct{}),
+		statusRelease: make(chan struct{}),
+	}
+	manager.Register(plugin)
 
-	if got := manager.Plugin("missing"); got != nil {
-		t.Fatalf("Plugin() = %#v, want nil", got)
+	statusesDone := make(chan struct{})
+	go func() {
+		_ = manager.Statuses()
+		close(statusesDone)
+	}()
+	<-plugin.statusEntered
+
+	registerDone := make(chan struct{})
+	go func() {
+		manager.Register(&idlePlugin{id: "second"})
+		close(registerDone)
+	}()
+	select {
+	case <-registerDone:
+	case <-time.After(time.Second):
+		t.Fatal("Register blocked behind plugin Status")
+	}
+
+	close(plugin.statusRelease)
+	<-statusesDone
+}
+
+func TestRegisterIgnoresDuplicateID(t *testing.T) {
+	manager := NewManager(nil)
+	manager.Register(&idlePlugin{id: "same"})
+	manager.Register(&idlePlugin{id: "same"})
+
+	if got := len(manager.Statuses()); got != 1 {
+		t.Fatalf("Statuses length = %d, want 1", got)
 	}
 }

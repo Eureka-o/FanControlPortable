@@ -45,6 +45,7 @@ export interface FanData {
 }
 
 export type GPUReadState = 'active' | 'notPolled' | 'unavailable' | 'error' | 'unknown';
+export type TelemetryState = 'fresh' | 'delayed' | 'unavailable';
 
 // 温度数据
 export interface TemperatureData {
@@ -65,6 +66,7 @@ export interface TemperatureData {
   updateTime: number;  // 更新时间戳
   bridgeOk?: boolean;  // 桥接程序是否正常
   bridgeMessage?: string; // 桥接程序提示
+  telemetryState?: TelemetryState;
 }
 
 export interface TemperatureSensor {
@@ -83,6 +85,7 @@ export interface PowerSensor {
 export interface AppConfig {
   legionFnQ?: LegionFnQConfig;
   legionFnQSupport?: LegionFnQSupportCache;
+  pluginEnabled?: Record<string, boolean>;
   deviceTransport?: string;
   fanControlDeviceIp?: string;
   wifiSmartStartStopEnabled?: boolean;
@@ -97,7 +100,7 @@ export interface AppConfig {
   windowsAutoStart: boolean;   // Windows开机自启动
   // 主题模式：system/light/dark 为内置基础主题；其它字符串为自定义主题 id（如 'thrm'）
   themeMode?: string;
-  windowBlur?: 'on' | 'off' | 'auto';
+  windowBlur?: 'acrylic' | 'mica' | 'tabbed' | 'off';
   smartStartStop: string;      // 智能启停
   brightness: number;          // 亮度
   tempUpdateRate: number;      // 温度更新频率(秒)
@@ -177,27 +180,6 @@ export interface LegionFnQSupportPayload {
   supported: boolean;
 }
 
-export interface PluginInfo {
-  id: string;
-  name: string;
-  version?: string;
-  type?: string;
-  description?: string;
-  minCoreVersion?: string;
-  frontend?: string;
-  icon?: string;
-  status?: string;
-  installed: boolean;
-  supported: boolean;
-  running: boolean;
-  exePath?: string;
-  lastError?: string;
-}
-
-export interface PluginListPayload {
-  plugins?: PluginInfo[];
-}
-
 export interface DebugInfo {
   debugMode: boolean;
   trayReady: boolean;
@@ -209,7 +191,7 @@ export interface DebugInfo {
   monitoringTemp: boolean;
   autoStartLaunch: boolean;
   pawnIOInstallerPath?: string;
-  plugins?: Array<{ id: string; name: string; running: boolean; frontend?: string; lastError?: string }>;
+  plugins?: Array<{ id: string; name: string; running: boolean; lastError?: string }>;
 }
 
 export interface DeviceDebugFrame {
@@ -308,6 +290,56 @@ export interface ThemeMeta {
   description?: string;
   layer?: 'basic' | 'advanced' | string; // basic | advanced
   source: string;      // user | install | builtin
+}
+
+export type PluginCatalogState =
+  | 'discovered'
+  | 'disabled'
+  | 'starting'
+  | 'ready'
+  | 'suspending'
+  | 'suspended'
+  | 'restarting'
+  | 'unsupported'
+  | 'failed'
+  | 'invalid'
+  | 'incompatible';
+
+export interface PluginPageManifest {
+  id: string;
+  title: string;
+  icon: string;
+  iconAsset?: string;
+  order: number;
+}
+
+export interface PluginCatalogEntry {
+  id: string;
+  name: string;
+  description?: string;
+  version?: string;
+  platform?: string;
+  enabled: boolean;
+  state: PluginCatalogState;
+  lastError?: string;
+  capabilities?: string[];
+  runtimeCapabilities?: string[];
+  telemetryInputs?: string[];
+  frontend?: string;
+  style?: string;
+  page: PluginPageManifest;
+}
+
+export interface PluginCatalogSnapshot {
+  revision: number;
+  plugins: PluginCatalogEntry[];
+  error?: string;
+}
+
+export interface PluginEventPayload {
+  pluginId: string;
+  event: string;
+  payload: unknown;
 }
 
 // 设备信息

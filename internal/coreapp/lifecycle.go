@@ -31,18 +31,13 @@ func (a *CoreApp) Start() error {
 	// 加载配置
 	a.logInfo("开始加载配置文件")
 	cfg := a.configManager.Load(a.isAutoStartLaunch)
+	configChanged := false
 	if normalizedLight, changed := normalizeLightStripConfig(cfg.LightStrip); changed {
 		cfg.LightStrip = normalizedLight
-		a.configManager.Set(cfg)
-		if err := a.configManager.Save(); err != nil {
-			a.logError("保存灯带默认配置失败: %v", err)
-		}
+		configChanged = true
 	}
 	if normalizeHotkeyConfig(&cfg) {
-		a.configManager.Set(cfg)
-		if err := a.configManager.Save(); err != nil {
-			a.logError("保存快捷键默认配置失败: %v", err)
-		}
+		configChanged = true
 	}
 	unit := types.DeviceProfileSpeedUnit(&cfg)
 	changedCurveState := syncDeviceFanCurveStateForStartup(&cfg)
@@ -53,44 +48,50 @@ func (a *CoreApp) Start() error {
 		changedCurveState = true
 	}
 	if changedCurveState {
-		a.configManager.Set(cfg)
-		if err := a.configManager.Save(); err != nil {
-			a.logError("保存温控曲线方案默认配置失败: %v", err)
-		}
+		configChanged = true
 	}
 	unit = types.DeviceProfileSpeedUnit(&cfg)
 	if normalizedSmart, changed := smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, unit); changed {
 		cfg.SmartControl = normalizedSmart
-		a.configManager.Set(cfg)
-		if err := a.configManager.Save(); err != nil {
-			a.logError("保存智能控温默认配置失败: %v", err)
-		}
+		configChanged = true
 	}
 	if syncSmartControlOffsetsForActiveProfile(&cfg) {
-		a.configManager.Set(cfg)
-		if err := a.configManager.Save(); err != nil {
-			a.logError("保存学习曲线方案隔离配置失败: %v", err)
-		}
+		configChanged = true
 	}
 	if normalizeManualGearMemoryConfig(&cfg) {
-		a.configManager.Set(cfg)
-		if err := a.configManager.Save(); err != nil {
-			a.logError("保存挡位记忆默认配置失败: %v", err)
-		}
+		configChanged = true
 	}
 	if types.NormalizeManualGearRPMForUnit(&cfg, startupManualGearSpeedUnit(cfg)) {
-		a.configManager.Set(cfg)
-		if err := a.configManager.Save(); err != nil {
-			a.logError("保存挡位转速默认配置失败: %v", err)
-		}
+		configChanged = true
 	}
 	if a.applyCachedLegionFnQSupport(&cfg) {
+		configChanged = true
+	}
+
+	// 将启动迁移和系统自启动状态合并为一次完整配置写入。
+	a.logInfo("检查Windows自启动状态")
+	actualAutoStart := a.autostartManager.CheckWindowsAutoStart()
+	if actualAutoStart != cfg.WindowsAutoStart {
+		cfg.WindowsAutoStart = actualAutoStart
+		configChanged = true
+		a.logInfo("已同步Windows自启动状态: %v", actualAutoStart)
+	}
+	if configChanged {
 		a.configManager.Set(cfg)
 		if err := a.configManager.Save(); err != nil {
-			a.logError("保存 Lenovo Legion Fn+Q 缓存配置失败: %v", err)
+			a.logError("保存启动归一化配置失败: %v", err)
 		}
 	}
 	a.syncManualGearLevelMemory(cfg)
+	if a.pluginCatalog != nil {
+		a.pluginCatalog.SetEnabledState(cfg.PluginEnabled)
+		snapshot := a.refreshPluginCatalog(false)
+		if snapshot.Error != "" {
+			a.logError("扫描插件目录失败: %s", snapshot.Error)
+		} else {
+			a.logInfo("插件目录扫描完成: %d 个条目", len(snapshot.Plugins))
+		}
+	}
 	a.configureDeviceManager(cfg)
 	a.logInfo("配置加载完成，配置路径: %s", cfg.ConfigPath)
 
@@ -101,19 +102,6 @@ func (a *CoreApp) Start() error {
 			a.logger.SetDebugMode(true)
 		}
 		a.logInfo("从配置文件同步调试模式: 启用")
-	}
-
-	// 检查并同步Windows自启动状态
-	a.logInfo("检查Windows自启动状态")
-	actualAutoStart := a.autostartManager.CheckWindowsAutoStart()
-	if actualAutoStart != cfg.WindowsAutoStart {
-		cfg.WindowsAutoStart = actualAutoStart
-		a.configManager.Set(cfg)
-		if err := a.configManager.Save(); err != nil {
-			a.logError("同步Windows自启动状态时保存配置失败: %v", err)
-		} else {
-			a.logInfo("已同步Windows自启动状态: %v", actualAutoStart)
-		}
 	}
 
 	// 初始化HID
@@ -134,7 +122,13 @@ func (a *CoreApp) Start() error {
 		a.logError("启动 IPC 服务器失败: %v", err)
 		return err
 	}
-	a.startPluginDiscovery()
+	if a.pluginSupervisor != nil {
+		a.pluginSupervisor.Start(a.ctx)
+		snapshot := a.currentPluginSnapshot()
+		a.safeGo("start-enabled-external-plugins@startup", func() {
+			a.startEnabledPluginRuntimes(snapshot)
+		})
+	}
 	if !a.legionFnQSupportChecked.Load() {
 		a.startLegionFnQSupportDetection()
 	}
@@ -152,6 +146,21 @@ func (a *CoreApp) Start() error {
 		a.powerNotifyStop = stop
 		a.logInfo("已注册系统睡眠/唤醒通知")
 	}
+	if stop, err := powernotify.RegisterHIDInterfaceArrivalNotifications(
+		types.FlyDigiHIDVendorID,
+		[]uint16{
+			types.FlyDigiBS2ProductID,
+			types.FlyDigiBS2PROProductID,
+			types.FlyDigiBS3ProductID,
+			types.FlyDigiBS3PROProductID,
+		},
+		a.onSupportedHIDArrival,
+	); err != nil {
+		a.logDebug("注册飞智 HID 到达通知失败，将继续使用分阶段重连: %v", err)
+	} else {
+		a.hidNotifyStop = stop
+		a.logInfo("已注册飞智 HID 接口到达通知")
+	}
 
 	// 启动健康监控
 	if cfg.GuiMonitoring {
@@ -168,19 +177,19 @@ func (a *CoreApp) Start() error {
 		a.startTemperatureMonitoring()
 	})
 
-	// 尝试连接设备
-	a.safeGo("delayedConnectDevice", func() {
-		if a.isAutoStartLaunch {
-			// 自启动时等待更长时间，让设备固件有足够时间完成初始化
-			a.logInfo("自启动模式：等待设备初始化（3秒）")
-			time.Sleep(3 * time.Second)
-		} else {
-			time.Sleep(1 * time.Second)
-		}
-		a.ConnectDevice()
-	})
+	// 启动连接与健康检查共用可取消的 generation 重连链路。
+	a.requestStartupReconnect()
 
 	return nil
+}
+
+func (a *CoreApp) requestStartupReconnect() {
+	delay := time.Second
+	if a.isAutoStartLaunch {
+		delay = 3 * time.Second
+		a.logInfo("自启动模式：等待设备初始化（3秒）")
+	}
+	a.requestReconnect("startup", []time.Duration{delay, 5 * time.Second, 10 * time.Second, 30 * time.Second})
 }
 
 func startupManualGearSpeedUnit(cfg types.AppConfig) string {
@@ -192,16 +201,36 @@ func startupManualGearSpeedUnit(cfg types.AppConfig) string {
 
 // Stop 停止核心服务
 func (a *CoreApp) Stop() {
+	if !a.stopping.CompareAndSwap(false, true) {
+		return
+	}
 	a.logInfo("核心服务正在停止...")
-	a.applyWiFiSmartStartStopStandbySpeed("stop")
 	if a.powerNotifyStop != nil {
 		a.safeRun("power-notify-unregister", a.powerNotifyStop)
 		a.powerNotifyStop = nil
 	}
-	a.stopPluginDiscovery()
+	if a.hidNotifyStop != nil {
+		a.safeRun("hid-notify-unregister", a.hidNotifyStop)
+		a.hidNotifyStop = nil
+	}
 	a.stopTemperatureMonitoring()
+	a.monitoringMutex.Lock()
+	monitoringDone := a.monitoringDone
+	a.monitoringMutex.Unlock()
+	if monitoringDone != nil {
+		select {
+		case <-monitoringDone:
+		case <-time.After(3 * time.Second):
+			a.logError("等待温度监控停止超时，继续退出")
+		}
+	}
 	if a.hotkeyManager != nil {
 		a.hotkeyManager.Stop()
+	}
+	if a.pluginSupervisor != nil {
+		if err := a.pluginSupervisor.StopAll("shutdown"); err != nil {
+			a.logError("停止外部插件后端时恢复未确认: %v", err)
+		}
 	}
 	if a.pluginManager != nil {
 		a.pluginManager.StopAll()
@@ -225,6 +254,9 @@ func (a *CoreApp) Stop() {
 	a.trayManager.Quit()
 
 	a.logInfo("核心服务已停止")
+	if a.logger != nil {
+		a.logger.Close()
+	}
 }
 
 // initSystemTray 初始化系统托盘
@@ -331,10 +363,6 @@ func (a *CoreApp) cleanup() {
 	default:
 	}
 
-	if a.logger != nil {
-		a.logger.Info("核心服务正在退出，清理资源")
-		a.logger.Close()
-	}
 }
 
 // 日志辅助方法

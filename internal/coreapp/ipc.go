@@ -16,10 +16,10 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		a.handleConfigIPCRequest,
 		a.handleControlIPCRequest,
 		a.handleTemperatureIPCRequest,
-		a.handlePluginIPCRequest,
 		a.handleAutostartIPCRequest,
 		a.handleWindowIPCRequest,
 		a.handleDebugIPCRequest,
+		a.handlePluginIPCRequest,
 		a.handleSystemIPCRequest,
 	} {
 		if resp, ok := route(req); ok {

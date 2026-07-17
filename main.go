@@ -11,8 +11,11 @@ import (
 	"strings"
 
 	"github.com/TIANLI0/THRM/internal/appmeta"
+	"github.com/TIANLI0/THRM/internal/config"
 	"github.com/TIANLI0/THRM/internal/guiapp"
+	"github.com/TIANLI0/THRM/internal/plugins"
 	"github.com/TIANLI0/THRM/internal/theme"
+	"github.com/TIANLI0/THRM/internal/version"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -21,12 +24,16 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+const pluginAssetURLPrefix = "/plugin-assets/"
+
 func main() {
 	if !guiapp.EnsureCoreServiceRunning() {
 		println("警告：无法启动核心服务，GUI 将以有限功能模式运行")
 	}
 
 	themeManager := newThemeManager()
+	pluginCatalog := plugins.NewCatalog(filepath.Join(config.GetInstallDir(), "plugins"), version.Get())
+	pluginCatalog.Refresh()
 	app := NewAppWithThemeManager(themeManager)
 	windowOptions := guiapp.ResolveWindowsOptions()
 	bgR, bgG, bgB, bgA := guiapp.WindowBackgroundColour()
@@ -48,8 +55,8 @@ func main() {
 		WindowStartState: windowStartState,
 		AssetServer: &assetserver.Options{
 			Assets:     assets,
-			Handler:    themeAssetHandler(themeManager),
-			Middleware: themeAssetMiddleware(themeManager),
+			Handler:    runtimeAssetHandler(themeManager, pluginCatalog),
+			Middleware: runtimeAssetMiddleware(themeManager, pluginCatalog),
 		},
 		OnStartup: func(ctx context.Context) {
 			guiapp.SetWailsContext(ctx)
@@ -70,6 +77,39 @@ func main() {
 	if err != nil {
 		println("Error:", err.Error())
 	}
+}
+
+func runtimeAssetMiddleware(themeManager *theme.Manager, pluginCatalog *plugins.Catalog) assetserver.Middleware {
+	themeHandler := themeAssetHandler(themeManager)
+	pluginHandler := pluginAssetHandler(pluginCatalog)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, theme.AssetURLPrefix) {
+				themeHandler.ServeHTTP(w, r)
+				return
+			}
+			if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, pluginAssetURLPrefix) {
+				pluginHandler.ServeHTTP(w, r)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func runtimeAssetHandler(themeManager *theme.Manager, pluginCatalog *plugins.Catalog) http.Handler {
+	themeHandler := themeAssetHandler(themeManager)
+	pluginHandler := pluginAssetHandler(pluginCatalog)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, theme.AssetURLPrefix):
+			themeHandler.ServeHTTP(w, r)
+		case strings.HasPrefix(r.URL.Path, pluginAssetURLPrefix):
+			pluginHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
 }
 
 func themeAssetMiddleware(themeManager *theme.Manager) assetserver.Middleware {
@@ -113,6 +153,37 @@ func themeAssetHandler(themeManager *theme.Manager) http.Handler {
 			w.Header().Set("Content-Type", contentType)
 		}
 		w.Header().Set("Cache-Control", "no-cache")
+		http.ServeContent(w, r, asset.Name, asset.ModTime, bytes.NewReader(asset.Data))
+	})
+}
+
+func pluginAssetHandler(catalog *plugins.Catalog) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if catalog == nil || r.Method != http.MethodGet || !strings.HasPrefix(r.URL.Path, pluginAssetURLPrefix) {
+			http.NotFound(w, r)
+			return
+		}
+
+		rest := strings.TrimPrefix(r.URL.Path, pluginAssetURLPrefix)
+		parts := strings.SplitN(rest, "/", 2)
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			http.NotFound(w, r)
+			return
+		}
+
+		asset, err := catalog.ReadAsset(parts[0], parts[1])
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Type", asset.ContentType)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		if requestedVersion := strings.TrimSpace(r.URL.Query().Get("v")); requestedVersion != "" && requestedVersion == asset.Version {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
+		}
 		http.ServeContent(w, r, asset.Name, asset.ModTime, bytes.NewReader(asset.Data))
 	})
 }

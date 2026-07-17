@@ -338,7 +338,7 @@ func TestStableObserverUsesComparablePowerForEfficiency(t *testing.T) {
 	}
 }
 
-func TestLearnSteadyOffsetPowerGainDampensHighPowerQuietLearning(t *testing.T) {
+func TestLearnSteadyOffsetReliableEfficiencyIgnoresPowerGain(t *testing.T) {
 	curve := []types.FanCurvePoint{
 		{Temperature: 50, RPM: 25},
 		{Temperature: 70, RPM: 75},
@@ -352,7 +352,181 @@ func TestLearnSteadyOffsetPowerGainDampensHighPowerQuietLearning(t *testing.T) {
 
 	lowPower, _ := LearnSteadyOffsetForUnitWithPower(1, 55, 30, true, 0.2, true, curve, []int{0, 0}, cfg, rawPercentUnit)
 	highPower, _ := LearnSteadyOffsetForUnitWithPower(1, 55, 140, true, 0.2, true, curve, []int{0, 0}, cfg, rawPercentUnit)
-	if !(lowPower[1] < highPower[1]) {
-		t.Fatalf("high power should dampen quiet down-learning: low=%v high=%v", lowPower, highPower)
+	if lowPower[1] != highPower[1] {
+		t.Fatalf("reliable efficiency should ignore global power gain: low=%v high=%v", lowPower, highPower)
+	}
+}
+
+func TestLearnSteadyOffsetHalvesQuietStep(t *testing.T) {
+	curve := []types.FanCurvePoint{
+		{Temperature: 50, RPM: 25},
+		{Temperature: 70, RPM: 75},
+	}
+	cfg := types.SmartControlConfig{
+		TargetTemp:     70,
+		Hysteresis:     2,
+		LearnRate:      6,
+		MaxLearnOffset: 30,
+	}
+
+	offsets, changed := LearnSteadyOffsetForUnitWithPower(1, 55, 50, true, 0.2, true, curve, []int{0, 0}, cfg, rawPercentUnit)
+	if !changed || offsets[1] != -2 {
+		t.Fatalf("quiet offset = %v changed=%v, want [0 -2]/true", offsets, changed)
+	}
+}
+
+func TestStableObserverQuietLearningRequiresTwoConsecutiveMatchingSteadies(t *testing.T) {
+	curve := []types.FanCurvePoint{{Temperature: 60, RPM: 2000}}
+	observer := NewLegacyRPMStableObserver(len(curve))
+	cfg := types.SmartControlConfig{
+		LearnWindow:  3,
+		LearnDelay:   0,
+		MinRPMChange: 50,
+	}
+	power := EffectivePower{CPUWatts: 50, GPUWatts: 20, CPUValid: true, GPUValid: true}
+
+	first := SteadyResult{}
+	for range 3 {
+		first = observer.ObserveWithEffectivePower(60, 2000, power, curve, cfg)
+	}
+	if !first.Ready || !first.HavePower || first.QuietLearningReady {
+		t.Fatalf("first reliable steady = %#v, want ready without quiet-learning approval", first)
+	}
+
+	second := SteadyResult{}
+	for range 3 {
+		second = observer.ObserveWithEffectivePower(60, 2000, power, curve, cfg)
+	}
+	if !second.Ready || !second.QuietLearningReady {
+		t.Fatalf("second matching steady = %#v, want quiet-learning approval", second)
+	}
+}
+
+func TestStableObserverQuietLearningAllowsTwoConsecutiveNoPowerSteadies(t *testing.T) {
+	curve := []types.FanCurvePoint{{Temperature: 60, RPM: 2000}}
+	observer := NewLegacyRPMStableObserver(len(curve))
+	cfg := types.SmartControlConfig{
+		LearnWindow:  3,
+		LearnDelay:   0,
+		MinRPMChange: 50,
+	}
+
+	first := SteadyResult{}
+	for range 3 {
+		first = observer.Observe(60, 2000, curve, cfg)
+	}
+	if !first.Ready || first.HavePower || first.QuietLearningReady {
+		t.Fatalf("first no-power steady = %#v, want ready without quiet-learning approval", first)
+	}
+
+	second := SteadyResult{}
+	for range 3 {
+		second = observer.Observe(60, 2000, curve, cfg)
+	}
+	if !second.Ready || second.HavePower || !second.QuietLearningReady {
+		t.Fatalf("second no-power steady = %#v, want quiet-learning approval", second)
+	}
+}
+
+func TestAllowsSteadyOffsetLearningRequiresConfirmationOnlyForQuietAdjustment(t *testing.T) {
+	cfg := types.SmartControlConfig{TargetTemp: 70, Hysteresis: 2}
+
+	if !AllowsSteadyOffsetLearning(SteadyResult{Ready: true, MeanTemp: 71}, cfg) {
+		t.Fatal("high-temperature safety learning must not wait for quiet confirmation")
+	}
+	if AllowsSteadyOffsetLearning(SteadyResult{Ready: true, MeanTemp: 64}, cfg) {
+		t.Fatal("first quiet learning sample must wait for confirmation")
+	}
+	if !AllowsSteadyOffsetLearning(SteadyResult{Ready: true, MeanTemp: 64, QuietLearningReady: true}, cfg) {
+		t.Fatal("confirmed quiet learning sample must be allowed")
+	}
+}
+
+func TestStableObserverKnownPowerDoesNotReuseUnknownHistory(t *testing.T) {
+	curve := []types.FanCurvePoint{{Temperature: 60, RPM: 2000}}
+	observer := NewLegacyRPMStableObserver(len(curve))
+	cfg := types.SmartControlConfig{
+		LearnWindow:  3,
+		LearnDelay:   0,
+		MinRPMChange: 50,
+	}
+
+	for range 3 {
+		observer.ObserveWithEffectivePower(70, 1800, EffectivePower{}, curve, cfg)
+	}
+
+	steady := SteadyResult{}
+	for range 3 {
+		steady = observer.ObserveWithEffectivePower(58, 2400, EffectivePower{
+			CPUWatts: 50,
+			CPUValid: true,
+		}, curve, cfg)
+	}
+	if !steady.Ready || !steady.HavePower {
+		t.Fatalf("known-power sample should be steady with power, got %#v", steady)
+	}
+	if steady.HaveEff {
+		t.Fatalf("known-power sample must not reuse unknown-power history: %#v", steady)
+	}
+}
+
+func TestStableObserverUnknownPowerDoesNotReplaceKnownContext(t *testing.T) {
+	curve := []types.FanCurvePoint{{Temperature: 60, RPM: 2000}}
+	observer := NewLegacyRPMStableObserver(len(curve))
+	cfg := types.SmartControlConfig{LearnWindow: 3, LearnDelay: 0, MinRPMChange: 50}
+	known := EffectivePower{CPUWatts: 50, CPUValid: true}
+
+	for range 3 {
+		observer.ObserveWithEffectivePower(70, 1800, known, curve, cfg)
+	}
+	for range 3 {
+		observer.ObserveWithEffectivePower(60, 2400, known, curve, cfg)
+	}
+	for range 3 {
+		observer.ObserveWithEffectivePower(70, 1800, EffectivePower{}, curve, cfg)
+	}
+
+	knownPoints := 0
+	for _, point := range observer.history[0] {
+		if point.power.CPUValid {
+			knownPoints++
+		}
+	}
+	if knownPoints < 2 {
+		t.Fatalf("unknown-power steady must not replace comparable known history: %#v", observer.history[0])
+	}
+}
+
+func TestStableObserverKnownPowerDoesNotMixSwappedComponents(t *testing.T) {
+	curve := []types.FanCurvePoint{{Temperature: 60, RPM: 2000}}
+	observer := NewLegacyRPMStableObserver(len(curve))
+	cfg := types.SmartControlConfig{
+		LearnWindow:  3,
+		LearnDelay:   0,
+		MinRPMChange: 50,
+	}
+	firstContext := EffectivePower{CPUWatts: 50, GPUWatts: 10, CPUValid: true, GPUValid: true}
+
+	for range 3 {
+		observer.ObserveWithEffectivePower(70, 1800, firstContext, curve, cfg)
+	}
+	for range 3 {
+		observer.ObserveWithEffectivePower(58, 2400, firstContext, curve, cfg)
+	}
+
+	steady := SteadyResult{}
+	for range 3 {
+		steady = observer.ObserveWithEffectivePower(57, 2500, EffectivePower{
+			CPUWatts: 10,
+			GPUWatts: 50,
+			CPUValid: true,
+			GPUValid: true,
+		}, curve, cfg)
+	}
+	if !steady.Ready || !steady.HavePower {
+		t.Fatalf("swapped-component sample should still be a valid steady sample, got %#v", steady)
+	}
+	if steady.HaveEff {
+		t.Fatalf("same total power with swapped CPU/GPU components must not reuse efficiency: %#v", steady)
 	}
 }

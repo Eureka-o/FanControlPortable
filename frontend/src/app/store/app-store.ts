@@ -1,8 +1,15 @@
 import { create } from 'zustand';
+import {
+  LatestRequestGate,
+  appendTimelineEvent,
+  cancelPendingTabChange as cancelTabChange,
+  completePendingTabChange as completeTabChange,
+  requestTabChange,
+  type AppTab,
+  type TimelineEvent,
+} from './app-store-logic.mts';
 import { types } from '../../../wailsjs/go/models';
 import { apiService } from '../services/api';
-import { configService } from '../services/config-service';
-import { deviceService, type DeviceStatusPayload } from '../services/device-service';
 import {
   appendSampledHistoryPoint,
   createLiveHistoryPoint,
@@ -12,7 +19,20 @@ import {
 import type { TemperatureHistoryPoint } from '../lib/temperature-history';
 import { i18n } from '../lib/i18n';
 import { toast } from 'sonner';
-import type { DeviceSettings, PluginInfo, PluginListPayload } from '../types/app';
+import type { DeviceSettings } from '../types/app';
+
+interface DeviceStatusPayload {
+  connected?: boolean;
+  currentData?: types.FanData | null;
+  deviceSettings?: DeviceSettings | null;
+  deviceProfile?: types.DeviceProfile | null;
+  deviceCapabilities?: types.DeviceCapabilities | null;
+  temperature?: types.TemperatureData | null;
+  productId?: string;
+  model?: string;
+  error?: string;
+  runtime?: { state?: string };
+}
 
 const getBridgeWarningMessage = () => i18n.t('store.bridgeWarning.default');
 
@@ -134,6 +154,7 @@ const temperatureDataEquals = (left: types.TemperatureData | null, right: types.
     left.gpuModel === right.gpuModel &&
     left.bridgeOk === right.bridgeOk &&
     left.bridgeMessage === right.bridgeMessage &&
+    (left as types.TemperatureData & { telemetryState?: string }).telemetryState === (right as types.TemperatureData & { telemetryState?: string }).telemetryState &&
     sensorListEquals(left.cpuSensors, right.cpuSensors) &&
     sensorListEquals(left.gpuSensors, right.gpuSensors) &&
     sensorListEquals(left.cpuPowerSensors, right.cpuPowerSensors) &&
@@ -141,17 +162,17 @@ const temperatureDataEquals = (left: types.TemperatureData | null, right: types.
     gpuDeviceListEquals(left.gpuDevices, right.gpuDevices);
 };
 
-type ActiveTab = 'status' | 'curve' | 'control' | 'devices' | `plugin:${string}` | 'about';
+const runtimeStateFromStatus = (status?: DeviceStatusPayload | null) =>
+  status?.runtime?.state || (status?.connected ? 'ready' : 'disconnected');
+
+type ActiveTab = AppTab;
 export type CurveFocusTarget = 'curve-editor' | 'history-details';
 
-function activePluginTabInstalled(activeTab: ActiveTab, plugins: PluginInfo[]) {
-  if (!activeTab.startsWith('plugin:')) return true;
-  const pluginID = activeTab.slice('plugin:'.length);
-  return plugins.some((plugin) => plugin.id === pluginID && plugin.installed === true && plugin.frontend);
-}
+const deviceContextRequestGate = new LatestRequestGate();
 
 interface AppStore {
   isConnected: boolean;
+  deviceRuntimeState: string;
   deviceProductId: string | null;
   deviceModel: string | null;
   deviceSettings: DeviceSettings | null;
@@ -161,28 +182,31 @@ interface AppStore {
   fanData: types.FanData | null;
   temperature: types.TemperatureData | null;
   legionFnQSupported: boolean;
-  availablePlugins: PluginInfo[];
   bridgeWarning: string | null;
   coreServiceError: string | null;
   isLoading: boolean;
   error: string | null;
   activeTab: ActiveTab;
+  curveDraftDirty: boolean;
+  pendingTab: ActiveTab | null;
   curveFocusTarget: CurveFocusTarget | null;
   sessionHistoryPoints: TemperatureHistoryPoint[];
+  timelineEvents: TimelineEvent[];
 
   setActiveTab: (tab: ActiveTab) => void;
+  setCurveDraftDirty: (dirty: boolean) => void;
+  completePendingTabChange: () => void;
+  cancelPendingTabChange: () => void;
   openCurveTab: (target: CurveFocusTarget) => void;
   clearCurveFocusTarget: () => void;
   clearBridgeWarning: () => void;
   handleTemperaturePayload: (data: types.TemperatureData | null) => void;
   appendSessionHistoryPoint: (data: types.TemperatureData | null) => void;
-  updatePluginSnapshot: (plugins: PluginInfo[]) => void;
-  refreshPluginSnapshot: () => Promise<PluginInfo[]>;
 
   initializeApp: () => Promise<void>;
   connectDevice: () => Promise<void>;
   disconnectDevice: () => Promise<void>;
-  updateConfig: (config: types.AppConfig) => Promise<void>;
+  setConfig: (config: types.AppConfig) => void;
   refreshDeviceContext: () => Promise<DeviceStatusPayload | null>;
 
   startEventListeners: () => () => void;
@@ -190,6 +214,7 @@ interface AppStore {
 
 export const useAppStore = create<AppStore>((set, get) => ({
   isConnected: false,
+  deviceRuntimeState: 'disconnected',
   deviceProductId: null,
   deviceModel: null,
   deviceSettings: null,
@@ -199,16 +224,27 @@ export const useAppStore = create<AppStore>((set, get) => ({
   fanData: null,
   temperature: null,
   legionFnQSupported: false,
-  availablePlugins: [],
   bridgeWarning: null,
   coreServiceError: null,
   isLoading: true,
   error: null,
   activeTab: 'status',
+  curveDraftDirty: false,
+  pendingTab: null,
   curveFocusTarget: null,
   sessionHistoryPoints: [],
+  timelineEvents: [],
 
-  setActiveTab: (tab) => set({ activeTab: tab, curveFocusTarget: null }),
+  setActiveTab: (tab) => set((state) => ({
+    ...requestTabChange(state, tab),
+    curveFocusTarget: null,
+  })),
+
+  setCurveDraftDirty: (dirty) => set({ curveDraftDirty: dirty }),
+
+  completePendingTabChange: () => set((state) => completeTabChange(state)),
+
+  cancelPendingTabChange: () => set((state) => cancelTabChange(state)),
 
   openCurveTab: (target) => set({ activeTab: 'curve', curveFocusTarget: target }),
 
@@ -216,28 +252,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   clearBridgeWarning: () => set({ bridgeWarning: null }),
 
-  updatePluginSnapshot: (plugins) => {
-    const list = Array.isArray(plugins) ? plugins : [];
-    set((state) => ({
-      availablePlugins: list,
-      activeTab: activePluginTabInstalled(state.activeTab, list) ? state.activeTab : 'status',
-    }));
-  },
-
-  refreshPluginSnapshot: async () => {
-    const plugins = await apiService.getAvailablePlugins().catch(() => []);
-    get().updatePluginSnapshot(plugins);
-    return plugins;
-  },
-
   handleTemperaturePayload: (data) => {
-    const bridgeMessage = data?.bridgeMessage?.trim() ?? '';
-    const bridgeWarning = data?.bridgeOk === false ? bridgeMessage || getBridgeWarningMessage() : null;
     const current = get();
-    if (temperatureDataEquals(current.temperature, data) && current.bridgeWarning === bridgeWarning) {
+    const merged = data && current.temperature ? {
+      ...data,
+      cpuSensors: data.cpuSensors ?? current.temperature.cpuSensors,
+      gpuSensors: data.gpuSensors ?? current.temperature.gpuSensors,
+      cpuPowerSensors: data.cpuPowerSensors ?? current.temperature.cpuPowerSensors,
+      gpuPowerSensors: data.gpuPowerSensors ?? current.temperature.gpuPowerSensors,
+      gpuDevices: data.gpuDevices ?? current.temperature.gpuDevices,
+    } as types.TemperatureData : data;
+    const bridgeMessage = merged?.bridgeMessage?.trim() ?? '';
+    const bridgeWarning = merged?.bridgeOk === false ? bridgeMessage || getBridgeWarningMessage() : null;
+    if (temperatureDataEquals(current.temperature, merged) && current.bridgeWarning === bridgeWarning) {
       return;
     }
-    set({ temperature: data, bridgeWarning });
+    set({ temperature: merged, bridgeWarning });
   },
 
   appendSessionHistoryPoint: (data) => {
@@ -253,29 +283,30 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     if (!point) return;
 
-    set((state) => ({
-      sessionHistoryPoints: appendSampledHistoryPoint(state.sessionHistoryPoints, point, {
+    set((state) => {
+      const points = appendSampledHistoryPoint(state.sessionHistoryPoints, point, {
         retentionMs: SESSION_HISTORY_RETENTION_MS,
         limit: SESSION_HISTORY_LIMIT,
-      }),
-    }));
+      });
+      return points === state.sessionHistoryPoints ? state : { sessionHistoryPoints: points };
+    });
   },
 
   initializeApp: async () => {
     try {
       set({ isLoading: true });
 
-      const [appConfig, deviceStatus, debugInfo, plugins] = await Promise.all([
-        configService.getConfig(),
-        deviceService.getStatus() as Promise<DeviceStatusPayload>,
+      const [appConfig, deviceStatus, debugInfo] = await Promise.all([
+        apiService.getConfig(),
+        apiService.getDeviceStatus() as Promise<DeviceStatusPayload>,
         apiService.getDebugInfo().catch(() => null),
-        apiService.getAvailablePlugins().catch(() => []),
       ]);
       const coreServiceError = deviceStatus.error ? getCoreServiceErrorMessage(deviceStatus.error) : null;
 
       set({
         config: appConfig,
         isConnected: deviceStatus.connected || false,
+        deviceRuntimeState: runtimeStateFromStatus(deviceStatus),
         deviceProductId: deviceStatus.productId || null,
         deviceModel: deviceStatus.model || null,
         deviceSettings: deviceStatus.deviceSettings || null,
@@ -283,7 +314,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
         runtimeDeviceCapabilities: deviceStatus.deviceCapabilities || deviceStatus.deviceProfile?.capabilities || null,
         fanData: deviceStatus.currentData || null,
         legionFnQSupported: debugInfo?.legionFnQSupported === true,
-        availablePlugins: plugins,
         coreServiceError,
         error: coreServiceError,
       });
@@ -301,54 +331,67 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   connectDevice: async () => {
     try {
-      const success = await deviceService.connect();
-      if (success) {
-        await get().refreshDeviceContext();
-      }
+      set({ deviceRuntimeState: 'discovering' });
+      await apiService.connectDevice();
+      await get().refreshDeviceContext();
     } catch (error) {
       console.error('连接失败:', error);
-      set({ error: i18n.t('store.errors.connectDevice') });
+      set({ deviceRuntimeState: 'disconnected', error: i18n.t('store.errors.connectDevice') });
     }
   },
 
   disconnectDevice: async () => {
+    deviceContextRequestGate.invalidate();
     try {
-      await deviceService.disconnect();
-      set({ isConnected: false, deviceProductId: null, deviceModel: null, deviceSettings: null, runtimeDeviceProfile: null, runtimeDeviceCapabilities: null, fanData: null });
+      await apiService.disconnectDevice();
+      set((state) => ({
+        isConnected: false,
+        deviceRuntimeState: 'disconnected',
+        deviceProductId: null,
+        deviceModel: null,
+        deviceSettings: null,
+        runtimeDeviceProfile: null,
+        runtimeDeviceCapabilities: null,
+        fanData: null,
+        timelineEvents: appendTimelineEvent(state.timelineEvents, { timestamp: Date.now(), type: 'disconnect' }),
+      }));
     } catch (error) {
       console.error('断开连接失败:', error);
     }
   },
 
-  updateConfig: async (config) => {
-    try {
-      await configService.updateConfig(config);
-      set({ config, error: null });
-    } catch (error) {
-      console.error('配置更新失败:', error);
-      set({ error: i18n.t('store.errors.saveConfig') });
-    }
-  },
+  setConfig: (config) => set((state) => {
+    const previousProfileId = ((state.config as any)?.activeFanCurveProfileId || '') as string;
+    const nextProfileId = ((config as any)?.activeFanCurveProfileId || '') as string;
+    return {
+      config,
+      timelineEvents: previousProfileId && nextProfileId && previousProfileId !== nextProfileId
+        ? appendTimelineEvent(state.timelineEvents, { timestamp: Date.now(), type: 'profile' })
+        : state.timelineEvents,
+    };
+  }),
 
   refreshDeviceContext: async () => {
+    const requestGeneration = deviceContextRequestGate.begin();
     try {
-      const [appConfig, status, plugins] = await Promise.all([
-        configService.getConfig().catch(() => null),
-        deviceService.getStatus() as Promise<DeviceStatusPayload>,
-        apiService.getAvailablePlugins().catch(() => []),
+      const [appConfig, status] = await Promise.all([
+        apiService.getConfig().catch(() => null),
+        apiService.getDeviceStatus() as Promise<DeviceStatusPayload>,
       ]);
+      if (!deviceContextRequestGate.isCurrent(requestGeneration)) {
+        return status;
+      }
       const coreServiceError = status?.error ? getCoreServiceErrorMessage(status.error) : null;
       set({
         config: appConfig ? types.AppConfig.createFrom(appConfig) : get().config,
         isConnected: status?.connected || false,
+        deviceRuntimeState: runtimeStateFromStatus(status),
         deviceSettings: status?.deviceSettings || null,
         deviceProductId: status?.productId || null,
         deviceModel: status?.model || null,
         runtimeDeviceProfile: status?.deviceProfile || null,
         runtimeDeviceCapabilities: status?.deviceCapabilities || status?.deviceProfile?.capabilities || null,
         fanData: status?.currentData || null,
-        availablePlugins: plugins,
-        activeTab: activePluginTabInstalled(get().activeTab, plugins) ? get().activeTab : 'status',
         coreServiceError,
         error: coreServiceError,
       });
@@ -357,6 +400,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
       return status;
     } catch (error) {
+      if (!deviceContextRequestGate.isCurrent(requestGeneration)) {
+        return null;
+      }
       const detail = error instanceof Error ? error.message : undefined;
       const coreServiceError = isCoreServiceFailureDetail(detail) ? getCoreServiceErrorMessage(detail) : null;
       set({ error: coreServiceError || i18n.t('store.errors.connectDevice'), coreServiceError });
@@ -376,12 +422,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     unsubscribers.push(
       apiService.onCoreServiceError((message) => {
+        deviceContextRequestGate.invalidate();
         clearPendingDisconnect();
         const coreServiceError = getCoreServiceErrorMessage(message);
         set({
           coreServiceError,
           error: coreServiceError,
           isConnected: false,
+          deviceRuntimeState: 'disconnected',
           deviceProductId: null,
           deviceModel: null,
           deviceSettings: null,
@@ -402,7 +450,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     );
 
     unsubscribers.push(
-      deviceService.onDeviceConnected((deviceInfo) => {
+      apiService.onDeviceConnected((deviceInfo) => {
         console.log('设备已连接:', deviceInfo);
         clearPendingDisconnect();
         const info = deviceInfo as {
@@ -412,6 +460,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           currentData?: types.FanData | null;
           deviceProfile?: types.DeviceProfile | null;
           deviceCapabilities?: types.DeviceCapabilities | null;
+          runtime?: { state?: string };
         };
         const settings = (deviceInfo as { deviceSettings?: DeviceSettings | null })?.deviceSettings || null;
         const connectedDeviceName = [
@@ -420,8 +469,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
           info.deviceProfile?.model,
           info.model,
         ].map((value) => (typeof value === 'string' ? value.trim() : '')).find(Boolean);
-        set({
+        set((state) => ({
           isConnected: true,
+          deviceRuntimeState: info.runtime?.state || 'capabilities',
           deviceProductId: info.productId || null,
           deviceModel: info.model || null,
           deviceSettings: settings,
@@ -430,7 +480,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
           fanData: info.currentData || null,
           coreServiceError: null,
           error: null,
-        });
+          timelineEvents: appendTimelineEvent(state.timelineEvents, { timestamp: Date.now(), type: 'reconnect' }),
+        }));
         if (connectedDeviceName) {
           toast.success(i18n.t('store.device.connectedTitle'), {
             description: i18n.t('store.device.connectedDescription', { device: connectedDeviceName }),
@@ -442,35 +493,40 @@ export const useAppStore = create<AppStore>((set, get) => ({
     );
 
     unsubscribers.push(
-      deviceService.onDeviceDisconnected(() => {
+      apiService.onDeviceDisconnected(() => {
+        deviceContextRequestGate.invalidate();
         console.log('设备已断开');
         clearPendingDisconnect();
+        set((state) => ({
+          timelineEvents: appendTimelineEvent(state.timelineEvents, { timestamp: Date.now(), type: 'disconnect' }),
+        }));
         if (!get().isConnected) {
-          set({ isConnected: false, deviceProductId: null, deviceModel: null, deviceSettings: null, runtimeDeviceProfile: null, runtimeDeviceCapabilities: null, fanData: null });
+          set({ isConnected: false, deviceRuntimeState: 'disconnected', deviceProductId: null, deviceModel: null, deviceSettings: null, runtimeDeviceProfile: null, runtimeDeviceCapabilities: null, fanData: null });
           return;
         }
         pendingDisconnectTimer = window.setTimeout(() => {
           pendingDisconnectTimer = null;
-          set({ isConnected: false, deviceProductId: null, deviceModel: null, deviceSettings: null, runtimeDeviceProfile: null, runtimeDeviceCapabilities: null, fanData: null });
+          set({ isConnected: false, deviceRuntimeState: 'disconnected', deviceProductId: null, deviceModel: null, deviceSettings: null, runtimeDeviceProfile: null, runtimeDeviceCapabilities: null, fanData: null });
         }, 2200);
       })
     );
 
     unsubscribers.push(
-      deviceService.onDeviceSettingsUpdate((settings) => {
+      apiService.onDeviceSettingsUpdate((settings) => {
         set({ deviceSettings: settings || null });
+        void get().refreshDeviceContext();
       })
     );
 
     unsubscribers.push(
-      deviceService.onDeviceError((errorMsg) => {
+      apiService.onDeviceError((errorMsg) => {
         console.error('设备错误:', errorMsg);
         set({ error: errorMsg });
       })
     );
 
     unsubscribers.push(
-      deviceService.onFanDataUpdate((data) => {
+      apiService.onFanDataUpdate((data) => {
         const current = get();
         if (fanDataEquals(current.fanData, data)) return;
         set({ fanData: data });
@@ -478,20 +534,29 @@ export const useAppStore = create<AppStore>((set, get) => ({
     );
 
     unsubscribers.push(
-      deviceService.onTemperatureUpdate((data) => {
+      apiService.onTemperatureUpdate((data) => {
         get().handleTemperaturePayload(data);
         get().appendSessionHistoryPoint(data);
       })
     );
 
     unsubscribers.push(
-      configService.onConfigUpdate((updatedConfig) => {
-        set({ config: updatedConfig });
+      apiService.onConfigUpdate((updatedConfig) => {
+        get().setConfig(updatedConfig);
       })
     );
 
     unsubscribers.push(
-      deviceService.onHotkeyTriggered((payload) => {
+      apiService.onSystemResume((payload) => {
+        const timestamp = Number(payload?.timestamp || 0) || Date.now();
+        set((state) => ({
+          timelineEvents: appendTimelineEvent(state.timelineEvents, { timestamp, type: 'resume' }),
+        }));
+      })
+    );
+
+    unsubscribers.push(
+      apiService.onHotkeyTriggered((payload) => {
         const message = typeof payload?.message === 'string' ? payload.message : '';
         if (!message) return;
         const ok = payload?.success !== false;
@@ -504,7 +569,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     );
 
     unsubscribers.push(
-      deviceService.onLegionPowerModeUpdate((payload) => {
+      apiService.onLegionPowerModeUpdate((payload) => {
         const mode = typeof payload?.mode === 'string' ? payload.mode : '';
         if (!mode) return;
         const modeLabel: Record<string, string> = {
@@ -526,25 +591,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
         set({ legionFnQSupported: payload?.supported === true });
       })
     );
-
-    const readPluginList = (payload: PluginListPayload | PluginInfo[]) => {
-      if (Array.isArray(payload)) return payload;
-      return Array.isArray(payload?.plugins) ? payload.plugins : [];
-    };
-
-    const handlePluginUpdate = (_plugin?: PluginInfo | null) => {
-      void get().refreshPluginSnapshot();
-    };
-
-    unsubscribers.push(
-      apiService.onPluginsDiscovered((payload) => {
-        get().updatePluginSnapshot(readPluginList(payload));
-      })
-    );
-
-    unsubscribers.push(apiService.onPluginInstalled(handlePluginUpdate));
-    unsubscribers.push(apiService.onPluginUninstalled(handlePluginUpdate));
-    unsubscribers.push(apiService.onPluginStatusChanged(handlePluginUpdate));
 
     return () => {
       clearPendingDisconnect();

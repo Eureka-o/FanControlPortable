@@ -14,20 +14,20 @@ var resolvedLaunchDarkMode bool
 func ResolveWindowsOptions() *windows.Options {
 	cfg := resolveLaunchAppearanceConfig()
 	resolvedLaunchDarkMode = darkModeForLaunchTheme(cfg.ThemeMode)
-	resolvedBlurEnabled = blurEnabledForCurrentSystem(cfg.WindowBlur, cfg.ThemeMode)
+	backdrop := resolveWindowBackdrop(cfg.WindowBlur, cfg.ThemeMode, isWindowsBackdropSupported())
+	resolvedBlurEnabled = backdrop != windows.None
 
 	opts := &windows.Options{
-		Theme: windowsThemeForLaunch(cfg.ThemeMode),
+		Theme:        windowsThemeForLaunch(cfg.ThemeMode),
+		BackdropType: backdrop,
 	}
 	if resolvedBlurEnabled {
 		opts.WebviewIsTransparent = true
 		opts.WindowIsTranslucent = true
-		opts.BackdropType = windows.Acrylic
 		return opts
 	}
 	opts.WebviewIsTransparent = false
 	opts.WindowIsTranslucent = false
-	opts.BackdropType = windows.None
 	return opts
 }
 
@@ -46,18 +46,19 @@ func (a *App) WindowBlurEnabled() bool {
 	return resolvedBlurEnabled
 }
 
-func blurEnabledForCurrentSystem(mode string, themeMode string) bool {
-	if !isBuiltinLaunchTheme(themeMode) {
-		return false
+func resolveWindowBackdrop(mode string, themeMode string, supported bool) windows.BackdropType {
+	if !supported || !isBuiltinLaunchTheme(themeMode) {
+		return windows.None
 	}
-	backdropSupported := isWindowsBackdropSupported()
-	switch mode {
+	switch types.NormalizeWindowBlur(mode) {
+	case types.WindowBlurMica:
+		return windows.Mica
+	case types.WindowBlurTabbed:
+		return windows.Tabbed
 	case types.WindowBlurOff:
-		return false
-	case types.WindowBlurAuto:
-		return backdropSupported
+		return windows.None
 	default:
-		return backdropSupported
+		return windows.Acrylic
 	}
 }
 

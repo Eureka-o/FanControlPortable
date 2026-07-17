@@ -11,17 +11,20 @@ export function Section({
   icon: Icon,
   children,
   className,
+  action,
 }: {
   title: string;
   icon: React.ComponentType<{ className?: string }>;
   children?: React.ReactNode;
   className?: string;
+  action?: React.ReactNode;
 }) {
   return (
     <section data-theme-ui="setting-section" className={clsx('rounded-[22px] border border-border/70 bg-card/92 shadow-sm shadow-black/5 backdrop-blur-xl', className)}>
       <div data-theme-ui="setting-section-header" className="flex items-center gap-2.5 border-b border-border/50 px-5 py-4">
         <Icon className="h-4.5 w-4.5 text-muted-foreground" />
-        <h3 className="text-base font-semibold text-foreground">{title}</h3>
+        <h3 className="min-w-0 flex-1 text-base font-semibold text-foreground">{title}</h3>
+        {action && <div className="ml-auto flex shrink-0 items-center gap-2">{action}</div>}
       </div>
       <div className="divide-y divide-border/45">{children}</div>
     </section>

@@ -16,7 +16,6 @@ import { useWiFiDiscovery } from '../useWiFiDiscovery';
 import { DeviceCompatibilityPanel } from './DeviceCompatibilityPanel';
 import { DeviceConnectionScanPanel } from './DeviceConnectionScanPanel';
 import {
-  currentDeviceSummary,
   getErrorMessage,
   mergeDeviceCandidates,
   profileEndpoint,
@@ -84,11 +83,7 @@ export default function DeviceConnectionPanel({
   const isScanning = isNormalScanning || wifiDiscovery.isScanning;
   const showDeepScan = Boolean(scanResult?.showDeepScan && wifiCompatibilityEnabled && !isScanning);
   const showScanSection = Boolean(scanResult || isNormalScanning || scanDevices.length > 0);
-  const { hasConnectedDevice, name: currentDeviceName, detail: currentDeviceDetail } = currentDeviceSummary({
-    connectedDeviceProfile,
-    connectedDeviceTransport,
-    t,
-  });
+  const hasConnectedDevice = Boolean(connectedDeviceProfile || connectedDeviceTransport);
   const wifiScanStatus = wifiDiscovery.isScanning
     ? t(wifiDiscovery.runningKey)
     : wifiDiscovery.error
@@ -110,10 +105,9 @@ export default function DeviceConnectionPanel({
 
   const refreshAfterConnection = useCallback(async () => {
     await refreshConnectedDeviceContext();
-    const nextConfig = await refreshDeviceConfig();
-    onConfigChange(nextConfig);
+    await refreshDeviceConfig();
     await loadDeviceProfiles();
-  }, [loadDeviceProfiles, onConfigChange, refreshConnectedDeviceContext, refreshDeviceConfig]);
+  }, [loadDeviceProfiles, refreshConnectedDeviceContext, refreshDeviceConfig]);
 
   const scanDevicesNow = useCallback(async () => {
     wifiDiscovery.reset();
@@ -265,8 +259,6 @@ export default function DeviceConnectionPanel({
         isNormalScanning={isNormalScanning}
         isDeepScanning={isDeepScanning}
         hasConnectedDevice={hasConnectedDevice}
-        currentDeviceName={currentDeviceName}
-        currentDeviceDetail={currentDeviceDetail}
         onScan={scanDevicesNow}
         onConnectCandidate={connectCandidate}
       />

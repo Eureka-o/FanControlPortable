@@ -6,6 +6,7 @@ using System.Linq;
 using System.Management;
 using System.Runtime.InteropServices;
 using System.ServiceProcess;
+using System.Text;
 using System.Threading;
 using Newtonsoft.Json;
 using LibreHardwareMonitor.Hardware;
@@ -207,6 +208,7 @@ namespace FanControl.TempBridge
 
     partial class Program
     {
+        private static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
         private const string PipeName = "FanControl2_TempBridge";
         private const string MutexName = @"Global\FanControl2_TempBridge_Singleton";
         private const int MaxInitRetries = 3;
@@ -214,6 +216,16 @@ namespace FanControl.TempBridge
         private const int ConsecutiveFailuresBeforeReinit = 5;
         private const int MaxReasonableTemperature = 150;
         private const int MemoryTrimIntervalSeconds = 60;
+        private const int IntelMsrRuntimeFailureThreshold = 3;
+        private const int IntelMsrProbeRetryCooldownSeconds = 15;
+        private const int IntelRaplProbeRetryCooldownSeconds = 30;
+        private const string MsrUnavailableMarker = "[msr-unavailable]";
+        private const string MsrRetryableMarker = "[msr-retryable]";
+        private const uint IntelTemperatureTargetMsr = 0x1A2;
+        private const uint IntelThermalStatusMsr = 0x19C;
+        private const uint IntelPackageThermalStatusMsr = 0x1B1;
+        private const uint IntelRaplPowerUnitMsr = 0x606;
+        private const uint IntelPackageEnergyStatusMsr = 0x611;
         private const string GpuReadStateActive = "active";
         private const string GpuReadStateNotPolled = "notPolled";
         private const string GpuReadStateUnavailable = "unavailable";
@@ -231,16 +243,35 @@ namespace FanControl.TempBridge
         private static int hardwareProfileSensorReconcileAttempted = 0;
         private static readonly GpuReadCoordinator gpuReadCoordinator = new GpuReadCoordinator();
         private static readonly IntPtr TrimWorkingSetSentinel = new IntPtr(-1);
+        private static IntelMsr intelMsrFallback;
+        private static bool intelMsrProbeAttempted;
+        private static string intelMsrDiagnostic = string.Empty;
+        private static int consecutiveIntelMsrTemperatureFailures;
+        private static int consecutiveIntelMsrPowerFailures;
+        private static DateTime lastIntelMsrProbeAt = DateTime.MinValue;
+        private static DateTime lastIntelRaplProbeAt = DateTime.MinValue;
+        private static double intelPackageEnergyUnit;
+        private static uint lastIntelPackageEnergy;
+        private static DateTime lastIntelPackageEnergyAt = DateTime.MinValue;
+        private static readonly string windowsCpuModel = ReadWindowsCpuModel();
 
         [DllImport("kernel32.dll")]
         private static extern bool SetProcessWorkingSetSize(IntPtr process, IntPtr minimumWorkingSetSize, IntPtr maximumWorkingSetSize);
 
         static void Main(string[] args)
         {
+            Console.InputEncoding = Utf8NoBom;
+            Console.OutputEncoding = Utf8NoBom;
+            bool msrSelfTest = HasArg(args, "--self-test-msr");
             bool diagnosticMode = ShouldRunDiagnosticMode(args);
             bool pipeMode = ShouldRunPipeMode(args);
             try
             {
+                if (msrSelfTest)
+                {
+                    RunIntelMsrSelfTest();
+                    return;
+                }
                 if (diagnosticMode)
                 {
                     RunConsoleDiagnostics();
@@ -281,6 +312,7 @@ namespace FanControl.TempBridge
             finally
             {
                 computer?.Close();
+                ResetIntelMsrFallback();
                 if (singleInstanceMutex != null)
                 {
                     singleInstanceMutex.Dispose();
@@ -296,8 +328,8 @@ namespace FanControl.TempBridge
             LogInitProgress(string.Format("hardware monitor initialized in {0} ms", initStopwatch.ElapsedMilliseconds));
             using (var stdin = Console.OpenStandardInput())
             using (var stdout = Console.OpenStandardOutput())
-            using (var reader = new StreamReader(stdin))
-            using (var writer = new StreamWriter(stdout) { AutoFlush = true })
+            using (var reader = new StreamReader(stdin, Utf8NoBom, false))
+            using (var writer = new StreamWriter(stdout, Utf8NoBom) { AutoFlush = true })
             {
                 writer.WriteLine("READY:STDIO");
                 ServeCommandLoop(reader, writer);
@@ -472,6 +504,7 @@ namespace FanControl.TempBridge
 
         static void InitializeHardwareMonitor(bool includeGpu = false)
         {
+            ResetIntelMsrFallback();
             var pawnIoStopwatch = Stopwatch.StartNew();
             string pawnIoMessage = EnsurePawnIoReady();
             LogInitProgress(string.Format("PawnIO check completed in {0} ms{1}", pawnIoStopwatch.ElapsedMilliseconds,
@@ -506,8 +539,63 @@ namespace FanControl.TempBridge
                     computer.Open();
                     computer.Accept(new UpdateVisitor());
 
-                    // Verify we can actually read at least one temperature
-                    if (HasAnyTemperatureSensor(computer))
+                    bool hasAnyTemperature = HasAnyTemperatureSensor(computer);
+                    bool hasCpuTemperature = HasCpuSensor(computer, SensorType.Temperature);
+                    bool hasCpuPower = HasCpuSensor(computer, SensorType.Power);
+                    string intelCpuModel = FindIntelCpuModel(computer);
+
+                    if (!string.IsNullOrEmpty(intelCpuModel) && (!hasCpuTemperature || !hasCpuPower))
+                    {
+                        string msrMessage;
+                        bool msrReady = EnsureIntelMsrFallback(intelCpuModel, out msrMessage);
+                        if (msrReady)
+                        {
+                            if (!hasCpuTemperature)
+                            {
+                                hasAnyTemperature = true;
+                                LogInitProgress("LibreHardwareMonitor CPU sensors missing; validated Intel MSR fallback enabled for " + intelCpuModel);
+                            }
+                            if (!hasCpuPower)
+                            {
+                                LogInitProgress(intelPackageEnergyUnit > 0
+                                    ? "LibreHardwareMonitor CPU power sensor missing; validated Intel RAPL fallback enabled for " + intelCpuModel
+                                    : "Intel temperature MSR is readable, but package RAPL power is unavailable for " + intelCpuModel);
+                            }
+                        }
+                        else if (!hasCpuTemperature)
+                        {
+                            lastException = new InvalidOperationException(msrMessage);
+                            if (ShouldRetryIntelMsrProbe(attempt, msrMessage))
+                            {
+                                LogInitProgress(string.Format(
+                                    "Intel MSR probe unavailable on attempt {0}/{1}; releasing handles before retry: {2}",
+                                    attempt,
+                                    MaxInitRetries,
+                                    msrMessage));
+                                try { computer.Close(); } catch { }
+                                computer = null;
+                                ResetIntelMsrFallback();
+                                Thread.Sleep(InitRetryDelayMs);
+                                continue;
+                            }
+
+                            if (IsPermanentMsrFailure(msrMessage))
+                            {
+                                lastHardwareMonitorError = msrMessage;
+                                LogInitProgress("Intel CPU sensor access is permanently unavailable; automatic reinitialization disabled: " + msrMessage);
+                                TrimWorkingSetIfIdle(true);
+                                return;
+                            }
+                            LogInitProgress("Intel CPU sensor access is temporarily unavailable; delayed recovery remains enabled: " + msrMessage);
+                        }
+                        else
+                        {
+                            LogInitProgress("Intel RAPL fallback unavailable: " + msrMessage);
+                        }
+                    }
+
+                    // A validated raw Intel package sensor is sufficient when LHM omits CPU sensors.
+                    if (hasAnyTemperature)
                     {
                         consecutiveFailures = 0;
                         lastHardwareMonitorError = string.Empty;
@@ -517,7 +605,8 @@ namespace FanControl.TempBridge
                         return;
                     }
 
-                    lastException = new InvalidOperationException("LibreHardwareMonitor 未发现有效温度传感器");
+                    if (lastException == null)
+                        lastException = new InvalidOperationException("LibreHardwareMonitor 未发现有效温度传感器");
 
                     LogInitProgress(string.Format("attempt {0} found no valid temperature sensors in {1} ms",
                         attempt, attemptStopwatch.ElapsedMilliseconds));
@@ -535,17 +624,51 @@ namespace FanControl.TempBridge
                     lastException = ex;
                     LogInitProgress(string.Format("attempt {0} failed in {1} ms: {2}",
                         attempt, attemptStopwatch.ElapsedMilliseconds, ex.Message));
-                    if (attempt < MaxInitRetries)
+
+                    try { computer?.Close(); } catch { }
+                    computer = null;
+
+                    string intelCpuModel = FindIntelCpuModel(null);
+                    if (!string.IsNullOrEmpty(intelCpuModel))
                     {
-                        try { computer?.Close(); } catch { }
-                        computer = null;
+                        string msrMessage;
+                        if (EnsureIntelMsrFallback(intelCpuModel, out msrMessage))
+                        {
+                            consecutiveFailures = 0;
+                            lastHardwareMonitorError = "LibreHardwareMonitor unavailable: " + ex.Message;
+                            LogInitProgress("LibreHardwareMonitor initialization failed; validated Intel MSR fallback enabled for " + intelCpuModel);
+                            TrimWorkingSetIfIdle(true);
+                            return;
+                        }
+
+                        lastException = new InvalidOperationException(ex.Message + "; " + msrMessage);
+                        if (IsPermanentMsrFailure(msrMessage))
+                        {
+                            LogInitProgress("Intel CPU sensor access is permanently unavailable; automatic reinitialization disabled: " + msrMessage);
+                            break;
+                        }
+                        if (ShouldRetryIntelMsrProbe(attempt, msrMessage))
+                        {
+                            LogInitProgress(string.Format(
+                                "Intel MSR probe unavailable after LHM failure on attempt {0}/{1}; releasing handles before retry: {2}",
+                                attempt,
+                                MaxInitRetries,
+                                msrMessage));
+                            ResetIntelMsrFallback();
+                            Thread.Sleep(InitRetryDelayMs);
+                            continue;
+                        }
+                        LogInitProgress("Intel CPU sensor access is temporarily unavailable; delayed recovery remains enabled: " + msrMessage);
+                    }
+                    else if (attempt < MaxInitRetries)
+                    {
                         Thread.Sleep(InitRetryDelayMs);
                     }
                 }
             }
 
-            // If we get here, all retries exhausted but computer may still be open
-            // (just without working sensors). Keep it - it might recover on next update.
+            // All immediate retries are exhausted. Retryable failures are recovered later
+            // through the existing bounded monitor/bridge recovery path.
             lastHardwareMonitorError = BuildHardwareMonitorError(lastException, pawnIoMessage);
             LogInitProgress(string.Format("hardware monitor initialized without valid sensors (gpu={0}); fallback will be used: {1}", includeGpu ? "on" : "off", lastHardwareMonitorError));
             TrimWorkingSetIfIdle(true);
@@ -594,6 +717,77 @@ namespace FanControl.TempBridge
             return false;
         }
 
+        static bool HasCpuSensor(Computer comp, SensorType sensorType)
+        {
+            foreach (IHardware hardware in comp.Hardware)
+            {
+                if (hardware.HardwareType == HardwareType.Cpu && HasSensorRecursive(hardware, sensorType))
+                    return true;
+            }
+            return false;
+        }
+
+        static bool HasSensorRecursive(IHardware hardware, SensorType sensorType)
+        {
+            foreach (ISensor sensor in hardware.Sensors)
+            {
+                if (sensor.SensorType == sensorType && sensor.Value.HasValue)
+                {
+                    if (sensorType != SensorType.Temperature || (sensor.Value.Value > 0 && sensor.Value.Value < MaxReasonableTemperature))
+                        return true;
+                }
+            }
+            foreach (IHardware sub in hardware.SubHardware)
+            {
+                if (HasSensorRecursive(sub, sensorType))
+                    return true;
+            }
+            return false;
+        }
+
+        static string FindIntelCpuModel(Computer comp)
+        {
+            if (comp != null)
+            {
+                foreach (IHardware hardware in comp.Hardware)
+                {
+                    string name = hardware.Name ?? string.Empty;
+                    if (hardware.HardwareType == HardwareType.Cpu && IsIntelCpuModel(name))
+                        return name;
+                }
+            }
+            return SelectIntelCpuModel(string.Empty, windowsCpuModel);
+        }
+
+        static string ReadWindowsCpuModel()
+        {
+            try
+            {
+                using (var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"HARDWARE\DESCRIPTION\System\CentralProcessor\0"))
+                {
+                    object value = key?.GetValue("ProcessorNameString");
+                    return value == null ? string.Empty : value.ToString().Trim();
+                }
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        static bool IsIntelCpuModel(string model)
+        {
+            return !string.IsNullOrWhiteSpace(model) &&
+                model.IndexOf("Intel", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        static string SelectIntelCpuModel(string primary, string fallback)
+        {
+            if (IsIntelCpuModel(primary))
+                return primary.Trim();
+            return IsIntelCpuModel(fallback) ? fallback.Trim() : string.Empty;
+        }
+
         static string EnsurePawnIoReady()
         {
             if (!PawnIo.IsInstalled)
@@ -630,6 +824,363 @@ namespace FanControl.TempBridge
             return string.Empty;
         }
 
+        static bool EnsureIntelMsrFallback(string cpuModel, out string message)
+        {
+            if (intelMsrProbeAttempted)
+            {
+                message = intelMsrDiagnostic;
+                if (intelMsrFallback != null)
+                    return true;
+                if (IsPermanentMsrFailure(message) ||
+                    !IsRetryCooldownElapsed(lastIntelMsrProbeAt, DateTime.UtcNow, IntelMsrProbeRetryCooldownSeconds))
+                    return false;
+            }
+
+            intelMsrProbeAttempted = true;
+            lastIntelMsrProbeAt = DateTime.UtcNow;
+            if (!PawnIo.IsInstalled)
+            {
+                intelMsrDiagnostic = MsrUnavailableMarker + " PawnIO is not installed; Intel CPU MSR sensors are unavailable";
+                message = intelMsrDiagnostic;
+                return false;
+            }
+
+            IntelMsr candidate = null;
+            try
+            {
+                candidate = new IntelMsr();
+                uint target;
+                uint packageStatus;
+                uint coreStatus;
+                uint ignored;
+                bool targetRead = candidate.ReadMsr(IntelTemperatureTargetMsr, out target, out ignored);
+                bool packageRead = candidate.ReadMsr(IntelPackageThermalStatusMsr, out packageStatus, out ignored);
+                bool coreRead = candidate.ReadMsr(IntelThermalStatusMsr, out coreStatus, out ignored);
+                int temperature;
+                if (!targetRead || !TryDecodeIntelTemperature(
+                    target,
+                    packageRead ? packageStatus : 0,
+                    coreRead ? coreStatus : 0,
+                    out temperature))
+                {
+                    candidate.Close();
+                    intelMsrDiagnostic = string.Format(
+                        "{0} PawnIO is registered but Intel MSR reads are temporarily invalid for {1} (target=0x{2:X8}, package=0x{3:X8}, core=0x{4:X8})",
+                        MsrRetryableMarker,
+                        cpuModel,
+                        target,
+                        packageStatus,
+                        coreStatus);
+                    message = intelMsrDiagnostic;
+                    return false;
+                }
+
+                intelMsrFallback = candidate;
+                consecutiveIntelMsrTemperatureFailures = 0;
+                consecutiveIntelMsrPowerFailures = 0;
+                TryInitializeIntelRaplFallback(DateTime.UtcNow);
+
+                intelMsrDiagnostic = string.Empty;
+                message = string.Empty;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                try { candidate?.Close(); } catch { }
+                intelMsrFallback = null;
+                intelMsrDiagnostic = MsrRetryableMarker + " PawnIO Intel MSR module could not be opened: " + ex.Message;
+                message = intelMsrDiagnostic;
+                return false;
+            }
+        }
+
+        static bool TryReadIntelMsrTemperature(out int temperature)
+        {
+            temperature = 0;
+            if (intelMsrFallback == null)
+                return false;
+
+            bool success = false;
+            try
+            {
+                uint target;
+                uint packageStatus;
+                uint coreStatus;
+                uint ignored;
+                bool targetRead = intelMsrFallback.ReadMsr(IntelTemperatureTargetMsr, out target, out ignored);
+                bool packageRead = intelMsrFallback.ReadMsr(IntelPackageThermalStatusMsr, out packageStatus, out ignored);
+                bool coreRead = intelMsrFallback.ReadMsr(IntelThermalStatusMsr, out coreStatus, out ignored);
+                success = targetRead && TryDecodeIntelTemperature(
+                    target,
+                    packageRead ? packageStatus : 0,
+                    coreRead ? coreStatus : 0,
+                    out temperature);
+            }
+            catch
+            {
+                success = false;
+            }
+
+            if (success)
+            {
+                consecutiveIntelMsrTemperatureFailures = 0;
+                return true;
+            }
+
+            consecutiveIntelMsrTemperatureFailures++;
+            if (HasReachedFailureThreshold(consecutiveIntelMsrTemperatureFailures, IntelMsrRuntimeFailureThreshold))
+                InvalidateIntelMsrFallback("Intel MSR temperature reads failed repeatedly", DateTime.UtcNow);
+            return false;
+        }
+
+        static bool TryDecodeIntelTemperature(uint target, uint packageStatus, uint coreStatus, out int temperature)
+        {
+            temperature = 0;
+            int tjMax = (int)((target >> 16) & 0xFF);
+            if (tjMax < 50 || tjMax > MaxReasonableTemperature)
+                return false;
+
+            uint thermalStatus = (packageStatus & 0x80000000u) != 0 ? packageStatus : coreStatus;
+            if ((thermalStatus & 0x80000000u) == 0)
+                return false;
+
+            int delta = (int)((thermalStatus >> 16) & 0x7F);
+            int decoded = tjMax - delta;
+            if (decoded <= 0 || decoded >= MaxReasonableTemperature)
+                return false;
+
+            temperature = decoded;
+            return true;
+        }
+
+        static bool TryReadIntelMsrPower(out double watts)
+        {
+            watts = 0;
+            if (intelMsrFallback == null || intelPackageEnergyUnit <= 0 || lastIntelPackageEnergyAt == DateTime.MinValue)
+                return false;
+
+            uint currentEnergy = 0;
+            uint ignored;
+            bool readSucceeded = false;
+            try
+            {
+                readSucceeded = intelMsrFallback.ReadMsr(IntelPackageEnergyStatusMsr, out currentEnergy, out ignored);
+            }
+            catch
+            {
+                readSucceeded = false;
+            }
+
+            if (!readSucceeded)
+            {
+                consecutiveIntelMsrPowerFailures++;
+                if (HasReachedFailureThreshold(consecutiveIntelMsrPowerFailures, IntelMsrRuntimeFailureThreshold))
+                    InvalidateIntelRaplFallback(DateTime.UtcNow);
+                return false;
+            }
+
+            DateTime now = DateTime.UtcNow;
+            double seconds = (now - lastIntelPackageEnergyAt).TotalSeconds;
+            uint previousEnergy = lastIntelPackageEnergy;
+            lastIntelPackageEnergy = currentEnergy;
+            lastIntelPackageEnergyAt = now;
+            if (TryCalculateIntelPackagePower(previousEnergy, currentEnergy, intelPackageEnergyUnit, seconds, out watts))
+            {
+                consecutiveIntelMsrPowerFailures = 0;
+                return true;
+            }
+
+            // A first/reprobe sample or a long suspend gap only establishes a new baseline.
+            if (seconds < 0.01 || seconds > 30)
+            {
+                consecutiveIntelMsrPowerFailures = 0;
+                return false;
+            }
+
+            consecutiveIntelMsrPowerFailures++;
+            if (HasReachedFailureThreshold(consecutiveIntelMsrPowerFailures, IntelMsrRuntimeFailureThreshold))
+                InvalidateIntelRaplFallback(now);
+            return false;
+        }
+
+        static bool TryCalculateIntelPackagePower(uint previousEnergy, uint currentEnergy, double energyUnit, double seconds, out double watts)
+        {
+            watts = 0;
+            if (energyUnit <= 0 || seconds < 0.01 || seconds > 30)
+                return false;
+
+            uint energyDelta = unchecked(currentEnergy - previousEnergy);
+            double value = energyDelta * energyUnit / seconds;
+            if (double.IsNaN(value) || double.IsInfinity(value) || value < 0 || value > 1000)
+                return false;
+
+            watts = Math.Round(value, 1);
+            return true;
+        }
+
+        static bool TryInitializeIntelRaplFallback(DateTime now)
+        {
+            if (intelMsrFallback == null)
+                return false;
+            if (intelPackageEnergyUnit > 0 && lastIntelPackageEnergyAt != DateTime.MinValue)
+                return true;
+            if (!IsRetryCooldownElapsed(lastIntelRaplProbeAt, now, IntelRaplProbeRetryCooldownSeconds))
+                return false;
+
+            lastIntelRaplProbeAt = now;
+            try
+            {
+                uint raplUnit;
+                uint packageEnergy;
+                uint ignored;
+                if (!intelMsrFallback.ReadMsr(IntelRaplPowerUnitMsr, out raplUnit, out ignored) || raplUnit == 0 ||
+                    !intelMsrFallback.ReadMsr(IntelPackageEnergyStatusMsr, out packageEnergy, out ignored))
+                    return false;
+
+                int energyExponent = (int)((raplUnit >> 8) & 0x1F);
+                intelPackageEnergyUnit = Math.Pow(0.5, energyExponent);
+                lastIntelPackageEnergy = packageEnergy;
+                lastIntelPackageEnergyAt = now;
+                consecutiveIntelMsrPowerFailures = 0;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        static bool IsRetryCooldownElapsed(DateTime lastAttempt, DateTime now, int cooldownSeconds)
+        {
+            return lastAttempt == DateTime.MinValue ||
+                cooldownSeconds <= 0 ||
+                now >= lastAttempt.AddSeconds(cooldownSeconds);
+        }
+
+        static bool HasReachedFailureThreshold(int failures, int threshold)
+        {
+            return threshold > 0 && failures >= threshold;
+        }
+
+        static bool IsPermanentMsrFailure(string message)
+        {
+            return !string.IsNullOrEmpty(message) &&
+                message.IndexOf(MsrUnavailableMarker, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        static bool IsRetryableMsrFailure(string message)
+        {
+            return !string.IsNullOrEmpty(message) &&
+                message.IndexOf(MsrRetryableMarker, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        static bool ShouldRetryIntelMsrProbe(int attempt, string message)
+        {
+            return attempt < MaxInitRetries && !IsPermanentMsrFailure(message);
+        }
+
+        static void InvalidateIntelMsrFallback(string reason, DateTime now)
+        {
+            try { intelMsrFallback?.Close(); } catch { }
+            intelMsrFallback = null;
+            intelMsrProbeAttempted = true;
+            intelMsrDiagnostic = MsrRetryableMarker + " " + reason;
+            consecutiveIntelMsrTemperatureFailures = 0;
+            consecutiveIntelMsrPowerFailures = 0;
+            lastIntelMsrProbeAt = now;
+            lastIntelRaplProbeAt = DateTime.MinValue;
+            intelPackageEnergyUnit = 0;
+            lastIntelPackageEnergy = 0;
+            lastIntelPackageEnergyAt = DateTime.MinValue;
+        }
+
+        static void InvalidateIntelRaplFallback(DateTime now)
+        {
+            consecutiveIntelMsrPowerFailures = 0;
+            lastIntelRaplProbeAt = now;
+            intelPackageEnergyUnit = 0;
+            lastIntelPackageEnergy = 0;
+            lastIntelPackageEnergyAt = DateTime.MinValue;
+        }
+
+        static void ResetIntelMsrFallback()
+        {
+            try { intelMsrFallback?.Close(); } catch { }
+            intelMsrFallback = null;
+            intelMsrProbeAttempted = false;
+            intelMsrDiagnostic = string.Empty;
+            consecutiveIntelMsrTemperatureFailures = 0;
+            consecutiveIntelMsrPowerFailures = 0;
+            lastIntelMsrProbeAt = DateTime.MinValue;
+            lastIntelRaplProbeAt = DateTime.MinValue;
+            intelPackageEnergyUnit = 0;
+            lastIntelPackageEnergy = 0;
+            lastIntelPackageEnergyAt = DateTime.MinValue;
+        }
+
+        static void RunIntelMsrSelfTest()
+        {
+            int temperature;
+            uint target = 100u << 16;
+            uint thermal = 0x80000000u | (35u << 16);
+            if (!TryDecodeIntelTemperature(target, thermal, 0, out temperature) || temperature != 65)
+                throw new InvalidOperationException("Intel MSR temperature decoder self-test failed");
+            if (TryDecodeIntelTemperature(0, 0, 0, out temperature))
+                throw new InvalidOperationException("Intel MSR zero-read rejection self-test failed");
+            string retryable = MsrRetryableMarker + " temporary read failure";
+            string permanent = MsrUnavailableMarker + " driver missing";
+            if (!ShouldRetryIntelMsrProbe(1, retryable) || !ShouldRetryIntelMsrProbe(2, retryable) ||
+                ShouldRetryIntelMsrProbe(3, retryable) || ShouldRetryIntelMsrProbe(1, permanent))
+                throw new InvalidOperationException("Intel MSR retry budget self-test failed");
+            if (!IsPermanentMsrFailure(permanent) || IsPermanentMsrFailure(retryable) || !IsRetryableMsrFailure(retryable))
+                throw new InvalidOperationException("Intel MSR failure classification self-test failed");
+            string systemOnlyModel = "Intel(R) Core(TM) Ultra 9 275HX";
+            if (SelectIntelCpuModel(string.Empty, systemOnlyModel) != systemOnlyModel ||
+                SelectIntelCpuModel(string.Empty, "AMD Ryzen") != string.Empty)
+                throw new InvalidOperationException("Intel system CPU fallback entry self-test failed");
+
+            double watts;
+            if (!TryCalculateIntelPackagePower(100, 819300, 1.0 / 16384.0, 1, out watts) || Math.Abs(watts - 50) > 0.1)
+                throw new InvalidOperationException("Intel RAPL power decoder self-test failed");
+            if (TryCalculateIntelPackagePower(100, 200, 1.0 / 16384.0, 0, out watts) ||
+                TryCalculateIntelPackagePower(100, 200, 1.0 / 16384.0, 31, out watts))
+                throw new InvalidOperationException("Intel RAPL baseline self-test failed");
+
+            DateTime now = new DateTime(2026, 1, 1, 0, 0, 30, DateTimeKind.Utc);
+            DateTime recentMsrProbe = now.AddSeconds(-IntelMsrProbeRetryCooldownSeconds + 1);
+            DateTime dueMsrProbe = now.AddSeconds(-IntelMsrProbeRetryCooldownSeconds);
+            if (!IsRetryCooldownElapsed(DateTime.MinValue, now, IntelMsrProbeRetryCooldownSeconds) ||
+                IsRetryCooldownElapsed(recentMsrProbe, now, IntelMsrProbeRetryCooldownSeconds) ||
+                !IsRetryCooldownElapsed(dueMsrProbe, now, IntelMsrProbeRetryCooldownSeconds))
+                throw new InvalidOperationException("Intel MSR retry cooldown self-test failed");
+            DateTime recentRaplProbe = now.AddSeconds(-IntelRaplProbeRetryCooldownSeconds + 1);
+            DateTime dueRaplProbe = now.AddSeconds(-IntelRaplProbeRetryCooldownSeconds);
+            if (IsRetryCooldownElapsed(recentRaplProbe, now, IntelRaplProbeRetryCooldownSeconds) ||
+                !IsRetryCooldownElapsed(dueRaplProbe, now, IntelRaplProbeRetryCooldownSeconds))
+                throw new InvalidOperationException("Intel RAPL retry cooldown self-test failed");
+            if (HasReachedFailureThreshold(IntelMsrRuntimeFailureThreshold - 1, IntelMsrRuntimeFailureThreshold) ||
+                !HasReachedFailureThreshold(IntelMsrRuntimeFailureThreshold, IntelMsrRuntimeFailureThreshold))
+                throw new InvalidOperationException("Intel MSR runtime failure threshold self-test failed");
+            if (IsTemperatureReadSuccessful(0, 55, permanent) ||
+                !IsTemperatureReadSuccessful(0, 55, retryable) ||
+                !IsTemperatureReadSuccessful(60, 0, permanent))
+                throw new InvalidOperationException("Intel permanent CPU failure visibility self-test failed");
+
+            DateTime preservedMsrProbe = now.AddSeconds(-5);
+            intelMsrProbeAttempted = true;
+            intelMsrDiagnostic = retryable;
+            lastIntelMsrProbeAt = preservedMsrProbe;
+            intelPackageEnergyUnit = 1.0 / 16384.0;
+            lastIntelPackageEnergyAt = now.AddSeconds(-1);
+            InvalidateIntelRaplFallback(now);
+            if (!intelMsrProbeAttempted || intelMsrDiagnostic != retryable || lastIntelMsrProbeAt != preservedMsrProbe ||
+                lastIntelRaplProbeAt != now || intelPackageEnergyUnit != 0 || lastIntelPackageEnergyAt != DateTime.MinValue)
+                throw new InvalidOperationException("Intel RAPL-only invalidation self-test failed");
+            ResetIntelMsrFallback();
+
+            Console.WriteLine("MSR self-test OK");
+        }
+
         static void ReinitializeHardwareMonitor()
         {
             lock (lockObject)
@@ -650,7 +1201,7 @@ namespace FanControl.TempBridge
 
         static void EnsureHardwareMonitorGpuMode(bool includeGpu)
         {
-            if (computer != null && currentGpuMonitoringEnabled == includeGpu)
+            if ((computer != null || intelMsrProbeAttempted) && currentGpuMonitoringEnabled == includeGpu)
             {
                 return;
             }
@@ -1053,8 +1604,8 @@ namespace FanControl.TempBridge
                     using (var pipeServer = new NamedPipeServerStream(PipeName, PipeDirection.InOut))
                     {
                         pipeServer.WaitForConnection();
-                        using (var reader = new StreamReader(pipeServer))
-                        using (var writer = new StreamWriter(pipeServer) { AutoFlush = true })
+                        using (var reader = new StreamReader(pipeServer, Utf8NoBom, false))
+                        using (var writer = new StreamWriter(pipeServer, Utf8NoBom) { AutoFlush = true })
                         {
                             ServeCommandLoop(reader, writer);
                         }
@@ -1359,6 +1910,46 @@ namespace FanControl.TempBridge
                 lastHardwareMonitorError = ex.Message;
             }
 
+            if (string.IsNullOrWhiteSpace(cpuModel))
+                cpuModel = windowsCpuModel;
+
+            if ((cpuSensors.Count == 0 || cpuPowerSensors.Count == 0) &&
+                IsIntelCpuModel(cpuModel))
+            {
+                string msrMessage;
+                if (EnsureIntelMsrFallback(cpuModel, out msrMessage))
+                {
+                    int msrTemperature;
+                    if (cpuSensors.Count == 0 && TryReadIntelMsrTemperature(out msrTemperature))
+                    {
+                        cpuSensors.Add(new TemperatureSensor
+                        {
+                            Key = "cpu/msr/package-temperature",
+                            Name = "CPU Package (MSR)",
+                            Value = msrTemperature,
+                        });
+                    }
+
+                    double msrPower;
+                    if (cpuPowerSensors.Count == 0 &&
+                        TryInitializeIntelRaplFallback(DateTime.UtcNow) &&
+                        TryReadIntelMsrPower(out msrPower))
+                    {
+                        cpuPowerSensors.Add(new PowerSensor
+                        {
+                            Key = "cpu/msr/package-power",
+                            Name = "CPU Package (MSR)",
+                            Value = msrPower,
+                        });
+                    }
+                }
+                else if (cpuSensors.Count == 0)
+                {
+                    hardwareError = msrMessage;
+                    lastHardwareMonitorError = msrMessage;
+                }
+            }
+
             if (cpuSensors.Count == 0)
             {
                 var fallbackCpuSensor = TryReadWindowsCpuTemperatureSensor();
@@ -1371,6 +1962,8 @@ namespace FanControl.TempBridge
                     }
                 }
             }
+
+            cpuPowerWatts = SelectPowerWatts(cpuPowerSensors, selection.CpuPowerSensor, new[] { "Package", "CPU Package", "Total", "Core" });
 
             var selectedGpu = SelectGpuCandidate(gpuCandidates, selection.GpuDevice, selection.GpuSensor, selection.GpuPowerSensor);
             ReconcileHardwareProfileWithSensorsOnce(gpuCandidates);
@@ -1420,7 +2013,10 @@ namespace FanControl.TempBridge
             }).ToArray();
             result.GpuDevices = runtimeGpuDevices.Length > 0 ? runtimeGpuDevices : hardwareProfileGpuDevices;
 
-            if (cpuTemp == 0 && gpuTemp == 0)
+            string temperatureErrorDetail = !string.IsNullOrWhiteSpace(hardwareError)
+                ? hardwareError
+                : lastHardwareMonitorError;
+            if (!IsTemperatureReadSuccessful(cpuTemp, gpuTemp, temperatureErrorDetail))
             {
                 result.Success = false;
                 result.Error = BuildTemperatureReadError(hardwareError);
@@ -1432,6 +2028,11 @@ namespace FanControl.TempBridge
             }
 
             return result;
+        }
+
+        static bool IsTemperatureReadSuccessful(int cpuTemp, int gpuTemp, string errorDetail)
+        {
+            return cpuTemp > 0 || (gpuTemp > 0 && !IsPermanentMsrFailure(errorDetail));
         }
 
         static void ReconcileHardwareProfileWithSensorsOnce(System.Collections.Generic.IEnumerable<GpuCandidate> gpuCandidates)
@@ -1455,7 +2056,18 @@ namespace FanControl.TempBridge
                 parts.Add("硬件监控信息: " + detail);
             }
 
-            parts.Add("已尝试 Windows 温区兜底；可重新初始化温度监控，或安装/更新 PawnIO 并关闭可能独占硬件传感器的软件");
+            if (IsPermanentMsrFailure(detail))
+            {
+                parts.Add("PawnIO 驱动未安装或未登记，Intel MSR 读取不可用；请安装或重新安装 PawnIO");
+            }
+            else if (IsRetryableMsrFailure(detail))
+            {
+                parts.Add("PawnIO/MSR 暂时不可用；程序会按限次与冷却策略自动重试，可关闭其它硬件监控软件后等待恢复");
+            }
+            else
+            {
+                parts.Add("已尝试 Windows 温区兜底；可重新初始化温度监控，或安装/更新 PawnIO 并关闭可能独占硬件传感器的软件");
+            }
             return string.Join("；", parts.ToArray());
         }
 
@@ -1615,7 +2227,12 @@ namespace FanControl.TempBridge
             {
 	                var result = GetTemperatureDataUnsafe(selection);
 
-                if (!result.Success || (result.CpuTemp == 0 && result.GpuTemp == 0))
+                if ((!result.Success || (result.CpuTemp == 0 && result.GpuTemp == 0)) &&
+                    (IsPermanentMsrFailure(result.Error) || IsRetryableMsrFailure(result.Error)))
+                {
+                    consecutiveFailures = 0;
+                }
+                else if (!result.Success || (result.CpuTemp == 0 && result.GpuTemp == 0))
                 {
                     consecutiveFailures++;
 

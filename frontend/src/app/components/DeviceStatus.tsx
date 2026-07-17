@@ -44,6 +44,7 @@ import { toast } from 'sonner';
 
 interface DeviceStatusProps {
   isConnected: boolean;
+  runtimeState: string;
   deviceProductId: string | null;
   deviceModel: string | null;
   deviceSettings: DeviceSettings | null;
@@ -670,6 +671,7 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
 
 export default function DeviceStatus({
   isConnected,
+  runtimeState,
   deviceModel,
   deviceSettings,
   fanData,
@@ -788,6 +790,12 @@ export default function DeviceStatus({
   };
 
   const activeDeviceName = activeDeviceProfile?.displayName?.trim() || '';
+  const showRuntimeState = runtimeState !== 'disconnected';
+  const runtimeStateClass = runtimeState === 'ready'
+    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
+    : runtimeState === 'unavailable'
+      ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+      : 'bg-primary/10 text-primary';
   const deviceModelName = isConnected
     ? (deviceModel?.trim() || activeDeviceName || t('deviceStatus.device.unknown'))
     : t('deviceStatus.disconnected.title');
@@ -859,9 +867,8 @@ export default function DeviceStatus({
                   ? t('deviceStatus.bridgeState.notStarted')
                   : '';
   const maxTempStatus = getTempStatus(temperature?.maxTemp || 0);
-
   return (
-    <div className="space-y-3">
+    <div data-page-reveal="cards" className="space-y-3">
       {/* ── Device header card ── */}
       <div data-theme-section="hero" data-theme-card="device-hero" className="glacier-hero-card relative overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm shadow-black/5">
         <div className="theme-thrm-only glacier-hero-art pointer-events-none absolute inset-y-0 right-0 hidden overflow-hidden md:block" aria-hidden="true">
@@ -883,7 +890,7 @@ export default function DeviceStatus({
                 <Fan className="h-8 w-8" />
               </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-base font-semibold text-foreground">{deviceModelName}</span>
                 <span
                   className={clsx(
@@ -895,15 +902,22 @@ export default function DeviceStatus({
                 >
                   {isConnected ? t('deviceStatus.connectStatus.connected') : t('deviceStatus.connectStatus.offline')}
                 </span>
+                {showRuntimeState && (
+                  <span className={clsx('rounded-md px-2 py-0.5 text-[11px] font-semibold', runtimeStateClass)}>
+                    {t(`deviceStatus.runtimeState.${runtimeState}`)}
+                  </span>
+                )}
               </div>
               {isConnected && (
-                <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                  {config.autoControl ? (
-                    <Zap className="h-3 w-3 text-primary" />
-                  ) : (
-                    <Settings className="h-3 w-3" />
-                  )}
-                  <span>{t('deviceStatus.hero.modeLine', { mode: modeTitle, description: modeDesc })}</span>
+                <div className="mt-1 space-y-1.5 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1.5">
+                    {config.autoControl ? (
+                      <Zap className="h-3 w-3 text-primary" />
+                    ) : (
+                      <Settings className="h-3 w-3" />
+                    )}
+                    <span>{t('deviceStatus.hero.modeLine', { mode: modeTitle, description: modeDesc })}</span>
+                  </div>
                 </div>
               )}
               {!isConnected && (
@@ -993,12 +1007,33 @@ export default function DeviceStatus({
           <h3 className="mb-1.5 text-lg font-semibold">
             {t('deviceStatus.disconnected.title')}
           </h3>
-          <p className="mb-5 text-base text-muted-foreground">
+          <p className="mb-4 text-base text-muted-foreground">
             {t('deviceStatus.disconnected.description')}
           </p>
-          <Button onClick={onConnect} size="md" icon={<RotateCw className="h-4 w-4" />}>
-            {t('deviceStatus.actions.connectDevice')}
-          </Button>
+          <ol
+            data-device-recovery="connection"
+            className="mx-auto mb-5 max-w-xl list-decimal space-y-1.5 pl-5 text-left text-sm text-muted-foreground"
+          >
+            <li>{t('deviceStatus.recovery.deviceAvailable')}</li>
+            <li>{t('deviceStatus.recovery.releaseCompetingTools')}</li>
+            <li>{t('deviceStatus.recovery.retryOrExport')}</li>
+          </ol>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Button onClick={onConnect} size="md" icon={<RotateCw className="h-4 w-4" />}>
+              {t('deviceStatus.actions.connectDevice')}
+            </Button>
+            {onExportDiagnostics && (
+              <Button
+                variant="secondary"
+                size="md"
+                disabled={diagnosticsExporting}
+                onClick={onExportDiagnostics}
+                icon={<Download className="h-4 w-4" />}
+              >
+                {diagnosticsExporting ? t('appShell.diagnostics.exporting') : t('appShell.diagnostics.export')}
+              </Button>
+            )}
+          </div>
         </motion.div>
       )}
 
@@ -1014,6 +1049,14 @@ export default function DeviceStatus({
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <div className="flex-1">
                 <p>{temperature?.bridgeMessage || t('deviceStatus.bridgeWarning.default')}</p>
+                <ol
+                  data-device-recovery="temperature"
+                  className="mt-2 list-decimal space-y-1 pl-5 text-xs text-amber-700/90 dark:text-amber-200/80"
+                >
+                  <li>{t('deviceStatus.bridgeWarning.recovery.checkServices')}</li>
+                  <li>{t('deviceStatus.bridgeWarning.recovery.releaseCompetingTools')}</li>
+                  <li>{t('deviceStatus.bridgeWarning.recovery.retryOrExport')}</li>
+                </ol>
                 {bridgeStatus && (
                   <div className="mt-2 space-y-1 text-xs text-amber-700/90 dark:text-amber-200/80">
                     {bridgeStateLabel && (

@@ -1,8 +1,8 @@
 'use client';
 
-import type { ComponentType, CSSProperties, KeyboardEvent, ReactNode } from 'react';
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import {
   Copy,
   Download,
@@ -22,6 +22,7 @@ import {
   Bluetooth,
   Boxes,
   Usb,
+  type LucideIcon,
 } from 'lucide-react';
 import { Environment, Quit, WindowIsMaximised, WindowMinimise, WindowToggleMaximise } from '../../../wailsjs/runtime/runtime';
 import { types } from '../../../wailsjs/go/models';
@@ -30,6 +31,8 @@ import { useTranslation } from 'react-i18next';
 import { BRAND } from '../lib/brand';
 import { clampFanSpeedToRange, fanSpeedUnitLabel, getFanSpeedRange, getFanSpeedUnit, readCurrentFanSpeed } from '../lib/fan-speed';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import UpdateProgressWidget from './UpdateProgressWidget';
+import { isPluginAppTab, type AppTab, type BuiltinAppTab, type PluginAppTab } from '../store/app-store-logic.mts';
 
 const MAIN_TAB_ITEMS = [
   { id: 'status', titleKey: 'appShell.tabs.status', icon: LayoutGrid },
@@ -40,32 +43,46 @@ const MAIN_TAB_ITEMS = [
 
 const ABOUT_TAB = { id: 'about', titleKey: 'appShell.tabs.about', icon: Info } as const;
 
-type PluginTabId = `plugin:${string}`;
-type SidebarIcon = ComponentType<{ className?: string }>;
-
-interface PluginTabItem {
-  id: PluginTabId;
-  title: string;
-  /** Inline `<svg>…</svg>` string from plugin manifest, or a legacy id (falls back to default glyph). */
-  icon?: string;
-  content: ReactNode;
-}
-
-type ActiveTab = (typeof MAIN_TAB_ITEMS)[number]['id'] | PluginTabId | typeof ABOUT_TAB.id;
-type TabChangeHandler = { bivarianceHack(tab: ActiveTab): void }['bivarianceHack'];
-
-const TAB_TRANSITION_ORDER: ActiveTab[] = [...MAIN_TAB_ITEMS.map((tab) => tab.id), ABOUT_TAB.id];
-
-function getTabTransitionDirection(fromTab: ActiveTab, toTab: ActiveTab) {
-  const fromIndex = TAB_TRANSITION_ORDER.indexOf(fromTab);
-  const toIndex = TAB_TRANSITION_ORDER.indexOf(toTab);
+function getTabTransitionDirection(order: AppTab[], fromTab: AppTab, toTab: AppTab) {
+	const fromIndex = order.indexOf(fromTab);
+	const toIndex = order.indexOf(toTab);
   if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
     return 0;
   }
   return toIndex > fromIndex ? 1 : -1;
 }
 
-const TAB_CONTENT_VARIANTS = {
+export interface PluginNavigationTab {
+  id: PluginAppTab;
+  title: string;
+  icon: LucideIcon;
+  iconAsset?: string;
+}
+
+function PluginNavigationIcon({ icon: Icon, iconAsset, active }: Pick<PluginNavigationTab, 'icon' | 'iconAsset'> & { active: boolean }) {
+  const [assetFailed, setAssetFailed] = useState(false);
+
+  useEffect(() => setAssetFailed(false), [iconAsset]);
+
+  if (iconAsset && !assetFailed) {
+    return (
+      <img
+        src={iconAsset}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        onError={() => setAssetFailed(true)}
+        className={clsx(
+          'relative z-10 h-5 w-5 object-contain transition-opacity duration-200',
+          active ? 'opacity-100' : 'opacity-70 group-hover:opacity-90',
+        )}
+      />
+    );
+  }
+  return <Icon className="relative z-10 h-4.5 w-4.5" />;
+}
+
+const TAB_CONTENT_VARIANTS: Variants = {
   enter: (direction: number) => ({
     opacity: 0,
     y: direction === 0 ? 8 : direction * 18,
@@ -73,65 +90,24 @@ const TAB_CONTENT_VARIANTS = {
   center: {
     opacity: 1,
     y: 0,
+    transition: {
+      duration: 0.18,
+      ease: [0.22, 1, 0.36, 1],
+    },
   },
   exit: (direction: number) => ({
     opacity: 0,
     y: direction === 0 ? -6 : direction * -14,
+    transition: {
+      duration: 0.15,
+      ease: [0.22, 1, 0.36, 1],
+    },
   }),
 };
 
-const TAB_CARD_RISE_SELECTOR = [
-  '.glacier-hero-card',
-  '.glacier-metric-card',
-  '.glacier-control-card',
-  '.glacier-chart-card',
-  '.glacier-stat-tile',
-  '[data-theme-ui="setting-section"]',
-  '[data-theme-card="curve-header"]',
-  '[data-theme-card="curve-editor"]',
-  '[data-theme-card="curve-manual-gears"]',
-  '[data-theme-card="curve-history-summary"]',
-  '[data-theme-card="curve-history-chart"]',
-  '[data-theme-card="fan-curve-preview"]',
-  '[data-theme-card="temperature-history"]',
-	].join(',');
-
-// Plugin icon rendering:
-// - Preferred path: plugin.json declares icon as inline `<svg>…</svg>` string (validated on the Go side,
-//   ≤8 KiB). We render it as an <img data:image/svg+xml> so browser namespace/hydration edges around
-//   dangerouslySetInnerHTML + SVG don't fire.
-// - Legacy path: any non-svg id falls back to a generic Boxes glyph. Host code no longer enumerates
-//   plugin-specific ids — adding a new plugin does not require touching the shell.
-// - Component identity is cached per icon string: re-renders reuse the same React component type,
-//   so tab-icon slots don't unmount/remount on every parent render.
-const pluginIconComponentCache = new Map<string, SidebarIcon>();
-
-function pluginSidebarIcon(icon?: string): SidebarIcon {
-  const trimmed = (icon ?? '').trim();
-  if (!trimmed) return Boxes;
-  const cached = pluginIconComponentCache.get(trimmed);
-  if (cached) return cached;
-
-  if (trimmed.startsWith('<svg') && trimmed.endsWith('</svg>')) {
-    const dataUri = 'data:image/svg+xml;utf8,' + encodeURIComponent(trimmed);
-    const InlinePluginIcon: SidebarIcon = ({ className }) => (
-      <img
-        aria-hidden="true"
-        alt=""
-        src={dataUri}
-        className={clsx('relative z-10 inline-block object-contain', className)}
-      />
-    );
-    pluginIconComponentCache.set(trimmed, InlinePluginIcon);
-    return InlinePluginIcon;
-  }
-  pluginIconComponentCache.set(trimmed, Boxes);
-  return Boxes;
-}
-
 interface AppShellProps {
-  activeTab: ActiveTab;
-  onTabChange: TabChangeHandler;
+  activeTab: AppTab;
+  onTabChange: (tab: AppTab) => void;
   isConnected: boolean;
   fanData: types.FanData | null;
   temperature: types.TemperatureData | null;
@@ -147,7 +123,8 @@ interface AppShellProps {
   curveContent: ReactNode;
   controlContent: ReactNode;
   devicesContent: ReactNode;
-  pluginTabs?: PluginTabItem[];
+  pluginTabs: PluginNavigationTab[];
+  pluginContent: ReactNode;
   aboutContent: ReactNode;
 }
 
@@ -524,7 +501,8 @@ export default function AppShell({
   curveContent,
   controlContent,
   devicesContent,
-  pluginTabs = [],
+  pluginTabs,
+  pluginContent,
   aboutContent,
 }: AppShellProps) {
   const { t } = useTranslation();
@@ -533,8 +511,7 @@ export default function AppShell({
   ));
   const [isMaximised, setIsMaximised] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const tabSurfaceRef = useRef<HTMLDivElement | null>(null);
-  const previousActiveTabRef = useRef<ActiveTab>(activeTab);
+  const previousActiveTabRef = useRef<AppTab>(activeTab);
 
   const syncWindowState = useCallback(async () => {
     try {
@@ -547,6 +524,9 @@ export default function AppShell({
   useEffect(() => {
     let disposed = false;
     let cleanup = () => {};
+    let resizeFrame: number | null = null;
+    let resizeSyncing = false;
+    let resizeQueued = false;
 
     const initializeWindowChrome = async () => {
       try {
@@ -558,9 +538,29 @@ export default function AppShell({
           setIsMaximised(false);
           return;
         }
-        const handleResize = () => void syncWindowState();
+        const handleResize = () => {
+          if (resizeFrame !== null) return;
+          resizeFrame = window.requestAnimationFrame(async () => {
+            resizeFrame = null;
+            if (resizeSyncing) {
+              resizeQueued = true;
+              return;
+            }
+            resizeSyncing = true;
+            await syncWindowState();
+            resizeSyncing = false;
+            if (resizeQueued && !disposed) {
+              resizeQueued = false;
+              handleResize();
+            }
+          });
+        };
         window.addEventListener('resize', handleResize);
-        cleanup = () => window.removeEventListener('resize', handleResize);
+        cleanup = () => {
+          window.removeEventListener('resize', handleResize);
+          resizeQueued = false;
+          if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
+        };
         await syncWindowState();
       } catch {
         if (!disposed) {
@@ -593,37 +593,26 @@ export default function AppShell({
     }
   }, []);
 
-  const handleTabChange = (tab: ActiveTab) => {
+  const handleTabChange = (tab: AppTab) => {
     if (tab === activeTab) return;
     onTabChange(tab);
   };
-	const visibleMainTabs = [
-	    ...MAIN_TAB_ITEMS,
-	    ...pluginTabs.map((plugin) => ({
-	      id: plugin.id,
-	      title: plugin.title,
-	      icon: pluginSidebarIcon(plugin.icon),
-	    })),
-	  ];
 
-  const contentMap: Partial<Record<ActiveTab, ReactNode>> = {
+  const contentMap: Record<BuiltinAppTab, ReactNode> = {
     status: statusContent,
     curve: curveContent,
     control: controlContent,
     devices: devicesContent,
     about: aboutContent,
   };
-  for (const plugin of pluginTabs) {
-    contentMap[plugin.id] = plugin.content;
-  }
-  const transitionDirection = getTabTransitionDirection(previousActiveTabRef.current, activeTab);
-  const windowBlurMode = String((config as any)?.windowBlur || 'on');
-
-  useEffect(() => {
-    if (activeTab.startsWith('plugin:') && !pluginTabs.some((plugin) => plugin.id === activeTab)) {
-      onTabChange('status');
-    }
-  }, [activeTab, onTabChange, pluginTabs]);
+  const transitionOrder: AppTab[] = [
+    ...MAIN_TAB_ITEMS.map((tab) => tab.id),
+    ...pluginTabs.map((tab) => tab.id),
+    ABOUT_TAB.id,
+  ];
+  const activeContent = isPluginAppTab(activeTab) ? pluginContent : contentMap[activeTab];
+  const transitionDirection = getTabTransitionDirection(transitionOrder, previousActiveTabRef.current, activeTab);
+  const windowBlurMode = String((config as any)?.windowBlur || 'acrylic');
 
   useEffect(() => {
     if (previousActiveTabRef.current === activeTab) {
@@ -635,16 +624,6 @@ export default function AppShell({
       scrollElement.scrollLeft = 0;
     }
     previousActiveTabRef.current = activeTab;
-  }, [activeTab]);
-
-  useLayoutEffect(() => {
-    const surface = tabSurfaceRef.current;
-    if (!surface) return;
-
-    const riseItems = surface.querySelectorAll<HTMLElement>(TAB_CARD_RISE_SELECTOR);
-    riseItems.forEach((item, index) => {
-      item.style.setProperty('--app-card-rise-delay', `${Math.min(index, 9) * 28}ms`);
-    });
   }, [activeTab]);
 
   return (
@@ -687,10 +666,10 @@ export default function AppShell({
         </div>
 
         <nav className="flex flex-1 flex-col items-center gap-1 px-2" role="tablist" style={NO_DRAG_STYLE}>
-	          {visibleMainTabs.map((tab) => {
-	            const Icon = tab.icon;
-	            const isActive = activeTab === tab.id;
-	            const tabTitle = 'titleKey' in tab ? t(tab.titleKey) : tab.title;
+          {MAIN_TAB_ITEMS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            const tabTitle = t(tab.titleKey);
             return (
               <Tooltip key={tab.id}>
                 <TooltipTrigger asChild>
@@ -710,13 +689,41 @@ export default function AppShell({
                   >
                     {isActive && (
                       <span
-                        className="absolute inset-0 rounded-xl border border-primary/15 bg-primary/10"
+                        className="pointer-events-none absolute inset-0 rounded-xl"
                       />
                     )}
                     <Icon className="relative z-10 h-4.5 w-4.5" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right">{tabTitle}</TooltipContent>
+              </Tooltip>
+            );
+          })}
+          {pluginTabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <Tooltip key={tab.id}>
+                <TooltipTrigger asChild>
+                  <button
+                    role="tab"
+                    data-theme-ui="sidebar-item"
+                    data-theme-tab={tab.id}
+                    aria-label={tab.title}
+                    aria-selected={isActive}
+                    onClick={() => handleTabChange(tab.id)}
+                    className={clsx(
+                      'group relative flex h-11 w-11 cursor-pointer items-center justify-center overflow-hidden rounded-xl transition-colors duration-200',
+                      isActive
+                        ? 'text-primary'
+                        : 'text-sidebar-foreground/62 hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                    )}
+                  >
+                    {isActive && <span className="pointer-events-none absolute inset-0 rounded-xl" />}
+                    <PluginNavigationIcon icon={Icon} iconAsset={tab.iconAsset} active={isActive} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">{tab.title}</TooltipContent>
               </Tooltip>
             );
           })}
@@ -740,7 +747,7 @@ export default function AppShell({
                 )}
               >
                 {activeTab === ABOUT_TAB.id && (
-                  <span className="absolute inset-0 rounded-xl border border-primary/15 bg-primary/10" />
+                  <span className="pointer-events-none absolute inset-0 rounded-xl" />
                 )}
                 <ABOUT_TAB.icon className="relative z-10 h-4.5 w-4.5" />
               </button>
@@ -836,20 +843,15 @@ export default function AppShell({
           <main className="mx-auto w-full max-w-[1120px] min-[1680px]:max-w-[1280px] min-[2200px]:max-w-[1480px] min-w-0 overflow-hidden">
             <AnimatePresence mode="wait" initial={false} custom={transitionDirection}>
               <motion.div
-                ref={tabSurfaceRef}
                 key={activeTab}
                 custom={transitionDirection}
                 variants={TAB_CONTENT_VARIANTS}
                 initial="enter"
                 animate="center"
                 exit="exit"
-                transition={{
-                  duration: 0.2,
-                  ease: [0.22, 1, 0.36, 1],
-                }}
-                className="app-tab-surface w-full min-w-0 px-1 pb-2 will-change-transform"
+                className="w-full min-w-0 px-1 pb-2 will-change-transform"
               >
-	                {contentMap[activeTab]}
+                {activeContent}
               </motion.div>
             </AnimatePresence>
           </main>
@@ -860,6 +862,7 @@ export default function AppShell({
         <OverlayScrollbar scrollRef={scrollRef} />
         </div>
       </section>
+      <UpdateProgressWidget />
     </div>
   );
 }

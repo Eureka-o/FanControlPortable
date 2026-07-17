@@ -4,132 +4,96 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"strings"
+	goruntime "runtime"
 
 	"github.com/TIANLI0/THRM/internal/config"
 	"github.com/TIANLI0/THRM/internal/ipc"
-	pluginpkg "github.com/TIANLI0/THRM/internal/plugins"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/TIANLI0/THRM/internal/plugins"
 )
 
-func (a *App) GetAvailablePlugins() []types.PluginInfo {
-	resp, err := a.sendRequest(ipc.ReqGetAvailablePlugins, nil)
-	if err != nil {
-		guiLogger.Errorf("get available plugins failed: %v", err)
-		return nil
-	}
-	if !resp.Success {
-		guiLogger.Errorf("get available plugins failed: %s", resp.Error)
-		return nil
-	}
-	var plugins []types.PluginInfo
-	if err := json.Unmarshal(resp.Data, &plugins); err != nil {
-		guiLogger.Errorf("parse available plugins failed: %v", err)
-		return nil
-	}
-	return plugins
+func (a *App) GetPluginSnapshot() (plugins.CatalogSnapshot, error) {
+	return a.pluginSnapshotRequest(ipc.ReqGetPluginSnapshot, nil)
 }
 
-func (a *App) GetPluginStatus(pluginID string) (types.PluginInfo, error) {
-	resp, err := a.sendRequest(ipc.ReqGetPluginStatus, map[string]string{"id": pluginID})
-	if err != nil {
-		return types.PluginInfo{}, err
-	}
-	if !resp.Success {
-		return types.PluginInfo{}, fmt.Errorf("%s", resp.Error)
-	}
-	var plugin types.PluginInfo
-	if err := json.Unmarshal(resp.Data, &plugin); err != nil {
-		return types.PluginInfo{}, err
-	}
-	return plugin, nil
+func (a *App) RefreshPlugins() (plugins.CatalogSnapshot, error) {
+	return a.pluginSnapshotRequest(ipc.ReqRefreshPlugins, nil)
 }
 
-func (a *App) EnablePlugin(pluginID string) error {
-	resp, err := a.sendRequest(ipc.ReqEnablePlugin, map[string]string{"id": pluginID})
+func (a *App) SetPluginEnabled(id string, enabled bool) (plugins.CatalogSnapshot, error) {
+	return a.pluginSnapshotRequest(ipc.ReqSetPluginEnabled, ipc.SetPluginEnabledParams{ID: id, Enabled: enabled})
+}
+
+func (a *App) DeletePlugin(id string) (plugins.CatalogSnapshot, error) {
+	return a.pluginSnapshotRequest(ipc.ReqDeletePlugin, ipc.PluginIDParams{ID: id})
+}
+
+func (a *App) ResetPlugin(id string) (plugins.CatalogSnapshot, error) {
+	return a.pluginSnapshotRequest(ipc.ReqResetPlugin, ipc.PluginIDParams{ID: id})
+}
+
+func (a *App) InvokePlugin(id, method string, payload any) (any, error) {
+	payloadData, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("序列化插件调用参数失败: %w", err)
+	}
+	resp, err := a.sendRequest(ipc.ReqInvokePlugin, ipc.InvokePluginParams{
+		ID:      id,
+		Method:  method,
+		Payload: payloadData,
+	})
+	if err != nil {
+		return nil, err
 	}
 	if !resp.Success {
-		return fmt.Errorf("%s", resp.Error)
+		return nil, fmt.Errorf("%s", resp.Error)
+	}
+	var result any
+	if len(resp.Data) == 0 {
+		return map[string]any{}, nil
+	}
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return nil, fmt.Errorf("解析插件调用结果失败: %w", err)
+	}
+	return result, nil
+}
+
+func (a *App) pluginSnapshotRequest(requestType ipc.RequestType, payload any) (plugins.CatalogSnapshot, error) {
+	resp, err := a.sendRequest(requestType, payload)
+	if err != nil {
+		return plugins.CatalogSnapshot{}, err
+	}
+	if !resp.Success {
+		return plugins.CatalogSnapshot{}, fmt.Errorf("%s", resp.Error)
+	}
+	var snapshot plugins.CatalogSnapshot
+	if err := json.Unmarshal(resp.Data, &snapshot); err != nil {
+		return plugins.CatalogSnapshot{}, err
+	}
+	if snapshot.Plugins == nil {
+		snapshot.Plugins = []plugins.CatalogEntry{}
+	}
+	return snapshot, nil
+}
+
+func (a *App) OpenPluginsFolder() error {
+	dir := filepath.Join(config.GetInstallDir(), "plugins")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("创建插件目录失败: %w", err)
+	}
+
+	var cmd *exec.Cmd
+	switch goruntime.GOOS {
+	case "windows":
+		cmd = exec.Command("explorer", dir)
+	case "darwin":
+		cmd = exec.Command("open", dir)
+	default:
+		cmd = exec.Command("xdg-open", dir)
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("打开插件目录失败: %w", err)
 	}
 	return nil
-}
-
-func (a *App) DisablePlugin(pluginID string) error {
-	resp, err := a.sendRequest(ipc.ReqDisablePlugin, map[string]string{"id": pluginID})
-	if err != nil {
-		return err
-	}
-	if !resp.Success {
-		return fmt.Errorf("%s", resp.Error)
-	}
-	return nil
-}
-
-func (a *App) RefreshPluginDiscovery() []types.PluginInfo {
-	resp, err := a.sendRequest(ipc.ReqRefreshPluginDiscovery, nil)
-	if err != nil {
-		guiLogger.Errorf("refresh plugin discovery failed: %v", err)
-		return nil
-	}
-	if !resp.Success {
-		guiLogger.Errorf("refresh plugin discovery failed: %s", resp.Error)
-		return nil
-	}
-	var plugins []types.PluginInfo
-	if err := json.Unmarshal(resp.Data, &plugins); err != nil {
-		guiLogger.Errorf("parse refreshed plugin discovery failed: %v", err)
-		return nil
-	}
-	return plugins
-}
-
-func (a *App) GetPluginFrontendAsset(pluginID string) (string, error) {
-	return a.GetPluginFrontendAssetPath(pluginID, "")
-}
-
-func (a *App) GetPluginFrontendAssetPath(pluginID string, assetPath string) (string, error) {
-	pluginID = strings.TrimSpace(pluginID)
-	if pluginID == "" {
-		return "", fmt.Errorf("plugin id is required")
-	}
-
-	pluginDir := filepath.Join(config.GetInstallDir(), "plugins", pluginID)
-	manifest, err := pluginpkg.LoadManifest(pluginDir)
-	if err != nil {
-		return "", err
-	}
-	if manifest.ID != pluginID {
-		return "", fmt.Errorf("plugin manifest id mismatch")
-	}
-
-	var frontendPath string
-	if strings.TrimSpace(assetPath) == "" {
-		var err error
-		frontendPath, err = manifest.FrontendPath(pluginDir)
-		if err != nil {
-			return "", err
-		}
-	} else {
-		frontendPath = filepath.Clean(filepath.Join(pluginDir, assetPath))
-		rel, err := filepath.Rel(pluginDir, frontendPath)
-		if err != nil {
-			return "", err
-		}
-		if filepath.IsAbs(assetPath) || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return "", fmt.Errorf("plugin asset path escapes plugin directory")
-		}
-	}
-
-	data, err := os.ReadFile(frontendPath)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-func (a *App) GetPluginFrontendHTML(pluginID string) (string, error) {
-	return a.GetPluginFrontendAsset(pluginID)
 }

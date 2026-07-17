@@ -18,23 +18,57 @@ func findDeviceProfileForTest(profiles []types.DeviceProfile, id string) (types.
 	return types.DeviceProfile{}, false
 }
 
-func loadConfigFromRawForTest(t *testing.T, raw map[string]any) types.AppConfig {
-	t.Helper()
-
-	installDir := t.TempDir()
-	configDir := filepath.Join(installDir, "config")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		t.Fatalf("mkdir config dir: %v", err)
+func TestWriteConfigFileAtomicallyReplacesCompleteFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config", "config.json")
+	if err := writeConfigFileAtomically(path, []byte(`{"version":1,"stale":"content"}`)); err != nil {
+		t.Fatalf("write initial config: %v", err)
 	}
-	data, err := json.MarshalIndent(raw, "", "  ")
+	if err := writeConfigFileAtomically(path, []byte(`{"version":2}`)); err != nil {
+		t.Fatalf("replace config: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("marshal config: %v", err)
+		t.Fatalf("read config: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "config.json"), data, 0644); err != nil {
-		t.Fatalf("write config: %v", err)
+	if string(data) != `{"version":2}` {
+		t.Fatalf("config = %q, want complete replacement", data)
+	}
+	temps, err := filepath.Glob(filepath.Join(filepath.Dir(path), ".config-*.tmp"))
+	if err != nil {
+		t.Fatalf("glob temp files: %v", err)
+	}
+	if len(temps) != 0 {
+		t.Fatalf("temporary config files left behind: %v", temps)
+	}
+}
+
+func TestUpdateKeepsCurrentConfigWhenPersistenceFails(t *testing.T) {
+	blockedPath := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(blockedPath, []byte("not a directory"), 0644); err != nil {
+		t.Fatalf("create blocked path: %v", err)
+	}
+	t.Setenv("USERPROFILE", blockedPath)
+	t.Setenv("HOME", blockedPath)
+
+	manager := NewManager(blockedPath, nil)
+	initial := types.GetDefaultConfig(false)
+	manager.Set(initial)
+	before, beforeRevision := manager.GetWithRevision()
+
+	next := before
+	next.DebugMode = !before.DebugMode
+	if err := manager.Update(next); err == nil {
+		t.Fatal("Update() error = nil, want persistence failure")
 	}
 
-	return NewManager(installDir, nil).Load(false)
+	after, afterRevision := manager.GetWithRevision()
+	if after.DebugMode != before.DebugMode {
+		t.Fatalf("DebugMode changed after failed update: got %v, want %v", after.DebugMode, before.DebugMode)
+	}
+	if afterRevision != beforeRevision {
+		t.Fatalf("revision changed after failed update: got %d, want %d", afterRevision, beforeRevision)
+	}
 }
 
 func TestValidateFanCurveForUnitAllowsReferenceRPMCurve(t *testing.T) {
@@ -165,31 +199,6 @@ func TestLoadUpgradeConfigPreservesWiFiIPAndCurveProfiles(t *testing.T) {
 	if len(cfg.FanCurveProfiles) != 2 || cfg.FanCurveProfiles[1].ID != "boost" || cfg.FanCurveProfiles[1].Curve[1].RPM != 42 {
 		t.Fatalf("fanCurveProfiles not preserved: %#v", cfg.FanCurveProfiles)
 	}
-}
-
-func TestLoadBackfillsIgnoreDeviceOnReconnectWhenMissing(t *testing.T) {
-	t.Run("missing uses default true", func(t *testing.T) {
-		cfg := loadConfigFromRawForTest(t, map[string]any{
-			"deviceTransport":    types.DeviceTransportWiFi,
-			"fanControlDeviceIp": "10.8.0.42",
-		})
-
-		if !cfg.IgnoreDeviceOnReconnect {
-			t.Fatal("IgnoreDeviceOnReconnect = false, want default true")
-		}
-	})
-
-	t.Run("explicit false is preserved", func(t *testing.T) {
-		cfg := loadConfigFromRawForTest(t, map[string]any{
-			"deviceTransport":         types.DeviceTransportWiFi,
-			"fanControlDeviceIp":      "10.8.0.42",
-			"ignoreDeviceOnReconnect": false,
-		})
-
-		if cfg.IgnoreDeviceOnReconnect {
-			t.Fatal("IgnoreDeviceOnReconnect = true, want explicit false")
-		}
-	})
 }
 
 func TestLoadPreservesPersistedNativeRPMCurveBeforeCompatibilityMigration(t *testing.T) {
@@ -446,5 +455,158 @@ func TestLoadUpgradeConfigPreservesDeviceProfilesAndLearningState(t *testing.T) 
 	}
 	if loaded.SmartControl.LearnedRateCool[6] != -7 {
 		t.Fatalf("learned rate cool not preserved: %#v", loaded.SmartControl.LearnedRateCool)
+	}
+}
+
+func TestLoadAppearanceAndPredictionDefaultsPreserveExplicitChoices(t *testing.T) {
+	writeConfig := func(t *testing.T, cfg map[string]any) string {
+		t.Helper()
+		installDir := t.TempDir()
+		configDir := filepath.Join(installDir, "config")
+		if err := os.MkdirAll(configDir, 0755); err != nil {
+			t.Fatalf("mkdir config dir: %v", err)
+		}
+		data, err := json.Marshal(cfg)
+		if err != nil {
+			t.Fatalf("marshal config: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(configDir, "config.json"), data, 0644); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+		return installDir
+	}
+
+	defaultMap := func(t *testing.T) map[string]any {
+		t.Helper()
+		data, err := json.Marshal(types.GetDefaultConfig(false))
+		if err != nil {
+			t.Fatalf("marshal defaults: %v", err)
+		}
+		var cfg map[string]any
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			t.Fatalf("unmarshal defaults: %v", err)
+		}
+		return cfg
+	}
+
+	t.Run("missing fields receive new defaults", func(t *testing.T) {
+		cfg := defaultMap(t)
+		delete(cfg, "windowBlur")
+		smart := cfg["smartControl"].(map[string]any)
+		delete(smart, "temperatureRisePrediction")
+
+		loaded := NewManager(writeConfig(t, cfg), nil).Load(false)
+		if loaded.WindowBlur != "acrylic" {
+			t.Fatalf("WindowBlur = %q, want acrylic", loaded.WindowBlur)
+		}
+		if !loaded.SmartControl.TemperatureRisePrediction {
+			t.Fatal("missing temperatureRisePrediction should migrate to enabled")
+		}
+	})
+
+	t.Run("explicit choices survive upgrade", func(t *testing.T) {
+		cfg := defaultMap(t)
+		cfg["windowBlur"] = "mica"
+		smart := cfg["smartControl"].(map[string]any)
+		smart["temperatureRisePrediction"] = false
+
+		loaded := NewManager(writeConfig(t, cfg), nil).Load(false)
+		if loaded.WindowBlur != "mica" {
+			t.Fatalf("WindowBlur = %q, want mica", loaded.WindowBlur)
+		}
+		if loaded.SmartControl.TemperatureRisePrediction {
+			t.Fatal("explicit disabled temperatureRisePrediction should be preserved")
+		}
+	})
+}
+
+func TestManagerConfigSnapshotsDoNotShareMutableState(t *testing.T) {
+	manager := NewManager(t.TempDir(), nil)
+	cfg := types.GetDefaultConfig(false)
+	cfg.ActiveDeviceProfileIDsByTransport[types.DeviceTransportWiFi] = "before"
+	cfg.ManualGearRPM["test"] = map[string]int{"low": 1111}
+	cfg.FanCurve[0].RPM = 21
+	cfg.FanCurveProfiles[0].Curve = append([]types.FanCurvePoint{}, cfg.FanCurveProfiles[0].Curve...)
+	cfg.FanCurveProfiles[0].Curve[0].RPM = 22
+	cfg.SmartControl.LearnedOffsets[0] = 23
+	cfg.SmartControl.LearnedOffsetsByProfile = map[string][]int{"profile": {24}}
+	cfg.LightStrip.Colors[0].R = 25
+	cfg.LegionFnQ.ModeMapping["Quiet"] = types.FanGearTarget{Gear: "quiet", Level: "low"}
+	manager.Set(cfg)
+
+	cfg.ActiveDeviceProfileIDsByTransport[types.DeviceTransportWiFi] = "mutated-input"
+	cfg.ManualGearRPM["test"]["low"] = 9000
+	cfg.FanCurve[0].RPM = 90
+	cfg.FanCurveProfiles[0].Curve[0].RPM = 91
+	cfg.SmartControl.LearnedOffsets[0] = 92
+	cfg.SmartControl.LearnedOffsetsByProfile["profile"][0] = 93
+	cfg.LightStrip.Colors[0].R = 94
+	cfg.LegionFnQ.ModeMapping["Quiet"] = types.FanGearTarget{Gear: "mutated", Level: "high"}
+
+	first := manager.Get()
+	if first.ActiveDeviceProfileIDsByTransport[types.DeviceTransportWiFi] != "before" ||
+		first.ManualGearRPM["test"]["low"] != 1111 ||
+		first.FanCurve[0].RPM != 21 ||
+		first.FanCurveProfiles[0].Curve[0].RPM != 22 ||
+		first.SmartControl.LearnedOffsets[0] != 23 ||
+		first.SmartControl.LearnedOffsetsByProfile["profile"][0] != 24 ||
+		first.LightStrip.Colors[0].R != 25 ||
+		first.LegionFnQ.ModeMapping["Quiet"].Gear != "quiet" {
+		t.Fatalf("manager retained mutable input references: %#v", first)
+	}
+
+	first.ActiveDeviceProfileIDsByTransport[types.DeviceTransportWiFi] = "mutated-output"
+	first.ManualGearRPM["test"]["low"] = 8000
+	first.FanCurve[0].RPM = 80
+	first.FanCurveProfiles[0].Curve[0].RPM = 81
+	first.SmartControl.LearnedOffsets[0] = 82
+	first.SmartControl.LearnedOffsetsByProfile["profile"][0] = 83
+	first.LightStrip.Colors[0].R = 84
+	first.LegionFnQ.ModeMapping["Quiet"] = types.FanGearTarget{Gear: "output", Level: "high"}
+
+	second := manager.Get()
+	if second.ActiveDeviceProfileIDsByTransport[types.DeviceTransportWiFi] != "before" ||
+		second.ManualGearRPM["test"]["low"] != 1111 ||
+		second.FanCurve[0].RPM != 21 ||
+		second.FanCurveProfiles[0].Curve[0].RPM != 22 ||
+		second.SmartControl.LearnedOffsets[0] != 23 ||
+		second.SmartControl.LearnedOffsetsByProfile["profile"][0] != 24 ||
+		second.LightStrip.Colors[0].R != 25 ||
+		second.LegionFnQ.ModeMapping["Quiet"].Gear != "quiet" {
+		t.Fatalf("manager exposed mutable snapshot references: %#v", second)
+	}
+}
+
+func TestManagerMutateIfRevisionRejectsStaleConfigAndPreservesNewerFields(t *testing.T) {
+	manager := NewManager(t.TempDir(), nil)
+	cfg := types.GetDefaultConfig(false)
+	manager.Set(cfg)
+	stale, staleRevision := manager.GetWithRevision()
+
+	newer := stale
+	newer.ThemeMode = "new-theme"
+	newer.CpuSensor = "new-sensor"
+	manager.Set(newer)
+
+	_, _, applied := manager.MutateIfRevision(staleRevision, func(current *types.AppConfig) {
+		current.SmartControl.LearnedOffsets[0] = 99
+	})
+	if applied {
+		t.Fatal("stale config mutation was applied")
+	}
+	afterStale := manager.Get()
+	if afterStale.ThemeMode != "new-theme" || afterStale.CpuSensor != "new-sensor" || afterStale.SmartControl.LearnedOffsets[0] == 99 {
+		t.Fatalf("stale mutation overwrote newer config: %#v", afterStale)
+	}
+
+	_, currentRevision := manager.GetWithRevision()
+	updated, nextRevision, applied := manager.MutateIfRevision(currentRevision, func(current *types.AppConfig) {
+		current.SmartControl.LearnedOffsets[0] = 77
+	})
+	if !applied || nextRevision <= currentRevision {
+		t.Fatalf("current mutation applied=%v revision=%d, want revision > %d", applied, nextRevision, currentRevision)
+	}
+	if updated.ThemeMode != "new-theme" || updated.CpuSensor != "new-sensor" || updated.SmartControl.LearnedOffsets[0] != 77 {
+		t.Fatalf("atomic mutation did not preserve unrelated fields: %#v", updated)
 	}
 }

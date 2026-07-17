@@ -61,13 +61,17 @@ export function parseThemeBootstrapSnapshot(raw: string | null | undefined): The
       };
     }
 
+    if (parsed.cssTruncated) {
+      return null;
+    }
+
     return {
       version: THEME_BOOTSTRAP_VERSION,
       mode,
       base: parsed.base === 'dark' ? 'dark' : 'light',
       layer: normalizeCustomThemeLayer(parsed.layer),
       css: typeof parsed.css === 'string' ? parsed.css : '',
-      cssTruncated: Boolean(parsed.cssTruncated),
+      cssTruncated: false,
     };
   } catch {
     return null;
@@ -149,8 +153,13 @@ export function getThemeBootstrapScript(): string {
     return;
   }
 
-  const css = typeof snapshot.css === 'string' ? snapshot.css : '';
   const base = snapshot.base === 'dark' ? 'dark' : 'light';
+  if (snapshot.cssTruncated) {
+    applyBaseTheme(base === 'dark');
+    return;
+  }
+
+  const css = typeof snapshot.css === 'string' ? snapshot.css : '';
   if (!css) {
     applyBaseTheme(base === 'dark');
     return;

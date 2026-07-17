@@ -454,7 +454,8 @@ func scanWiFiDiscoveryCandidates(
 	}
 
 	jobs := make(chan wifiDiscoveryCandidate)
-	results := make(chan types.WiFiDiscoveredDevice, len(candidates))
+	devices := make([]types.WiFiDiscoveredDevice, 0, 1)
+	var devicesMu sync.Mutex
 	var wg sync.WaitGroup
 	var scannedCount int64
 	for i := 0; i < workerCount; i++ {
@@ -468,7 +469,9 @@ func scanWiFiDiscoveryCandidates(
 				atomic.AddInt64(&scannedCount, 1)
 				device, ok := probeWiFiDiscoveryCandidate(ctx, client, candidate, stateEndpoint, params)
 				if ok {
-					results <- device
+					devicesMu.Lock()
+					devices = append(devices, device)
+					devicesMu.Unlock()
 				}
 			}
 		}()
@@ -487,12 +490,6 @@ dispatch:
 	}
 	close(jobs)
 	wg.Wait()
-	close(results)
-
-	devices := make([]types.WiFiDiscoveredDevice, 0)
-	for device := range results {
-		devices = append(devices, device)
-	}
 	sort.SliceStable(devices, func(i, j int) bool {
 		if devices[i].Source != devices[j].Source {
 			return wifiDiscoverySourceRank(devices[i].Source) < wifiDiscoverySourceRank(devices[j].Source)

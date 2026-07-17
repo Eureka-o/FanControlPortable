@@ -26,6 +26,9 @@ func shouldRestartTemperatureBridge(temp types.TemperatureData) bool {
 	if msg == "" {
 		return true
 	}
+	if strings.Contains(msg, "[msr-unavailable]") {
+		return false
+	}
 
 	restartHints := []string{
 		"启动桥接程序失败",
@@ -37,6 +40,7 @@ func shouldRestartTemperatureBridge(temp types.TemperatureData) bool {
 		"等待桥接程序启动超时",
 		"未能获取管道名称",
 		"pipe",
+		"eof",
 		"broken",
 		"closed",
 	}
@@ -77,13 +81,13 @@ func mergeTemperatureHardwareMetadata(previous, incoming types.TemperatureData) 
 	if incoming.GpuModel == "" {
 		incoming.GpuModel = previous.GpuModel
 	}
-	if incoming.CpuSensors == nil {
+	if len(incoming.CpuSensors) == 0 && len(previous.CpuSensors) > 0 {
 		incoming.CpuSensors = previous.CpuSensors
 	}
 	if incoming.GpuSensors == nil || (incoming.GPUReadState == types.GPUReadStateNotPolled && len(incoming.GpuSensors) == 0) {
 		incoming.GpuSensors = previous.GpuSensors
 	}
-	if incoming.CpuPowerSensors == nil {
+	if len(incoming.CpuPowerSensors) == 0 && len(previous.CpuPowerSensors) > 0 {
 		incoming.CpuPowerSensors = previous.CpuPowerSensors
 	}
 	if incoming.GpuPowerSensors == nil || (incoming.GPUReadState == types.GPUReadStateNotPolled && len(incoming.GpuPowerSensors) == 0) {

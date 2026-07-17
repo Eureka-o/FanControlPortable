@@ -12,6 +12,7 @@ import (
 func (a *App) ShowWindow() {
 	if a.ctx != nil {
 		runtime.WindowShow(a.ctx)
+		restorePendingWindowMaximise(a.ctx)
 		runtime.WindowSetAlwaysOnTop(a.ctx, false)
 	}
 }

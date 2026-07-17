@@ -21,30 +21,38 @@ import (
 	"github.com/TIANLI0/THRM/internal/temperature"
 	"github.com/TIANLI0/THRM/internal/tray"
 	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/TIANLI0/THRM/internal/version"
 )
 
 // CoreApp 核心应用结构
 type CoreApp struct {
 	ctx context.Context
 
-	deviceManager         *device.Manager
-	bridgeManager         *bridge.Manager
-	tempReader            *temperature.Reader
-	tempHistory           *temperature.HistoryRecorder
-	configManager         *config.Manager
-	trayManager           *tray.Manager
-	hotkeyManager         *hotkeysvc.Manager
-	notifier              *notifier.Manager
-	autostartManager      *autostart.Manager
-	pluginManager         *plugins.Manager
-	logger                *logger.CustomLogger
-	ipcServer             *ipc.Server
-	wifiScanControl       *types.WiFiDiscoveryControl
-	wifiScanRunning       atomic.Bool
-	pluginDiscoveryCancel context.CancelFunc
+	deviceManager           *device.Manager
+	bridgeManager           *bridge.Manager
+	tempReader              *temperature.Reader
+	tempHistory             *temperature.HistoryRecorder
+	configManager           *config.Manager
+	trayManager             *tray.Manager
+	hotkeyManager           *hotkeysvc.Manager
+	notifier                *notifier.Manager
+	autostartManager        *autostart.Manager
+	pluginManager           *plugins.Manager
+	pluginCatalog           *plugins.Catalog
+	pluginSupervisor        *plugins.Supervisor
+	logger                  *logger.CustomLogger
+	ipcServer               *ipc.Server
+	wifiScanControl         *types.WiFiDiscoveryControl
+	wifiScanRunning         atomic.Bool
+	pluginTelemetrySequence atomic.Uint64
 
 	isConnected                   bool
 	monitoringTemp                atomic.Bool
+	monitoringMutex               sync.Mutex
+	monitoringCancel              context.CancelFunc
+	monitoringDone                chan struct{}
+	monitoringStopping            bool
+	stopping                      atomic.Bool
 	currentTemp                   types.TemperatureData
 	deviceSettings                *types.DeviceSettings
 	lastDeviceMode                string
@@ -55,10 +63,18 @@ type CoreApp struct {
 	legionFnQSupportChecked       atomic.Bool
 	legionFnQRegistered           atomic.Bool
 	reconnectInProgress           atomic.Bool
+	connectionPhase               atomic.Int32
+	connectMutex                  sync.Mutex
+	reconnectMutex                sync.Mutex
+	reconnectCancel               context.CancelFunc
+	reconnectGeneration           uint64
 	autoReconnectSuppressed       atomic.Bool
+	hasSuccessfulConnection       atomic.Bool
 	lastConnectionWasNative       atomic.Bool
 	resumeRecoveryRunning         atomic.Bool
 	systemSuspended               atomic.Bool
+	resumeReconnectWanted         atomic.Bool
+	suspendGeneration             atomic.Uint64
 	wifiStandbyApplied            atomic.Bool
 	forceNextAutoTarget           atomic.Bool
 	lastResumeRecoveryUnix        int64
@@ -66,6 +82,7 @@ type CoreApp struct {
 	healthConsecutiveFailureCount int32
 
 	powerNotifyStop func()
+	hidNotifyStop   func()
 
 	guiLastResponse   int64
 	guiMonitorEnabled bool
@@ -74,9 +91,6 @@ type CoreApp struct {
 	quitChan          chan bool
 
 	mutex                 sync.RWMutex
-	pluginDiscoveryMutex  sync.RWMutex
-	availablePlugins      map[string]types.PluginInfo
-	stopMonitoring        chan bool
 	manualGearLevelMemory map[string]string
 }
 
@@ -149,6 +163,7 @@ func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 	trayMgr := tray.NewManager(customLogger, iconData)
 	autostartMgr := autostart.NewManager(customLogger)
 	pluginMgr := plugins.NewManager(customLogger)
+	pluginCatalog := plugins.NewCatalog(filepath.Join(installDir, "plugins"), version.Get())
 
 	app := &CoreApp{
 		ctx:                context.Background(),
@@ -161,10 +176,10 @@ func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 		trayManager:        trayMgr,
 		autostartManager:   autostartMgr,
 		pluginManager:      pluginMgr,
+		pluginCatalog:      pluginCatalog,
 		logger:             customLogger,
 		wifiScanControl:    types.NewWiFiDiscoveryControl(),
 		isConnected:        false,
-		stopMonitoring:     make(chan bool, 1),
 		lastDeviceMode:     "",
 		userSetAutoControl: false,
 		isAutoStartLaunch:  isAutoStart,
@@ -173,7 +188,6 @@ func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 		cleanupChan:        make(chan bool, 1),
 		quitChan:           make(chan bool, 1),
 		guiMonitorEnabled:  true,
-		availablePlugins:   map[string]types.PluginInfo{},
 		manualGearLevelMemory: map[string]string{
 			"静音": "中",
 			"标准": "中",
@@ -183,6 +197,12 @@ func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 	}
 	app.notifier = notifier.NewManager(customLogger, iconData)
 	app.hotkeyManager = hotkeysvc.NewManager(customLogger, app.handleHotkeyAction)
+	app.pluginSupervisor = plugins.NewSupervisor(plugins.SupervisorOptions{
+		Logger:   customLogger,
+		DataRoot: filepath.Join(installDir, "config", "plugins"),
+		OnStatus: app.handlePluginRuntimeStatus,
+		OnEvent:  app.handlePluginRuntimeEvent,
+	})
 
 	return app
 }

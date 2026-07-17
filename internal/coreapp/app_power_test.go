@@ -49,6 +49,93 @@ func TestShouldRecoverFromSystemResumeGap(t *testing.T) {
 	}
 }
 
+func TestShouldReconnectAfterResume(t *testing.T) {
+	tests := []struct {
+		name                    string
+		proactivelySuspended    bool
+		resumeReconnectWanted   bool
+		autoReconnectSuppressed bool
+		forceReconnect          bool
+		want                    bool
+	}{
+		{name: "connected before suspend", proactivelySuspended: true, resumeReconnectWanted: true, want: true},
+		{name: "manual disconnect before suspend", proactivelySuspended: true, autoReconnectSuppressed: true, forceReconnect: true},
+		{name: "unexpected resume", forceReconnect: true, want: true},
+		{name: "manual disconnect without suspend", autoReconnectSuppressed: true, forceReconnect: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := shouldReconnectAfterResume(test.proactivelySuspended, test.resumeReconnectWanted, test.autoReconnectSuppressed, test.forceReconnect); got != test.want {
+				t.Fatalf("shouldReconnectAfterResume() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestResumeReconnectWantedOnSuspend(t *testing.T) {
+	tests := []struct {
+		name                    string
+		coreConnected           bool
+		deviceConnected         bool
+		reconnectInProgress     bool
+		autoReconnectSuppressed bool
+		want                    bool
+	}{
+		{name: "core connected", coreConnected: true, want: true},
+		{name: "device handle open", deviceConnected: true, want: true},
+		{name: "reconnect pending", reconnectInProgress: true, want: true},
+		{name: "nothing active"},
+		{name: "manual disconnect wins", coreConnected: true, reconnectInProgress: true, autoReconnectSuppressed: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := resumeReconnectWantedOnSuspend(test.coreConnected, test.deviceConnected, test.reconnectInProgress, test.autoReconnectSuppressed); got != test.want {
+				t.Fatalf("resumeReconnectWantedOnSuspend() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestSystemResumeReconnectDelaysAreStaged(t *testing.T) {
+	want := []time.Duration{
+		3 * time.Second,
+		8 * time.Second,
+		15 * time.Second,
+		20 * time.Second,
+		30 * time.Second,
+		30 * time.Second,
+		60 * time.Second,
+		60 * time.Second,
+	}
+	got := systemResumeReconnectDelays()
+	if len(got) != len(want) {
+		t.Fatalf("resume reconnect delays = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("resume reconnect delays = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestCurrentSuspendGenerationRequiresActiveSuspend(t *testing.T) {
+	app := &CoreApp{}
+	generation := app.suspendGeneration.Add(1)
+	if app.isCurrentSuspendGeneration(generation) {
+		t.Fatal("inactive suspend generation reported current")
+	}
+	app.systemSuspended.Store(true)
+	if !app.isCurrentSuspendGeneration(generation) {
+		t.Fatal("active suspend generation reported stale")
+	}
+	app.suspendGeneration.Add(1)
+	if app.isCurrentSuspendGeneration(generation) {
+		t.Fatal("stale suspend generation reported current")
+	}
+}
+
 func TestShouldSendTargetRPM(t *testing.T) {
 	tests := []struct {
 		name          string

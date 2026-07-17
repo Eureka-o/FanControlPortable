@@ -1,6 +1,7 @@
 package coreapp
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -29,7 +30,6 @@ func (a *CoreApp) onShowWindowRequest() {
 // onQuitRequest 退出请求回调
 func (a *CoreApp) onQuitRequest() {
 	a.logInfo("收到退出请求")
-	a.applyWiFiSmartStartStopStandbySpeed("quit")
 
 	// 通知所有 GUI 客户端退出
 	if a.ipcServer != nil {
@@ -41,33 +41,6 @@ func (a *CoreApp) onQuitRequest() {
 	case a.quitChan <- true:
 	default:
 	}
-}
-
-func (a *CoreApp) applyWiFiSmartStartStopStandbySpeed(reason string) bool {
-	cfg := a.configManager.Get()
-	if !cfg.WiFiSmartStartStopEnabled {
-		return false
-	}
-	types.NormalizeDeviceProfileConfig(&cfg)
-	profile := types.ActiveDeviceProfile(&cfg)
-	if profile.Transport != types.DeviceTransportWiFi || !types.IsPercentSpeedUnit(profile.SpeedUnit) {
-		return false
-	}
-	if !profile.Capabilities.SupportsSoftwareSmartStartStop {
-		return false
-	}
-	if !a.wifiStandbyApplied.CompareAndSwap(false, true) {
-		return false
-	}
-
-	standbySpeed := types.ClampWiFiSmartStartStopStandbyPercent(cfg.WiFiSmartStartStopStandbySpeed)
-	a.logInfo("WiFi 智能启停(Beta): %s 前尝试设置待机转速 %d%%", reason, standbySpeed)
-	if ok := a.deviceManager.SetPercentSpeed(standbySpeed); !ok {
-		a.wifiStandbyApplied.Store(false)
-		a.logError("WiFi 智能启停(Beta): %s 前设置待机转速失败", reason)
-		return false
-	}
-	return true
 }
 
 func didDeviceSwitchToManualMode(previousMode, currentMode string) bool {
@@ -166,6 +139,19 @@ func defaultReconnectDelays() []time.Duration {
 	}
 }
 
+func systemResumeReconnectDelays() []time.Duration {
+	return []time.Duration{
+		systemResumeReconnectDelay,
+		8 * time.Second,
+		15 * time.Second,
+		20 * time.Second,
+		30 * time.Second,
+		30 * time.Second,
+		60 * time.Second,
+		60 * time.Second,
+	}
+}
+
 func cloneReconnectDelays(delays []time.Duration) []time.Duration {
 	if len(delays) == 0 {
 		return defaultReconnectDelays()
@@ -175,8 +161,11 @@ func cloneReconnectDelays(delays []time.Duration) []time.Duration {
 	return cloned
 }
 
-func autoReconnectDelaysForConfig(cfg types.AppConfig, retryDelays []time.Duration) []time.Duration {
-	return cloneReconnectDelays(retryDelays)
+type reconnectAttemptResult struct {
+	connected   bool
+	deviceInfo  map[string]string
+	disconnect  func()
+	isConnected func() bool
 }
 
 func (a *CoreApp) requestReconnect(reason string, retryDelays []time.Duration) {
@@ -184,26 +173,80 @@ func (a *CoreApp) requestReconnect(reason string, retryDelays []time.Duration) {
 		a.logInfo("自动重连已被手动断开抑制，忽略请求: %s", reason)
 		return
 	}
-
-	if !a.reconnectInProgress.CompareAndSwap(false, true) {
-		a.logDebug("重连流程已在进行中，忽略新的请求: %s", reason)
+	if a.systemSuspended.Load() {
+		a.logDebug("系统仍处于挂起状态，忽略重连请求: %s", reason)
 		return
 	}
 
-	delays := autoReconnectDelaysForConfig(a.configManager.Get(), retryDelays)
+	delays := cloneReconnectDelays(retryDelays)
+	ctx, cancel := context.WithCancel(context.Background())
+	a.reconnectMutex.Lock()
+	if a.autoReconnectSuppressed.Load() || a.systemSuspended.Load() {
+		a.reconnectMutex.Unlock()
+		cancel()
+		return
+	}
+	if a.reconnectCancel != nil {
+		a.reconnectCancel()
+	}
+	a.reconnectGeneration++
+	generation := a.reconnectGeneration
+	a.reconnectCancel = cancel
+	a.reconnectInProgress.Store(true)
+	a.reconnectMutex.Unlock()
+
 	a.safeGo("reconnect@"+reason, func() {
-		defer a.reconnectInProgress.Store(false)
-		a.runReconnectLoop(reason, delays)
+		defer func() {
+			cancel()
+			a.reconnectMutex.Lock()
+			if a.reconnectGeneration == generation {
+				a.reconnectCancel = nil
+				a.reconnectInProgress.Store(false)
+			}
+			a.reconnectMutex.Unlock()
+		}()
+		a.runReconnectLoop(ctx, reason, delays, generation, a.reconnectDevice)
 	})
 }
 
+func (a *CoreApp) cancelReconnect() {
+	a.reconnectMutex.Lock()
+	if a.reconnectCancel != nil {
+		a.reconnectCancel()
+	}
+	a.reconnectMutex.Unlock()
+}
+
+func (a *CoreApp) suppressReconnect() {
+	a.reconnectMutex.Lock()
+	a.autoReconnectSuppressed.Store(true)
+	if a.reconnectCancel != nil {
+		a.reconnectCancel()
+	}
+	a.reconnectMutex.Unlock()
+}
+
 // runReconnectLoop 安排设备重连
-func (a *CoreApp) runReconnectLoop(reason string, retryDelays []time.Duration) {
+func (a *CoreApp) runReconnectLoop(
+	ctx context.Context,
+	reason string,
+	retryDelays []time.Duration,
+	generation uint64,
+	attempt func() reconnectAttemptResult,
+) {
 	a.logInfo("启动设备重连流程: %s", reason)
 
 	for i, delay := range retryDelays {
+		if ctx.Err() != nil {
+			a.logDebug("重连流程已被更新请求取消: %s", reason)
+			return
+		}
 		if a.autoReconnectSuppressed.Load() {
 			a.logInfo("自动重连已被手动断开抑制，停止重连流程: %s", reason)
+			return
+		}
+		if a.systemSuspended.Load() {
+			a.logDebug("系统进入挂起状态，停止重连流程: %s", reason)
 			return
 		}
 
@@ -219,11 +262,18 @@ func (a *CoreApp) runReconnectLoop(reason string, retryDelays []time.Duration) {
 
 		if delay > 0 {
 			a.logInfo("等待 %v 后尝试第 %d 次重连...", delay, i+1)
-			time.Sleep(delay)
+			if !waitForReconnectDelay(ctx, delay) {
+				a.logDebug("重连等待已被更新请求取消: %s", reason)
+				return
+			}
 		}
 
 		if a.autoReconnectSuppressed.Load() {
 			a.logInfo("自动重连已被手动断开抑制，停止重连流程: %s", reason)
+			return
+		}
+		if a.systemSuspended.Load() {
+			a.logDebug("系统进入挂起状态，停止重连流程: %s", reason)
 			return
 		}
 
@@ -236,9 +286,18 @@ func (a *CoreApp) runReconnectLoop(reason string, retryDelays []time.Duration) {
 			a.logInfo("设备已重新连接，停止重连尝试")
 			return
 		}
+		if ctx.Err() != nil {
+			a.logDebug("重连尝试已被更新请求取消: %s", reason)
+			return
+		}
 
 		a.logInfo("尝试第 %d 次重连设备...", i+1)
-		if a.reconnectDevice() {
+		result := attempt()
+		current, connected := a.completeReconnectAttempt(ctx, generation, result, "reconnect@"+reason)
+		if !current {
+			return
+		}
+		if connected {
 			a.logInfo("设备重连成功")
 
 			// 如果开启了断连保持配置模式，重新应用APP配置
@@ -253,21 +312,115 @@ func (a *CoreApp) runReconnectLoop(reason string, retryDelays []time.Duration) {
 		a.logError("第 %d 次重连失败", i+1)
 	}
 
-	a.logError("所有重连尝试均失败，等待下次健康检查")
+	if ctx.Err() == nil {
+		a.logError("所有重连尝试均失败，等待下次健康检查")
+	}
 }
 
-func (a *CoreApp) reconnectDevice() bool {
-	if a.lastConnectionWasNative.Load() {
-		return a.ConnectNativeDevice("")
+func (a *CoreApp) completeReconnectAttempt(ctx context.Context, generation uint64, result reconnectAttemptResult, caller string) (bool, bool) {
+	current := false
+	connected := false
+	func() {
+		a.reconnectMutex.Lock()
+		defer a.reconnectMutex.Unlock()
+		current = ctx.Err() == nil &&
+			a.reconnectGeneration == generation &&
+			!a.autoReconnectSuppressed.Load() &&
+			!a.systemSuspended.Load()
+		if current && result.connected {
+			connected = result.isConnected == nil || result.isConnected()
+			if connected {
+				a.finishSuccessfulDeviceConnection(result.deviceInfo, caller)
+			}
+		} else if result.connected {
+			if result.disconnect != nil {
+				result.disconnect()
+			}
+			a.mutex.Lock()
+			a.isConnected = false
+			a.deviceSettings = nil
+			a.mutex.Unlock()
+		}
+	}()
+	return current, connected
+}
+
+func waitForReconnectDelay(ctx context.Context, delay time.Duration) bool {
+	if delay <= 0 {
+		return ctx.Err() == nil
 	}
-	if a.ConnectDevice() {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
 		return true
+	case <-ctx.Done():
+		return false
 	}
+}
+
+func (a *CoreApp) reconnectDevice() reconnectAttemptResult {
+	a.connectMutex.Lock()
+	defer a.connectMutex.Unlock()
+	a.connectionPhase.Store(deviceConnectionPhaseConnecting)
+	defer a.connectionPhase.Store(deviceConnectionPhaseNone)
+
 	cfg := a.configManager.Get()
-	if shouldTryDynamicWiFiCompatibility(cfg) && a.recoverDynamicWiFiEndpoint(&cfg) {
-		return a.ConnectDevice()
+	types.NormalizeDeviceProfileConfig(&cfg)
+	lastConnectionWasNative := a.lastConnectionWasNative.Load()
+	activeProfile := a.deviceManager.ActiveProfile()
+	connected, deviceInfo := reconnectTransport(
+		a.hasSuccessfulConnection.Load(),
+		lastConnectionWasNative,
+		func() (bool, map[string]string) {
+			return reconnectNativeTransport(
+				lastConnectionWasNative,
+				activeProfile,
+				a.deviceManager.ConnectNativeProfile,
+				func() (bool, map[string]string) {
+					return a.deviceManager.AutoConnectNativeProfiles(cfg.DeviceProfiles)
+				},
+			)
+		},
+		func() (bool, map[string]string) {
+			a.configureDeviceManager(cfg)
+			return a.deviceManager.Connect()
+		},
+	)
+	return reconnectAttemptResult{
+		connected:   connected,
+		deviceInfo:  deviceInfo,
+		disconnect:  a.deviceManager.DisconnectSilently,
+		isConnected: a.deviceManager.IsConnected,
 	}
-	return false
+}
+
+func reconnectNativeTransport(
+	lastConnectionWasNative bool,
+	activeProfile types.DeviceProfile,
+	tryProfile func(types.DeviceProfile) (bool, map[string]string),
+	tryAll func() (bool, map[string]string),
+) (bool, map[string]string) {
+	activeProfile = types.NormalizeDeviceProfile(activeProfile, "")
+	if lastConnectionWasNative && types.IsNativeDeviceTransport(activeProfile.Transport) {
+		return tryProfile(activeProfile)
+	}
+	return tryAll()
+}
+
+func reconnectTransport(
+	hasSuccessfulConnection bool,
+	lastConnectionWasNative bool,
+	tryNative func() (bool, map[string]string),
+	tryCompatibility func() (bool, map[string]string),
+) (bool, map[string]string) {
+	if !hasSuccessfulConnection || lastConnectionWasNative {
+		connected, info := tryNative()
+		if connected || lastConnectionWasNative {
+			return connected, info
+		}
+	}
+	return tryCompatibility()
 }
 
 func compatibilityConnectionEnabled(cfg types.AppConfig) bool {
@@ -307,28 +460,56 @@ func (a *CoreApp) onSystemSuspend() {
 	if !a.systemSuspended.CompareAndSwap(false, true) {
 		return
 	}
+	generation := a.suspendGeneration.Add(1)
+	a.deviceManager.BlockWrites()
 	start := time.Now()
 	a.logInfo("收到系统挂起通知：提前停止监控并断开设备/桥接，避免唤醒后失效句柄导致崩溃")
 
+	a.mutex.RLock()
+	coreConnected := a.isConnected
+	a.mutex.RUnlock()
+	a.resumeReconnectWanted.Store(resumeReconnectWantedOnSuspend(
+		coreConnected,
+		a.deviceManager.IsConnected(),
+		a.reconnectInProgress.Load(),
+		a.autoReconnectSuppressed.Load(),
+	))
+	a.cancelReconnect()
 	a.autoReconnectSuppressed.Store(true)
+	a.mutex.Lock()
+	a.isConnected = false
+	a.deviceSettings = nil
+	a.mutex.Unlock()
 	a.stopTemperatureMonitoring()
 
 	done := make(chan struct{})
 	a.safeGo("suspend-cleanup", func() {
 		defer close(done)
-
-		a.applyWiFiSmartStartStopStandbySpeed("system-suspend")
+		if !a.isCurrentSuspendGeneration(generation) {
+			return
+		}
+		if a.pluginSupervisor != nil {
+			if err := a.pluginSupervisor.SuspendAll(); err != nil {
+				a.logError("挂起前停止外部插件后端时恢复未确认: %v", err)
+			}
+		}
+		if !a.isCurrentSuspendGeneration(generation) {
+			return
+		}
 
 		a.safeRun("suspend-device-disconnect", func() {
 			a.deviceManager.DisconnectSilently()
 		})
-		a.mutex.Lock()
-		a.isConnected = false
-		a.mutex.Unlock()
+		if !a.isCurrentSuspendGeneration(generation) {
+			return
+		}
 
 		a.safeRun("suspend-bridge-stop", func() {
 			a.bridgeManager.Stop()
 		})
+		if !a.isCurrentSuspendGeneration(generation) {
+			return
+		}
 
 		if a.ipcServer != nil {
 			a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
@@ -343,11 +524,50 @@ func (a *CoreApp) onSystemSuspend() {
 	}
 }
 
+func resumeReconnectWantedOnSuspend(coreConnected, deviceConnected, reconnectInProgress, autoReconnectSuppressed bool) bool {
+	if autoReconnectSuppressed {
+		return false
+	}
+	return coreConnected || deviceConnected || reconnectInProgress
+}
+
+func shouldReconnectAfterResume(proactivelySuspended, resumeReconnectWanted, autoReconnectSuppressed, forceReconnect bool) bool {
+	if proactivelySuspended {
+		return resumeReconnectWanted
+	}
+	return forceReconnect && !autoReconnectSuppressed
+}
+
+func (a *CoreApp) isCurrentSuspendGeneration(generation uint64) bool {
+	return a.systemSuspended.Load() && a.suspendGeneration.Load() == generation && !a.stopping.Load()
+}
+
 // onSystemResume 收到系统唤醒通知时调用，触发设备与监控的恢复。
 func (a *CoreApp) onSystemResume() {
 	a.logInfo("收到系统唤醒通知")
-	a.wifiStandbyApplied.Store(false)
 	a.triggerResumeRecovery("power-event", 0, true)
+}
+
+func shouldReconnectOnHIDArrival(stopping, suspended, suppressed, coreConnected, managerConnected bool) bool {
+	return !stopping && !suspended && !suppressed && !coreConnected && !managerConnected
+}
+
+func (a *CoreApp) onSupportedHIDArrival(devicePath string) {
+	a.mutex.RLock()
+	coreConnected := a.isConnected
+	a.mutex.RUnlock()
+	if !shouldReconnectOnHIDArrival(
+		a.stopping.Load(),
+		a.systemSuspended.Load(),
+		a.autoReconnectSuppressed.Load(),
+		coreConnected,
+		a.deviceManager.IsConnected(),
+	) {
+		return
+	}
+
+	a.logInfo("检测到飞智 HID 接口已就绪，立即触发重连: %s", devicePath)
+	a.requestReconnect("hid-interface-arrival", []time.Duration{0})
 }
 
 // triggerResumeRecovery 以节流方式触发唤醒恢复，避免电源事件与基于时间间隔的检测重复执行。
@@ -376,12 +596,28 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 		a.logInfo("系统唤醒恢复流程结束（来源=%s，耗时=%s）", source, time.Since(start).Round(time.Millisecond))
 	}()
 
-	// 若之前收到过挂起通知（主动断开），唤醒后必须强制重连，且需要重启已停止的温度监控。
+	// 先让仍在后台阻塞的旧休眠清理失效，避免其覆盖唤醒后的新连接。
 	proactivelySuspended := a.systemSuspended.Swap(false)
-	forceReconnect = forceReconnect || proactivelySuspended
+	resumeReconnectWanted := a.resumeReconnectWanted.Swap(false)
+	if proactivelySuspended {
+		a.suspendGeneration.Add(1)
+	}
+	a.cancelReconnect()
+	forceReconnect = shouldReconnectAfterResume(
+		proactivelySuspended,
+		resumeReconnectWanted,
+		a.autoReconnectSuppressed.Load(),
+		forceReconnect,
+	)
 
 	a.logInfo("检测到系统从睡眠/休眠恢复，来源=%s，挂起时长约=%s，主动挂起=%v，开始执行连接自愈",
 		source, gap.Round(time.Second), proactivelySuspended)
+	if a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent(ipc.EventSystemResume, map[string]any{
+			"timestamp": time.Now().UnixMilli(),
+			"source":    source,
+		})
+	}
 
 	// 唤醒后 Explorer 可能重启或通知区域被重建，主动刷新托盘图标避免图标丢失/无响应。
 	a.refreshTrayAfterResume()
@@ -392,6 +628,10 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 		wasConnected = a.isConnected
 	}
 	a.mutex.RUnlock()
+	if (proactivelySuspended && !resumeReconnectWanted) ||
+		(!proactivelySuspended && a.autoReconnectSuppressed.Load()) {
+		wasConnected = false
+	}
 
 	// 桥接停止与设备断开都涉及外部进程/cgo 调用，唤醒后句柄可能失效，统一兜底防止崩溃。
 	a.safeRun("resume-bridge-stop", func() {
@@ -400,7 +640,17 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 
 	// 主动挂起时温度监控已停止，唤醒后需重新启动（与设备连接解耦）。
 	if proactivelySuspended {
-		a.autoReconnectSuppressed.Store(false)
+		if a.pluginSupervisor != nil {
+			cfg := a.configManager.Get()
+			a.safeGo("resume-external-plugins", func() {
+				if err := a.pluginSupervisor.ResumeEnabled(cfg.PluginEnabled); err != nil {
+					a.logError("唤醒后恢复外部插件后端失败: %v", err)
+				}
+			})
+		}
+		if resumeReconnectWanted {
+			a.autoReconnectSuppressed.Store(false)
+		}
 		a.safeGo("resume-temp-monitor", func() {
 			a.startTemperatureMonitoring()
 		})
@@ -412,22 +662,18 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 	}
 
 	a.safeRun("resume-device-disconnect", func() {
-		a.deviceManager.DisconnectSilently()
+		a.deviceManager.DisconnectForRecovery()
 	})
 	a.mutex.Lock()
 	a.isConnected = false
+	a.deviceSettings = nil
 	a.mutex.Unlock()
 
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
 	}
 
-	a.requestReconnect("system-resume", []time.Duration{
-		systemResumeReconnectDelay,
-		8 * time.Second,
-		15 * time.Second,
-		30 * time.Second,
-	})
+	a.requestReconnect("system-resume", systemResumeReconnectDelays())
 }
 
 // refreshTrayAfterResume 在系统唤醒后刷新托盘图标。
@@ -461,6 +707,8 @@ func (a *CoreApp) ConnectDevice() bool {
 }
 
 func (a *CoreApp) AutoScanDevices() map[string]any {
+	a.connectionPhase.Store(deviceConnectionPhaseDiscovering)
+	defer a.connectionPhase.Store(deviceConnectionPhaseNone)
 	cfg := a.configManager.Get()
 	types.NormalizeDeviceProfileConfig(&cfg)
 	devices := a.deviceManager.ScanNativeDevicesProfiles(cfg.DeviceProfiles)
@@ -478,16 +726,23 @@ func (a *CoreApp) AutoScanDevices() map[string]any {
 }
 
 func (a *CoreApp) ConnectNativeDevice(profileID string) bool {
+	a.cancelReconnect()
+	a.connectMutex.Lock()
+	defer a.connectMutex.Unlock()
+	a.connectionPhase.Store(deviceConnectionPhaseConnecting)
+	defer a.connectionPhase.Store(deviceConnectionPhaseNone)
 	return newDeviceConnectionFlow(a).connectNativeDevice(profileID)
 }
 
 func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string, caller string) *types.DeviceSettings {
+	a.deviceManager.UnblockWrites()
 	a.syncConnectedBuiltInDeviceProfile(deviceInfo)
 
 	a.mutex.Lock()
 	a.isConnected = true
 	a.mutex.Unlock()
 	atomic.StoreInt64(&a.lastHealthReconnectUnix, 0)
+	a.hasSuccessfulConnection.Store(true)
 	a.lastConnectionWasNative.Store(types.IsNativeDeviceTransport(a.deviceManager.GetDeviceType()))
 
 	if cfg, changed, err := a.applyConnectedRuntimeCurveState(); err != nil {
@@ -529,7 +784,7 @@ func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string,
 
 // DisconnectDevice 断开设备连接
 func (a *CoreApp) DisconnectDevice() {
-	a.autoReconnectSuppressed.Store(true)
+	a.suppressReconnect()
 	a.lastConnectionWasNative.Store(false)
 
 	a.mutex.Lock()
@@ -547,11 +802,9 @@ func (a *CoreApp) DisconnectDevice() {
 // reapplyConfigAfterReconnect 重连后重新应用APP配置
 func (a *CoreApp) reapplyConfigAfterReconnect() {
 	cfg := a.configManager.Get()
-	a.configureDeviceManager(cfg)
 
 	// 重新应用智能变频配置
 	if cfg.AutoControl {
-		a.forceNextAutoTarget.Store(true)
 		a.logInfo("重新启动智能变频")
 	} else if cfg.CustomSpeedEnabled {
 		// 重新应用自定义转速
@@ -589,39 +842,49 @@ func (a *CoreApp) reapplyConfigAfterReconnect() {
 			a.logError("重新开启通电自启动失败")
 		}
 	}
+	if cfg.SmartStartStop != "" && cfg.SmartStartStop != "off" && a.activeDeviceCapabilities().SupportsSmartStartStop {
+		a.logInfo("重新应用智能启停: %s", cfg.SmartStartStop)
+		if !a.deviceManager.SetSmartStartStop(cfg.SmartStartStop) {
+			a.logError("重新应用智能启停失败")
+		}
+	}
 }
 
 // GetDeviceStatus 获取设备状态
 func (a *CoreApp) GetDeviceStatus() map[string]any {
 	a.mutex.RLock()
-	connected := a.isConnected && a.deviceManager.IsConnected()
+	connected := a.isConnected
+	manager := a.deviceManager
 	settings := a.deviceSettings
 	currentTemp := a.currentTemp
 	monitoring := a.monitoringTemp.Load()
-	defer a.mutex.RUnlock()
+	a.mutex.RUnlock()
+	connected = connected && manager != nil && manager.IsConnected()
 
+	runtime := a.deviceRuntimeStatus()
 	if !connected {
 		return map[string]any{
 			"connected":   false,
 			"monitoring":  monitoring,
 			"currentData": nil,
 			"temperature": currentTemp,
+			"runtime":     runtime,
 		}
 	}
 
-	productID := a.deviceManager.GetProductID()
+	productID := manager.GetProductID()
 	productIDHex := ""
 	if productID != 0 {
 		productIDHex = fmt.Sprintf("0x%04X", productID)
 	}
 
-	model := a.deviceManager.GetModelName()
-	profile := a.deviceManager.ActiveProfile()
+	model := manager.GetModelName()
+	profile := manager.ActiveProfile()
 
 	return map[string]any{
 		"connected":          true,
 		"monitoring":         monitoring,
-		"currentData":        a.deviceManager.GetCurrentFanData(),
+		"currentData":        manager.GetCurrentFanData(),
 		"temperature":        currentTemp,
 		"productId":          productIDHex,
 		"model":              model,
@@ -629,6 +892,7 @@ func (a *CoreApp) GetDeviceStatus() map[string]any {
 		"deviceProfile":      profile,
 		"deviceCapabilities": profile.Capabilities,
 		"deviceSettings":     settings,
+		"runtime":            runtime,
 	}
 }
 

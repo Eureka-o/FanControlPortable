@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, memo, useMemo, useRef } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   RotateCw,
@@ -31,10 +31,10 @@ import { useHistoryDisplayPreferences } from '../hooks/useHistoryDisplayPreferen
 import { useLocale } from '../lib/i18n';
 import { getFanSpeedUnit, getFanSpeedRange, getFanSpeedTicks, fanSpeedUnitLabel } from '../lib/fan-speed';
 import { type HistorySeriesKey } from '../lib/temperature-history';
-import type { CurveFocusTarget } from '../store/app-store';
+import { useAppStore, type CurveFocusTarget } from '../store/app-store';
 import { types } from '../../../wailsjs/go/models';
+import { ClipboardSetText } from '../../../wailsjs/runtime/runtime';
 import { useTranslation } from 'react-i18next';
-import FanCurveProfileSelect from './FanCurveProfileSelect';
 import { toast } from 'sonner';
 import {
   ToggleSwitch,
@@ -43,6 +43,7 @@ import {
   Select,
   Slider,
   NumberInput,
+  FanCurveEditor,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -222,57 +223,6 @@ function normalizeFanCurve(curve: types.FanCurvePoint[] | null | undefined, minS
   }));
 }
 
-function syncCurveSpeedAtIndex(
-  curve: types.FanCurvePoint[],
-  index: number,
-  targetSpeed: number,
-  minSpeed: number,
-  maxSpeed: number,
-) {
-  const currentPoint = curve[index];
-  if (!currentPoint) {
-    return { curve, changed: false };
-  }
-
-  const normalizedSpeed = normalizeSpeedValue(targetSpeed, minSpeed, maxSpeed);
-  const nextCurve = [...curve];
-  let changed = false;
-
-  if (currentPoint.rpm !== normalizedSpeed) {
-    nextCurve[index] = { ...currentPoint, rpm: normalizedSpeed };
-    changed = true;
-  }
-
-  for (let left = index - 1; left >= 0; left -= 1) {
-    if (nextCurve[left].rpm <= nextCurve[left + 1].rpm) {
-      break;
-    }
-
-    nextCurve[left] = {
-      ...nextCurve[left],
-      rpm: nextCurve[left + 1].rpm,
-    };
-    changed = true;
-  }
-
-  for (let right = index + 1; right < nextCurve.length; right += 1) {
-    if (nextCurve[right].rpm >= nextCurve[right - 1].rpm) {
-      break;
-    }
-
-    nextCurve[right] = {
-      ...nextCurve[right],
-      rpm: nextCurve[right - 1].rpm,
-    };
-    changed = true;
-  }
-
-  return {
-    curve: nextCurve,
-    changed,
-  };
-}
-
 interface FanCurveProps {
   config: types.AppConfig;
   onConfigChange: (config: types.AppConfig) => void;
@@ -323,50 +273,6 @@ function formatHistoryDuration(
     : t('fanCurve.history.duration.hours', { hours });
 }
 
-/* ── Temperature indicator overlay (memo, doesn't re-render chart) ── */
-
-const TemperatureIndicator = memo(function TemperatureIndicator({
-  temperature,
-  chartRef,
-  temperatureRange,
-}: {
-  temperature: number | null;
-  chartRef: React.RefObject<HTMLDivElement | null>;
-  temperatureRange: { min: number; max: number };
-}) {
-  const { t } = useTranslation();
-  const [position, setPosition] = useState<{ x: number; top: number; height: number } | null>(null);
-
-  useEffect(() => {
-    if (temperature === null || !chartRef.current) { setPosition(null); return; }
-    const updatePosition = () => {
-      const chartArea = chartRef.current?.querySelector('.recharts-cartesian-grid');
-      if (!chartArea) return;
-      const rect = chartArea.getBoundingClientRect();
-      const containerRect = chartRef.current!.querySelector('.recharts-responsive-container')?.getBoundingClientRect();
-      if (!containerRect) return;
-      const chartWidth = rect.width;
-      const chartLeft = rect.left - containerRect.left;
-      const tempPercent = (temperature - temperatureRange.min) / (temperatureRange.max - temperatureRange.min);
-      const x = chartLeft + tempPercent * chartWidth;
-      setPosition({ x, top: rect.top - containerRect.top, height: rect.height });
-    };
-    updatePosition();
-    window.addEventListener('resize', updatePosition);
-    return () => window.removeEventListener('resize', updatePosition);
-  }, [temperature, chartRef, temperatureRange]);
-
-  if (!position || temperature === null) return null;
-
-  return (
-    <svg className="absolute inset-0 pointer-events-none overflow-visible" style={{ width: '100%', height: '100%' }}>
-      <line x1={position.x} y1={position.top} x2={position.x} y2={position.top + position.height} stroke="var(--chart-temperature-indicator)" strokeWidth={2} strokeDasharray="5 5" />
-      <rect x={position.x - 45} y={position.top - 22} width={90} height={20} rx={4} fill="var(--chart-temperature-indicator)" />
-      <text x={position.x} y={position.top - 8} textAnchor="middle" fill="white" fontSize={11} fontWeight={500}>{t('fanCurve.chart.currentTemperature', { temperature })}</text>
-    </svg>
-  );
-});
-
 /* ── Tooltip label helper ── */
 
 const ConfigTooltipLabel = memo(function ConfigTooltipLabel({ label, description }: { label: string; description: string }) {
@@ -387,34 +293,6 @@ const ConfigTooltipLabel = memo(function ConfigTooltipLabel({ label, description
   );
 });
 
-/* ── Draggable chart point ── */
-
-const DraggablePoint = memo(function DraggablePoint({
-  cx, cy, index, speed, unitSuffix, onDragStart, isActive,
-}: {
-  cx: number; cy: number; index: number; temperature: number; speed: number; unitSuffix: string;
-  onDragStart: (index: number) => void; isActive: boolean;
-}) {
-  const handleMouseDown = useCallback((e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); onDragStart(index); }, [index, onDragStart]);
-  const handleTouchStart = useCallback((e: React.TouchEvent) => { e.preventDefault(); e.stopPropagation(); onDragStart(index); }, [index, onDragStart]);
-
-  return (
-    <g>
-      <circle cx={cx} cy={cy} r={isActive ? 14 : 10} fill="transparent" stroke="transparent" style={{ cursor: 'ns-resize' }} onMouseDown={handleMouseDown} onTouchStart={handleTouchStart} />
-      <circle cx={cx} cy={cy} r={isActive ? 8 : 6} fill={isActive ? 'var(--chart-primary-active)' : 'var(--chart-primary)'} stroke="var(--card)" strokeWidth={2}
-        style={{ cursor: 'ns-resize', transition: isActive ? 'none' : 'all 0.2s ease', filter: isActive ? 'drop-shadow(0 4px 8px var(--chart-primary-glow))' : 'drop-shadow(0 2px 4px var(--chart-point-shadow))' }}
-        onMouseDown={handleMouseDown} onTouchStart={handleTouchStart}
-      />
-      {isActive && (
-        <g>
-          <rect x={cx - 35} y={cy - 35} width={70} height={24} rx={4} fill="var(--chart-primary-active)" opacity={0.95} />
-          <text x={cx} y={cy - 19} textAnchor="middle" fill="white" fontSize={12} fontWeight={600}>{formatSpeedValue(speed)}{unitSuffix}</text>
-        </g>
-      )}
-    </g>
-  );
-});
-
 /* ═══════════════════════════════════════════════════════════
    ─── Main FanCurve Component ───
    ═══════════════════════════════════════════════════════════ */
@@ -428,16 +306,28 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const [profileNameInput, setProfileNameInput] = useState('');
   const [isProfileNameComposing, setIsProfileNameComposing] = useState(false);
   const [profileOpLoading, setProfileOpLoading] = useState(false);
-  const [exportCode, setExportCode] = useState('');
+  const [createProfileDialogOpen, setCreateProfileDialogOpen] = useState(false);
+  const [manageProfilesDialogOpen, setManageProfilesDialogOpen] = useState(false);
+  const [profileSwitchDialogOpen, setProfileSwitchDialogOpen] = useState(false);
+  const [deleteProfileDialogOpen, setDeleteProfileDialogOpen] = useState(false);
+  const [pendingProfileId, setPendingProfileId] = useState('');
+  const [pendingDeleteProfileId, setPendingDeleteProfileId] = useState('');
+  const [newProfileNameInput, setNewProfileNameInput] = useState('');
   const [importCode, setImportCode] = useState('');
+  const [isImportDragging, setIsImportDragging] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const pendingTab = useAppStore((state) => state.pendingTab);
+  const timelineEvents = useAppStore((state) => state.timelineEvents);
+  const setCurveDraftDirty = useAppStore((state) => state.setCurveDraftDirty);
+  const completePendingTabChange = useAppStore((state) => state.completePendingTabChange);
+  const cancelPendingTabChange = useAppStore((state) => state.cancelPendingTabChange);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [learningConfigLoading, setLearningConfigLoading] = useState(false);
   const [learningResetLoading, setLearningResetLoading] = useState(false);
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [isInteracting, setIsInteracting] = useState(false);
   const [historyDisplayDialogOpen, setHistoryDisplayDialogOpen] = useState(false);
+  const [historyPowerChartReady, setHistoryPowerChartReady] = useState(false);
   const [draggedHistorySeries, setDraggedHistorySeries] = useState<HistorySeriesKey | null>(null);
   const {
     orderedSeries,
@@ -447,14 +337,13 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     reorderSeries,
     resetPreferences: resetHistoryDisplayPreferences,
   } = useHistoryDisplayPreferences();
-  const chartRef = useRef<HTMLDivElement>(null);
+  const profileFileInputRef = useRef<HTMLInputElement>(null);
   const curveEditorRef = useRef<HTMLDivElement>(null);
   const historyDetailsRef = useRef<HTMLElement>(null);
-  const chartBoundsRef = useRef<{ top: number; bottom: number; left: number; right: number; yMin: number; yMax: number } | null>(null);
-  const dragFrameRef = useRef<number | null>(null);
-  const pendingDragYRef = useRef<number | null>(null);
+  const initialFocusTarget = useRef(focusTarget).current;
   const historySeriesItemRefs = useRef<Partial<Record<HistorySeriesKey, HTMLDivElement>>>({});
   const historySeriesDragRef = useRef<{ key: HistorySeriesKey; target?: HistorySeriesKey; placement?: 'before' | 'after' } | null>(null);
+  const historySeriesDragCleanupRef = useRef<(() => void) | null>(null);
   const runtimeProfileForSpeed = useMemo(() => {
     if (!isConnected) {
       return null;
@@ -489,6 +378,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   } = useTemperatureHistory();
 
   const activeProfile = useMemo(() => curveProfiles.find((p) => p.id === activeProfileId) ?? null, [curveProfiles, activeProfileId]);
+  const pendingDeleteProfile = useMemo(
+    () => curveProfiles.find((profile) => profile.id === pendingDeleteProfileId) ?? null,
+    [curveProfiles, pendingDeleteProfileId],
+  );
   const externalActiveProfileId = ((config as any).activeFanCurveProfileId || '') as string;
   const externalDeviceCurveKey = [
     ((config as any).deviceTransport || '') as string,
@@ -556,7 +449,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     const normalizeRateOffsets = (source?: number[]) => Array.isArray(source) ? [...source.slice(0, 7), ...defaultRateOffsets].slice(0, 7) : defaultRateOffsets;
 
     if (!existing) {
-      return { enabled: true, learning: true, learningBias: 'balanced', filterTransientSpike: true, temperatureRisePrediction: false, temperatureRisePredictionMaxBoost: 60, targetTemp: 68, aggressiveness: 5, hysteresis: 2, minRpmChange: 2, rampUpLimit: 8, rampDownLimit: 6, learnRate: 3, learnWindow: 8, learnDelay: 3, overheatWeight: 8, rpmDeltaWeight: 5, noiseWeight: 4, trendGain: 5, maxLearnOffset: 20, learnedOffsets: defaultOffsets, learnedOffsetsHeat: defaultOffsets, learnedOffsetsCool: defaultOffsets, learnedRateHeat: defaultRateOffsets, learnedRateCool: defaultRateOffsets };
+      return { enabled: true, learning: true, learningBias: 'balanced', filterTransientSpike: true, temperatureRisePrediction: true, temperatureRisePredictionMaxBoost: 60, targetTemp: 68, aggressiveness: 5, hysteresis: 2, minRpmChange: 2, rampUpLimit: 8, rampDownLimit: 6, learnRate: 3, learnWindow: 8, learnDelay: 3, overheatWeight: 8, rpmDeltaWeight: 5, noiseWeight: 4, trendGain: 5, maxLearnOffset: 20, learnedOffsets: defaultOffsets, learnedOffsetsHeat: defaultOffsets, learnedOffsetsCool: defaultOffsets, learnedRateHeat: defaultRateOffsets, learnedRateCool: defaultRateOffsets };
     }
 
     return {
@@ -564,7 +457,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       learning: existing.learning ?? true,
       learningBias: normalizeLearningBias((existing as any).learningBias),
       filterTransientSpike: existing.filterTransientSpike ?? true,
-      temperatureRisePrediction: (existing as any).temperatureRisePrediction ?? false,
+      temperatureRisePrediction: (existing as any).temperatureRisePrediction ?? true,
       temperatureRisePredictionMaxBoost: (existing as any).temperatureRisePredictionMaxBoost ?? 60,
       targetTemp: normalizeTargetTemp(existing.targetTemp ?? 68),
       hysteresis: Math.max(1, existing.hysteresis ?? 2),
@@ -593,6 +486,17 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const [targetTempDraft, setTargetTempDraft] = useState(() => normalizeTargetTemp((config.smartControl as any)?.targetTemp ?? 68));
 
   useEffect(() => {
+    setCurveDraftDirty(hasUnsavedChanges);
+  }, [hasUnsavedChanges, setCurveDraftDirty]);
+
+  useEffect(() => {
+    if (pendingTab) {
+      setPendingProfileId('');
+      setProfileSwitchDialogOpen(true);
+    }
+  }, [pendingTab]);
+
+  useEffect(() => {
     setTargetTempDraft(normalizeTargetTemp((smartControl as any).targetTemp ?? 68));
   }, [smartControl.targetTemp]);
 
@@ -616,6 +520,23 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     };
   }, [focusTarget, onFocusHandled]);
 
+  useEffect(() => {
+    if (historyPowerChartReady) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setHistoryPowerChartReady(true);
+      return;
+    }
+    if (!historyDetailsRef.current) return;
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry?.isIntersecting) return;
+      setHistoryPowerChartReady(true);
+      observer.disconnect();
+    }, { rootMargin: '360px 0px' });
+    observer.observe(historyDetailsRef.current);
+    return () => observer.disconnect();
+  }, [historyPowerChartReady]);
+
   const learnedOffsetSummary = useMemo(() => {
     const sourceCurve = localCurve.length > 0 ? localCurve : (config.fanCurve || []);
     return (smartControl.learnedOffsets || [])
@@ -633,16 +554,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   }, [config.fanCurve, currentLearningBias, localCurve, smartControl.learnedOffsets, speedUnit]);
 
   const detailHistoryPoints = useMemo(() => temperatureHistory.slice(-720), [temperatureHistory]);
-
-  const historyFanMax = useMemo(() => {
-    let maxFan = speedRange.max;
-    for (const point of detailHistoryPoints) {
-      if (point.fanRpm > 0) {
-        maxFan = Math.max(maxFan, normalizeSpeedValue(point.fanRpm, speedRange.min, speedRange.max));
-      }
-    }
-    return maxFan;
-  }, [detailHistoryPoints, speedRange.max, speedRange.min]);
 
   const historySummary = useMemo(() => {
     const latest = temperatureHistory[temperatureHistory.length - 1] ?? null;
@@ -716,19 +627,9 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
 
   const historyChartStats = useMemo(() => {
     let maxPower = 0;
-    let minTemp = Number.POSITIVE_INFINITY;
-    let maxTemp = 0;
     const data = detailHistoryPoints.map((point) => {
       const cpuPowerWatts = Number(point.cpuPowerWatts || 0);
       const gpuPowerWatts = Number(point.gpuPowerWatts || 0);
-      if (point.cpuTemp > 0) {
-        minTemp = Math.min(minTemp, point.cpuTemp);
-        maxTemp = Math.max(maxTemp, point.cpuTemp);
-      }
-      if (point.gpuTemp > 0) {
-        minTemp = Math.min(minTemp, point.gpuTemp);
-        maxTemp = Math.max(maxTemp, point.gpuTemp);
-      }
       if (historySeriesVisibility.cpuPower) {
         maxPower = Math.max(maxPower, cpuPowerWatts);
       }
@@ -746,25 +647,44 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       };
     });
 
-    const tempDomain: [number, number] = Number.isFinite(minTemp)
-      ? [
-        Math.max(0, Math.floor((minTemp - 4) / 5) * 5),
-        Math.max(Math.max(0, Math.floor((minTemp - 4) / 5) * 5) + 10, Math.min(110, Math.ceil((maxTemp + 4) / 5) * 5)),
-      ]
-      : [30, 90];
     const powerMax = maxPower > 0 ? Math.max(20, Math.ceil((maxPower + 10) / 10) * 10) : 20;
 
     return {
       data,
-      tempDomain,
       powerMax,
       hasPower: maxPower > 0,
     };
   }, [detailHistoryPoints, historySeriesVisibility.cpuPower, historySeriesVisibility.gpuPower, speedRange.max, speedRange.min]);
   const historyChartData = historyChartStats.data;
-  const historyTempDomain = historyChartStats.tempDomain;
   const historyPowerMax = historyChartStats.powerMax;
   const historyHasPower = historyChartStats.hasPower;
+  const visibleTimelineEvents = useMemo(() => {
+    const firstTimestamp = detailHistoryPoints[0]?.timestamp ?? 0;
+    if (!firstTimestamp) return [];
+    return timelineEvents.filter((event) => event.timestamp >= firstTimestamp).slice(-12);
+  }, [detailHistoryPoints, timelineEvents]);
+  const historyTimeDomain = useMemo<[number, number]>(() => {
+    const firstTimestamp = detailHistoryPoints[0]?.timestamp ?? 0;
+    const lastSampleTimestamp = detailHistoryPoints[detailHistoryPoints.length - 1]?.timestamp ?? firstTimestamp;
+    const lastEventTimestamp = visibleTimelineEvents[visibleTimelineEvents.length - 1]?.timestamp ?? firstTimestamp;
+    return [firstTimestamp, Math.max(firstTimestamp + 1, lastSampleTimestamp, lastEventTimestamp)];
+  }, [detailHistoryPoints, visibleTimelineEvents]);
+  const timelineEventLayout = useMemo(() => {
+    const [firstTimestamp, lastTimestamp] = historyTimeDomain;
+    const range = Math.max(1, lastTimestamp - firstTimestamp);
+    const minGap = range * 0.07;
+    const rowLastTimestamps: number[] = [];
+    return visibleTimelineEvents.map((event) => {
+      let row = rowLastTimestamps.findIndex((timestamp) => event.timestamp - timestamp >= minGap);
+      if (row === -1) {
+        row = rowLastTimestamps.length < 4
+          ? rowLastTimestamps.length
+          : rowLastTimestamps.reduce((best, timestamp, index) => (timestamp < rowLastTimestamps[best] ? index : best), 0);
+      }
+      rowLastTimestamps[row] = event.timestamp;
+      return { event, row, anchorEnd: (event.timestamp - firstTimestamp) / range > 0.55 };
+    });
+  }, [historyTimeDomain, visibleTimelineEvents]);
 
   const historySeriesMeta = useMemo(() => {
     const meta: Record<HistorySeriesKey, { key: HistorySeriesKey; label: string; color: string; dataKey: string; axisId: 'temp' | 'fan' | 'power' }> = {
@@ -776,22 +696,63 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     };
     return orderedSeries.map((key) => meta[key]).filter(Boolean);
   }, [orderedSeries, t, locale]);
+  const showHistoryPowerChart = historyHasPower && (historySeriesVisibility.cpuPower || historySeriesVisibility.gpuPower);
 
-  const historySeriesByDataKey = useMemo(() => {
-    const entries = historySeriesMeta.map((series) => [series.dataKey, series] as const);
-    return new Map(entries);
-  }, [historySeriesMeta]);
+  const renderHistoryTooltip = useCallback(({ active, label, payload }: any) => {
+    const point = payload?.[0]?.payload;
+    if (!active || !point) {
+      return null;
+    }
 
-  const historySeriesOrderByDataKey = useMemo(() => {
-    const entries = historySeriesMeta.map((series, index) => [series.dataKey, index] as const);
-    return new Map(entries);
-  }, [historySeriesMeta]);
+    const rows = historySeriesMeta.flatMap((series) => {
+      if (!historySeriesVisibility[series.key]) {
+        return [];
+      }
+      const numericValue = Number(point[series.dataKey] ?? 0);
+      if (!Number.isFinite(numericValue) || numericValue <= 0) {
+        return [];
+      }
+      const value = series.key === 'fan'
+        ? `${formatSpeedValue(numericValue)}${speedUnitSuffix}`
+        : series.axisId === 'power'
+          ? `${formatPowerValue(numericValue)} W`
+          : `${numericValue} °C`;
+      return [{ key: series.key, label: series.label, value, color: series.color }];
+    });
+
+    if (rows.length === 0) {
+      return null;
+    }
+
+    return (
+      <div
+        className="rounded-lg border px-3 py-2 text-sm shadow-lg"
+        style={{
+          backgroundColor: 'var(--chart-tooltip-bg)',
+          borderColor: 'var(--chart-tooltip-border)',
+          boxShadow: 'var(--chart-tooltip-shadow)',
+          color: 'var(--chart-tooltip-text)',
+        }}
+      >
+        <div className="mb-2 font-semibold">{formatHistoryDateTime(Number(label), locale)}</div>
+        <div className="space-y-1.5">
+          {rows.map((row) => (
+            <div key={row.key} className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: row.color }} />
+              <span>{row.label}：{row.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }, [historySeriesMeta, historySeriesVisibility, locale, speedUnitSuffix]);
 
   const handleHistorySeriesPointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>, key: HistorySeriesKey) => {
     if (event.pointerType === 'mouse' && event.button !== 0) {
       return;
     }
 
+    historySeriesDragCleanupRef.current?.();
     event.preventDefault();
     event.stopPropagation();
     setDraggedHistorySeries(key);
@@ -830,18 +791,28 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       }
     };
 
-    const handlePointerEnd = () => {
-      historySeriesDragRef.current = null;
-      setDraggedHistorySeries(null);
+    const cleanup = () => {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerEnd);
       window.removeEventListener('pointercancel', handlePointerEnd);
+      if (historySeriesDragCleanupRef.current === cleanup) {
+        historySeriesDragCleanupRef.current = null;
+      }
+    };
+
+    const handlePointerEnd = () => {
+      historySeriesDragRef.current = null;
+      setDraggedHistorySeries(null);
+      cleanup();
     };
 
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerEnd);
     window.addEventListener('pointercancel', handlePointerEnd);
+    historySeriesDragCleanupRef.current = cleanup;
   }, [historySeriesMeta, reorderSeries]);
+
+  useEffect(() => () => historySeriesDragCleanupRef.current?.(), []);
 
   /* ── Init ── */
 
@@ -854,29 +825,17 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
 
   useEffect(() => {
     loadCurveProfiles().catch(() => {});
-  }, [loadCurveProfiles]);
-
-  useEffect(() => {
-    if (externalActiveProfileId && externalActiveProfileId !== activeProfileId) {
-      loadCurveProfiles().catch(() => {});
-    }
-  }, [activeProfileId, externalActiveProfileId, loadCurveProfiles]);
-
-  useEffect(() => {
-    loadCurveProfiles().catch(() => {});
-  }, [externalDeviceCurveKey, loadCurveProfiles]);
+  }, [externalActiveProfileId, externalDeviceCurveKey, loadCurveProfiles]);
 
   /* ── Chart data ── */
 
-  const chartData = useMemo(() => {
+  const learnedCurvePoints = useMemo(() => {
     const offsets = smartControl.learnedOffsets || [];
     return localCurve.map((point, index) => {
       const offset = learnedOffsetForDisplay(constrainOffsetByLearningBias(offsets[index] ?? 0, currentLearningBias), speedUnit);
       return {
         temperature: point.temperature,
-        rpm: point.rpm,
-        coupledRpm: Math.max(curveSpeedBounds.min, Math.min(curveSpeedBounds.max, point.rpm + offset)),
-        index,
+        rpm: Math.max(curveSpeedBounds.min, Math.min(curveSpeedBounds.max, point.rpm + offset)),
       };
     });
   }, [curveSpeedBounds.max, curveSpeedBounds.min, currentLearningBias, localCurve, smartControl.learnedOffsets, speedUnit]);
@@ -884,93 +843,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const hasLearnedOffsets = learnedOffsetSummary.length > 0;
   const showCoupledCurve = config.autoControl && !!smartControl.learning && hasLearnedOffsets;
 
-  /* ── Point update + drag ── */
-
-  const updatePoint = useCallback((index: number, newRpm: number) => {
-    let didChange = false;
-
-    setLocalCurve((prev) => {
-      const nextState = syncCurveSpeedAtIndex(prev, index, newRpm, speedRange.min, speedRange.max);
-
-      if (!nextState.changed) {
-        return prev;
-      }
-
-      didChange = true;
-      return nextState.curve;
-    });
-
-    if (didChange) {
-      setHasUnsavedChanges(true);
-    }
-  }, [speedRange]);
-
-  const handleDragStart = useCallback((index: number) => {
-    setDragIndex(index);
-    setIsInteracting(true);
-    if (chartRef.current) {
-      const chartArea = chartRef.current.querySelector('.recharts-cartesian-grid');
-      if (chartArea) {
-        const rect = chartArea.getBoundingClientRect();
-        chartBoundsRef.current = { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, yMin: speedRange.min, yMax: speedRange.max };
-      }
-    }
-  }, [speedRange]);
-
-  const handleDrag = useCallback((clientY: number) => {
-    if (dragIndex === null || !chartBoundsRef.current) return;
-    const bounds = chartBoundsRef.current;
-    const relativeY = Math.max(0, Math.min(1, (bounds.bottom - clientY) / (bounds.bottom - bounds.top)));
-    updatePoint(dragIndex, bounds.yMin + relativeY * (bounds.yMax - bounds.yMin));
-  }, [dragIndex, updatePoint]);
-
-  const scheduleDrag = useCallback((clientY: number) => {
-    pendingDragYRef.current = clientY;
-    if (dragFrameRef.current !== null) {
-      return;
-    }
-
-    dragFrameRef.current = window.requestAnimationFrame(() => {
-      dragFrameRef.current = null;
-      const nextClientY = pendingDragYRef.current;
-      pendingDragYRef.current = null;
-      if (nextClientY !== null) {
-        handleDrag(nextClientY);
-      }
-    });
-  }, [handleDrag]);
-
-  const handleDragEnd = useCallback(() => {
-    if (dragFrameRef.current !== null) {
-      window.cancelAnimationFrame(dragFrameRef.current);
-      dragFrameRef.current = null;
-    }
-    pendingDragYRef.current = null;
-    setDragIndex(null);
-    setTimeout(() => setIsInteracting(false), 100);
+  const handleCurveChange = useCallback((points: types.FanCurvePoint[]) => {
+    setLocalCurve(points);
+    setHasUnsavedChanges(true);
   }, []);
-
-  useEffect(() => {
-    if (dragIndex === null) return;
-    const mm = (e: MouseEvent) => { e.preventDefault(); scheduleDrag(e.clientY); };
-    const tm = (e: TouchEvent) => { if (e.touches.length > 0) scheduleDrag(e.touches[0].clientY); };
-    const end = () => handleDragEnd();
-    document.addEventListener('mousemove', mm);
-    document.addEventListener('mouseup', end);
-    document.addEventListener('touchmove', tm, { passive: false });
-    document.addEventListener('touchend', end);
-    return () => {
-      document.removeEventListener('mousemove', mm);
-      document.removeEventListener('mouseup', end);
-      document.removeEventListener('touchmove', tm);
-      document.removeEventListener('touchend', end);
-      if (dragFrameRef.current !== null) {
-        window.cancelAnimationFrame(dragFrameRef.current);
-        dragFrameRef.current = null;
-      }
-      pendingDragYRef.current = null;
-    };
-  }, [dragIndex, handleDragEnd, scheduleDrag]);
 
   /* ── Save / Reset ── */
 
@@ -1026,7 +902,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     setProfileNameInput(trimProfileNameToLimit(value));
   }, [trimProfileNameToLimit]);
 
-  const switchProfile = useCallback(async (id: string) => {
+  const applyProfileSwitch = useCallback(async (id: string) => {
     try {
       setProfileOpLoading(true);
       await apiService.setActiveFanCurveProfile(id);
@@ -1039,6 +915,33 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       setProfileOpLoading(false);
     }
   }, [loadCurveProfiles, syncConfigFromBackend, t]);
+
+  const switchProfile = useCallback(async (id: string) => {
+    if (!id || id === activeProfileId) return;
+    if (hasUnsavedChanges) {
+      setPendingProfileId(id);
+      setProfileSwitchDialogOpen(true);
+      return;
+    }
+    await applyProfileSwitch(id);
+  }, [activeProfileId, applyProfileSwitch, hasUnsavedChanges]);
+
+  const confirmProfileSwitch = useCallback(async (action: 'save' | 'discard') => {
+    if (!pendingProfileId && !pendingTab) return;
+    if (action === 'save') {
+      const saved = await persistCurrentCurve();
+      if (!saved) return;
+    }
+    if (pendingTab) {
+      setProfileSwitchDialogOpen(false);
+      completePendingTabChange();
+      return;
+    }
+    const nextProfileId = pendingProfileId;
+    setProfileSwitchDialogOpen(false);
+    setPendingProfileId('');
+    await applyProfileSwitch(nextProfileId);
+  }, [applyProfileSwitch, completePendingTabChange, pendingProfileId, pendingTab, persistCurrentCurve]);
 
   const saveCurrentProfileName = useCallback(async () => {
     const fallbackName = activeProfile?.name || t('fanCurve.profiles.currentCurveName');
@@ -1058,67 +961,98 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   }, [activeProfile?.curve, activeProfile?.name, activeProfileId, getSafeProfileName, loadCurveProfiles, localCurve, profileNameInput, syncConfigFromBackend, t]);
 
   const createNewProfile = useCallback(async () => {
-    const rawName = (profileNameInput || '').trim();
-    const activeName = (activeProfile?.name || '').trim();
-    const shouldUseDefaultNewName = !rawName || rawName === activeName;
     const newProfileName = t('fanCurve.profiles.newCurveName');
-    const safeName = shouldUseDefaultNewName ? newProfileName : getSafeProfileName(rawName, newProfileName);
+    const safeName = getSafeProfileName(newProfileNameInput, newProfileName);
     try {
       setProfileOpLoading(true);
       await apiService.saveFanCurveProfile('', safeName, localCurve, true);
       await loadCurveProfiles();
       await syncConfigFromBackend();
-      setProfileNameInput('');
+      setNewProfileNameInput('');
+      setCreateProfileDialogOpen(false);
       toast.success(t('fanCurve.toast.profileSavedAsNew'));
     } catch (e) {
       toast.error(t('fanCurve.toast.saveAsFailed', { error: getErrorMessage(e) }));
     } finally {
       setProfileOpLoading(false);
     }
-  }, [activeProfile?.name, getSafeProfileName, loadCurveProfiles, localCurve, profileNameInput, syncConfigFromBackend, t]);
+  }, [getSafeProfileName, loadCurveProfiles, localCurve, newProfileNameInput, syncConfigFromBackend, t]);
 
-  const removeActiveProfile = useCallback(async () => {
-    if (!activeProfileId) return;
+  const removeProfile = useCallback(async () => {
+    if (!pendingDeleteProfileId) return;
+    const deletingActiveProfile = pendingDeleteProfileId === activeProfileId;
     try {
       setProfileOpLoading(true);
-      await apiService.deleteFanCurveProfile(activeProfileId);
-      await loadCurveProfiles();
+      await apiService.deleteFanCurveProfile(pendingDeleteProfileId);
+      if (deletingActiveProfile) {
+        await loadCurveProfiles();
+      } else {
+        setCurveProfiles((profiles) => profiles.filter((profile) => profile.id !== pendingDeleteProfileId));
+      }
       await syncConfigFromBackend();
+      setDeleteProfileDialogOpen(false);
+      setPendingDeleteProfileId('');
       toast.success(t('fanCurve.toast.profileDeleted'));
     } catch (e) {
       toast.error(t('fanCurve.toast.deleteFailed', { error: getErrorMessage(e) }));
     } finally {
       setProfileOpLoading(false);
     }
-  }, [activeProfileId, loadCurveProfiles, syncConfigFromBackend, t]);
+  }, [activeProfileId, loadCurveProfiles, pendingDeleteProfileId, syncConfigFromBackend, t]);
 
-  const exportProfiles = useCallback(async () => {
+  const exportProfiles = useCallback(async (destination: 'clipboard' | 'file') => {
     try {
       if (hasUnsavedChanges) {
         const ok = await persistCurrentCurve();
         if (!ok) {
           return;
         }
-        await loadCurveProfiles();
+      }
+      if (destination === 'file') {
+        const savedPath = await apiService.exportFanCurveProfilesToFile();
+        if (!savedPath) return;
+        toast.success(t('fanCurve.toast.exportFileCreated'));
+        return;
       }
       const code = await apiService.exportFanCurveProfiles();
-      setExportCode(code);
       if (navigator?.clipboard?.writeText) {
         await navigator.clipboard.writeText(code);
-        toast.success(t('fanCurve.toast.exportCopied'));
       } else {
-        toast.success(t('fanCurve.toast.exportGenerated'));
+        await ClipboardSetText(code);
       }
+      toast.success(t('fanCurve.toast.exportCopied'));
     } catch (e) {
       toast.error(t('fanCurve.toast.exportFailed', { error: getErrorMessage(e) }));
     }
-  }, [hasUnsavedChanges, loadCurveProfiles, persistCurrentCurve, t]);
+  }, [hasUnsavedChanges, persistCurrentCurve, t]);
+
+  const loadProfileImportFile = useCallback(async (file?: File) => {
+    if (!file) return;
+    try {
+      const code = (await file.text()).trim();
+      if (!code) throw new Error(t('fanCurve.importExport.emptyFile'));
+      setImportCode(code);
+      toast.success(t('fanCurve.toast.importFileLoaded', { name: file.name }));
+    } catch (error) {
+      toast.error(t('fanCurve.toast.importFileFailed', { error: getErrorMessage(error) }));
+    }
+  }, [t]);
+
+  const handleProfileFileDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsImportDragging(false);
+    void loadProfileImportFile(event.dataTransfer.files?.[0]);
+  }, [loadProfileImportFile]);
 
   const importProfiles = useCallback(async () => {
     const code = importCode.trim();
     if (!code) {
       toast.error(t('fanCurve.toast.importMissingCode'));
       return;
+    }
+    if (hasUnsavedChanges) {
+      const saved = await persistCurrentCurve();
+      if (!saved) return;
     }
     try {
       setProfileOpLoading(true);
@@ -1132,7 +1066,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     } finally {
       setProfileOpLoading(false);
     }
-  }, [importCode, loadCurveProfiles, syncConfigFromBackend, t]);
+  }, [hasUnsavedChanges, importCode, loadCurveProfiles, persistCurrentCurve, syncConfigFromBackend, t]);
 
   const resetCurve = useCallback(() => {
     setLocalCurve(normalizeFanCurve(defaultCurve, speedRange.min, speedRange.max, defaultCurve));
@@ -1377,22 +1311,20 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     }
   }, [config, draftGearRpm, manualGearValueRange.max, manualGearValueRange.min, onConfigChange, speedUnit, supportsManualGears, t]);
 
-  const CustomDot = useCallback((props: any): React.ReactElement<SVGElement> => {
-    const { cx, cy, index, payload } = props;
-    if (cx === undefined || cy === undefined) return <g />;
-    return <DraggablePoint key={`dot-${index}`} cx={cx} cy={cy} index={index} temperature={payload.temperature} speed={payload.rpm} unitSuffix={speedUnitSuffix} onDragStart={handleDragStart} isActive={dragIndex === index} />;
-  }, [dragIndex, handleDragStart, speedUnitSuffix]);
-
   return (
-    <div data-theme-section="curve-page" className="relative space-y-4 px-1 pb-2">
+    <div
+      data-theme-section="curve-page"
+      data-page-reveal={initialFocusTarget === 'history-details' ? 'cards-reverse' : initialFocusTarget ? undefined : 'cards'}
+      className="relative space-y-4 px-1 pb-2"
+    >
         <motion.div
           data-theme-card="curve-header"
-          initial={{ opacity: 0, y: 8 }}
+          initial={initialFocusTarget ? false : { opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.2 }}
           className="relative px-1 py-1"
         >
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-3">
             <div className="flex items-center gap-2">
               <Spline className="h-4 w-4 text-primary" />
               <h2 className="text-base font-semibold text-foreground">{t('fanCurve.title')}</h2>
@@ -1400,19 +1332,73 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
               {isInteracting && <Badge variant="info">{t('fanCurve.badges.editing')}</Badge>}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <FanCurveProfileSelect
-                profiles={curveProfiles}
-                activeProfileId={activeProfileId}
-                onChange={switchProfile}
-                loading={profileOpLoading}
-              />
-              <ToggleSwitch enabled={config.autoControl} onChange={handleAutoControlChange} label={t('fanCurve.actions.smartControl')} size="sm" color="blue" />
-              <div className="flex items-center gap-2">
-                <Button variant="secondary" size="sm" onClick={resetCurve} icon={<RotateCw className="h-3.5 w-3.5" />}>
+            <div data-curve-profile-row className="flex min-w-0 items-center gap-3">
+              <div data-curve-profile-toolbar className="flex min-w-0 flex-1 items-center gap-1.5 rounded-xl border border-border/70 bg-card/70 p-1.5 shadow-sm shadow-black/5">
+                <div data-curve-profile-list className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto px-0.5 py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {curveProfiles.map((profile) => {
+                    const isActive = profile.id === activeProfileId;
+                    return (
+                      <div key={profile.id} className="group relative flex shrink-0 hover:z-10 focus-within:z-10">
+                        <button
+                          type="button"
+                          onClick={() => void switchProfile(profile.id)}
+                          disabled={profileOpLoading}
+                          className={clsx(
+                            'h-9 cursor-pointer truncate whitespace-nowrap rounded-full border px-4 text-center text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60',
+                            isActive
+                              ? 'border-primary/40 bg-primary/10 text-primary'
+                              : 'border-border/70 bg-background/55 text-muted-foreground group-hover:border-border group-hover:bg-muted/65 group-hover:text-foreground',
+                          )}
+                          aria-current={isActive ? 'true' : undefined}
+                        >
+                          {profile.name}
+                        </button>
+                        {curveProfiles.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPendingDeleteProfileId(profile.id);
+                              setDeleteProfileDialogOpen(true);
+                            }}
+                            disabled={profileOpLoading}
+                            className="absolute -right-[6px] -top-[1px] z-10 flex h-[13px] w-[13px] cursor-pointer items-center justify-center rounded-full border border-border bg-card text-muted-foreground opacity-0 shadow-sm transition-[color,background-color,border-color,opacity] group-hover:opacity-100 group-focus-within:opacity-100 hover:border-destructive/50 hover:text-destructive focus-visible:border-destructive/50 focus-visible:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/30 disabled:cursor-not-allowed"
+                            aria-label={t('fanCurve.profiles.deleteProfileLabel', { name: profile.name })}
+                            title={t('fanCurve.profiles.deleteProfileLabel', { name: profile.name })}
+                          >
+                            <X className="h-2 w-2" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="shrink-0 rounded-lg"
+                  onClick={() => setCreateProfileDialogOpen(true)}
+                  disabled={profileOpLoading}
+                  icon={<Plus className="h-3.5 w-3.5" />}
+                >
+                  {t('fanCurve.profiles.add')}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 rounded-lg"
+                  onClick={() => setManageProfilesDialogOpen(true)}
+                  disabled={profileOpLoading || curveProfiles.length === 0}
+                  icon={<Settings2 className="h-3.5 w-3.5" />}
+                >
+                  {t('fanCurve.profiles.manage')}
+                </Button>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                <ToggleSwitch enabled={config.autoControl} onChange={handleAutoControlChange} label={t('fanCurve.actions.smartControl')} size="sm" color="blue" />
+                <Button variant="secondary" size="sm" className="rounded-lg" onClick={resetCurve} icon={<RotateCw className="h-3.5 w-3.5" />}>
                   {t('fanCurve.actions.reset')}
                 </Button>
-                <Button variant="primary" size="sm" onClick={saveCurve} disabled={!hasUnsavedChanges} loading={isSaving} icon={<Check className="h-3.5 w-3.5" />}>
+                <Button variant="primary" size="sm" className="rounded-lg" onClick={saveCurve} disabled={!hasUnsavedChanges} loading={isSaving} icon={<Check className="h-3.5 w-3.5" />}>
                   {t('common.actions.save')}
                 </Button>
               </div>
@@ -1423,7 +1409,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
         <AnimatePresence>
           {!config.autoControl && isConnected && supportsManualGears && (
             <motion.div
-              initial={{ opacity: 0, height: 0 }}
+              initial={initialFocusTarget ? false : { opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden"
@@ -1562,33 +1548,26 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
         </Dialog>}
 
         <div ref={curveEditorRef} data-theme-card="curve-editor">
-          <div
-            ref={chartRef}
-            className={clsx('relative rounded-3xl border bg-card p-4 shadow-sm', dragIndex !== null ? 'ring-2 ring-primary/40 border-primary/30' : 'border-border/70')}
-          >
-            <div className="h-80 md:h-96 relative">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-                  <XAxis dataKey="temperature" type="number" domain={[temperatureRange.min, temperatureRange.max]} ticks={temperatureRange.ticks} interval={0} minTickGap={0} tickLine={false} axisLine={{ stroke: 'var(--chart-axis)' }} tick={{ fill: 'var(--chart-tick)', fontSize: 10 }} label={{ value: t('fanCurve.chart.axes.temperature'), position: 'insideBottom', offset: -10, fill: 'var(--chart-tick)', fontSize: 12 }} />
-                  <YAxis type="number" domain={[speedRange.min, speedRange.max]} ticks={speedRange.ticks} tickLine={false} axisLine={{ stroke: 'var(--chart-axis)' }} tick={{ fill: 'var(--chart-tick)', fontSize: 11 }} label={{ value: `速度（${speedUnitSuffix}）`, angle: -90, position: 'insideLeft', fill: 'var(--chart-tick)', fontSize: 12 }} />
-                  <RechartsTooltip
-                    formatter={(value, name) => {
-                      const numericValue = Number(value ?? 0);
-                      return name === 'coupledRpm' ? [`${formatSpeedValue(numericValue)}${speedUnitSuffix}`, '学习曲线'] : [`${formatSpeedValue(numericValue)}${speedUnitSuffix}`, '基础曲线'];
-                    }}
-                    labelFormatter={(v) => t('fanCurve.chart.temperatureLabel', { temperature: v })}
-                    contentStyle={{ backgroundColor: 'var(--chart-tooltip-bg)', border: '1px solid', borderColor: 'var(--chart-tooltip-border)', borderRadius: '8px', boxShadow: 'var(--chart-tooltip-shadow)', padding: '8px 12px', color: 'var(--chart-tooltip-text)' }}
-                    labelStyle={{ color: 'var(--chart-tooltip-text)', fontWeight: 600 }}
-                    itemStyle={{ color: 'var(--chart-tooltip-text)' }}
-                  />
-                  <Line type="monotone" dataKey="rpm" stroke="var(--chart-primary)" strokeWidth={3} dot={CustomDot} activeDot={false} isAnimationActive={false} />
-                  {showCoupledCurve && <Line type="monotone" dataKey="coupledRpm" stroke="var(--chart-primary)" strokeWidth={2} strokeDasharray="6 4" dot={false} activeDot={false} isAnimationActive={false} />}
-                </LineChart>
-              </ResponsiveContainer>
-              <TemperatureIndicator temperature={referenceTemp} chartRef={chartRef} temperatureRange={temperatureRange} />
-            </div>
-          </div>
+          <FanCurveEditor
+            points={localCurve}
+            onChange={handleCurveChange}
+            minTemperature={temperatureRange.min}
+            maxTemperature={temperatureRange.max}
+            temperatureTicks={temperatureRange.ticks}
+            minSpeed={speedRange.min}
+            maxSpeed={speedRange.max}
+            speedTicks={speedRange.ticks}
+            speedUnit={speedUnitSuffix}
+            temperatureAxisLabel={t('fanCurve.chart.axes.temperature')}
+            speedAxisLabel={`速度（${speedUnitSuffix}）`}
+            temperatureLabel={(value) => t('fanCurve.chart.temperatureLabel', { temperature: value })}
+            baseCurveLabel={t('fanCurve.chart.series.base')}
+            secondaryPoints={showCoupledCurve ? learnedCurvePoints : undefined}
+            secondaryCurveLabel={t('fanCurve.chart.series.learned')}
+            currentTemperature={referenceTemp}
+            currentTemperatureLabel={referenceTemp === null ? undefined : t('fanCurve.chart.currentTemperature', { temperature: referenceTemp })}
+            onInteractionChange={setIsInteracting}
+          />
         </div>
 
         <section data-theme-card="curve-prediction" className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm">
@@ -1812,125 +1791,174 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                 {historyChartData.length < 2 ? (
                   <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">{t('fanCurve.history.waitingMoreSamples')}</div>
                 ) : (
-                  <div className="h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={historyChartData} margin={{ top: 12, right: 16, left: 4, bottom: 8 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-                        <XAxis
-                          dataKey="timestamp"
-                          type="number"
-                          domain={['dataMin', 'dataMax']}
-                          tickFormatter={(value) => formatHistoryTime(Number(value), locale)}
-                          tickLine={false}
-                          minTickGap={24}
-                          axisLine={{ stroke: 'var(--chart-axis)' }}
-                          tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
-                        />
-                        <YAxis
-                          yAxisId="temp"
-                          type="number"
-                          domain={historyTempDomain}
-                          tickLine={false}
-                          axisLine={{ stroke: 'var(--chart-axis)' }}
-                          tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
-                          width={40}
-                        />
-                        <YAxis
-                          yAxisId="fan"
-                          orientation="right"
-                          type="number"
-                          domain={[0, historyFanMax]}
-                          tickLine={false}
-                          axisLine={{ stroke: 'var(--chart-axis)' }}
-                          tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
-                          width={52}
-                        />
-                        <YAxis yAxisId="power" type="number" domain={[0, historyPowerMax]} hide />
-                        <RechartsTooltip
-                          content={({ active, label, payload }) => {
-                            if (!active || !Array.isArray(payload) || payload.length === 0) {
-                              return null;
-                            }
-
-                            const rows = payload
-                              .map((item) => {
-                                const dataKey = String(item.name ?? item.dataKey ?? '');
-                                const series = historySeriesByDataKey.get(dataKey);
-                                const numericValue = Number(item.value ?? 0);
-                                if (!series || !Number.isFinite(numericValue) || numericValue <= 0) {
-                                  return null;
-                                }
-
-                                const value = series.key === 'fan'
-                                  ? `${formatSpeedValue(numericValue)}${speedUnitSuffix}`
-                                  : series.key === 'cpuPower' || series.key === 'gpuPower'
-                                    ? `${formatPowerValue(numericValue)} W`
-                                    : `${numericValue} °C`;
-
-                                return {
-                                  key: series.key,
-                                  label: series.label,
-                                  value,
-                                  color: series.color,
-                                  order: historySeriesOrderByDataKey.get(series.dataKey) ?? Number.MAX_SAFE_INTEGER,
-                                };
-                              })
-                              .filter((row): row is { key: HistorySeriesKey; label: string; value: string; color: string; order: number } => row !== null)
-                              .sort((left, right) => left.order - right.order);
-
-                            if (rows.length === 0) {
-                              return null;
-                            }
-
+                  <>
+                    <div data-history-chart="thermal-fan" className="h-72">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={historyChartData} margin={{ top: 12, right: 16, left: 4, bottom: 8 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                          <XAxis
+                            dataKey="timestamp"
+                            type="number"
+                            domain={historyTimeDomain}
+                            allowDataOverflow
+                            tickFormatter={(value) => formatHistoryTime(Number(value), locale)}
+                            tickLine={false}
+                            minTickGap={24}
+                            axisLine={{ stroke: 'var(--chart-axis)' }}
+                            tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
+                          />
+                          <YAxis
+                            yAxisId="fan"
+                            type="number"
+                            domain={[speedRange.min, speedRange.max]}
+                            ticks={speedRange.ticks}
+                            allowDataOverflow
+                            tickFormatter={(value) => `${formatSpeedValue(Number(value))}${speedUnitSuffix}`}
+                            tickLine={false}
+                            axisLine={{ stroke: 'var(--chart-axis)' }}
+                            tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
+                            width={64}
+                          />
+                          <YAxis
+                            yAxisId="temp"
+                            orientation="right"
+                            type="number"
+                            domain={[temperatureRange.min, temperatureRange.max]}
+                            ticks={temperatureRange.ticks.filter((value) => value === temperatureRange.max || (value - temperatureRange.min) % (FAN_CURVE_TEMP_STEP * 4) === 0)}
+                            allowDataOverflow
+                            tickFormatter={(value) => `${Number(value)}°C`}
+                            tickLine={false}
+                            axisLine={{ stroke: 'var(--chart-axis)' }}
+                            tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
+                            width={44}
+                          />
+                          <RechartsTooltip content={renderHistoryTooltip} />
+                          {timelineEventLayout.map(({ event, row, anchorEnd }, index) => {
+                            const markerColor = event.type === 'disconnect'
+                              ? '#ef4444'
+                              : event.type === 'reconnect'
+                                ? '#10b981'
+                                : event.type === 'resume'
+                                  ? '#8b5cf6'
+                                  : '#0ea5e9';
                             return (
-                              <div
-                                className="rounded-lg border px-3 py-2 text-sm shadow-lg"
-                                style={{
-                                  backgroundColor: 'var(--chart-tooltip-bg)',
-                                  borderColor: 'var(--chart-tooltip-border)',
-                                  boxShadow: 'var(--chart-tooltip-shadow)',
-                                  color: 'var(--chart-tooltip-text)',
+                              <ReferenceLine
+                                key={`${event.timestamp}-${event.type}-${index}`}
+                                x={event.timestamp}
+                                yAxisId="fan"
+                                stroke={markerColor}
+                                strokeDasharray="4 3"
+                                label={(labelProps: { viewBox?: { x?: number; y?: number } }) => {
+                                  const x = labelProps.viewBox?.x ?? 0;
+                                  const y = labelProps.viewBox?.y ?? 0;
+                                  return (
+                                    <text
+                                      x={x}
+                                      y={y + 10 + row * 12}
+                                      dx={anchorEnd ? -5 : 5}
+                                      textAnchor={anchorEnd ? 'end' : 'start'}
+                                      fontSize={10}
+                                      fontWeight={500}
+                                      fill={markerColor}
+                                    >
+                                      {t(`fanCurve.history.events.${event.type}`)}
+                                    </text>
+                                  );
                                 }}
-                              >
-                                <div className="mb-2 font-semibold">{formatHistoryDateTime(Number(label), locale)}</div>
-                                <div className="space-y-1.5">
-                                  {rows.map((row) => (
-                                    <div key={row.key} className="flex items-center gap-2">
-                                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: row.color }} />
-                                      <span>{row.label}：{row.value}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
+                              />
                             );
-                          }}
-                        />
-                        {historySeriesMeta.map((series) => {
-                          if (!historySeriesVisibility[series.key]) {
-                            return null;
-                          }
-                          if ((series.key === 'cpuPower' || series.key === 'gpuPower') && !historyHasPower) {
-                            return null;
-                          }
-                          return (
-                            <Line
-                              key={series.key}
-                              yAxisId={series.axisId}
-                              type="monotone"
-                              dataKey={series.dataKey}
-                              name={series.dataKey}
-                              stroke={series.color}
-                              strokeWidth={series.key === 'fan' ? 2 : 2.3}
-                              dot={false}
-                              activeDot={false}
-                              isAnimationActive={false}
-                              connectNulls={false}
-                            />
-                          );
-                        })}
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
+                          })}
+                          {historySeriesMeta.map((series) => {
+                            if (series.axisId === 'power' || !historySeriesVisibility[series.key]) {
+                              return null;
+                            }
+                            return (
+                              <Line
+                                key={series.key}
+                                yAxisId={series.axisId}
+                                type="monotone"
+                                dataKey={series.dataKey}
+                                name={series.dataKey}
+                                stroke={series.color}
+                                strokeWidth={series.key === 'fan' ? 2 : 2.3}
+                                dot={false}
+                                activeDot={false}
+                                isAnimationActive={false}
+                                connectNulls={false}
+                              />
+                            );
+                          })}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    {showHistoryPowerChart && (
+                      <div data-history-chart="power" className="border-t border-border/60 pt-3">
+                        <div className="mb-2 text-xs font-medium text-muted-foreground">{t('fanCurve.history.powerTrend')}</div>
+                        <div className="h-48">
+                          {historyPowerChartReady ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <LineChart data={historyChartData} margin={{ top: 12, right: 16, left: 4, bottom: 8 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                                <XAxis
+                                  dataKey="timestamp"
+                                  type="number"
+                                  domain={historyTimeDomain}
+                                  allowDataOverflow
+                                  tickFormatter={(value) => formatHistoryTime(Number(value), locale)}
+                                  tickLine={false}
+                                  minTickGap={24}
+                                  axisLine={{ stroke: 'var(--chart-axis)' }}
+                                  tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
+                                />
+                                <YAxis
+                                  yAxisId="power"
+                                  type="number"
+                                  domain={[0, historyPowerMax]}
+                                  tickFormatter={(value) => Number(value) === 0 ? '0 W' : `${formatPowerValue(Number(value))} W`}
+                                  tickLine={false}
+                                  axisLine={{ stroke: 'var(--chart-axis)' }}
+                                  tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
+                                  width={64}
+                                />
+                                <YAxis
+                                  yAxisId="powerSpacer"
+                                  orientation="right"
+                                  type="number"
+                                  domain={[0, historyPowerMax]}
+                                  tick={false}
+                                  tickLine={false}
+                                  axisLine={false}
+                                  width={44}
+                                />
+                                <RechartsTooltip content={renderHistoryTooltip} />
+                                {historySeriesMeta.map((series) => {
+                                  if (series.axisId !== 'power' || !historySeriesVisibility[series.key]) {
+                                    return null;
+                                  }
+                                  return (
+                                    <Line
+                                      key={series.key}
+                                      yAxisId="power"
+                                      type="monotone"
+                                      dataKey={series.dataKey}
+                                      name={series.dataKey}
+                                      stroke={series.color}
+                                      strokeWidth={2.3}
+                                      dot={false}
+                                      activeDot={false}
+                                      isAnimationActive={false}
+                                      connectNulls={false}
+                                    />
+                                  );
+                                })}
+                              </LineChart>
+                            </ResponsiveContainer>
+                          ) : null}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
               <Dialog open={historyDisplayDialogOpen} onOpenChange={setHistoryDisplayDialogOpen}>
@@ -2015,100 +2043,211 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
           )}
         </section>
 
-        <section data-theme-card="curve-profiles" className="rounded-2xl border border-border/70 bg-card p-4 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">{t('fanCurve.profiles.title')}</span>
-            </div>
-          </div>
+        <Dialog open={createProfileDialogOpen} onOpenChange={setCreateProfileDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t('fanCurve.profiles.createTitle')}</DialogTitle>
+              <DialogDescription>{t('fanCurve.profiles.createDescription')}</DialogDescription>
+            </DialogHeader>
+            <Input
+              value={newProfileNameInput}
+              onChange={(event) => setNewProfileNameInput(trimProfileNameToLimit(event.target.value))}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !profileOpLoading) void createNewProfile();
+              }}
+              placeholder={t('fanCurve.profiles.newNamePlaceholder')}
+              className="h-10"
+              autoFocus
+            />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setCreateProfileDialogOpen(false)} disabled={profileOpLoading}>
+                {t('common.actions.cancel')}
+              </Button>
+              <Button type="button" onClick={() => void createNewProfile()} loading={profileOpLoading} icon={<Plus className="h-3.5 w-3.5" />}>
+                {t('fanCurve.profiles.createAction')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-          <div className="flex flex-wrap gap-2">
-            {curveProfiles.map((profile) => {
-              const isActive = profile.id === activeProfileId;
-              return (
-                <Button
-                  key={profile.id}
-                  variant={isActive ? 'primary' : 'outline'}
-                  size="sm"
-                  onClick={() => switchProfile(profile.id)}
-                  disabled={profileOpLoading}
-                >
-                  {profile.name}
-                </Button>
-              );
-            })}
-          </div>
+        <Dialog open={manageProfilesDialogOpen} onOpenChange={setManageProfilesDialogOpen}>
+          <DialogContent className="max-w-[620px]">
+            <DialogHeader>
+              <DialogTitle>{t('fanCurve.profiles.manageTitle')}</DialogTitle>
+              <DialogDescription>{t('fanCurve.profiles.manageDescription')}</DialogDescription>
+            </DialogHeader>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="min-w-[220px] flex-1">
-              <Input
-                value={profileNameInput}
-                onChange={(e) => handleProfileNameInputChange(e.target.value, Boolean((e.nativeEvent as InputEvent).isComposing))}
-                onCompositionStart={handleProfileNameCompositionStart}
-                onCompositionEnd={(e) => handleProfileNameCompositionEnd(e.currentTarget.value)}
-                placeholder={t('fanCurve.profiles.namePlaceholder')}
-                className="h-10"
-              />
-            </div>
-            <Button variant="secondary" size="sm" onClick={saveCurrentProfileName} loading={profileOpLoading} icon={<Check className="h-3.5 w-3.5" />}>{t('fanCurve.profiles.saveName')}</Button>
-            <Button variant="secondary" size="sm" onClick={createNewProfile} loading={profileOpLoading} icon={<Plus className="h-3.5 w-3.5" />}>{t('fanCurve.profiles.saveAsNew')}</Button>
-            <Button variant="danger" size="sm" onClick={removeActiveProfile} loading={profileOpLoading} icon={<Trash2 className="h-3.5 w-3.5" />} disabled={curveProfiles.length <= 1}>{t('fanCurve.profiles.deleteCurrent')}</Button>
-          </div>
-        </section>
-
-        <section data-theme-card="curve-import-export" className="rounded-2xl border border-border/70 bg-card p-4 space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-sm font-medium">{t('fanCurve.importExport.title')}</span>
-            <span className="text-xs text-muted-foreground">{t('fanCurve.importExport.description')}</span>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div className="space-y-2 rounded-xl border border-border/70 bg-background/30 p-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">{t('fanCurve.importExport.exportTitle')}</span>
-                <div className="flex items-center gap-2">
-                  <Button variant="secondary" size="sm" onClick={exportProfiles} icon={<Download className="h-3.5 w-3.5" />}>{t('fanCurve.importExport.generate')}</Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={async () => {
-                      if (!exportCode) return;
-                      if (navigator?.clipboard?.writeText) {
-                        await navigator.clipboard.writeText(exportCode);
-                        toast.success(t('fanCurve.toast.exportCopiedAgain'));
-                      }
-                    }}
-                    icon={<Clipboard className="h-3.5 w-3.5" />}
-                    disabled={!exportCode}
-                  >
-                    {t('common.actions.copy')}
+            <div className="space-y-4">
+              <section className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground" htmlFor="curve-profile-name">
+                  {t('fanCurve.profiles.renameLabel')}
+                </label>
+                <div data-profile-rename-row className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                  <Input
+                    id="curve-profile-name"
+                    value={profileNameInput}
+                    onChange={(e) => handleProfileNameInputChange(e.target.value, Boolean((e.nativeEvent as InputEvent).isComposing))}
+                    onCompositionStart={handleProfileNameCompositionStart}
+                    onCompositionEnd={(e) => handleProfileNameCompositionEnd(e.currentTarget.value)}
+                    placeholder={t('fanCurve.profiles.namePlaceholder')}
+                    className="h-10 w-full"
+                  />
+                  <Button className="h-10 w-full sm:w-auto" variant="secondary" size="sm" onClick={() => void saveCurrentProfileName()} loading={profileOpLoading} icon={<Pencil className="h-3.5 w-3.5" />}>
+                    {t('fanCurve.profiles.saveName')}
                   </Button>
                 </div>
-              </div>
-              <textarea
-                value={exportCode}
-                readOnly
-                rows={3}
-                className="w-full rounded-lg border border-border/70 bg-background px-3 py-2 text-xs leading-relaxed"
-                placeholder={t('fanCurve.importExport.exportPlaceholder')}
-              />
-            </div>
+              </section>
 
-            <div className="space-y-2 rounded-xl border border-border/70 bg-background/30 p-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">{t('fanCurve.importExport.importTitle')}</span>
-                <Button variant="secondary" size="sm" onClick={importProfiles} loading={profileOpLoading} icon={<Upload className="h-3.5 w-3.5" />}>{t('common.actions.import')}</Button>
-              </div>
-              <textarea
-                value={importCode}
-                onChange={(e) => setImportCode(e.target.value)}
-                rows={3}
-                className="w-full rounded-lg border border-border/70 bg-background px-3 py-2 text-xs leading-relaxed"
-                placeholder={t('fanCurve.importExport.importPlaceholder')}
-              />
+              <section data-profile-transfer className="space-y-3 border-t border-border/70 pt-4">
+                <div data-profile-transfer-header className="space-y-1">
+                  <div className="text-sm font-medium">{t('fanCurve.importExport.title')}</div>
+                  <div className="text-xs leading-relaxed text-muted-foreground">{t('fanCurve.importExport.description')}</div>
+                </div>
+                <div className="space-y-3">
+                  <div data-profile-export-section className="space-y-3 rounded-xl border border-border/70 bg-background/30 p-4">
+                    <div>
+                      <span className="text-xs font-medium text-muted-foreground">{t('fanCurve.importExport.exportTitle')}</span>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t('fanCurve.importExport.exportHint')}</p>
+                    </div>
+                    <div data-profile-export-actions className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <Button className="w-full" variant="secondary" size="sm" onClick={() => void exportProfiles('clipboard')} icon={<Clipboard className="h-3.5 w-3.5" />}>
+                        {t('fanCurve.importExport.copyCode')}
+                      </Button>
+                      <Button className="w-full" variant="outline" size="sm" onClick={() => void exportProfiles('file')} icon={<Upload className="h-3.5 w-3.5" />}>
+                        {t('fanCurve.importExport.exportFile')}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div
+                    data-profile-import-section
+                    onDragEnter={(event) => { event.preventDefault(); setIsImportDragging(true); }}
+                    onDragOver={(event) => { event.preventDefault(); setIsImportDragging(true); }}
+                    onDragLeave={() => setIsImportDragging(false)}
+                    onDrop={handleProfileFileDrop}
+                    className={clsx(
+                      'space-y-3 rounded-xl border border-border/70 bg-background/30 p-4 transition-colors',
+                      isImportDragging && 'border-primary bg-primary/5',
+                    )}
+                  >
+                    <input
+                      ref={profileFileInputRef}
+                      type="file"
+                      accept=".fcurve,.fancontrolcurve,.b2curve,.txt,text/plain"
+                      className="hidden"
+                      onChange={(event) => {
+                        void loadProfileImportFile(event.target.files?.[0]);
+                        event.target.value = '';
+                      }}
+                    />
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-muted-foreground">{t('fanCurve.importExport.importTitle')}</span>
+                      <Button className="shrink-0" variant="outline" size="sm" onClick={() => profileFileInputRef.current?.click()} icon={<Download className="h-3.5 w-3.5" />}>
+                        {t('fanCurve.importExport.chooseFile')}
+                      </Button>
+                    </div>
+                    <textarea
+                      value={importCode}
+                      onChange={(e) => setImportCode(e.target.value)}
+                      rows={2}
+                      className="min-h-20 w-full resize-none rounded-lg border border-border/70 bg-background px-3 py-2 text-xs leading-relaxed"
+                      placeholder={t('fanCurve.importExport.importPlaceholder')}
+                    />
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="text-[11px] text-muted-foreground">{t('fanCurve.importExport.dropHint')}</span>
+                      <Button
+                        className="w-full sm:w-auto"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          if (!importCode.trim()) {
+                            toast.error(t('fanCurve.toast.importMissingCode'));
+                            return;
+                          }
+                          void importProfiles();
+                        }}
+                        loading={profileOpLoading}
+                        icon={<Download className="h-3.5 w-3.5" />}
+                      >
+                        {t('fanCurve.importExport.importAction')}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </section>
             </div>
-          </div>
-        </section>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={profileSwitchDialogOpen}
+          onOpenChange={(open) => {
+            setProfileSwitchDialogOpen(open);
+            if (!open) {
+              setPendingProfileId('');
+              cancelPendingTabChange();
+            }
+          }}
+        >
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t('fanCurve.profiles.unsavedSwitchTitle')}</DialogTitle>
+              <DialogDescription>{t('fanCurve.profiles.unsavedSwitchDescription')}</DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="sm:justify-between">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setProfileSwitchDialogOpen(false);
+                  setPendingProfileId('');
+                  cancelPendingTabChange();
+                }}
+                disabled={isSaving || profileOpLoading}
+              >
+                {t('common.actions.cancel')}
+              </Button>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button type="button" variant="secondary" onClick={() => void confirmProfileSwitch('discard')} disabled={isSaving || profileOpLoading}>
+                  {t('fanCurve.profiles.discardAndSwitch')}
+                </Button>
+                <Button type="button" onClick={() => void confirmProfileSwitch('save')} loading={isSaving || profileOpLoading} icon={<Check className="h-3.5 w-3.5" />}>
+                  {t('fanCurve.profiles.saveAndSwitch')}
+                </Button>
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={deleteProfileDialogOpen}
+          onOpenChange={(open) => {
+            setDeleteProfileDialogOpen(open);
+            if (!open) setPendingDeleteProfileId('');
+          }}
+        >
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t('fanCurve.profiles.deleteConfirmTitle')}</DialogTitle>
+              <DialogDescription>
+                {t(
+                  hasUnsavedChanges && pendingDeleteProfileId === activeProfileId
+                    ? 'fanCurve.profiles.deleteUnsavedDescription'
+                    : 'fanCurve.profiles.deleteDescription',
+                  { name: pendingDeleteProfile?.name || '' },
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setDeleteProfileDialogOpen(false)} disabled={profileOpLoading}>
+                {t('common.actions.cancel')}
+              </Button>
+              <Button type="button" variant="danger" onClick={() => void removeProfile()} loading={profileOpLoading} icon={<Trash2 className="h-3.5 w-3.5" />}>
+                {t('common.actions.delete')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
       </div>
   );

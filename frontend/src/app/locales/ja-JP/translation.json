@@ -67,6 +67,12 @@
       "exportFailed": "診断ログの出力に失敗しました: {{error}}"
     }
   },
+  "pluginHost": {
+    "loading": "\u30d7\u30e9\u30b0\u30a4\u30f3\u30da\u30fc\u30b8\u3092\u8aad\u307f\u8fbc\u3093\u3067\u3044\u307e\u3059...",
+    "loadFailed": "\u30d7\u30e9\u30b0\u30a4\u30f3\u30da\u30fc\u30b8\u306e\u8aad\u307f\u8fbc\u307f\u306b\u5931\u6557\u3057\u307e\u3057\u305f",
+    "retry": "\u518d\u8a66\u884c",
+    "unavailable": "\u30d7\u30e9\u30b0\u30a4\u30f3\u304c\u7121\u52b9\u307e\u305f\u306f\u4e00\u6642\u7684\u306b\u5229\u7528\u3067\u304d\u306a\u3044\u305f\u3081\u3001\u30b9\u30c6\u30fc\u30bf\u30b9\u306b\u623b\u308a\u307e\u3057\u305f\u3002"
+  },
   "advancedDevices": {
     "title": "対応デバイス",
     "subtitle": "WiFi/仮想シリアル互換デバイスとユーザー BLE/HID ネイティブプロファイルを管理します。BLE/HID はネイティブ接続時に自動で順番に試され、ここで手動有効化しません。",
@@ -126,6 +132,7 @@
     "capabilities": {
       "read": "状態取得",
       "setSpeed": "速度設定",
+      "manualGears": "手動段階",
       "debugFrames": "デバッグフレーム",
       "raw": "Raw コマンド",
       "gearLight": "ギアランプ",
@@ -415,6 +422,22 @@
       "connected": "接続済み",
       "offline": "未接続"
     },
+    "runtimeState": {
+      "disconnected": "切断済み",
+      "discovering": "検出中",
+      "connecting": "接続中",
+      "capabilities": "機能確認中",
+      "ready": "制御可能",
+      "unavailable": "制御不可"
+    },
+    "capabilities": {
+      "title": "現在のデバイス機能"
+    },
+    "telemetryState": {
+      "fresh": "センサー: リアルタイム",
+      "delayed": "センサー: 遅延",
+      "unavailable": "センサー: 利用不可"
+    },
     "mode": {
       "smartControl": "スマート制御",
       "fixedSpeed": "固定回転数",
@@ -465,6 +488,11 @@
       "titleWithDevice": "{{name}} は未接続です",
       "descriptionWithDevice": "現在有効なデバイスは {{name}} です。接続方式とアドレスを確認してから接続してください。"
     },
+    "recovery": {
+      "deviceAvailable": "デバイスの電源が入り、Windows で認識されていることを確認します。",
+      "releaseCompetingTools": "デバイスを使用している可能性のある他のハードウェア・ファン制御ツールを終了します。",
+      "retryOrExport": "接続を再試行し、失敗する場合は診断情報を出力します。"
+    },
     "bridgeWarning": {
       "default": "温度ブリッジの読み取りに失敗しました。温度モニタリングを初期化してから再試行してください。",
       "stateLine": "ブリッジ状態: {{state}}",
@@ -472,7 +500,12 @@
       "sharedProcess": "現在のインスタンスは共有プロセスを再利用しています",
       "pipeLine": "名前付きパイプ: {{pipe}}",
       "diagnosticsLine": "診断情報: {{message}}",
-      "reinitialize": "温度モニタリングを初期化"
+      "reinitialize": "温度モニタリングを初期化",
+      "recovery": {
+        "checkServices": "FanControl Core と温度ブリッジが動作していることを確認します。",
+        "releaseCompetingTools": "他のセンサー・ハードウェア監視ツールを終了します。",
+        "retryOrExport": "温度監視を初期化し、復旧しない場合は診断情報を出力します。"
+      }
     },
     "controlProtection": "制御と保護",
     "stats": {
@@ -526,7 +559,36 @@
       "updatable": "アップデートがあります",
       "checkFailed": "アップデートの確認に失敗しました。しばらくしてから再試行してください。",
       "newVersionFound": "新しいバージョン {{version}} が見つかりました",
-      "emptyReleaseNotes": "リリースノートがないか、今回の取得に失敗しました。"
+      "emptyReleaseNotes": "リリースノートがないか、今回の取得に失敗しました。",
+      "downloadAndInstall": "ダウンロードしてインストール",
+      "upToDate": "最新バージョンです",
+      "downloading": "ダウンロード中 {{percent}}%",
+      "installing": "インストール中…",
+      "restarting": "まもなく再起動",
+      "noInstallerHint": "このリリースには自動インストール用パッケージがありません。リリースページから手動でダウンロードしてください。",
+      "updateFailed": "更新に失敗しました",
+      "retryUpdate": "再試行",
+      "progressDownloading": "更新をダウンロード中",
+      "progressPaused": "ダウンロードを一時停止しました",
+      "progressCanceled": "ダウンロードを中止しました",
+      "progressRetrying": "ダウンロードを再開中",
+      "progressInstalling": "更新をインストール中",
+      "progressRestarting": "インストール後に再起動します",
+      "progressFailed": "更新に失敗しました",
+      "downloadingHint": "ダウンロード完了後、自動的にインストールを開始します",
+      "pausedHint": "現在の進捗を保持したまま再開できます",
+      "canceledHint": "一時ダウンロードファイルを削除しました",
+      "retryingHint": "接続が中断されました。{{attempt}} / {{max}} 回目を試行中",
+      "installingHint": "インストール完了後、自動的に再起動します",
+      "doneHint": "インストーラーを起動しました。まもなくアプリを終了します",
+      "minimizeProgress": "ダウンロード進捗を折りたたむ",
+      "pauseDownload": "ダウンロードを一時停止",
+      "resumeDownload": "ダウンロードを再開",
+      "cancelDownload": "中止してダウンロードを削除",
+      "updateComplete": "FanControl の更新が完了しました",
+      "updaterWindowTitle": "FanControl を更新中",
+      "updaterWindowBody": "新しいバージョンをインストールしています。このウィンドウを閉じないでください",
+      "updaterWindowRestarting": "更新完了。FanControl を再起動します"
     },
     "contact": {
       "title": "プロジェクトリンク",
@@ -651,6 +713,13 @@
       "emptyEnabled": "バックグラウンド記録は有効です。さらなる温度とファンのサンプルを待っています。",
       "emptyDisabled": "バックグラウンド記録は無効です。このタブで有効にできます。",
       "recentTrend": "最近の推移",
+      "powerTrend": "電力トレンド",
+      "events": {
+        "disconnect": "デバイス切断",
+        "reconnect": "デバイス接続",
+        "resume": "システム復帰",
+        "profile": "カーブプロファイル切替"
+      },
       "waitingMoreSamples": "サンプルを 1 件記録しました。推移グラフを表示するにはさらなるデータが必要です。",
       "series": {
         "cpu": "CPU 温度",
@@ -689,19 +758,39 @@
       "title": "カーブプロファイル",
       "currentCurveName": "現在のカーブ",
       "newCurveName": "新しいカーブ",
+      "add": "新規",
+      "manage": "管理",
+      "createTitle": "カーブプロファイルを作成",
+      "createDescription": "現在のカーブを基に新しいプロファイルを作成します。元のプロファイルは変更されません。",
+      "createAction": "作成して切り替え",
+      "newNamePlaceholder": "新しい名前（最大 6 文字）",
+      "manageTitle": "カーブプロファイルを管理",
+      "manageDescription": "現在のプロファイル名の変更、インポート、エクスポート、削除を行います。",
+      "renameLabel": "現在のプロファイル名",
       "namePlaceholder": "現在のプロファイル名（最大 6 文字）",
       "saveName": "名前を変更",
-      "saveAsNew": "新規プロファイルとして保存",
-      "deleteCurrent": "現在のプロファイルを削除"
+      "deleteProfileLabel": "プロファイル {{name}} を削除",
+      "unsavedSwitchTitle": "カーブが保存されていません",
+      "unsavedSwitchDescription": "切り替える前に現在の変更を保存するか破棄してください。",
+      "saveAndSwitch": "保存して切り替え",
+      "discardAndSwitch": "破棄して切り替え",
+      "deleteConfirmTitle": "プロファイルを削除しますか？",
+      "deleteDescription": "「{{name}}」を削除しますか？隣のプロファイルに切り替わります。",
+      "deleteUnsavedDescription": "「{{name}}」には未保存の変更があります。削除すると変更も破棄されます。"
     },
     "importExport": {
       "title": "カーブプロファイルのインポート / エクスポート",
-      "description": "文字列をコピーまたは貼り付けて使用します",
+      "description": "プロファイルコードまたは .fcurve ファイルを使用します",
       "exportTitle": "エクスポート",
-      "generate": "作成",
-      "exportPlaceholder": "「作成」ボタンを押すと文字列が表示されます",
+      "exportHint": "コードをコピーして共有するか、ファイルとして保存できます。未保存のカーブは先に保存されます。",
+      "copyCode": "コードをコピー",
+      "exportFile": "ファイルに保存",
       "importTitle": "適用",
-      "importPlaceholder": "B2C1. で始まる文字列を貼り付けてください"
+      "importPlaceholder": "B2C1. で始まるコードを貼り付けてください",
+      "chooseFile": "ファイルを選択",
+      "dropHint": ".fcurve またはテキストファイルをここにドロップできます",
+      "importAction": "新規としてインポート",
+      "emptyFile": "ファイルが空です"
     },
     "warning": {
       "title": "注意",
@@ -719,11 +808,12 @@
       "profileDeleted": "カーブプロファイルを削除しました",
       "deleteFailed": "削除に失敗しました: {{error}}",
       "exportCopied": "エクスポート文字列をコピーしました",
-      "exportGenerated": "エクスポート文字列を作成しました",
-      "exportCopiedAgain": "エクスポート文字列をコピーしました",
+      "exportFileCreated": "カーブプロファイルファイルを保存しました",
       "exportFailed": "エクスポートに失敗しました: {{error}}",
       "importMissingCode": "先にエキスポート文字列を貼り付けてください",
-      "importSucceeded": "カーブプロファイルをインポートしました",
+      "importFileLoaded": "{{name}} を読み込みました",
+      "importFileFailed": "インポートファイルの読み込みに失敗しました: {{error}}",
+      "importSucceeded": "新しいカーブプロファイルとしてインポートしました",
       "importFailed": "インポートに失敗しました: {{error}}",
       "saveLearningFailed": "学習設定の保存に失敗しました",
       "learningReset": "学習オフセットをリセットしました",
@@ -736,6 +826,9 @@
       "title": "ライブステータス",
       "currentTemperature": "現在温度",
       "currentRpm": "現在の速度",
+      "temperatureMetric": "温度",
+      "powerMetric": "電力",
+      "controlModeMetric": "制御モード",
       "currentGear": "現在ギア",
       "targetRpm": "目標速度",
       "cpuGpuTemperatureFormatted": "CPU {{cpu}} · GPU {{gpu}}",
@@ -814,6 +907,7 @@
       "customSpeedDescription": "特殊な場面向けに、現在のデバイス速度を固定します",
       "customSpeedWarning": "カスタム速度はスマート温度制御を無効にします",
       "customSpeedRangeHint": "手動速度の範囲は {{min}} から {{max}} です。冷却状態を見ながら慎重に設定してください。",
+      "customSpeedInvalid": "{{min}} から {{max}} の範囲で速度を入力してください。",
       "toasts": {
         "profileSwitched": "温度カーブを切り替えました",
         "profileSwitchFailed": "カーブの切り替えに失敗しました: {{error}}"
@@ -825,7 +919,7 @@
         "basic": "基本機能",
         "basicDescription": "現在のデバイス機能ホワイトリストに基づいて表示される実行時スイッチです。",
         "smartStartStop": "起停ポリシー",
-        "smartStartStopDescription": "現在のデバイス機能に応じて、本体の起停または WiFi Beta の待機動作を表示します。",
+        "smartStartStopDescription": "現在のデバイス機能に応じて、ファームウェア側の起停動作を表示します。",
         "lighting": "ライト制御",
         "lightingDescription": "現在のデバイスがライト機能を明示的にサポートする場合のみ表示します。"
       },
@@ -838,10 +932,10 @@
       "smartStartStopTitle": "スマート起停",
       "smartStartStopDescription": "システム終了後にクーラーを停止するタイミングを選べます",
       "wifiSmartStartStopTitle": "スマート起停",
-      "wifiSmartStartStopDescription": "終了、スリープ、休止状態の前に WiFi デバイスを待機速度へ切り替えます",
-      "wifiSmartStartStopTip": "Beta 機能です。シャットダウン時にネットワークが利用可能な場合のみ動作し、将来のファームウェア側ハートビートでより安定します。",
+      "wifiSmartStartStopDescription": "PC のハートビートに基づき、新ファームウェアが起停を処理します",
+      "wifiSmartStartStopTip": "FanControl WiFi v2 プロトコル対応ファームウェアが必要です。",
       "wifiSmartStartStopStandbySpeed": "待機時の速度",
-      "wifiSmartStartStopStandbySpeedDescription": "終了、スリープ、休止状態の前にこの速度を送信します。1% を推奨します。",
+      "wifiSmartStartStopStandbySpeedDescription": "PC のハートビートがタイムアウトした後、ファームウェアはこの待機速度を使用します。1% を推奨します。",
       "betaBadge": "Beta",
       "contextRefreshing": "{{device}} のデバイス設定を照合しています..."
     },
@@ -867,8 +961,8 @@
       "themeTitle": "テーマ",
       "themeDescription": "システム設定に従う、ライト/ダーク固定のほか、themes フォルダーからカスタムテーマも選択できます。",
       "themeOpenFolder": "themes フォルダー",
-      "windowBlurTitle": "ガラス風ウィンドウ",
-      "windowBlurDescription": "内蔵ライト/ダークテーマで Acrylic ウィンドウ素材を使用します。カスタムテーマには影響しません。",
+      "windowBlurTitle": "ぼかし効果",
+      "windowBlurDescription": "Acrylic、Mica、Mica Alt、オフから選択できます。内蔵のライト/ダークテーマに合わせて表示され、カスタムテーマには影響しません。",
       "windowBlurTip": "この設定はアプリ再起動後に反映されます。",
       "languageTitle": "言語",
       "languageDescription": "アプリの表示言語を切り替え、選択した言語は自動で保存されます。",
@@ -1072,6 +1166,68 @@
         "wifiManualSaveAction": "保存して接続"
       }
     },
+    "plugins": {
+      "sectionTitle": "プラグイン",
+      "get": {
+        "title": "プラグインを入手",
+        "officialTitle": "公式プラグイン",
+        "description": "FanControl リポジトリの Releases から公式プラグインのインストーラーをダウンロードします。",
+        "openReleases": "Releases を開く",
+        "openFolder": "プラグインフォルダーを開く"
+      },
+      "management": {
+        "title": "プラグイン管理",
+        "refresh": "プラグイン一覧を更新",
+        "loading": "プラグインを読み込み中...",
+        "emptyTitle": "プラグインがインストールされていません",
+        "emptyDescription": "Releases から公式プラグインをダウンロードし、インストール後に FanControl を再起動するか、この一覧を更新してください。",
+        "toggleAria": "{{name}} の有効設定を切り替える",
+        "reset": "プラグインデータをリセット",
+        "delete": "プラグインを削除",
+        "disableBeforeAction": "先にプラグインを無効にしてください"
+      },
+      "states": {
+        "invalid": "マニフェストが無効",
+        "incompatible": "互換性なし",
+        "enabledConfigured": "有効に設定済み",
+        "starting": "起動中",
+        "ready": "実行中",
+        "suspending": "一時停止中",
+        "suspended": "一時停止済み",
+        "restarting": "再接続中",
+        "unsupported": "ハードウェア非対応",
+        "failed": "起動失敗",
+        "disabled": "無効"
+      },
+      "errors": {
+        "apiUnavailable": "プラグイン管理を利用できません。FanControl を完全に再起動して再試行してください。"
+      },
+      "confirm": {
+        "delete": {
+          "title": "{{name}} を削除しますか？",
+          "description": "プラグインのインストールファイルを削除します。保存済みデータは保持され、再インストール後に再利用できます。",
+          "confirm": "プラグインを削除"
+        },
+        "reset": {
+          "title": "{{name}} をリセットしますか？",
+          "description": "プラグインの保存済み設定と学習データを削除します。この操作は元に戻せません。",
+          "confirm": "データをリセット"
+        }
+      },
+      "toasts": {
+        "refreshed": "プラグイン一覧を更新しました",
+        "refreshFailed": "プラグイン一覧の更新に失敗しました：{{error}}",
+        "openFolderFailed": "プラグインフォルダーを開けませんでした：{{error}}",
+        "enabled": "{{name}} を有効に設定しました",
+        "disabled": "{{name}} を無効にしました",
+        "startFailed": "プラグインの起動に失敗しました：{{error}}",
+        "toggleFailed": "プラグインの状態変更に失敗しました：{{error}}",
+        "deleted": "{{name}} を削除しました",
+        "deleteFailed": "プラグインの削除に失敗しました：{{error}}",
+        "reset": "{{name}} のデータをリセットしました",
+        "resetFailed": "プラグインデータのリセットに失敗しました：{{error}}"
+      }
+    },
     "offline": {
       "message": "デバイスが接続されていないため、一部機能は利用できません"
     },
@@ -1110,7 +1266,8 @@
       "autoStartFailed": "スタートアップの設定に失敗しました: {{error}}",
       "lightStripFailed": "ライティングの設定に失敗しました: {{error}}",
       "deviceCommandFailed": "デバイス指令の送信に失敗しました。ログを確認するか診断情報をエクスポートしてください。",
-      "deviceCommandFailedWithError": "デバイス指令の送信に失敗しました: {{error}}"
+      "deviceCommandFailedWithError": "デバイス指令の送信に失敗しました: {{error}}",
+      "settingsOperationFailed": "設定操作に失敗しました: {{error}}"
     },
     "options": {
       "smartStartStop": {
@@ -1147,6 +1304,12 @@
         "light": "ライト",
         "dark": "ダーク",
         "system": "システムに従う"
+      },
+      "windowMaterial": {
+        "acrylic": "Acrylic",
+        "mica": "Mica",
+        "tabbed": "Mica Alt",
+        "off": "オフ"
       },
       "lightMode": {
         "off": {

@@ -70,7 +70,7 @@ export function DeviceCompatibilityPanel({
             exit={{ opacity: 0, height: 0 }}
             className="mt-3 overflow-hidden border-t border-border/50"
           >
-            <div className="divide-y divide-border/45">
+            <div className="space-y-3 pt-4">
               <CompatibilitySubmenuRow
                 icon={<Wifi className={clsx('h-4 w-4', wifiCompatibilityEnabled ? 'text-emerald-500' : 'text-muted-foreground')} />}
                 title={t('controlPanel.system.deviceConnection.wifiCompatibilityTitle')}

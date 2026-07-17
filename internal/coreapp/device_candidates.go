@@ -10,6 +10,10 @@ import (
 )
 
 func (a *CoreApp) ScanDeviceCandidates(mode string) types.DeviceScanResult {
+	return a.scanDeviceCandidates(mode, true)
+}
+
+func (a *CoreApp) scanDeviceCandidates(mode string, includeNative bool) types.DeviceScanResult {
 	mode = normalizeDeviceScanMode(mode)
 
 	cfg := a.configManager.Get()
@@ -25,9 +29,11 @@ func (a *CoreApp) ScanDeviceCandidates(mode string) types.DeviceScanResult {
 		SerialEnabled: cfg.SerialCompatibilityEnabled,
 	}
 
-	for _, info := range a.deviceManager.ScanNativeDevicesProfiles(cfg.DeviceProfiles) {
-		if candidate := nativeDeviceCandidate(info); candidate.ID != "" {
-			result.Devices = append(result.Devices, candidate)
+	if includeNative {
+		for _, info := range a.deviceManager.ScanNativeDevicesProfiles(cfg.DeviceProfiles) {
+			if candidate := nativeDeviceCandidate(info); candidate.ID != "" {
+				result.Devices = append(result.Devices, candidate)
+			}
 		}
 	}
 
@@ -168,10 +174,20 @@ func availableSerialPortNames() map[string]bool {
 }
 
 func (a *CoreApp) ConnectDeviceCandidate(req types.DeviceConnectRequest) bool {
+	a.cancelReconnect()
+	a.connectMutex.Lock()
+	defer a.connectMutex.Unlock()
+	a.connectionPhase.Store(deviceConnectionPhaseConnecting)
+	defer a.connectionPhase.Store(deviceConnectionPhaseNone)
 	return newDeviceConnectionFlow(a).connectCandidate(req)
 }
 
 func (a *CoreApp) ConnectBestScannedDevice() bool {
+	a.cancelReconnect()
+	a.connectMutex.Lock()
+	defer a.connectMutex.Unlock()
+	a.connectionPhase.Store(deviceConnectionPhaseDiscovering)
+	defer a.connectionPhase.Store(deviceConnectionPhaseNone)
 	return newDeviceConnectionFlow(a).connectBestScannedDevice()
 }
 

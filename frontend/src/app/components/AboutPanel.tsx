@@ -3,23 +3,16 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BrowserOpenURL } from '../../../wailsjs/runtime/runtime';
-import { Heart, Mail, MessageCircle, RefreshCw, Rocket, Sparkles } from 'lucide-react';
+import { Download, Heart, Mail, MessageCircle, RefreshCw, Rocket, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { BRAND } from '../lib/brand';
 import { ALIPAY_QR_DATA_URL, WECHAT_PAY_QR_DATA_URL } from '../lib/support-assets';
-import { apiService } from '../services/api';
+import { apiService, type UpdateRelease } from '../services/api';
+import { useUpdateStore } from './UpdateProgressWidget';
 import { Badge, Button, ScrollArea } from './ui/index';
 
 type ReleaseChannel = 'stable' | 'prerelease';
-
-type GithubRelease = {
-  tag_name?: string;
-  html_url?: string;
-  body?: string;
-  prerelease?: boolean;
-  draft?: boolean;
-};
 
 function openUrl(url: string) {
   try {
@@ -27,50 +20,6 @@ function openUrl(url: string) {
   } catch {
     window.open(url, '_blank', 'noopener,noreferrer');
   }
-}
-
-function isLatestVersion(currentVersion: string, latestVersion: string) {
-  const normalize = (value: string) => value.trim().replace(/^v/i, '').toLowerCase();
-  const currentRaw = normalize(currentVersion);
-  const latestRaw = normalize(latestVersion);
-  if (!currentRaw || !latestRaw) return true;
-  if (currentRaw === latestRaw) return true;
-
-  const parseNightly = (value: string): number | null => {
-    const match = value.match(/^nightly[-.]?(\d{8})$/i);
-    return match ? Number(match[1]) : null;
-  };
-
-  const parseSemverParts = (value: string): number[] | null => {
-    const base = value.split('-')[0].split('+')[0];
-    if (!/^\d+(\.\d+){0,3}$/.test(base)) return null;
-    return base.split('.').map((part) => Number(part));
-  };
-
-  const currentNightly = parseNightly(currentRaw);
-  const latestNightly = parseNightly(latestRaw);
-  if (currentNightly !== null && latestNightly !== null) {
-    return latestNightly <= currentNightly;
-  }
-
-  const currentSemver = parseSemverParts(currentRaw);
-  const latestSemver = parseSemverParts(latestRaw);
-  if (!currentSemver || !latestSemver) {
-    return false;
-  }
-
-  const current = currentSemver;
-  const latest = latestSemver;
-  const length = Math.max(current.length, latest.length);
-
-  for (let index = 0; index < length; index += 1) {
-    const currentPart = current[index] ?? 0;
-    const latestPart = latest[index] ?? 0;
-    if (latestPart > currentPart) return false;
-    if (latestPart < currentPart) return true;
-  }
-
-  return true;
 }
 
 const ABOUT_CARD_CLASS = 'min-w-0 rounded-3xl border border-border/70 bg-card p-5';
@@ -85,8 +34,16 @@ export default function AboutPanel() {
   const [latestReleaseUrl, setLatestReleaseUrl] = useState<string>(BRAND.latestReleaseUrl);
   const [latestReleaseBody, setLatestReleaseBody] = useState('');
   const [latestReleaseIsPrerelease, setLatestReleaseIsPrerelease] = useState(false);
+  const [installerUrl, setInstallerUrl] = useState('');
+  const [installerSHA256, setInstallerSHA256] = useState('');
+  const [latestReleaseUpdateAvailable, setLatestReleaseUpdateAvailable] = useState(false);
   const [releaseLoading, setReleaseLoading] = useState(false);
   const [releaseError, setReleaseError] = useState('');
+  const updateStage = useUpdateStore((state) => state.stage);
+  const updateRequestStarting = useUpdateStore((state) => state.starting);
+  const updatePercent = useUpdateStore((state) => state.percent);
+  const startUpdate = useUpdateStore((state) => state.startUpdate);
+  const updateStarting = updateRequestStarting || updateStage === 'downloading' || updateStage === 'retrying' || updateStage === 'installing';
   const [isSponsorHovered, setIsSponsorHovered] = useState(false);
   const [isSponsorPinned, setIsSponsorPinned] = useState(false);
   const [sponsorPopupStyle, setSponsorPopupStyle] = useState<{ top: number; left: number; placement: 'top' | 'bottom' } | null>(null);
@@ -132,42 +89,40 @@ export default function AboutPanel() {
     setReleaseLoading(true);
     setReleaseError('');
 
-    const headers = { Accept: 'application/vnd.github+json' };
-
     try {
-      let targetRelease: GithubRelease | null = null;
-
-      if (channel === 'prerelease') {
-        const response = await fetch(`${BRAND.releasesApiUrl}?per_page=30`, { headers });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-        const releases = (await response.json()) as GithubRelease[];
-        targetRelease = (Array.isArray(releases) ? releases : []).find((item) => !item?.draft && !!item?.prerelease) || null;
-
-        if (!targetRelease) {
-          setLatestReleaseTag('');
-          setLatestReleaseUrl(BRAND.latestReleaseUrl);
-          setLatestReleaseBody('');
-          setLatestReleaseIsPrerelease(false);
-          setReleaseError(t('aboutPanel.version.noPrereleaseFound'));
-          return;
-        }
-      } else {
-        const response = await fetch(BRAND.latestReleaseApiUrl, { headers });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        targetRelease = (await response.json()) as GithubRelease;
+      const targetRelease: UpdateRelease | null = await apiService.checkLatestRelease(channel);
+      if (!targetRelease?.tag_name) {
+        setLatestReleaseTag('');
+        setLatestReleaseUrl(BRAND.latestReleaseUrl);
+        setLatestReleaseBody('');
+        setLatestReleaseIsPrerelease(false);
+        setInstallerUrl('');
+        setInstallerSHA256('');
+        setLatestReleaseUpdateAvailable(false);
+        setReleaseError(channel === 'prerelease'
+          ? t('aboutPanel.version.noPrereleaseFound')
+          : t('aboutPanel.version.checkFailed'));
+        return null;
       }
 
-      setLatestReleaseTag(targetRelease?.tag_name || '');
-      setLatestReleaseUrl(targetRelease?.html_url || BRAND.latestReleaseUrl);
+      setLatestReleaseTag(targetRelease.tag_name || '');
+      setLatestReleaseUrl(targetRelease.html_url || BRAND.latestReleaseUrl);
       setLatestReleaseBody(typeof targetRelease?.body === 'string' ? targetRelease.body.trim() : '');
       setLatestReleaseIsPrerelease(!!targetRelease?.prerelease);
-    } catch {
+      setInstallerUrl(targetRelease.installer_url || '');
+      setInstallerSHA256(targetRelease.installer_sha256 || '');
+      setLatestReleaseUpdateAvailable(!!targetRelease.update_available);
+      return targetRelease;
+    } catch (error) {
       setLatestReleaseTag('');
       setLatestReleaseUrl(BRAND.latestReleaseUrl);
       setLatestReleaseBody('');
       setLatestReleaseIsPrerelease(false);
-      setReleaseError(t('aboutPanel.version.checkFailed'));
+      setInstallerUrl('');
+      setInstallerSHA256('');
+      setLatestReleaseUpdateAvailable(false);
+      setReleaseError(`${t('aboutPanel.version.checkFailed')}: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
     } finally {
       setReleaseLoading(false);
     }
@@ -186,10 +141,6 @@ export default function AboutPanel() {
       disposed = true;
     };
   }, []);
-
-  useEffect(() => {
-    void checkLatestRelease(releaseChannel);
-  }, [checkLatestRelease, releaseChannel]);
 
   const clearSponsorHoverTimer = useCallback(() => {
     if (sponsorHoverTimerRef.current !== null) {
@@ -211,9 +162,49 @@ export default function AboutPanel() {
     }, 120);
   }, [clearSponsorHoverTimer]);
 
-  const hasNewVersion = useMemo(() => {
-    return !!appVersion && !!latestReleaseTag && !isLatestVersion(appVersion, latestReleaseTag);
-  }, [appVersion, latestReleaseTag]);
+  const hasNewVersion = !!latestReleaseTag && latestReleaseUpdateAvailable;
+
+  const handleCheckUpdate = useCallback(async () => {
+    const release = await checkLatestRelease(releaseChannel);
+    if (release?.tag_name) {
+      if (release.update_available) {
+        toast.info(t('aboutPanel.version.newVersionFound', { version: release.tag_name }));
+      } else {
+        toast.success(t('aboutPanel.version.upToDate'));
+      }
+    }
+  }, [checkLatestRelease, releaseChannel, t]);
+
+  const handleDownloadInstall = useCallback(async () => {
+    if (updateStarting) return;
+    let targetTag = latestReleaseTag;
+    let targetInstallerUrl = installerUrl;
+    let targetInstallerSHA256 = installerSHA256;
+    let targetUpdateAvailable = latestReleaseUpdateAvailable;
+    if (!targetTag || !targetInstallerUrl) {
+      const release = await checkLatestRelease(releaseChannel);
+      if (!release) return;
+      targetTag = release.tag_name || '';
+      targetInstallerUrl = release.installer_url || '';
+      targetInstallerSHA256 = release.installer_sha256 || '';
+      targetUpdateAvailable = !!release.update_available;
+    }
+    if (targetTag && !targetUpdateAvailable) {
+      toast.success(t('aboutPanel.version.upToDate'));
+      return;
+    }
+    if (!targetInstallerUrl) {
+      toast.error(t('aboutPanel.version.noInstallerHint'));
+      return;
+    }
+    void startUpdate({
+      downloadURL: targetInstallerUrl,
+      expectedSHA256: targetInstallerSHA256,
+      windowTitle: t('aboutPanel.version.updaterWindowTitle'),
+      windowBody: t('aboutPanel.version.updaterWindowBody'),
+      windowRestarting: t('aboutPanel.version.updaterWindowRestarting'),
+    });
+  }, [checkLatestRelease, installerSHA256, installerUrl, latestReleaseTag, latestReleaseUpdateAvailable, releaseChannel, startUpdate, t, updateStarting]);
 
   const isSponsorOpen = isSponsorHovered || isSponsorPinned;
 
@@ -311,7 +302,7 @@ export default function AboutPanel() {
   }, [isSponsorOpen, updateSponsorPopupPosition]);
 
   return (
-    <div className="mx-auto max-w-[860px] space-y-4">
+    <div data-page-reveal="cards" className="mx-auto max-w-[980px] space-y-4">
       <section className="rounded-[28px] border border-border bg-card">
         <div className="flex items-center gap-2 border-b border-border/60 px-5 py-4">
           <Rocket className="h-4 w-4 text-muted-foreground" />
@@ -373,18 +364,39 @@ export default function AboutPanel() {
                   </button>
                 </div>
 
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    loading={releaseLoading}
-                    onClick={() => {
-                      void checkLatestRelease(releaseChannel);
-                    }}
-                    icon={<RefreshCw className="h-3.5 w-3.5" />}
-                  >
-                    {releaseLoading ? t('aboutPanel.version.checkingButton') : t('aboutPanel.version.checkUpdate')}
-                  </Button>
+                <div data-about-actions className="mt-4 flex flex-wrap items-center gap-2 lg:flex-nowrap">
+                  <div data-update-actions className="inline-flex overflow-hidden rounded-lg border border-primary bg-primary shadow-sm">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      loading={updateStarting}
+                      disabled={releaseLoading}
+                      onClick={() => {
+                        void handleDownloadInstall();
+                      }}
+                      className="rounded-r-none shadow-none hover:opacity-100"
+                      icon={<Download className="h-3.5 w-3.5" />}
+                    >
+                      {updateStage === 'installing'
+                        ? t('aboutPanel.version.installing')
+                        : updateStarting
+                          ? t('aboutPanel.version.downloading', { percent: updatePercent })
+                          : t('aboutPanel.version.downloadAndInstall')}
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      loading={releaseLoading}
+                      disabled={updateStarting}
+                      onClick={() => {
+                        void handleCheckUpdate();
+                      }}
+                      className="rounded-l-none border-l border-primary-foreground/25 shadow-none hover:opacity-100"
+                      icon={<RefreshCw className="h-3.5 w-3.5" />}
+                    >
+                      {releaseLoading ? t('aboutPanel.version.checkingButton') : t('aboutPanel.version.checkUpdate')}
+                    </Button>
+                  </div>
                   <Button
                     variant="outline"
                     size="sm"
@@ -417,6 +429,9 @@ export default function AboutPanel() {
                 </div>
 
                 {releaseError && <div className="mt-3 text-xs text-amber-600 dark:text-amber-300">{releaseError}</div>}
+                {hasNewVersion && !installerUrl && !releaseLoading && (
+                  <div className="mt-3 text-xs text-muted-foreground">{t('aboutPanel.version.noInstallerHint')}</div>
+                )}
               </div>
             </div>
 

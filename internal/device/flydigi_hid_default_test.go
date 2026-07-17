@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/TIANLI0/THRM/internal/types"
 )
@@ -101,6 +102,19 @@ func TestNativeAutoConnectCandidatesKeepUserNativeProfilesBeforeBuiltInFallbacks
 		if gotIDs[i] != wantIDs[i] {
 			t.Fatalf("candidate IDs = %#v, want %#v", gotIDs, wantIDs)
 		}
+	}
+}
+
+func TestNativeAutoConnectCandidatesPreferLastRuntimeProfile(t *testing.T) {
+	previous := types.FlyDigiBS1Profile()
+	previous.Connection.Endpoint = "AA:BB:CC:DD:EE:FF"
+
+	candidates := nativeAutoConnectCandidates(nil, previous)
+	if len(candidates) == 0 || candidates[0].ID != types.FlyDigiBS1ProfileID {
+		t.Fatalf("first candidate = %#v, want previous BS1 profile", candidates)
+	}
+	if candidates[0].Connection.Endpoint != previous.Connection.Endpoint {
+		t.Fatalf("preferred endpoint = %q, want %q", candidates[0].Connection.Endpoint, previous.Connection.Endpoint)
 	}
 }
 
@@ -254,6 +268,115 @@ func TestFlyDigiHIDReadErrorPolicyToleratesTransientFailures(t *testing.T) {
 	next, stop = flyDigiHIDReadErrorState(transient, flyDigiHIDMaxConsecutiveReadErrors-1)
 	if next != flyDigiHIDMaxConsecutiveReadErrors || !stop {
 		t.Fatalf("threshold state = (%d, %v), want (%d, true)", next, stop, flyDigiHIDMaxConsecutiveReadErrors)
+	}
+}
+
+func TestDisconnectForRecoveryDetachesStalledFlyDigiHID(t *testing.T) {
+	m := NewManager(nil)
+	stalled := &flyDigiHIDDevice{}
+	stop := make(chan struct{})
+	m.flyDigiHID = stalled
+	m.flyDigiHIDStop = stop
+	m.flyDigiHIDDone = make(chan struct{})
+	m.isConnected = true
+	m.deviceType = types.DeviceTransportHID
+	m.productID = types.FlyDigiBS2PROProductID
+	stalledGeneration := m.connectionGen.Add(1)
+
+	m.DisconnectForRecovery()
+
+	select {
+	case <-stop:
+	default:
+		t.Fatal("recovery disconnect did not stop the stalled HID reader")
+	}
+	if m.flyDigiHID != nil || m.isConnected || m.deviceType != "" || m.productID != 0 {
+		t.Fatalf("stalled HID state was not detached: device=%p connected=%v type=%q product=0x%04X", m.flyDigiHID, m.isConnected, m.deviceType, m.productID)
+	}
+	report := []byte{0x02, 0x5A, 0xA5, 0xEF, 0x00, 0x2A, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00}
+	if m.handleFlyDigiHIDRX(stalledGeneration, report) {
+		t.Fatal("detached HID reader generation remained active")
+	}
+}
+
+func TestFlyDigiHIDConnectionGenerationRejectsStaleReaderData(t *testing.T) {
+	m := NewManager(nil)
+	stale := &flyDigiHIDDevice{}
+	current := &flyDigiHIDDevice{}
+	m.flyDigiHID = stale
+	staleGeneration := m.connectionGen.Add(1)
+	m.flyDigiHID = current
+	currentGeneration := m.connectionGen.Add(1)
+
+	report := []byte{0x02, 0x5A, 0xA5, 0xEF, 0x00, 0x2A, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00}
+	binary.LittleEndian.PutUint16(report[8:10], 1560)
+	binary.LittleEndian.PutUint16(report[10:12], 2200)
+
+	if m.handleFlyDigiHIDRX(staleGeneration, report) {
+		t.Fatal("stale HID reader data was accepted")
+	}
+	if got := m.GetCurrentFanData(); got != nil {
+		t.Fatalf("stale HID reader overwrote fan data: %#v", got)
+	}
+	if !m.handleFlyDigiHIDRX(currentGeneration, report) {
+		t.Fatal("current HID reader data was rejected")
+	}
+	if got := m.GetCurrentFanData(); got == nil || got.CurrentRPM != 1560 || got.TargetRPM != 2200 {
+		t.Fatalf("current HID reader data = %#v, want 1560/2200 RPM", got)
+	}
+	if got := m.ConnectionGeneration(); got != currentGeneration {
+		t.Fatalf("connection generation = %d, want %d", got, currentGeneration)
+	}
+}
+
+func TestFlyDigiHIDReadyFrameDoesNotWaitForManagerLock(t *testing.T) {
+	m := NewManager(nil)
+	dev := &flyDigiHIDDevice{}
+	m.flyDigiHID = dev
+	generation := m.connectionGen.Add(1)
+	report := []byte{0x02, 0x5A, 0xA5, 0xEF, 0x00, 0x2A, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00}
+	binary.LittleEndian.PutUint16(report[8:10], 1560)
+
+	m.mutex.Lock()
+	result := make(chan bool, 1)
+	go func() {
+		result <- m.handleFlyDigiHIDRX(generation, report)
+	}()
+	select {
+	case accepted := <-result:
+		m.mutex.Unlock()
+		if !accepted {
+			t.Fatal("current HID ready frame was rejected")
+		}
+	case <-time.After(100 * time.Millisecond):
+		m.mutex.Unlock()
+		<-result
+		t.Fatal("HID ready frame waited for the manager lock")
+	}
+}
+
+func TestWaitForFlyDigiHIDReady(t *testing.T) {
+	ready := make(chan struct{})
+	close(ready)
+	if !waitForFlyDigiHIDReady(ready, time.Second) {
+		t.Fatal("ready status frame should complete HID connection")
+	}
+
+	if waitForFlyDigiHIDReady(make(chan struct{}), time.Millisecond) {
+		t.Fatal("missing status frame should time out HID connection")
+	}
+}
+
+func TestFlyDigiQueryResponseFramesFiltersUnrelatedTraffic(t *testing.T) {
+	frames := []types.DeviceDebugFrame{
+		{Direction: "tx", ChecksumOK: true, Command: "0x23"},
+		{Direction: "rx", ChecksumOK: false, Command: "0x23"},
+		{Direction: "rx", ChecksumOK: true, Command: "0xEF"},
+		{Direction: "rx", ChecksumOK: true, Command: "0x23"},
+	}
+	got := flyDigiQueryResponseFrames(0x23, frames)
+	if len(got) != 1 || got[0].Command != "0x23" {
+		t.Fatalf("matched frames = %#v, want one valid 0x23 response", got)
 	}
 }
 

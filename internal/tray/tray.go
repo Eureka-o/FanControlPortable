@@ -24,6 +24,8 @@ const (
 	trayShellRestartSettleDelay = 2 * time.Second
 	// trayShellRestartSettleTimeout 是补注册托盘前等待通知区域恢复的最长时间。
 	trayShellRestartSettleTimeout = 12 * time.Second
+	trayReadyRecoveryDelay        = 75 * time.Second
+	trayRestartThrottle           = 45 * time.Second
 )
 
 // Manager 系统托盘管理器
@@ -51,6 +53,8 @@ type Manager struct {
 	// 监控托盘健康状态
 	lastIconRefresh  atomic.Int64
 	consecutiveFails atomic.Int32 // 连续失败计数
+	readyFalseSince  atomic.Int64
+	lastRestartTry   atomic.Int64
 
 	// 防止托盘动作重入导致偶发无响应
 	showWindowInFlight int32
@@ -230,6 +234,8 @@ func (m *Manager) runSystrayInstance() (ran time.Duration) {
 	m.menuItems = nil
 	m.curveMenuItems = make(map[string]*systray.MenuItem)
 	m.instanceMu.Unlock()
+	atomic.StoreInt32(&m.readyState, 0)
+	m.readyFalseSince.Store(time.Now().Unix())
 
 	// 等待 Windows 外壳就绪，避免 Shell_NotifyIcon(NIM_ADD) 在外壳未启动时失败。
 	if !waitForShellReady(m.done, 60*time.Second) {
@@ -267,6 +273,7 @@ func (m *Manager) runSystrayInstance() (ran time.Duration) {
 	ran = time.Since(start)
 
 	atomic.StoreInt32(&m.readyState, 0)
+	m.readyFalseSince.Store(time.Now().Unix())
 	// 通知本实例的附属 goroutine 退出。
 	close(instanceDone)
 	return ran
@@ -318,6 +325,7 @@ func (m *Manager) onTrayReady() {
 	m.startUIWorker(instanceDone)
 
 	atomic.StoreInt32(&m.readyState, 1)
+	m.readyFalseSince.Store(0)
 	m.lastIconRefresh.Store(time.Now().Unix())
 	m.consecutiveFails.Store(0)
 	m.logInfo("系统托盘初始化完成")
@@ -656,6 +664,7 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 func (m *Manager) onTrayExit() {
 	m.logDebug("托盘退出回调被触发")
 	atomic.StoreInt32(&m.readyState, 0)
+	m.readyFalseSince.Store(time.Now().Unix())
 }
 
 // startIconHealthMonitor 启动托盘图标健康监控
@@ -917,6 +926,11 @@ func (m *Manager) CheckHealth() {
 	if atomic.LoadInt32(&m.initialized) == 0 {
 		return
 	}
+	if atomic.LoadInt32(&m.readyState) == 0 {
+		m.recoverNotReadyTray()
+		return
+	}
+	m.readyFalseSince.Store(0)
 
 	// 检查图标是否长时间未刷新
 	lastRefresh := m.lastIconRefresh.Load()
@@ -930,6 +944,36 @@ func (m *Manager) CheckHealth() {
 		m.logError("检测到托盘连续失败，尝试刷新图标")
 		m.refreshTrayIcon()
 	}
+}
+
+func (m *Manager) recoverNotReadyTray() {
+	now := time.Now()
+	first := m.readyFalseSince.Load()
+	if first == 0 {
+		m.readyFalseSince.CompareAndSwap(0, now.Unix())
+		return
+	}
+	if now.Sub(time.Unix(first, 0)) < trayReadyRecoveryDelay || !isShellReady() {
+		return
+	}
+	m.requestTrayRestart("ready=false 持续超时")
+}
+
+func (m *Manager) requestTrayRestart(reason string) {
+	now := time.Now().Unix()
+	last := m.lastRestartTry.Load()
+	if last > 0 && now-last < int64(trayRestartThrottle/time.Second) {
+		return
+	}
+	if !m.lastRestartTry.CompareAndSwap(last, now) {
+		return
+	}
+	m.logError("系统托盘状态异常，准备重建: %s", reason)
+	atomic.StoreInt32(&m.readyState, 0)
+	go func() {
+		defer func() { _ = recover() }()
+		systray.Quit()
+	}()
 }
 
 // 日志辅助方法

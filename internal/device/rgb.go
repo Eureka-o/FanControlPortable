@@ -18,6 +18,9 @@ const (
 
 // SetLightStrip 设置灯带模式
 func (m *Manager) SetLightStrip(cfg types.LightStripConfig) error {
+	if m.writesBlocked.Load() {
+		return fmt.Errorf("device writes are blocked during system suspend")
+	}
 	if m.IsBS1() {
 		return fmt.Errorf("BS1 不支持灯带设置")
 	}
@@ -62,6 +65,9 @@ func (m *Manager) SetLightStrip(cfg types.LightStripConfig) error {
 
 // SetRGBOff 关闭RGB灯光
 func (m *Manager) SetRGBOff() bool {
+	if m.writesBlocked.Load() {
+		return false
+	}
 	if m.IsBS1() {
 		return false
 	}

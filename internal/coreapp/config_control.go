@@ -15,6 +15,16 @@ import (
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
+func (a *CoreApp) persistConfigUpdate(cfg types.AppConfig) error {
+	if err := a.configManager.Update(cfg); err != nil {
+		return err
+	}
+	if a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
+	}
+	return nil
+}
+
 func runtimeDebugInfo() map[string]any {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
@@ -84,6 +94,9 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 		cfg.ActiveDeviceProfileID = oldCfg.ActiveDeviceProfileID
 	}
 	cfg.LegionFnQSupport = oldCfg.LegionFnQSupport
+	if cfg.PluginEnabled == nil {
+		cfg.PluginEnabled = oldCfg.PluginEnabled
+	}
 	cfg.ManualGearLevels = cloneManualGearLevels(oldCfg.ManualGearLevels)
 	cfg.LightStrip, _ = normalizeLightStripConfig(cfg.LightStrip)
 	cfg.ThemeMode = types.NormalizeThemeMode(cfg.ThemeMode)
@@ -396,11 +409,9 @@ func (a *CoreApp) SetGearLight(enabled bool) bool {
 
 	cfg := a.configManager.Get()
 	cfg.GearLight = enabled
-	a.configManager.Update(cfg)
-
-	// 广播配置更新
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
+	if err := a.persistConfigUpdate(cfg); err != nil {
+		a.logError("保存挡位灯配置失败: %v", err)
+		return false
 	}
 	return true
 }
@@ -416,11 +427,9 @@ func (a *CoreApp) SetPowerOnStart(enabled bool) bool {
 
 	cfg := a.configManager.Get()
 	cfg.PowerOnStart = enabled
-	a.configManager.Update(cfg)
-
-	// 广播配置更新
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
+	if err := a.persistConfigUpdate(cfg); err != nil {
+		a.logError("保存通电自启动配置失败: %v", err)
+		return false
 	}
 	return true
 }
@@ -430,17 +439,38 @@ func (a *CoreApp) SetSmartStartStop(mode string) bool {
 	if !a.activeDeviceCapabilities().SupportsSmartStartStop {
 		return false
 	}
+
+	cfg := a.configManager.Get()
+	cfg.WiFiSmartStartStopStandbySpeed = types.ClampWiFiSmartStartStopStandbyPercent(cfg.WiFiSmartStartStopStandbySpeed)
+	if mode == "delayed" && types.NormalizeDeviceTransport(a.deviceManager.ActiveProfile().Transport) == types.DeviceTransportWiFi {
+		_ = a.deviceManager.SetWiFiSmartStartStopStandbySpeed(cfg.WiFiSmartStartStopStandbySpeed)
+	}
 	if !a.deviceManager.SetSmartStartStop(mode) {
+		return false
+	}
+	cfg.SmartStartStop = mode
+	if err := a.persistConfigUpdate(cfg); err != nil {
+		a.logError("保存智能启停配置失败: %v", err)
+		return false
+	}
+	return true
+}
+
+// SetWiFiSmartStartStopStandbySpeed 设置新固件心跳超时后的待机转速
+func (a *CoreApp) SetWiFiSmartStartStopStandbySpeed(percent int) bool {
+	if !a.activeDeviceCapabilities().SupportsSmartStartStop {
+		return false
+	}
+	percent = types.ClampWiFiSmartStartStopStandbyPercent(percent)
+	if !a.deviceManager.SetWiFiSmartStartStopStandbySpeed(percent) {
 		return false
 	}
 
 	cfg := a.configManager.Get()
-	cfg.SmartStartStop = mode
-	a.configManager.Update(cfg)
-
-	// 广播配置更新
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
+	cfg.WiFiSmartStartStopStandbySpeed = percent
+	if err := a.persistConfigUpdate(cfg); err != nil {
+		a.logError("保存 WiFi 待机转速配置失败: %v", err)
+		return false
 	}
 	return true
 }
@@ -456,11 +486,9 @@ func (a *CoreApp) SetBrightness(percentage int) bool {
 
 	cfg := a.configManager.Get()
 	cfg.Brightness = percentage
-	a.configManager.Update(cfg)
-
-	// 广播配置更新
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
+	if err := a.persistConfigUpdate(cfg); err != nil {
+		a.logError("保存亮度配置失败: %v", err)
+		return false
 	}
 	return true
 }
@@ -536,18 +564,12 @@ func normalizeLightStripConfig(cfg types.LightStripConfig) (types.LightStripConf
 
 // SetWindowsAutoStart 设置Windows自启动
 func (a *CoreApp) SetWindowsAutoStart(enable bool) error {
-	err := a.autostartManager.SetWindowsAutoStart(enable)
-	if err == nil {
-		cfg := a.configManager.Get()
-		cfg.WindowsAutoStart = enable
-		a.configManager.Update(cfg)
-
-		// 广播配置更新
-		if a.ipcServer != nil {
-			a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
-		}
+	if err := a.autostartManager.SetWindowsAutoStart(enable); err != nil {
+		return err
 	}
-	return err
+	cfg := a.configManager.Get()
+	cfg.WindowsAutoStart = enable
+	return a.persistConfigUpdate(cfg)
 }
 
 // GetDebugInfo 获取调试信息

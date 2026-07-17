@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { types } from '../../wailsjs/go/models';
@@ -13,10 +13,14 @@ import AppShell from './components/AppShell';
 import ControlPanel from './components/ControlPanel';
 import DeviceStatus from './components/DeviceStatus';
 import FanCurve from './components/FanCurve';
-import PluginPage from './components/PluginPage';
 import { useAppBootstrap } from './hooks/useAppBootstrap';
 import { apiService } from './services/api';
+import { PluginPageOutlet, useOfficialPluginCatalog } from './plugins/plugin-host';
+import { pluginAssetURL, pluginPageTabId } from './plugins/plugin-host-logic.mts';
+import { PLUGIN_ICONS } from './plugins/plugin-icons';
+import type { PluginIconName } from './plugins/plugin-host-types';
 import { useAppStore } from './store/app-store';
+import { isPluginAppTab } from './store/app-store-logic.mts';
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -28,10 +32,12 @@ export default function Home() {
   useAppBootstrap();
   const { t } = useTranslation();
   const [diagnosticsExporting, setDiagnosticsExporting] = useState(false);
+  const { plugins } = useOfficialPluginCatalog();
 
   const view = useAppStore(
     useShallow((state) => ({
       isConnected: state.isConnected,
+      deviceRuntimeState: state.deviceRuntimeState,
       deviceProductId: state.deviceProductId,
       deviceModel: state.deviceModel,
       deviceSettings: state.deviceSettings,
@@ -43,17 +49,16 @@ export default function Home() {
       bridgeWarning: state.bridgeWarning,
       coreServiceError: state.coreServiceError,
       isLoading: state.isLoading,
-	      error: state.error,
-	      activeTab: state.activeTab,
-	      curveFocusTarget: state.curveFocusTarget,
-	      availablePlugins: state.availablePlugins,
-	    })),
-	  );
+      error: state.error,
+      activeTab: state.activeTab,
+      curveFocusTarget: state.curveFocusTarget,
+    })),
+  );
 
   const initializeApp = useAppStore((state) => state.initializeApp);
   const connectDevice = useAppStore((state) => state.connectDevice);
   const disconnectDevice = useAppStore((state) => state.disconnectDevice);
-  const updateConfig = useAppStore((state) => state.updateConfig);
+  const setConfig = useAppStore((state) => state.setConfig);
   const refreshDeviceContext = useAppStore((state) => state.refreshDeviceContext);
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const openCurveTab = useAppStore((state) => state.openCurveTab);
@@ -64,16 +69,25 @@ export default function Home() {
     () => view.config || new types.AppConfig(),
     [view.config],
   );
-  const pluginTabs = useMemo(() => (
-    view.availablePlugins
-      .filter((plugin) => plugin.installed && plugin.frontend)
-		      .map((plugin) => ({
-		        id: `plugin:${plugin.id}` as const,
-		        title: plugin.name,
-		        icon: plugin.icon,
-		        content: <PluginPage plugin={plugin} />,
-		      }))
-  ), [view.availablePlugins]);
+
+  const pluginTabs = useMemo(() => plugins.map((plugin) => ({
+    id: pluginPageTabId(plugin),
+    title: plugin.page.title,
+    icon: PLUGIN_ICONS[plugin.page.icon as PluginIconName] || PLUGIN_ICONS.plug,
+    iconAsset: plugin.page.iconAsset
+      ? pluginAssetURL(plugin.id, plugin.page.iconAsset, plugin.version)
+      : undefined,
+  })), [plugins]);
+  const selectedPlugin = useMemo(() => {
+    if (!isPluginAppTab(view.activeTab)) return null;
+    return plugins.find((plugin) => pluginPageTabId(plugin) === view.activeTab) || null;
+  }, [plugins, view.activeTab]);
+
+  useEffect(() => {
+    if (!isPluginAppTab(view.activeTab) || selectedPlugin) return;
+    setActiveTab('status');
+    toast.info(t('pluginHost.unavailable'));
+  }, [selectedPlugin, setActiveTab, t, view.activeTab]);
 
   const exportDiagnostics = useCallback(async () => {
     if (diagnosticsExporting) return;
@@ -99,75 +113,80 @@ export default function Home() {
   }
 
   return (
-    <AppShell
-      activeTab={view.activeTab}
-      onTabChange={setActiveTab}
-      isConnected={view.isConnected}
-      fanData={view.fanData}
-      temperature={view.temperature}
-      runtimeDeviceProfile={view.runtimeDeviceProfile}
-      config={safeConfig}
-      autoControl={safeConfig.autoControl}
-      error={view.error}
-      bridgeWarning={view.bridgeWarning}
-      diagnosticsExporting={diagnosticsExporting}
-      onExportDiagnostics={exportDiagnostics}
-      onDismissBridgeWarning={clearBridgeWarning}
-      statusContent={
-        <DeviceStatus
-          isConnected={view.isConnected}
-          deviceProductId={view.deviceProductId}
-          deviceModel={view.deviceModel}
-          deviceSettings={view.deviceSettings}
-          fanData={view.fanData}
-          temperature={view.temperature}
-          runtimeDeviceProfile={view.runtimeDeviceProfile}
-          config={safeConfig}
-          coreServiceError={view.coreServiceError}
-          onConnect={connectDevice}
-          onDisconnect={disconnectDevice}
-          onConfigChange={updateConfig}
-          onOpenCurveEditor={() => openCurveTab('curve-editor')}
-          onOpenHistoryDetails={() => openCurveTab('history-details')}
-          diagnosticsExporting={diagnosticsExporting}
-          onExportDiagnostics={exportDiagnostics}
-        />
-      }
-      curveContent={
-        <FanCurve
-          config={safeConfig}
-          onConfigChange={updateConfig}
-          isConnected={view.isConnected}
-          fanData={view.fanData}
-          temperature={view.temperature}
-          runtimeDeviceProfile={view.runtimeDeviceProfile}
-          runtimeDeviceCapabilities={view.runtimeDeviceCapabilities}
-          deviceModel={view.deviceModel}
-          focusTarget={view.curveFocusTarget}
-          onFocusHandled={clearCurveFocusTarget}
-        />
-      }
-      controlContent={
-        <ControlPanel
-          config={safeConfig}
-          onConfigChange={updateConfig}
-          isConnected={view.isConnected}
-          fanData={view.fanData}
-          temperature={view.temperature}
-          runtimeDeviceProfile={view.runtimeDeviceProfile}
-          runtimeDeviceCapabilities={view.runtimeDeviceCapabilities}
-          onDeviceContextRefresh={refreshDeviceContext}
-        />
-      }
-      devicesContent={
-        <AdvancedDevicesPanel
-          config={safeConfig}
-          isConnected={view.isConnected}
-          onConfigChange={updateConfig}
-        />
-      }
-	      pluginTabs={pluginTabs}
-	      aboutContent={<AboutPanel />}
-    />
+    <>
+      <AppShell
+        activeTab={view.activeTab}
+        onTabChange={setActiveTab}
+        isConnected={view.isConnected}
+        fanData={view.fanData}
+        temperature={view.temperature}
+        runtimeDeviceProfile={view.runtimeDeviceProfile}
+        config={safeConfig}
+        autoControl={safeConfig.autoControl}
+        error={view.error}
+        bridgeWarning={view.bridgeWarning}
+        diagnosticsExporting={diagnosticsExporting}
+        onExportDiagnostics={exportDiagnostics}
+        onDismissBridgeWarning={clearBridgeWarning}
+        statusContent={
+          <DeviceStatus
+            isConnected={view.isConnected}
+            runtimeState={view.deviceRuntimeState}
+            deviceProductId={view.deviceProductId}
+            deviceModel={view.deviceModel}
+            deviceSettings={view.deviceSettings}
+            fanData={view.fanData}
+            temperature={view.temperature}
+            runtimeDeviceProfile={view.runtimeDeviceProfile}
+            config={safeConfig}
+            coreServiceError={view.coreServiceError}
+            onConnect={connectDevice}
+            onDisconnect={disconnectDevice}
+            onConfigChange={setConfig}
+            onOpenCurveEditor={() => setActiveTab('curve')}
+            onOpenHistoryDetails={() => openCurveTab('history-details')}
+            diagnosticsExporting={diagnosticsExporting}
+            onExportDiagnostics={exportDiagnostics}
+          />
+        }
+        curveContent={
+          <FanCurve
+            config={safeConfig}
+            onConfigChange={setConfig}
+            isConnected={view.isConnected}
+            fanData={view.fanData}
+            temperature={view.temperature}
+            runtimeDeviceProfile={view.runtimeDeviceProfile}
+            runtimeDeviceCapabilities={view.runtimeDeviceCapabilities}
+            deviceModel={view.deviceModel}
+            focusTarget={view.curveFocusTarget}
+            onFocusHandled={clearCurveFocusTarget}
+          />
+        }
+        controlContent={
+          <ControlPanel
+            config={safeConfig}
+            onConfigChange={setConfig}
+            isConnected={view.isConnected}
+            fanData={view.fanData}
+            temperature={view.temperature}
+            runtimeDeviceProfile={view.runtimeDeviceProfile}
+            runtimeDeviceCapabilities={view.runtimeDeviceCapabilities}
+            onDeviceContextRefresh={refreshDeviceContext}
+          />
+        }
+        devicesContent={
+          <AdvancedDevicesPanel
+            config={safeConfig}
+            isConnected={view.isConnected}
+            onConfigChange={setConfig}
+          />
+        }
+        pluginTabs={pluginTabs}
+        pluginContent={selectedPlugin ? <PluginPageOutlet plugin={selectedPlugin} /> : null}
+        aboutContent={<AboutPanel />}
+      />
+    </>
   );
+
 }

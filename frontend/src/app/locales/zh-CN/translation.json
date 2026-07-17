@@ -67,6 +67,12 @@
       "exportFailed": "导出诊断日志失败：{{error}}"
     }
   },
+  "pluginHost": {
+    "loading": "\u6b63\u5728\u52a0\u8f7d\u63d2\u4ef6\u9875\u9762...",
+    "loadFailed": "\u63d2\u4ef6\u9875\u9762\u52a0\u8f7d\u5931\u8d25",
+    "retry": "\u91cd\u8bd5",
+    "unavailable": "\u63d2\u4ef6\u5df2\u505c\u7528\u6216\u6682\u65f6\u4e0d\u53ef\u7528\uff0c\u5df2\u8fd4\u56de\u72b6\u6001\u9875"
+  },
   "advancedDevices": {
     "title": "已支持设备",
     "subtitle": "管理 WiFi/虚拟串口兼容设备和用户 BLE/HID 原生档案。BLE/HID 会在连接原生设备时自动遍历，不在这里手动启用。",
@@ -126,6 +132,7 @@
     "capabilities": {
       "read": "读取状态",
       "setSpeed": "设置速度",
+      "manualGears": "手动挡位",
       "debugFrames": "调试帧",
       "raw": "原始命令",
       "gearLight": "挡位灯",
@@ -415,6 +422,22 @@
       "connected": "已连接",
       "offline": "离线"
     },
+    "runtimeState": {
+      "disconnected": "已断开",
+      "discovering": "正在发现",
+      "connecting": "正在连接",
+      "capabilities": "读取能力",
+      "ready": "可控制",
+      "unavailable": "暂不可控"
+    },
+    "capabilities": {
+      "title": "当前设备能力"
+    },
+    "telemetryState": {
+      "fresh": "传感器实时",
+      "delayed": "传感器延迟",
+      "unavailable": "传感器不可用"
+    },
     "mode": {
       "smartControl": "智能控制",
       "fixedSpeed": "固定转速",
@@ -465,6 +488,11 @@
       "titleWithDevice": "{{name}} 未连接",
       "descriptionWithDevice": "当前启用设备为 {{name}}，确认连接方式和地址后即可连接。"
     },
+    "recovery": {
+      "deviceAvailable": "确认设备已通电，并且 Windows 可以识别。",
+      "releaseCompetingTools": "退出可能占用设备的其他硬件或风扇控制工具。",
+      "retryOrExport": "重试连接；仍然失败时导出诊断信息。"
+    },
     "bridgeWarning": {
       "default": "温度桥接程序读取失败，可重新初始化温度监控后重试。",
       "stateLine": "桥接状态：{{state}}",
@@ -472,7 +500,12 @@
       "sharedProcess": "当前实例复用共享进程",
       "pipeLine": "命名管道：{{pipe}}",
       "diagnosticsLine": "诊断信息：{{message}}",
-      "reinitialize": "重新初始化温度监控"
+      "reinitialize": "重新初始化温度监控",
+      "recovery": {
+        "checkServices": "确认 FanControl Core 和温度桥接程序正在运行。",
+        "releaseCompetingTools": "退出其他传感器或硬件监控工具。",
+        "retryOrExport": "重新初始化温度监控；仍未恢复时导出诊断信息。"
+      }
     },
     "controlProtection": "控制与保护",
     "stats": {
@@ -526,7 +559,36 @@
       "updatable": "可更新",
       "checkFailed": "检查更新失败，请稍后重试",
       "newVersionFound": "发现新版本 {{version}}",
-      "emptyReleaseNotes": "暂无日志内容，或本次获取失败。"
+      "emptyReleaseNotes": "暂无日志内容，或本次获取失败。",
+      "downloadAndInstall": "下载并安装",
+      "upToDate": "当前已是最新版本",
+      "downloading": "下载中 {{percent}}%",
+      "installing": "正在安装…",
+      "restarting": "即将重启",
+      "noInstallerHint": "本次发布未提供可自动安装的安装包，请前往发布页手动下载。",
+      "updateFailed": "更新失败",
+      "retryUpdate": "重试",
+      "progressDownloading": "正在下载更新",
+      "progressPaused": "下载已暂停",
+      "progressCanceled": "下载已中止",
+      "progressRetrying": "正在继续下载",
+      "progressInstalling": "正在安装更新",
+      "progressRestarting": "即将安装并重启",
+      "progressFailed": "更新失败",
+      "downloadingHint": "安装包下载完成后会自动进入安装",
+      "pausedHint": "保留当前进度，可随时继续下载",
+      "canceledHint": "下载临时文件已清理",
+      "retryingHint": "连接中断，正在进行第 {{attempt}} / {{max}} 次尝试",
+      "installingHint": "安装完成后应用会自动重启",
+      "doneHint": "安装程序已启动，应用即将关闭",
+      "minimizeProgress": "收起下载进度",
+      "pauseDownload": "暂停下载",
+      "resumeDownload": "继续下载",
+      "cancelDownload": "中止并清理下载",
+      "updateComplete": "FanControl 已更新完成",
+      "updaterWindowTitle": "FanControl 正在更新",
+      "updaterWindowBody": "正在安装新版本，请勿关闭此窗口",
+      "updaterWindowRestarting": "更新完成，正在重启应用"
     },
     "contact": {
       "title": "项目链接",
@@ -651,6 +713,13 @@
       "emptyEnabled": "后台记录已开启，等待更多温度与风扇样本。",
       "emptyDisabled": "后台记录当前已关闭，可在本页开启。",
       "recentTrend": "最近趋势",
+      "powerTrend": "功耗趋势",
+      "events": {
+        "disconnect": "设备断开",
+        "reconnect": "设备连接",
+        "resume": "系统恢复",
+        "profile": "曲线方案切换"
+      },
       "waitingMoreSamples": "已记录 1 条样本，等待更多数据后展示趋势图。",
       "series": {
         "cpu": "CPU 温度",
@@ -689,19 +758,39 @@
       "title": "曲线方案",
       "currentCurveName": "当前曲线",
       "newCurveName": "新曲线",
+      "add": "新建",
+      "manage": "管理",
+      "createTitle": "新建曲线方案",
+      "createDescription": "以当前曲线为基础创建新方案，原方案不会被修改。",
+      "createAction": "创建并切换",
+      "newNamePlaceholder": "新方案名称（最多6字）",
+      "manageTitle": "管理曲线方案",
+      "manageDescription": "重命名当前方案，或导入、导出和删除方案。",
+      "renameLabel": "当前方案名称",
       "namePlaceholder": "当前方案命名（最多6字）",
       "saveName": "保存命名",
-      "saveAsNew": "另存为新方案",
-      "deleteCurrent": "删除当前方案"
+      "deleteProfileLabel": "删除方案 {{name}}",
+      "unsavedSwitchTitle": "当前曲线尚未保存",
+      "unsavedSwitchDescription": "切换方案前，可以保存当前修改或放弃修改。",
+      "saveAndSwitch": "保存并切换",
+      "discardAndSwitch": "放弃并切换",
+      "deleteConfirmTitle": "确认删除方案",
+      "deleteDescription": "确定删除“{{name}}”吗？删除后将自动切换到相邻方案。",
+      "deleteUnsavedDescription": "“{{name}}”还有未保存修改。删除方案将同时放弃这些修改。"
     },
     "importExport": {
       "title": "导入 / 导出曲线方案",
-      "description": "可复制粘贴短字符串",
+      "description": "支持方案码和 .fcurve 文件",
       "exportTitle": "导出",
-      "generate": "生成",
-      "exportPlaceholder": "点击“生成”后显示导出字符串",
+      "exportHint": "复制方案码可快速分享，也可以保存为文件备份。未保存的当前曲线会先保存。",
+      "copyCode": "复制方案码",
+      "exportFile": "导出文件",
       "importTitle": "导入",
-      "importPlaceholder": "粘贴 B2C1. 开头的导入字符串"
+      "importPlaceholder": "粘贴 B2C1. 开头的方案码",
+      "chooseFile": "选择文件",
+      "dropHint": "也可以将 .fcurve 或文本文件拖到这里",
+      "importAction": "导入为新方案",
+      "emptyFile": "文件内容为空"
     },
     "warning": {
       "title": "注意",
@@ -719,11 +808,12 @@
       "profileDeleted": "已删除曲线方案",
       "deleteFailed": "删除失败: {{error}}",
       "exportCopied": "导出字符串已复制",
-      "exportGenerated": "导出字符串已生成",
-      "exportCopiedAgain": "已复制导出字符串",
+      "exportFileCreated": "曲线方案文件已导出",
       "exportFailed": "导出失败: {{error}}",
       "importMissingCode": "请先粘贴导入字符串",
-      "importSucceeded": "曲线方案导入成功",
+      "importFileLoaded": "已读取 {{name}}",
+      "importFileFailed": "读取导入文件失败: {{error}}",
+      "importSucceeded": "已导入为新曲线方案",
       "importFailed": "导入失败: {{error}}",
       "saveLearningFailed": "保存学习设置失败",
       "learningReset": "已重置学习偏移",
@@ -736,6 +826,9 @@
       "title": "实时概览",
       "currentTemperature": "当前温度",
       "currentRpm": "实时速度",
+      "temperatureMetric": "温度",
+      "powerMetric": "功耗",
+      "controlModeMetric": "控制模式",
       "currentGear": "当前挡位",
       "targetRpm": "目标速度",
       "cpuGpuTemperature": "CPU {{cpu}} · GPU {{gpu}}",
@@ -814,6 +907,7 @@
       "customSpeedDescription": "固定当前设备速度，适合特殊场景",
       "customSpeedWarning": "自定义速度会禁用智能温控",
       "customSpeedRangeHint": "手动速度范围为 {{min}} 到 {{max}}，请根据散热需求谨慎设置。",
+      "customSpeedInvalid": "请输入 {{min}} 到 {{max}} 范围内的速度。",
       "toasts": {
         "profileSwitched": "温控曲线已切换",
         "profileSwitchFailed": "切换曲线失败: {{error}}"
@@ -825,7 +919,7 @@
         "basic": "基础功能",
         "basicDescription": "根据当前设备功能白名单显示的运行开关。",
         "smartStartStop": "启停策略",
-        "smartStartStopDescription": "按当前设备能力显示原生启停或 WiFi Beta 待机策略。",
+        "smartStartStopDescription": "按当前设备能力显示固件支持的启停策略。",
         "lighting": "灯光控制",
         "lightingDescription": "只有当前设备明确支持灯光时才会显示。"
       },
@@ -838,10 +932,10 @@
       "smartStartStopTitle": "智能启停",
       "smartStartStopDescription": "系统关闭后何时停止散热",
       "wifiSmartStartStopTitle": "智能启停",
-      "wifiSmartStartStopDescription": "退出、睡眠或休眠前将 WiFi 设备切到待机转速",
-      "wifiSmartStartStopTip": "Beta 功能，依赖系统关机前网络仍可用；固件心跳兜底后会更稳定。",
+      "wifiSmartStartStopDescription": "由新固件根据电脑心跳自动处理启停",
+      "wifiSmartStartStopTip": "需要支持 FanControl WiFi v2 协议的新固件。",
       "wifiSmartStartStopStandbySpeed": "待机时转速",
-      "wifiSmartStartStopStandbySpeedDescription": "退出、睡眠或休眠前发送该速度，建议保持 1%。",
+      "wifiSmartStartStopStandbySpeedDescription": "固件在电脑心跳超时后会使用该待机速度。建议保持 1%。",
       "betaBadge": "Beta",
       "contextRefreshing": "正在匹配 {{device}} 的设备设置..."
     },
@@ -867,8 +961,8 @@
       "themeTitle": "界面主题",
       "themeDescription": "默认跟随系统，也可固定浅色/深色，或选择安装目录 themes 文件夹中的自定义主题",
       "themeOpenFolder": "打开主题文件夹",
-      "windowBlurTitle": "毛玻璃窗口",
-      "windowBlurDescription": "内置浅色/深色主题使用 Acrylic 窗口材质，自定义主题不受影响。",
+      "windowBlurTitle": "毛玻璃效果",
+      "windowBlurDescription": "选择 Acrylic、Mica、Mica Alt 或关闭，内置浅色和深色主题会自动适配。自定义主题不受影响。",
       "windowBlurTip": "此设置需要重启应用后生效。",
       "languageTitle": "界面语言",
       "languageDescription": "切换应用显示语言，立即生效并自动记住。",
@@ -1072,6 +1166,68 @@
         "wifiManualSaveAction": "保存并连接"
       }
     },
+    "plugins": {
+      "sectionTitle": "插件",
+      "get": {
+        "title": "获取插件",
+        "officialTitle": "官方插件",
+        "description": "从 FanControl 仓库的 Releases 下载官方插件安装包。",
+        "openReleases": "打开 Releases",
+        "openFolder": "打开插件目录"
+      },
+      "management": {
+        "title": "插件管理",
+        "refresh": "刷新插件列表",
+        "loading": "正在读取插件...",
+        "emptyTitle": "尚未安装插件",
+        "emptyDescription": "可前往 Releases 下载官方插件，安装后重新启动 FanControl 或刷新此列表。",
+        "toggleAria": "切换 {{name}} 的启用配置",
+        "reset": "重置插件数据",
+        "delete": "删除插件",
+        "disableBeforeAction": "请先停用插件"
+      },
+      "states": {
+        "invalid": "清单无效",
+        "incompatible": "不兼容",
+        "enabledConfigured": "已设为启用",
+        "starting": "正在启动",
+        "ready": "运行中",
+        "suspending": "正在暂停",
+        "suspended": "已暂停",
+        "restarting": "正在重连",
+        "unsupported": "硬件不支持",
+        "failed": "启动失败",
+        "disabled": "已停用"
+      },
+      "errors": {
+        "apiUnavailable": "插件管理接口不可用，请完全重启 FanControl 后重试。"
+      },
+      "confirm": {
+        "delete": {
+          "title": "删除 {{name}}？",
+          "description": "将删除该插件的安装文件。已保存的插件数据会保留，重新安装后仍可继续使用。",
+          "confirm": "删除插件"
+        },
+        "reset": {
+          "title": "重置 {{name}}？",
+          "description": "将删除该插件保存的设置和学习数据，此操作无法撤销。",
+          "confirm": "重置数据"
+        }
+      },
+      "toasts": {
+        "refreshed": "插件列表已刷新",
+        "refreshFailed": "刷新插件列表失败：{{error}}",
+        "openFolderFailed": "打开插件目录失败：{{error}}",
+        "enabled": "已将 {{name}} 设为启用",
+        "disabled": "已停用 {{name}}",
+        "startFailed": "插件启动失败：{{error}}",
+        "toggleFailed": "修改插件启用状态失败：{{error}}",
+        "deleted": "已删除 {{name}}",
+        "deleteFailed": "删除插件失败：{{error}}",
+        "reset": "已重置 {{name}} 的数据",
+        "resetFailed": "重置插件数据失败：{{error}}"
+      }
+    },
     "offline": {
       "message": "设备未连接，部分功能不可用"
     },
@@ -1110,7 +1266,8 @@
       "autoStartFailed": "设置自启动失败: {{error}}",
       "lightStripFailed": "设置灯带失败: {{error}}",
       "deviceCommandFailed": "设备指令发送失败，请查看日志或导出诊断信息",
-      "deviceCommandFailedWithError": "设备指令发送失败: {{error}}"
+      "deviceCommandFailedWithError": "设备指令发送失败: {{error}}",
+      "settingsOperationFailed": "设置操作失败: {{error}}"
     },
     "options": {
       "smartStartStop": {
@@ -1147,6 +1304,12 @@
         "light": "浅色",
         "dark": "深色",
         "system": "跟随系统"
+      },
+      "windowMaterial": {
+        "acrylic": "Acrylic",
+        "mica": "Mica",
+        "tabbed": "Mica Alt",
+        "off": "关闭"
       },
       "lightMode": {
         "off": {

@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -16,6 +18,8 @@ import (
 )
 
 const exportPrefix = "B2C1."
+
+var generatedIDCounter uint64
 
 type exportPayload struct {
 	V        int                     `json:"v"`
@@ -140,7 +144,53 @@ func NormalizeProfileName(name string, fallback string) string {
 }
 
 func GenerateID() string {
-	return fmt.Sprintf("p%x", time.Now().UnixNano())
+	return fmt.Sprintf("p%x-%x", time.Now().UnixNano(), atomic.AddUint64(&generatedIDCounter, 1))
+}
+
+func AppendImportedProfiles(existing, imported []types.FanCurveProfile, importedActiveID string) ([]types.FanCurveProfile, string) {
+	merged := CloneProfiles(existing)
+	usedIDs := make(map[string]bool, len(existing)+len(imported))
+	usedNames := make(map[string]bool, len(existing)+len(imported))
+	for _, profile := range merged {
+		usedIDs[profile.ID] = true
+		usedNames[profile.Name] = true
+	}
+
+	newActiveID := ""
+	for index, profile := range imported {
+		originalID := profile.ID
+		profile.ID = GenerateID()
+		for usedIDs[profile.ID] {
+			profile.ID = GenerateID()
+		}
+		usedIDs[profile.ID] = true
+		profile.Name = uniqueImportedProfileName(profile.Name, fmt.Sprintf("Import%d", index+1), usedNames)
+		profile.Curve = CloneCurve(profile.Curve)
+		merged = append(merged, profile)
+		if originalID == importedActiveID {
+			newActiveID = profile.ID
+		}
+	}
+	if newActiveID == "" && len(imported) > 0 {
+		newActiveID = merged[len(existing)].ID
+	}
+	return merged, newActiveID
+}
+
+func uniqueImportedProfileName(name, fallback string, used map[string]bool) string {
+	base := NormalizeProfileName(name, fallback)
+	if !used[base] {
+		used[base] = true
+		return base
+	}
+	for suffix := 2; ; suffix++ {
+		suffixText := strconv.Itoa(suffix)
+		candidate := truncateByRunes(base, 6-utf8.RuneCountInString(suffixText)) + suffixText
+		if !used[candidate] {
+			used[candidate] = true
+			return candidate
+		}
+	}
 }
 
 func FindIndex(profiles []types.FanCurveProfile, profileID string) int {

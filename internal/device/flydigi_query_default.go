@@ -21,6 +21,9 @@ var flyDigiDeviceSettingsQueryCommands = []byte{
 }
 
 func (m *Manager) queryFlyDigiHIDDeviceSettings() (types.DeviceSettings, error) {
+	m.queryMutex.Lock()
+	defer m.queryMutex.Unlock()
+
 	settings := types.DeviceSettings{
 		Available: false,
 		Source:    types.DeviceTransportHID,
@@ -42,6 +45,7 @@ func (m *Manager) queryFlyDigiHIDDeviceSettings() (types.DeviceSettings, error) 
 			lastErr = err
 			continue
 		}
+		frames = flyDigiQueryResponseFrames(cmd, frames)
 		settings.RawFrames = append(settings.RawFrames, frames...)
 		applyFlyDigiDeviceSettingsFrames(&settings, frames)
 	}
@@ -50,10 +54,21 @@ func (m *Manager) queryFlyDigiHIDDeviceSettings() (types.DeviceSettings, error) 
 	return settings, lastErr
 }
 
+func flyDigiQueryResponseFrames(cmd byte, frames []types.DeviceDebugFrame) []types.DeviceDebugFrame {
+	command := fmt.Sprintf("0x%02X", cmd)
+	matched := make([]types.DeviceDebugFrame, 0, len(frames))
+	for _, frame := range frames {
+		if frame.Direction == "rx" && frame.ChecksumOK && frame.Command == command {
+			matched = append(matched, frame)
+		}
+	}
+	return matched
+}
+
 func (m *Manager) queryFlyDigiHIDCommand(cmd byte) ([]types.DeviceDebugFrame, error) {
 	startSeq := m.currentDebugSeq()
 	m.mutex.Lock()
-	if !m.isConnected || m.flyDigiHID == nil {
+	if m.writesBlocked.Load() || !m.isConnected || m.flyDigiHID == nil {
 		m.mutex.Unlock()
 		return nil, fmt.Errorf("设备未连接")
 	}
@@ -81,7 +96,7 @@ func (m *Manager) sendFlyDigiHIDDebugCommand(input string, waitMs int) (types.De
 	startSeq := m.currentDebugSeq()
 
 	m.mutex.Lock()
-	if !m.isConnected || m.flyDigiHID == nil {
+	if m.writesBlocked.Load() || !m.isConnected || m.flyDigiHID == nil {
 		m.mutex.Unlock()
 		return types.DeviceDebugCommandResult{}, fmt.Errorf("device is not connected")
 	}

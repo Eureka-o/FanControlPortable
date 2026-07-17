@@ -14,7 +14,11 @@ import (
 func (a *App) GetDeviceProfiles() DeviceProfilesPayload {
 	resp, err := a.sendRequest(ipc.ReqGetDeviceProfiles, nil)
 	if err != nil || !resp.Success {
-		cfg := a.GetConfig()
+		cfg, cfgErr := a.GetConfig()
+		if cfgErr != nil {
+			guiLogger.Errorf("获取设备配置失败: %v", cfgErr)
+			return DeviceProfilesPayload{}
+		}
 		return DeviceProfilesPayload{
 			Profiles:             cfg.DeviceProfiles,
 			ActiveID:             cfg.ActiveDeviceProfileID,

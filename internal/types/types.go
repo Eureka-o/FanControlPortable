@@ -19,8 +19,9 @@ const (
 	ThemeModeLight                      = "light"
 	ThemeModeDark                       = "dark"
 	ThemeModeTHRM                       = "thrm"
-	WindowBlurAuto                      = "auto"
-	WindowBlurOn                        = "on"
+	WindowBlurAcrylic                   = "acrylic"
+	WindowBlurMica                      = "mica"
+	WindowBlurTabbed                    = "tabbed"
 	WindowBlurOff                       = "off"
 	TempSourceMax                       = "max"
 	TempSourceCPU                       = "cpu"
@@ -32,6 +33,9 @@ const (
 	GPUReadStateUnavailable             = "unavailable"
 	GPUReadStateError                   = "error"
 	GPUReadStateUnknown                 = "unknown"
+	TelemetryStateFresh                 = "fresh"
+	TelemetryStateDelayed               = "delayed"
+	TelemetryStateUnavailable           = "unavailable"
 	GPUReadModeAuto                     = "auto"
 	GPUReadModeAlways                   = "always"
 	LearningBiasBalanced                = "balanced"
@@ -117,15 +121,17 @@ func NormalizeThemeMode(mode string) string {
 	return ThemeModeSystem
 }
 
-// NormalizeWindowBlur 归一化窗口毛玻璃设置，非法值回退为 on。
+// NormalizeWindowBlur 归一化窗口材质，旧版 on/auto 与非法值回退为 Acrylic。
 func NormalizeWindowBlur(mode string) string {
 	switch mode {
-	case WindowBlurAuto:
-		return WindowBlurAuto
+	case WindowBlurMica:
+		return WindowBlurMica
+	case WindowBlurTabbed:
+		return WindowBlurTabbed
 	case WindowBlurOff:
 		return WindowBlurOff
 	default:
-		return WindowBlurOn
+		return WindowBlurAcrylic
 	}
 }
 
@@ -310,24 +316,6 @@ type FanData struct {
 	FlyDigiCapability *FlyDigiRuntimeCapability `json:"flyDigiCapability,omitempty"`
 }
 
-// PluginInfo is the GUI-safe discovery snapshot for optional plugins.
-type PluginInfo struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Version        string `json:"version"`
-	Type           string `json:"type"`
-	Description    string `json:"description,omitempty"`
-	MinCoreVersion string `json:"minCoreVersion,omitempty"`
-	Frontend       string `json:"frontend,omitempty"`
-	Icon           string `json:"icon,omitempty"`
-	Status         string `json:"status,omitempty"`
-	Installed      bool   `json:"installed"`
-	Supported      bool   `json:"supported"`
-	Running        bool   `json:"running"`
-	ExePath        string `json:"exePath,omitempty"`
-	LastError      string `json:"lastError,omitempty"`
-}
-
 // DeviceDebugFrame is a captured low-level device protocol frame.
 type DeviceDebugFrame struct {
 	ID          uint64 `json:"id"`
@@ -424,6 +412,8 @@ type TemperatureData struct {
 	UpdateTime        int64                  `json:"updateTime"`        // 更新时间戳
 	BridgeOk          bool                   `json:"bridgeOk"`          // 桥接程序是否正常
 	BridgeMsg         string                 `json:"bridgeMessage"`     // 桥接故障提示
+	TelemetryState    string                 `json:"telemetryState"`    // 前端展示用的遥测可信度
+	TelemetryFresh    bool                   `json:"-"`                 // 本轮是否直接读取到有效桥接遥测
 }
 
 // TemperatureHistoryPoint CPU/GPU 温度历史点。
@@ -545,6 +535,7 @@ type SmartControlConfig struct {
 type AppConfig struct {
 	LegionFnQ                         LegionFnQConfig                        `json:"legionFnQ"`
 	LegionFnQSupport                  LegionFnQSupportCache                  `json:"legionFnQSupport"`
+	PluginEnabled                     map[string]bool                        `json:"pluginEnabled,omitempty"`
 	ActiveDeviceProfileID             string                                 `json:"activeDeviceProfileId"`
 	ActiveDeviceProfileIDsByTransport map[string]string                      `json:"activeDeviceProfileIdsByTransport,omitempty"`
 	DeviceProfiles                    []DeviceProfile                        `json:"deviceProfiles,omitempty"`
@@ -569,7 +560,7 @@ type AppConfig struct {
 	PowerOnStart                      bool                                   `json:"powerOnStart"`            // 通电自启动
 	WindowsAutoStart                  bool                                   `json:"windowsAutoStart"`        // Windows开机自启动
 	ThemeMode                         string                                 `json:"themeMode"`               // 主题模式: system/light/dark/thrm
-	WindowBlur                        string                                 `json:"windowBlur"`              // 窗口毛玻璃: on/off/auto
+	WindowBlur                        string                                 `json:"windowBlur"`              // 窗口材质: acrylic/mica/tabbed/off
 	SmartStartStop                    string                                 `json:"smartStartStop"`          // 智能启停
 	Brightness                        int                                    `json:"brightness"`              // 亮度
 	TempUpdateRate                    int                                    `json:"tempUpdateRate"`          // 温度更新频率(秒)
@@ -646,7 +637,7 @@ func GetDefaultSmartControlConfigForUnit(curve []FanCurvePoint, unit string) Sma
 			LearnedOffsetsCool:                coolOffsets,
 			LearnedRateHeat:                   heatRate,
 			LearnedRateCool:                   coolRate,
-			TemperatureRisePrediction:         false,
+			TemperatureRisePrediction:         true,
 			TemperatureRisePredictionMaxBoost: 80,
 		}
 	}
@@ -676,7 +667,7 @@ func GetDefaultSmartControlConfigForUnit(curve []FanCurvePoint, unit string) Sma
 		LearnedOffsetsCool:                coolOffsets,
 		LearnedRateHeat:                   heatRate,
 		LearnedRateCool:                   coolRate,
-		TemperatureRisePrediction:         false,
+		TemperatureRisePrediction:         true,
 		TemperatureRisePredictionMaxBoost: 60,
 	}
 }
@@ -721,24 +712,6 @@ func NormalizeLegionFnQConfig(cfg LegionFnQConfig) LegionFnQConfig {
 	}
 
 	return cfg
-}
-
-func cloneFanCurvePoints(curve []FanCurvePoint) []FanCurvePoint {
-	if len(curve) == 0 {
-		return nil
-	}
-	out := make([]FanCurvePoint, len(curve))
-	copy(out, curve)
-	return out
-}
-
-func cloneIntSlice(values []int) []int {
-	if len(values) == 0 {
-		return nil
-	}
-	out := make([]int, len(values))
-	copy(out, values)
-	return out
 }
 
 func clampInt(value, minValue, maxValue int) int {
@@ -1094,7 +1067,7 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		PowerOnStart:            false,
 		WindowsAutoStart:        false,
 		ThemeMode:               ThemeModeSystem,
-		WindowBlur:              WindowBlurOn,
+		WindowBlur:              WindowBlurAcrylic,
 		SmartStartStop:          "off",
 		Brightness:              100,
 		TempUpdateRate:          2,
@@ -1119,5 +1092,6 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		LightStrip:              GetDefaultLightStripConfig(),
 		LegionFnQ:               GetDefaultLegionFnQConfig(),
 		LegionFnQSupport:        LegionFnQSupportCache{},
+		PluginEnabled:           map[string]bool{},
 	}
 }

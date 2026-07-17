@@ -31,6 +31,18 @@ func (f BLEScannerFunc) ScanBLEDevices(ctx context.Context, params types.BLEScan
 
 type DefaultBLEScanner struct{}
 
+var defaultBLEAdapterLease = make(chan struct{}, 1)
+
+func acquireDefaultBLEAdapter(ctx context.Context) (func(), error) {
+	ctx = ctxWithDefault(ctx)
+	select {
+	case defaultBLEAdapterLease <- struct{}{}:
+		return func() { <-defaultBLEAdapterLease }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
 func ScanBLEDevices(params types.BLEScanParams) ([]types.BLEDeviceInfo, error) {
 	return ScanBLEDevicesWithScanner(context.Background(), DefaultBLEScanner{}, params)
 }
@@ -40,7 +52,7 @@ func ScanBLEDevicesWithScanner(ctx context.Context, scanner BLEScanner, params t
 		return nil, errors.New("ble scanner is not configured")
 	}
 	params = normalizeBLEScanParams(params)
-	scanCtx, cancel := context.WithTimeout(ctx, time.Duration(params.TimeoutMs)*time.Millisecond)
+	scanCtx, cancel := context.WithTimeout(ctxWithDefault(ctx), time.Duration(params.TimeoutMs)*time.Millisecond)
 	defer cancel()
 
 	devices, err := scanner.ScanBLEDevices(scanCtx, params)
@@ -51,42 +63,82 @@ func ScanBLEDevicesWithScanner(ctx context.Context, scanner BLEScanner, params t
 }
 
 func (DefaultBLEScanner) ScanBLEDevices(ctx context.Context, params types.BLEScanParams) ([]types.BLEDeviceInfo, error) {
+	ctx = ctxWithDefault(ctx)
+	params = normalizeBLEScanParams(params)
+	release, err := acquireDefaultBLEAdapter(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
 	adapter := bluetooth.DefaultAdapter
 	if err := adapter.Enable(); err != nil {
 		return nil, err
 	}
 
+	return scanBLEAdvertisements(
+		ctx,
+		params,
+		func(report func(types.BLEDeviceInfo)) error {
+			return adapter.Scan(func(adapter *bluetooth.Adapter, result bluetooth.ScanResult) {
+				report(bleDeviceInfoFromScanResult(result))
+			})
+		},
+		adapter.StopScan,
+	)
+}
+
+func scanBLEAdvertisements(
+	ctx context.Context,
+	params types.BLEScanParams,
+	scan func(report func(types.BLEDeviceInfo)) error,
+	stop func() error,
+) ([]types.BLEDeviceInfo, error) {
 	var mutex sync.Mutex
 	seen := make(map[string]types.BLEDeviceInfo)
-	scanDone := make(chan error, 1)
-
+	stopRequested := make(chan struct{}, 1)
+	stopWatch := make(chan struct{})
+	watchDone := make(chan struct{})
 	go func() {
-		scanDone <- adapter.Scan(func(adapter *bluetooth.Adapter, result bluetooth.ScanResult) {
-			info := bleDeviceInfoFromScanResult(result)
-			if strings.TrimSpace(info.Address) == "" {
+		defer close(watchDone)
+		select {
+		case <-ctx.Done():
+		case <-stopRequested:
+		case <-stopWatch:
+			return
+		}
+		for {
+			err := stop()
+			if err == nil || !strings.Contains(strings.ToLower(err.Error()), "not scanning") {
 				return
 			}
-			mutex.Lock()
-			seen[strings.ToUpper(info.Address)] = mergeBLEDeviceInfo(seen[strings.ToUpper(info.Address)], info)
-			mutex.Unlock()
-		})
-	}()
-
-	select {
-	case err := <-scanDone:
-		if err != nil {
-			return nil, err
-		}
-	case <-ctx.Done():
-		_ = adapter.StopScan()
-		select {
-		case err := <-scanDone:
-			if err != nil && !strings.Contains(strings.ToLower(err.Error()), "not scanning") {
-				return nil, err
+			select {
+			case <-stopWatch:
+				return
+			case <-time.After(10 * time.Millisecond):
 			}
-		case <-time.After(2 * time.Second):
-			return nil, ctx.Err()
 		}
+	}()
+	err := scan(func(info types.BLEDeviceInfo) {
+		if strings.TrimSpace(info.Address) == "" {
+			return
+		}
+		key := strings.ToUpper(info.Address)
+		mutex.Lock()
+		seen[key] = mergeBLEDeviceInfo(seen[key], info)
+		matched := params.OnlyMatched && scoreBLEDevice(seen[key], params).Matched
+		mutex.Unlock()
+		if matched {
+			select {
+			case stopRequested <- struct{}{}:
+			default:
+			}
+		}
+	})
+	close(stopWatch)
+	<-watchDone
+	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "not scanning") {
+		return nil, err
 	}
 
 	mutex.Lock()

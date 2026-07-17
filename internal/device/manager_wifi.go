@@ -24,24 +24,32 @@ const (
 // Manager is the default FanControl device manager.
 // It keeps WiFi and profile-driven serial transports in the normal build.
 type Manager struct {
-	isConnected     bool
-	productID       uint16
-	deviceType      string
-	deviceTransport string
-	wifiEndpoint    string
-	wifiHTTPClient  *http.Client
-	activeProfile   types.DeviceProfile
-	wifiExecutor    *deviceprofileexec.WiFiExecutor
-	bleConnector    deviceprofileexec.BLEConnector
-	bleExecutor     *deviceprofileexec.BLEExecutor
-	serialDialer    deviceprofileexec.SerialDialer
-	serialExecutor  *deviceprofileexec.SerialExecutor
-	flyDigiHID      *flyDigiHIDDevice
-	flyDigiHIDStop  chan struct{}
-	flyDigiHIDDone  chan struct{}
-	mutex           sync.RWMutex
-	logger          types.Logger
-	currentFanData  atomic.Pointer[types.FanData]
+	isConnected      bool
+	productID        uint16
+	deviceType       string
+	deviceTransport  string
+	wifiEndpoint     string
+	wifiHTTPClient   *http.Client
+	wifiProtocol     string
+	wifiConfig       bool
+	wifiHeartbeat    bool
+	wifiHbStop       chan struct{}
+	wifiHbDone       chan struct{}
+	activeProfile    types.DeviceProfile
+	wifiExecutor     *deviceprofileexec.WiFiExecutor
+	bleConnector     deviceprofileexec.BLEConnector
+	bleExecutor      *deviceprofileexec.BLEExecutor
+	serialDialer     deviceprofileexec.SerialDialer
+	serialExecutor   *deviceprofileexec.SerialExecutor
+	flyDigiHID       *flyDigiHIDDevice
+	flyDigiHIDStop   chan struct{}
+	flyDigiHIDDone   chan struct{}
+	mutex            sync.RWMutex
+	operationControl deviceOperationControl
+	logger           types.Logger
+	currentFanData   atomic.Pointer[types.FanData]
+	writesBlocked    atomic.Bool
+	connectionGen    atomic.Uint64
 
 	onFanDataUpdate func(data *types.FanData)
 	onDisconnect    func()
@@ -49,6 +57,7 @@ type Manager struct {
 	lightCmdBuf [65]byte
 
 	debugMutex  sync.Mutex
+	queryMutex  sync.Mutex
 	debugSeq    uint64
 	debugFrames []types.DeviceDebugFrame
 }
@@ -82,18 +91,26 @@ func (m *Manager) Connect() (bool, map[string]string) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
+	if m.writesBlocked.Load() {
+		return false, nil
+	}
 	if m.isConnected {
 		return true, m.connectedInfoLocked()
 	}
+	ctx, finishOperation := m.operationControl.begin()
+	defer finishOperation()
+	if m.writesBlocked.Load() {
+		return false, nil
+	}
 
 	if m.shouldUseWiFiLocked() {
-		return m.connectWiFiLocked()
+		return m.connectWiFiWithContextLocked(ctx)
 	}
 	if m.shouldUseSerialLocked() {
-		return m.connectSerialLocked()
+		return m.connectSerialWithContextLocked(ctx)
 	}
 	if m.shouldUseBLELocked() {
-		return m.connectBLELocked()
+		return m.connectBLEWithContextLocked(ctx)
 	}
 	if m.shouldUseLegacyHIDLocked() {
 		return m.connectLegacyHIDLocked()
@@ -121,7 +138,12 @@ func (m *Manager) DisconnectSilently() {
 	m.disconnect(false)
 }
 
+func (m *Manager) DisconnectForRecovery() {
+	m.disconnect(false)
+}
+
 func (m *Manager) disconnect(notify bool) {
+	m.operationControl.cancelActive()
 	m.mutex.Lock()
 	if !m.isConnected {
 		m.mutex.Unlock()
@@ -150,6 +172,10 @@ func (m *Manager) IsConnected() bool {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 	return m.isConnected
+}
+
+func (m *Manager) ConnectionGeneration() uint64 {
+	return m.connectionGen.Load()
 }
 
 func (m *Manager) GetProductID() uint16 {
@@ -190,7 +216,12 @@ func (m *Manager) SetPercentSpeed(percent int) bool {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	if !m.isConnected {
+	if m.writesBlocked.Load() || !m.isConnected {
+		return false
+	}
+	ctx, finishOperation := m.operationControl.begin()
+	defer finishOperation()
+	if m.writesBlocked.Load() {
 		return false
 	}
 	switch m.deviceType {
@@ -202,19 +233,19 @@ func (m *Manager) SetPercentSpeed(percent int) bool {
 			m.logWarn("percent speed command rejected because the active WiFi profile uses RPM")
 			return false
 		}
-		return m.setWiFiSpeedLocked(types.ClampFanPercent(percent))
+		return m.setWiFiSpeedWithContextLocked(ctx, types.ClampFanPercent(percent))
 	case types.DeviceTransportSerial:
 		if types.IsRPMSpeedUnit(m.activeProfile.SpeedUnit) {
 			m.logWarn("percent speed command rejected because the active serial profile uses RPM")
 			return false
 		}
-		return m.setSerialTargetSpeedLocked(types.NewPercentSpeed(percent))
+		return m.setSerialTargetSpeedWithContextLocked(ctx, types.NewPercentSpeed(percent))
 	case types.DeviceTransportBLE:
 		if types.IsRPMSpeedUnit(m.activeProfile.SpeedUnit) {
 			m.logWarn("percent speed command rejected because the active BLE profile uses RPM")
 			return false
 		}
-		return m.setBLETargetSpeedLocked(types.NewPercentSpeed(percent))
+		return m.setBLETargetSpeedWithContextLocked(ctx, types.NewPercentSpeed(percent))
 	default:
 		return false
 	}
@@ -226,7 +257,12 @@ func (m *Manager) SetTargetSpeed(value int, unit string) bool {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	if !m.isConnected {
+	if m.writesBlocked.Load() || !m.isConnected {
+		return false
+	}
+	ctx, finishOperation := m.operationControl.begin()
+	defer finishOperation()
+	if m.writesBlocked.Load() {
 		return false
 	}
 	if types.IsRPMSpeedUnit(unit) {
@@ -238,13 +274,13 @@ func (m *Manager) SetTargetSpeed(value int, unit string) bool {
 				m.logWarn("default WiFi percent profile does not support direct RPM target speed: %d", value)
 				return false
 			}
-			return m.setWiFiTargetSpeedLocked(types.NewRPMSpeed(value))
+			return m.setWiFiTargetSpeedWithContextLocked(ctx, types.NewRPMSpeed(value))
 		}
 		if m.deviceType == types.DeviceTransportSerial {
-			return m.setSerialTargetSpeedLocked(types.NewRPMSpeed(value))
+			return m.setSerialTargetSpeedWithContextLocked(ctx, types.NewRPMSpeed(value))
 		}
 		if m.deviceType == types.DeviceTransportBLE {
-			return m.setBLETargetSpeedLocked(types.NewRPMSpeed(value))
+			return m.setBLETargetSpeedWithContextLocked(ctx, types.NewRPMSpeed(value))
 		}
 		return false
 	}
@@ -252,13 +288,13 @@ func (m *Manager) SetTargetSpeed(value int, unit string) bool {
 		if !m.shouldUseWiFiLocked() {
 			return false
 		}
-		return m.setWiFiTargetSpeedLocked(types.NewPercentTickSpeed(value))
+		return m.setWiFiTargetSpeedWithContextLocked(ctx, types.NewPercentTickSpeed(value))
 	}
 	if m.deviceType == types.DeviceTransportSerial {
-		return m.setSerialTargetSpeedLocked(types.NewPercentTickSpeed(value))
+		return m.setSerialTargetSpeedWithContextLocked(ctx, types.NewPercentTickSpeed(value))
 	}
 	if m.deviceType == types.DeviceTransportBLE {
-		return m.setBLETargetSpeedLocked(types.NewPercentTickSpeed(value))
+		return m.setBLETargetSpeedWithContextLocked(ctx, types.NewPercentTickSpeed(value))
 	}
 	return false
 }
@@ -275,6 +311,9 @@ func (m *Manager) EnterAutoMode() error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
+	if m.writesBlocked.Load() {
+		return fmt.Errorf("device writes are blocked during system suspend")
+	}
 	if !m.isConnected {
 		return fmt.Errorf("设备未连接")
 	}
@@ -313,6 +352,14 @@ func (m *Manager) SetGearLight(enabled bool) bool {
 }
 
 func (m *Manager) SetPowerOnStart(enabled bool) bool {
+	m.mutex.Lock()
+	if m.isWiFiFirmwareV2Locked() {
+		ok := m.setWiFiFirmwareConfigLocked(map[string]any{"powerOnStart": enabled})
+		m.mutex.Unlock()
+		return ok
+	}
+	m.mutex.Unlock()
+
 	if m.IsBS1() {
 		return m.setFlyDigiBS1PowerOnStart(enabled)
 	}
@@ -323,10 +370,33 @@ func (m *Manager) SetPowerOnStart(enabled bool) bool {
 }
 
 func (m *Manager) SetSmartStartStop(mode string) bool {
+	mode = normalizeWiFiSmartStartStopMode(mode)
+	m.mutex.Lock()
+	if m.isWiFiFirmwareV2Locked() {
+		payload := map[string]any{"smartStartStop": mode}
+		if mode == "delayed" {
+			payload["delaySeconds"] = 60
+		}
+		ok := m.setWiFiFirmwareConfigLocked(payload)
+		m.mutex.Unlock()
+		return ok
+	}
+	m.mutex.Unlock()
+
 	if m.GetDeviceType() == types.DeviceTransportHID {
 		return m.setFlyDigiHIDSmartStartStop(mode)
 	}
 	return false
+}
+
+func (m *Manager) SetWiFiSmartStartStopStandbySpeed(percent int) bool {
+	percent = types.ClampWiFiSmartStartStopStandbyPercent(percent)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if !m.isWiFiFirmwareV2Locked() {
+		return false
+	}
+	return m.setWiFiFirmwareConfigLocked(map[string]any{"standbySpeed": percent})
 }
 
 func (m *Manager) SetBrightness(percentage int) bool {

@@ -5,6 +5,10 @@ import {
   DisconnectDevice, 
   GetDeviceStatus,
   GetConfig,
+  DownloadAndInstallUpdate,
+  PauseUpdateDownload,
+  ResumeUpdateDownload,
+  CancelUpdateDownload,
   UpdateConfig,
   SetFanCurve,
   ResetLearnedOffsets,
@@ -16,35 +20,35 @@ import {
   SetGearLight,
   SetPowerOnStart,
   SetSmartStartStop,
+  SetWiFiSmartStartStopStandbySpeed,
   SetBrightness,
   SetLightStrip,
   GetTemperature,
   GetTemperatureHistory,
-	SetTemperatureHistoryEnabled,
-	GetCurrentFanData,
-	TestTemperatureReading,
-	GetDebugInfo,
-	ExportDiagnosticsToFile,
-	SetDebugMode,
-	UpdateGuiResponseTime,
-	SetCustomSpeed
-	// CheckWindowsAutoStart,
-	// SetWindowsAutoStart
+  SetTemperatureHistoryEnabled,
+  GetCurrentFanData,
+  TestTemperatureReading,
+  GetDebugInfo,
+  ExportDiagnosticsToFile,
+  SetDebugMode,
+  SetCustomSpeed
+  // CheckWindowsAutoStart,
+  // SetWindowsAutoStart
 } from '../../../wailsjs/go/main/App';
 
 import { types } from '../../../wailsjs/go/models';
 
 import type {
-	DeviceInfo,
-	DeviceDebugCommandResult,
-	DeviceDebugFrame,
-	DeviceSettings,
+  DeviceInfo,
+  DeviceDebugCommandResult,
+  DeviceDebugFrame,
+  DeviceSettings,
   DebugInfo,
   LegionFnQSupportPayload,
   LegionPowerModePayload,
-	PluginInfo,
-	PluginListPayload,
-	ThemeMeta,
+  PluginCatalogSnapshot,
+  PluginEventPayload,
+  ThemeMeta,
 } from '../types/app';
 
 export interface AutoScanDeviceInfo {
@@ -130,9 +134,28 @@ export interface DeviceScanResult {
   error?: string;
 }
 
-class ApiService {
-  supportsPluginAssetPath = true;
+export interface UpdateRelease {
+  tag_name?: string;
+  html_url?: string;
+  body?: string;
+  prerelease?: boolean;
+  update_available?: boolean;
+  draft?: boolean;
+  installer_url?: string;
+  installer_sha256?: string;
+}
 
+export interface UpdateProgressPayload {
+  percent: number;
+  received: number;
+  total: number;
+  stage: 'downloading' | 'paused' | 'retrying' | 'installing' | 'error' | 'canceled';
+  message: string;
+  attempt?: number;
+  maxAttempts?: number;
+}
+
+class ApiService {
   // 设备连接
   async connectDevice(): Promise<boolean> {
     return await ConnectDevice();
@@ -189,6 +212,49 @@ class ApiService {
 
   async getAppVersion(): Promise<string> {
     return await GetAppVersion();
+  }
+
+  async checkLatestRelease(channel: 'stable' | 'prerelease'): Promise<UpdateRelease | null> {
+    const release = await (window as any).go?.main?.App?.CheckLatestRelease?.(channel);
+    return release && typeof release === 'object' ? release as UpdateRelease : null;
+  }
+
+  async updateCompletedOnLaunch(): Promise<boolean> {
+    return !!(await (window as any).go?.main?.App?.UpdateCompletedOnLaunch?.());
+  }
+
+  async downloadAndInstallUpdate(
+    downloadURL: string,
+    windowTitle: string,
+    windowBody: string,
+    windowRestarting: string,
+    expectedSHA256: string,
+  ): Promise<void> {
+    return await DownloadAndInstallUpdate(
+      downloadURL,
+      windowTitle,
+      windowBody,
+      windowRestarting,
+      expectedSHA256,
+    );
+  }
+
+  async pauseUpdateDownload(): Promise<boolean> {
+    return await PauseUpdateDownload();
+  }
+
+  async resumeUpdateDownload(): Promise<boolean> {
+    return await ResumeUpdateDownload();
+  }
+
+  async cancelUpdateDownload(downloadURL: string): Promise<void> {
+    return await CancelUpdateDownload(downloadURL);
+  }
+
+  onUpdateDownloadProgress(
+    callback: (payload: UpdateProgressPayload) => void,
+  ): () => void {
+    return EventsOn('update-download-progress', callback);
   }
 
   async updateConfig(config: types.AppConfig): Promise<void> {
@@ -285,6 +351,10 @@ class ApiService {
     return await (window as any).go?.main?.App?.ExportFanCurveProfiles();
   }
 
+  async exportFanCurveProfilesToFile(): Promise<string> {
+    return await (window as any).go?.main?.App?.ExportFanCurveProfilesToFile?.();
+  }
+
   async importFanCurveProfiles(code: string): Promise<void> {
     return await (window as any).go?.main?.App?.ImportFanCurveProfiles(code);
   }
@@ -322,55 +392,16 @@ class ApiService {
     return await SetSmartStartStop(mode);
   }
 
+  async setWiFiSmartStartStopStandbySpeed(percent: number): Promise<boolean> {
+    return await SetWiFiSmartStartStopStandbySpeed(percent);
+  }
+
   async setBrightness(percentage: number): Promise<boolean> {
     return await SetBrightness(percentage);
   }
 
   async setLightStrip(config: types.LightStripConfig): Promise<void> {
     return await SetLightStrip(config);
-  }
-
-  // 插件
-  async getAvailablePlugins(): Promise<PluginInfo[]> {
-    const plugins = await (window as any).go?.main?.App?.GetAvailablePlugins?.();
-    return Array.isArray(plugins) ? plugins as PluginInfo[] : [];
-  }
-
-  async getPluginStatus(pluginID: string): Promise<PluginInfo | null> {
-    const plugin = await (window as any).go?.main?.App?.GetPluginStatus?.(pluginID);
-    return plugin && typeof plugin === 'object' ? plugin as PluginInfo : null;
-  }
-
-  async enablePlugin(pluginID: string): Promise<void> {
-    return await (window as any).go?.main?.App?.EnablePlugin?.(pluginID);
-  }
-
-  async disablePlugin(pluginID: string): Promise<void> {
-    return await (window as any).go?.main?.App?.DisablePlugin?.(pluginID);
-  }
-
-  async refreshPluginDiscovery(): Promise<PluginInfo[]> {
-    const plugins = await (window as any).go?.main?.App?.RefreshPluginDiscovery?.();
-    return Array.isArray(plugins) ? plugins as PluginInfo[] : [];
-  }
-
-  async getPluginFrontendAssetPath(pluginID: string, assetPath: string): Promise<string> {
-    const app = (window as any).go?.main?.App;
-    const asset = await app?.GetPluginFrontendAssetPath?.(pluginID, assetPath);
-    return typeof asset === 'string' ? asset : '';
-  }
-
-  async getPluginFrontendAsset(pluginID: string, assetPath = ''): Promise<string> {
-    if (assetPath) {
-      return this.getPluginFrontendAssetPath(pluginID, assetPath);
-    }
-    const app = (window as any).go?.main?.App;
-    const asset = await (app?.GetPluginFrontendAsset?.(pluginID) ?? app?.GetPluginFrontendHTML?.(pluginID));
-    return typeof asset === 'string' ? asset : '';
-  }
-
-  async getPluginFrontendHTML(pluginID: string): Promise<string> {
-    return this.getPluginFrontendAsset(pluginID);
   }
 
   // Windows自启动相关
@@ -470,6 +501,10 @@ class ApiService {
     return EventsOn('config-update', callback);
   }
 
+  onSystemResume(callback: (payload: { timestamp?: number; source?: string }) => void): () => void {
+    return EventsOn('system-resume', callback);
+  }
+
   onHotkeyTriggered(callback: (payload: { action: string; shortcut: string; success: boolean; message: string }) => void): () => void {
     return EventsOn('hotkey-triggered', callback);
   }
@@ -481,22 +516,6 @@ class ApiService {
 
   onLegionFnQSupportUpdate(callback: (payload: LegionFnQSupportPayload) => void): () => void {
     return EventsOn('legion-fnq-support-update', callback);
-  }
-
-  onPluginsDiscovered(callback: (payload: PluginListPayload | PluginInfo[]) => void): () => void {
-    return EventsOn('plugins-discovered', callback);
-  }
-
-  onPluginInstalled(callback: (payload: PluginInfo) => void): () => void {
-    return EventsOn('plugin-installed', callback);
-  }
-
-  onPluginUninstalled(callback: (payload: PluginInfo) => void): () => void {
-    return EventsOn('plugin-uninstalled', callback);
-  }
-
-  onPluginStatusChanged(callback: (payload: PluginInfo) => void): () => void {
-    return EventsOn('plugin-status-changed', callback);
   }
 
   async getDebugInfo(): Promise<DebugInfo> {
@@ -541,8 +560,40 @@ class ApiService {
     return await (window as any).go?.main?.App?.OpenThemesFolder?.();
   }
 
-  async updateGuiResponseTime(): Promise<void> {
-    return await UpdateGuiResponseTime();
+  async getPluginSnapshot(): Promise<PluginCatalogSnapshot> {
+    return await (window as any).go?.main?.App?.GetPluginSnapshot?.() as PluginCatalogSnapshot;
+  }
+
+  async refreshPlugins(): Promise<PluginCatalogSnapshot> {
+    return await (window as any).go?.main?.App?.RefreshPlugins?.() as PluginCatalogSnapshot;
+  }
+
+  async setPluginEnabled(id: string, enabled: boolean): Promise<PluginCatalogSnapshot> {
+    return await (window as any).go?.main?.App?.SetPluginEnabled?.(id, enabled) as PluginCatalogSnapshot;
+  }
+
+  async deletePlugin(id: string): Promise<PluginCatalogSnapshot> {
+    return await (window as any).go?.main?.App?.DeletePlugin?.(id) as PluginCatalogSnapshot;
+  }
+
+  async resetPlugin(id: string): Promise<PluginCatalogSnapshot> {
+    return await (window as any).go?.main?.App?.ResetPlugin?.(id) as PluginCatalogSnapshot;
+  }
+
+  async openPluginsFolder(): Promise<void> {
+    return await (window as any).go?.main?.App?.OpenPluginsFolder?.();
+  }
+
+  async invokePlugin<T = unknown>(id: string, method: string, payload: unknown = {}): Promise<T> {
+    return await (window as any).go?.main?.App?.InvokePlugin?.(id, method, payload) as T;
+  }
+
+  onPluginStatusUpdate(callback: (snapshot: PluginCatalogSnapshot) => void): () => void {
+    return EventsOn('plugin-status-update', callback);
+  }
+
+  onPluginEvent(callback: (event: PluginEventPayload) => void): () => void {
+    return EventsOn('plugin-event', callback);
   }
 
   // 调试事件监听

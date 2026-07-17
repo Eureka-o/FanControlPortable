@@ -4,9 +4,9 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --font-ui-sans: "Manrope", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-ui-cjk: "Noto Sans SC", "Source Han Sans CN", "思源黑体 CN", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
-  --font-geist-mono: "Geist Mono", "Cascadia Mono", "Consolas", "SFMono-Regular", monospace;
+  --font-ui-sans: "Manrope", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  --font-ui-cjk: "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-geist-mono: "Geist Mono", "Cascadia Mono", Consolas, monospace;
   --background: #f6f8fc;
   --foreground: #111827;
   --card: #ffffff;
@@ -150,8 +150,8 @@
   --window-glass-row-bg: rgba(255, 255, 255, 0.36);
   --window-glass-border: rgba(255, 255, 255, 0.56);
   --window-glass-border-muted: rgba(116, 134, 158, 0.22);
-  --window-glass-shadow: 0 18px 46px -32px rgba(24, 34, 54, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.62);
-  --window-glass-row-shadow: 0 10px 28px -24px rgba(24, 34, 54, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.42);
+  --window-glass-shadow: 0 8px 24px -16px rgba(24, 34, 54, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  --window-glass-row-shadow: 0 6px 18px -12px rgba(24, 34, 54, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.42);
   --window-glass-blur: blur(26px) saturate(150%);
 }
 
@@ -370,9 +370,7 @@ html[data-window-blur="on"]:not([data-theme]) body:has(.glacier-native-backdrop)
 }
 
 html[data-window-blur="on"]:not([data-theme]) .glacier-native-backdrop {
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--window-glass-shell-bg) 82%, transparent), transparent 72%),
-    var(--window-glass-shell-bg) !important;
+  background: var(--window-glass-panel-bg) !important;
 }
 
 .glacier-native-backdrop .glacier-sidebar {
@@ -381,13 +379,9 @@ html[data-window-blur="on"]:not([data-theme]) .glacier-native-backdrop {
 }
 
 html[data-window-blur="on"]:not([data-theme]) .glacier-native-backdrop .glacier-sidebar {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 38%),
-    var(--window-glass-sidebar-bg);
-  border-right-color: var(--window-glass-border-muted);
-  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.08), 18px 0 40px -34px rgba(0, 0, 0, 0.36);
-  backdrop-filter: var(--window-glass-blur);
-  -webkit-backdrop-filter: var(--window-glass-blur);
+  background: transparent;
+  border-right-color: transparent;
+  box-shadow: none;
 }
 
 .glacier-native-backdrop .glacier-titlebar {
@@ -395,12 +389,7 @@ html[data-window-blur="on"]:not([data-theme]) .glacier-native-backdrop .glacier-
 }
 
 html[data-window-blur="on"]:not([data-theme]) .glacier-native-backdrop .glacier-titlebar {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 78%),
-    var(--window-glass-titlebar-bg);
-  border-bottom: 1px solid var(--window-glass-border-muted);
-  backdrop-filter: var(--window-glass-blur);
-  -webkit-backdrop-filter: var(--window-glass-blur);
+  background: transparent;
 }
 
 .glacier-native-backdrop .glacier-content {
@@ -421,15 +410,11 @@ html[data-window-blur="on"]:not([data-theme]) .glacier-native-backdrop .glacier-
 }
 
 html[data-window-blur="on"]:not([data-theme]) .glacier-native-backdrop .glacier-content-panel {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 72%),
-    var(--window-glass-panel-bg);
+  background: transparent;
   border-top-color: transparent;
-  border-left-color: var(--window-glass-border-muted);
+  border-left-color: transparent;
   border-top-left-radius: 0;
-  box-shadow: var(--window-glass-shadow);
-  backdrop-filter: var(--window-glass-blur);
-  -webkit-backdrop-filter: var(--window-glass-blur);
+  box-shadow: none;
 }
 
 .dark .glacier-native-backdrop .glacier-content-panel {
@@ -447,7 +432,7 @@ html[data-window-blur="on"]:not([data-theme]) {
   --theme-card-background: var(--window-glass-card-mid-bg);
   --theme-card-border: var(--window-glass-border-muted);
   --theme-card-shadow: var(--window-glass-shadow);
-  --theme-card-backdrop-filter: blur(18px) saturate(136%);
+  --theme-card-backdrop-filter: none;
   --theme-preview-card-background: var(--window-glass-card-soft-bg);
   --theme-preview-card-border: var(--window-glass-border-muted);
   --theme-preview-card-shadow: var(--window-glass-row-shadow);
@@ -465,6 +450,67 @@ html[data-window-blur="on"]:not([data-theme]) {
   stroke-width: var(--theme-icon-stroke-width, 2);
 }
 
+@keyframes glacier-page-card-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+[data-page-reveal="cards"] > *,
+[data-page-reveal="cards-reverse"] > * {
+  animation: glacier-page-card-fade 0.285s ease-out both;
+}
+
+[data-page-reveal="cards"] > :nth-child(2) {
+  animation-delay: 0.08s;
+}
+
+[data-page-reveal="cards"] > :nth-child(3) {
+  animation-delay: 0.16s;
+}
+
+[data-page-reveal="cards"] > :nth-child(4) {
+  animation-delay: 0.24s;
+}
+
+[data-page-reveal="cards"] > :nth-child(5) {
+  animation-delay: 0.32s;
+}
+
+[data-page-reveal="cards-reverse"] > :nth-last-child(2) {
+  animation-delay: 0.06s;
+}
+
+[data-page-reveal="cards-reverse"] > :nth-last-child(3) {
+  animation-delay: 0.12s;
+}
+
+[data-page-reveal="cards-reverse"] > :nth-last-child(4) {
+  animation-delay: 0.18s;
+}
+
+[data-page-reveal="cards-reverse"] > :nth-last-child(5) {
+  animation-delay: 0.24s;
+}
+
+[data-page-reveal="cards-reverse"] > :nth-last-child(6) {
+  animation-delay: 0.3s;
+}
+
+[data-page-reveal="cards-reverse"] > :nth-last-child(7) {
+  animation-delay: 0.36s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-page-reveal="cards"] > *,
+  [data-page-reveal="cards-reverse"] > * {
+    animation: none;
+  }
+}
+
 .glacier-shell[data-theme-page="status"] [data-theme-section="content-panel"] {
   background: var(--theme-page-home-background, var(--mica-content-surface));
 }
@@ -478,9 +524,7 @@ html[data-window-blur="on"]:not([data-theme]) {
 }
 
 html[data-window-blur="on"]:not([data-theme]) .glacier-shell[data-theme-page] [data-theme-section="content-panel"] {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 72%),
-    var(--window-glass-panel-bg);
+  background: transparent;
 }
 
 .glacier-shell [data-theme-ui="setting-section"],
@@ -578,8 +622,6 @@ html[data-window-blur="on"]:not([data-theme]) .glacier-shell .glacier-chart-card
     var(--window-glass-card-mid-bg);
   border-color: var(--window-glass-border-muted);
   box-shadow: var(--window-glass-shadow);
-  backdrop-filter: blur(16px) saturate(130%);
-  -webkit-backdrop-filter: blur(16px) saturate(130%);
   background-clip: padding-box;
 }
 
@@ -599,8 +641,6 @@ html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="c
     var(--window-glass-card-soft-bg);
   border-color: color-mix(in srgb, var(--window-glass-border-muted) 82%, transparent);
   box-shadow: var(--window-glass-row-shadow);
-  backdrop-filter: blur(12px) saturate(122%);
-  -webkit-backdrop-filter: blur(12px) saturate(122%);
 }
 
 html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="setting-row-icon"],
@@ -634,8 +674,6 @@ html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="set
     linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent 72%),
     var(--window-glass-card-soft-bg);
   box-shadow: var(--window-glass-row-shadow);
-  backdrop-filter: blur(12px) saturate(122%);
-  -webkit-backdrop-filter: blur(12px) saturate(122%);
 }
 
 html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="setting-row"]:has(> [data-theme-ui="setting-row-control"] [data-theme-ui="switch"]) {
@@ -718,6 +756,11 @@ html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="c
   isolation: isolate;
   background-clip: padding-box;
   clip-path: inset(0 round var(--theme-curve-editor-radius, var(--theme-card-radius)));
+}
+
+.glacier-shell [data-theme-card="curve-history"] [data-theme-ui="switch"],
+.glacier-shell [data-theme-card="curve-history"] [data-theme-ui="switch-thumb"] {
+  transition: none;
 }
 
 [data-slot="dialog-overlay"] {
@@ -840,14 +883,33 @@ html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="com
   box-shadow: var(--theme-switch-thumb-shadow);
 }
 
-.glacier-shell [data-theme-ui="sidebar-item"] {
+.glacier-shell [data-theme-ui="sidebar-item"],
+.glacier-shell [data-theme-ui="settings-tab"] {
   border: 1px solid transparent;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
 }
 
-.glacier-shell [data-theme-ui="sidebar-item"][aria-selected="true"] {
-  background: color-mix(in srgb, var(--primary) 12%, var(--sidebar) 88%);
-  border-color: color-mix(in srgb, var(--primary) 18%, transparent);
-  box-shadow: 0 10px 24px -18px color-mix(in srgb, var(--primary) 50%, transparent);
+.glacier-shell [data-theme-ui="settings-tab"]:not([aria-selected="true"]):hover {
+  background: var(--sidebar-accent);
+  border-color: color-mix(in srgb, var(--primary) 16%, transparent);
+  color: var(--sidebar-foreground);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 28%, transparent),
+    0 5px 10px -8px color-mix(in srgb, var(--foreground) 38%, transparent);
+  transform: translateY(-0.5px);
+}
+
+.glacier-shell [data-theme-ui="sidebar-item"][aria-selected="true"],
+.glacier-shell [data-theme-ui="settings-tab"][aria-selected="true"] {
+  background: color-mix(in srgb, var(--primary) 11%, var(--sidebar) 78%);
+  border-color: color-mix(in srgb, var(--primary) 25%, white 12%);
+  backdrop-filter: blur(12px) saturate(125%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 52%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--primary) 10%, transparent),
+    0 5px 10px -7px color-mix(in srgb, var(--foreground) 45%, transparent),
+    0 2px 5px -3px color-mix(in srgb, var(--primary) 40%, transparent);
+  transform: translateY(-1px);
 }
 
 html,
@@ -863,7 +925,7 @@ body {
 
 body {
   overflow: hidden;
-  /* Western text prefers Manrope; CJK text falls back to bundled/system fonts. */
+  /* Match the reference typography, with system fonts as a safe fallback. */
   font-family: var(--font-sans), "PingFang SC", "Hiragino Sans GB",
     "Hiragino Sans", "Yu Gothic UI", "HarmonyOS Sans SC", "Source Han Sans SC", "Noto Sans CJK SC",
     "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI Variable",
@@ -976,56 +1038,6 @@ textarea,
 
 *::-webkit-scrollbar-corner {
   background: transparent;
-}
-
-@keyframes app-card-rise {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 10px, 0);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-}
-
-.app-tab-surface :where(
-  .glacier-hero-card,
-  .glacier-metric-card,
-  .glacier-control-card,
-  .glacier-chart-card,
-  .glacier-stat-tile,
-  [data-theme-ui="setting-section"],
-  [data-theme-card="curve-header"],
-  [data-theme-card="curve-editor"],
-  [data-theme-card="curve-manual-gears"],
-  [data-theme-card="curve-history-summary"],
-  [data-theme-card="curve-history-chart"],
-  [data-theme-card="fan-curve-preview"],
-  [data-theme-card="temperature-history"]
-) {
-  animation: app-card-rise 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  animation-delay: var(--app-card-rise-delay, 0ms);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .app-tab-surface :where(
-    .glacier-hero-card,
-    .glacier-metric-card,
-    .glacier-control-card,
-    .glacier-chart-card,
-    .glacier-stat-tile,
-    [data-theme-ui="setting-section"],
-    [data-theme-card="curve-header"],
-    [data-theme-card="curve-editor"],
-    [data-theme-card="curve-manual-gears"],
-    [data-theme-card="curve-history-summary"],
-    [data-theme-card="curve-history-chart"],
-    [data-theme-card="fan-curve-preview"],
-    [data-theme-card="temperature-history"]
-  ) {
-    animation: none;
-  }
 }
 
 /* Smooth animations */

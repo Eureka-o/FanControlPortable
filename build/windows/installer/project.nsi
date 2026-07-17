@@ -90,13 +90,9 @@ Unicode true
 !define CORE_EXECUTABLE_SOURCE "..\..\bin\FanControl Core.exe"
 !endif
 
-!ifndef INFO_NUMERIC_PRODUCTVERSION
-!define INFO_NUMERIC_PRODUCTVERSION "2.5.0.0"
-!endif
-
-# The version information for this two must consist of 4 parts
-VIProductVersion "${INFO_NUMERIC_PRODUCTVERSION}"
-VIFileVersion    "${INFO_NUMERIC_PRODUCTVERSION}"
+# Windows version resources require four numeric parts.
+VIProductVersion "2.5.2.0"
+VIFileVersion    "2.5.2.0"
 
 VIAddVersionKey "CompanyName"     "${INFO_COMPANYNAME}"
 VIAddVersionKey "FileDescription" "${INFO_PRODUCTNAME} Installer"
@@ -503,7 +499,7 @@ Section "$(THRM_STR_SECTION_MAIN)" SEC_MAIN
     SetOutPath $INSTDIR\bridge
     File /r "..\..\bin\bridge\*.*"
 
-    # Stage built-in themes first; the migration script copies only new or upgraded theme versions.
+    # Stage built-in themes first; the migration script copies only missing theme directories.
     DetailPrint "$(THRM_STR_INSTALLING_THEMES)"
     RMDir /r "$INSTDIR\.bundled-themes"
     SetOutPath $INSTDIR\.bundled-themes
@@ -800,7 +796,7 @@ Section "uninstall"
     DetailPrint "$(THRM_STR_REMOVE_LOGS)"
     RMDir /r "$INSTDIR\logs"
 
-    # Remove the root only if empty; separately installed plugins are intentionally preserved.
+    # Remove the install root only when no user-managed files remain.
     DetailPrint "$(THRM_STR_REMOVE_DIR)"
     RMDir $INSTDIR
 

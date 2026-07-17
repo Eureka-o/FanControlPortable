@@ -191,28 +191,12 @@ async function applyCustomTheme(id: string, isCancelled?: () => boolean): Promis
   writeThemeBootstrapSnapshot(createCustomThemeSnapshot(id, base, css, layer));
 }
 
-/**
- * 在 <html> 上写入 data-os：CSS 用 [data-os="mac"] / [data-os="win"]
- * 精确分流字体渲染策略 — 因为 Windows ClearType 子像素和 macOS 灰阶反锯齿
- * 对同一段 CSS 的诉求是反的。
- */
-function detectOs(): 'win' | 'mac' | 'linux' | 'other' {
-  if (typeof navigator === 'undefined') return 'other';
-  const ua = navigator.userAgent || '';
-  const platform = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform || '';
-  const probe = `${ua} ${platform}`.toLowerCase();
-  if (probe.includes('windows') || probe.includes('win32') || probe.includes('win64')) return 'win';
-  if (probe.includes('mac') || probe.includes('darwin')) return 'mac';
-  if (probe.includes('linux')) return 'linux';
-  return 'other';
-}
-
 export default function SystemThemeSync() {
   const themeMode = useAppStore((state) => {
     const rawMode = (state.config as any)?.themeMode;
     return typeof rawMode === 'string' && rawMode.trim() ? rawMode.trim() : null;
   });
-  const windowBlurMode = useAppStore((state) => (state.config as any)?.windowBlur || 'on');
+  const windowBlurMode = useAppStore((state) => (state.config as any)?.windowBlur || 'acrylic');
 
   useLayoutEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
@@ -246,11 +230,6 @@ export default function SystemThemeSync() {
     };
   }, [themeMode]);
 
-  // 仅首挂载时打 data-os；UA / 平台不会运行时变化
-  useEffect(() => {
-    document.documentElement.dataset.os = detectOs();
-  }, []);
-
   useLayoutEffect(() => {
     let cancelled = false;
     const effectiveThemeMode = themeMode || readThemeBootstrapSnapshot()?.mode || 'system';
@@ -269,7 +248,7 @@ export default function SystemThemeSync() {
       .then(({ WindowBlurEnabled }) => WindowBlurEnabled())
       .then((enabled) => {
         if (cancelled) return;
-        if (enabled || windowBlurMode === 'on') {
+        if (enabled) {
           document.documentElement.dataset.windowBlur = 'on';
         } else {
           delete document.documentElement.dataset.windowBlur;

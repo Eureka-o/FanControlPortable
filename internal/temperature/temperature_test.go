@@ -2,6 +2,9 @@ package temperature
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +25,18 @@ func (testLogger) GetLogDir() string    { return "" }
 type fakeBridgeTemperatureProvider struct {
 	responses []types.BridgeTemperatureData
 	calls     int
+}
+
+func TestResolveControlTempFallsBackToAvailableSensor(t *testing.T) {
+	if got := resolveControlTemp(0, 67, types.TempSourceCPU); got != 67 {
+		t.Fatalf("CPU source fallback = %d, want 67", got)
+	}
+	if got := resolveControlTemp(58, 0, types.TempSourceGPU); got != 58 {
+		t.Fatalf("GPU source fallback = %d, want 58", got)
+	}
+	if got := resolveControlTemp(0, 0, types.TempSourceGPU); got != 0 {
+		t.Fatalf("empty fallback = %d, want 0", got)
+	}
 }
 
 func (f *fakeBridgeTemperatureProvider) GetTemperature(types.TemperatureSelection) types.BridgeTemperatureData {
@@ -154,6 +169,99 @@ func TestReadUsesRecentBridgeTemperatureOnTransientFailure(t *testing.T) {
 	}
 }
 
+func TestReadTelemetryFreshOnlyForDirectBridgeData(t *testing.T) {
+	oldNow := readTimeNow
+	defer func() {
+		readTimeNow = oldNow
+	}()
+
+	now := time.Unix(1_717_000_000, 0)
+	readTimeNow = func() time.Time { return now }
+
+	bridge := &fakeBridgeTemperatureProvider{
+		responses: []types.BridgeTemperatureData{
+			{
+				Success:       true,
+				CpuTemp:       61,
+				ControlTemp:   61,
+				ControlSource: types.TempSourceCPU,
+			},
+			{
+				Success: false,
+				Error:   "timeout",
+			},
+		},
+	}
+
+	reader := NewReader(bridge, testLogger{})
+	selection := types.GetDefaultTemperatureSelection()
+	selection.TempSource = types.TempSourceCPU
+
+	direct := reader.Read(selection)
+	if !direct.TelemetryFresh {
+		t.Fatal("direct bridge data TelemetryFresh = false, want true")
+	}
+
+	now = now.Add(time.Second)
+	cached := reader.Read(selection)
+	if cached.TelemetryFresh {
+		t.Fatal("cached bridge data TelemetryFresh = true, want false")
+	}
+}
+
+func TestTelemetryStateClassifiesFreshDelayedAndUnavailable(t *testing.T) {
+	cases := []struct {
+		name string
+		temp types.TemperatureData
+		want string
+	}{
+		{name: "fresh", temp: types.TemperatureData{BridgeOk: true, TelemetryFresh: true, ControlTemp: 60}, want: types.TelemetryStateFresh},
+		{name: "delayed", temp: types.TemperatureData{BridgeOk: true, ControlTemp: 60}, want: types.TelemetryStateDelayed},
+		{name: "bridge unavailable", temp: types.TemperatureData{ControlTemp: 60}, want: types.TelemetryStateUnavailable},
+		{name: "invalid temperature", temp: types.TemperatureData{BridgeOk: true, TelemetryFresh: true}, want: types.TelemetryStateUnavailable},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := telemetryStateFor(tc.temp); got != tc.want {
+				t.Fatalf("telemetryStateFor() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestReadTelemetryFreshIsFalseForLocalFallback(t *testing.T) {
+	oldExec := execHelperCommand
+	defer func() {
+		execHelperCommand = oldExec
+	}()
+	execHelperCommand = func(time.Duration, string, ...string) ([]byte, error) {
+		return nil, errors.New("unavailable")
+	}
+
+	bridge := &fakeBridgeTemperatureProvider{
+		responses: []types.BridgeTemperatureData{{
+			Success:      true,
+			GPUReadState: types.GPUReadStateNotPolled,
+		}},
+	}
+	reader := NewReader(bridge, testLogger{})
+
+	if got := reader.Read(types.GetDefaultTemperatureSelection()); got.TelemetryFresh {
+		t.Fatal("local fallback TelemetryFresh = true, want false")
+	}
+}
+
+func TestTelemetryFreshIsNotSerialized(t *testing.T) {
+	encoded, err := json.Marshal(types.TemperatureData{TelemetryFresh: true})
+	if err != nil {
+		t.Fatalf("marshal TemperatureData: %v", err)
+	}
+	if strings.Contains(string(encoded), "telemetryFresh") {
+		t.Fatalf("serialized TemperatureData = %s, must not include TelemetryFresh", encoded)
+	}
+}
+
 func TestReadDoesNotUseExpiredBridgeTemperatureCache(t *testing.T) {
 	oldNow := readTimeNow
 	defer func() {
@@ -195,5 +303,8 @@ func TestReadDoesNotUseExpiredBridgeTemperatureCache(t *testing.T) {
 	}
 	if second.BridgeMsg != "timeout" {
 		t.Fatalf("second read BridgeMsg = %q, want timeout", second.BridgeMsg)
+	}
+	if second.TelemetryFresh {
+		t.Fatal("second read TelemetryFresh = true, want false after bridge failure")
 	}
 }

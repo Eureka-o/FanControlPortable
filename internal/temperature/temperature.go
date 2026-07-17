@@ -53,13 +53,14 @@ func NewReader(bridgeManager bridgeTemperatureProvider, logger types.Logger) *Re
 }
 
 // Read 读取温度
-func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureData {
+func (r *Reader) Read(selection types.TemperatureSelection) (temp types.TemperatureData) {
 	selection = types.NormalizeTemperatureSelection(selection)
-	temp := types.TemperatureData{
+	temp = types.TemperatureData{
 		UpdateTime:    time.Now().UnixMilli(),
 		BridgeOk:      true,
 		ControlSource: selection.TempSource,
 	}
+	defer func() { temp.TelemetryState = telemetryStateFor(temp) }()
 
 	// 优先使用桥接程序读取温度
 	bridgeTemp := r.bridgeManager.GetTemperature(selection)
@@ -85,6 +86,7 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 
 		temp.BridgeOk = true
 		temp.BridgeMsg = ""
+		temp.TelemetryFresh = true
 		r.storeLastGoodBridgeTemperature(selection, temp)
 		return temp
 	}
@@ -96,6 +98,7 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 		cached.UpdateTime = time.Now().UnixMilli()
 		cached.BridgeOk = true
 		cached.BridgeMsg = ""
+		cached.TelemetryFresh = false
 		return cached
 	}
 
@@ -122,6 +125,16 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 	temp.ControlTemp = resolveControlTemp(temp.CPUTemp, temp.GPUTemp, selection.TempSource)
 
 	return temp
+}
+
+func telemetryStateFor(temp types.TemperatureData) string {
+	if !temp.BridgeOk || temp.ControlTemp <= 0 {
+		return types.TelemetryStateUnavailable
+	}
+	if temp.TelemetryFresh {
+		return types.TelemetryStateFresh
+	}
+	return types.TelemetryStateDelayed
 }
 
 func (r *Reader) storeLastGoodBridgeTemperature(selection types.TemperatureSelection, temp types.TemperatureData) {
@@ -199,8 +212,14 @@ func normalizeGPUReadState(state string, gpuTemp int) string {
 func resolveControlTemp(cpuTemp, gpuTemp int, source string) int {
 	switch types.NormalizeTempSource(source) {
 	case types.TempSourceCPU:
+		if cpuTemp <= 0 && gpuTemp > 0 {
+			return gpuTemp
+		}
 		return cpuTemp
 	case types.TempSourceGPU:
+		if gpuTemp <= 0 && cpuTemp > 0 {
+			return cpuTemp
+		}
 		return gpuTemp
 	default:
 		return max(cpuTemp, gpuTemp)

@@ -164,15 +164,25 @@ jobs:
             if has_effective_changes "${GITHUB_SHA}"; then
               normalized_tag="${GITHUB_REF_NAME#v}"
               normalized_tag="${normalized_tag#V}"
+              release_type="stable"
+              is_prerelease="false"
+              release_label="formal release"
+              release_guidance="This is a formal release. Emphasize stable delivery and user-visible changes, but only state facts supported by the commit data."
+              if [[ "${normalized_tag,,}" == *"-preview"* ]]; then
+                release_type="preview"
+                is_prerelease="true"
+                release_label="preview release"
+                release_guidance="This is a preview release. Emphasize user-visible changes and make it clear that feedback is still being collected."
+              fi
               {
                 echo "should_build=true"
                 echo "should_publish_release=true"
-                echo "release_type=stable"
-                echo "is_prerelease=false"
+                echo "release_type=$release_type"
+                echo "is_prerelease=$is_prerelease"
                 echo "release_tag=${GITHUB_REF_NAME}"
                 echo "release_name=${GITHUB_REF_NAME}"
-                echo "release_label=formal release"
-                echo "release_guidance=This is a formal release. Emphasize stable delivery and user-visible changes, but only state facts supported by the commit data."
+                echo "release_label=$release_label"
+                echo "release_guidance=$release_guidance"
                 echo "build_version=$normalized_tag"
               } >> "$GITHUB_OUTPUT"
             fi
@@ -237,6 +247,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-bun-
 
+      - name: Install and test frontend
+        shell: pwsh
+        working-directory: frontend
+        run: |
+          bun install --frozen-lockfile
+          node --test tests/*.test.mjs
+
       - name: Build TempBridge
         shell: cmd
         run: build_bridge.bat
@@ -246,24 +263,6 @@ jobs:
         env:
           FANCONTROL_BUILD_VERSION: ${{ needs.prepare-release.outputs.build_version }}
         run: build.bat
-
-      - name: Collect release files
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path build/output | Out-Null
-          $buildVersion = '${{ needs.prepare-release.outputs.build_version }}'
-          if ([string]::IsNullOrWhiteSpace($buildVersion)) {
-            $wailsConfig = Get-Content wails.json -Raw | ConvertFrom-Json
-            $buildVersion = $wailsConfig.info.productVersion
-          }
-          if ([string]::IsNullOrWhiteSpace($buildVersion)) {
-            $buildVersion = 'dev'
-          }
-          Copy-Item build/bin/FanControl.exe build/output/FanControl.exe
-          Copy-Item 'build/bin/FanControl Core.exe' 'build/output/FanControl Core.exe'
-          Copy-Item build/bin/PawnIO_setup.exe build/output/PawnIO_setup.exe
-          Copy-Item -Recurse build/bin/bridge build/output/bridge
-          Compress-Archive -Path build/output/* -DestinationPath "build/bin/FanControl-$buildVersion-portable.zip" -Force
 
       - name: Upload PR artifacts
         if: github.event_name == 'pull_request'
@@ -309,8 +308,9 @@ jobs:
           $fileLines = @()
           $rawFileLines = @()
 
-          if ($releaseType -eq 'stable') {
+          if ($releaseType -eq 'stable' -or $releaseType -eq 'preview') {
             $currentTag = $env:RELEASE_TAG
+            $releaseKind = if ($releaseType -eq 'preview') { 'Preview' } else { 'Formal' }
             $previousTag = (git describe --tags --abbrev=0 "$currentTag^" 2>$null)
             if ($LASTEXITCODE -ne 0) {
               $previousTag = ''
@@ -318,12 +318,12 @@ jobs:
             $previousTag = "$previousTag".Trim()
 
             if ([string]::IsNullOrWhiteSpace($previousTag)) {
-              $compareSummary = "Formal release $currentTag; no earlier tag was found, so the notes should be based on the currently visible recent commits for this tag."
+              $compareSummary = "$releaseKind release $currentTag; no earlier tag was found, so the notes should be based on the currently visible recent commits for this tag."
               $commitLines = @(git log $currentTag --pretty=format:"- %h %s (%an, %ad)" --date=short --max-count=60)
               $fileLines = @(git log $currentTag --name-only --pretty=format: --max-count=60 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
             } else {
               $range = "$previousTag..$currentTag"
-              $compareSummary = "Formal release $currentTag; change range $range."
+              $compareSummary = "$releaseKind release $currentTag; change range $range."
               $commitLines = @(git log $range --pretty=format:"- %h %s (%an, %ad)" --date=short --max-count=60)
               $fileLines = @(git log $range --name-only --pretty=format: --max-count=60 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
             }
