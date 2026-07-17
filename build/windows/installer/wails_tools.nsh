@@ -14,7 +14,7 @@
     !define INFO_PRODUCTNAME "FanControl"
 !endif
 !ifndef INFO_PRODUCTVERSION
-    !define INFO_PRODUCTVERSION "2.5.2-preview.3"
+    !define INFO_PRODUCTVERSION "2.5.2"
 !endif
 !ifndef INFO_COPYRIGHT
     !define INFO_COPYRIGHT "Copyright (c) 2026 Eureka-o"
