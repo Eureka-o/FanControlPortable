@@ -64,6 +64,14 @@ func (a *App) emitCoreServiceOK() {
 	runtime.EventsEmit(a.ctx, "core-service-ok", nil)
 }
 
+func decodeDeviceConnectedPayload(data json.RawMessage) (map[string]any, error) {
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
 // handleCoreEvent 处理核心服务推送的事件
 func (a *App) handleCoreEvent(event ipc.Event) {
 	if a.ctx == nil {
@@ -94,8 +102,11 @@ func (a *App) handleCoreEvent(event ipc.Event) {
 		}
 
 	case ipc.EventDeviceConnected:
-		var deviceInfo map[string]string
-		json.Unmarshal(event.Data, &deviceInfo)
+		deviceInfo, err := decodeDeviceConnectedPayload(event.Data)
+		if err != nil {
+			guiLogger.Errorf("解析设备连接事件失败: %v", err)
+			return
+		}
 		a.mutex.Lock()
 		a.isConnected = true
 		a.mutex.Unlock()

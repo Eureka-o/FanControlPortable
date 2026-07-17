@@ -298,6 +298,11 @@ export interface DeviceInfo {
   model?: string;
   deviceName?: string;
   productId?: string;
+  transport?: string;
+  endpoint?: string;
+  currentData?: import('../../../wailsjs/go/models').types.FanData | null;
+  deviceSettings?: DeviceSettings | null;
   deviceProfile?: import('../../../wailsjs/go/models').types.DeviceProfile | null;
   deviceCapabilities?: import('../../../wailsjs/go/models').types.DeviceCapabilities | null;
+  runtime?: { state?: string };
 }

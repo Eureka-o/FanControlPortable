@@ -242,6 +242,31 @@ func TestReconnectTransportUsesCompatibilityFastPathAfterCompatibilitySuccess(t 
 	}
 }
 
+func TestConnectCompatibilityRetriesAfterEndpointRecovery(t *testing.T) {
+	connectCalls := 0
+	recoverCalls := 0
+	connected, info := connectCompatibilityWithRecovery(
+		func() (bool, map[string]string) {
+			connectCalls++
+			if connectCalls == 1 {
+				return false, nil
+			}
+			return true, map[string]string{"endpoint": "http://192.168.1.21"}
+		},
+		func() bool {
+			recoverCalls++
+			return true
+		},
+	)
+
+	if !connected || info["endpoint"] != "http://192.168.1.21" {
+		t.Fatalf("recovered compatibility connection = connected %v, info %#v", connected, info)
+	}
+	if connectCalls != 2 || recoverCalls != 1 {
+		t.Fatalf("connectCalls=%d recoverCalls=%d, want 2 and 1", connectCalls, recoverCalls)
+	}
+}
+
 func TestReconnectNativeTransportKeepsLastSuccessfulProfile(t *testing.T) {
 	profile := types.FlyDigiBS2PROProfile()
 	profileCalls := 0

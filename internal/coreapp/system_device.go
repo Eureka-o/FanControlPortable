@@ -384,7 +384,12 @@ func (a *CoreApp) reconnectDevice() reconnectAttemptResult {
 		},
 		func() (bool, map[string]string) {
 			a.configureDeviceManager(cfg)
-			return a.deviceManager.Connect()
+			return connectCompatibilityWithRecovery(
+				a.deviceManager.Connect,
+				func() bool {
+					return shouldTryDynamicWiFiCompatibility(cfg) && a.recoverDynamicWiFiEndpoint(&cfg)
+				},
+			)
 		},
 	)
 	return reconnectAttemptResult{
@@ -423,6 +428,17 @@ func reconnectTransport(
 	return tryCompatibility()
 }
 
+func connectCompatibilityWithRecovery(
+	connect func() (bool, map[string]string),
+	recoverEndpoint func() bool,
+) (bool, map[string]string) {
+	connected, info := connect()
+	if connected || recoverEndpoint == nil || !recoverEndpoint() {
+		return connected, info
+	}
+	return connect()
+}
+
 func compatibilityConnectionEnabled(cfg types.AppConfig) bool {
 	types.NormalizeDeviceProfileConfig(&cfg)
 	profile := types.ActiveDeviceProfile(&cfg)
@@ -438,6 +454,9 @@ func compatibilityConnectionEnabled(cfg types.AppConfig) bool {
 
 func shouldTryDynamicWiFiCompatibility(cfg types.AppConfig) bool {
 	if !cfg.WiFiCompatibilityEnabled {
+		return false
+	}
+	if !cfg.WiFiDynamicIPCompatibilityEnabled {
 		return false
 	}
 	types.NormalizeDeviceProfileConfig(&cfg)
