@@ -6,6 +6,7 @@ const source = readFileSync(new URL('../src/app/components/FanCurve.tsx', import
 const styles = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8');
 const pageSource = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
 const historyHookSource = readFileSync(new URL('../src/app/hooks/useTemperatureHistory.ts', import.meta.url), 'utf8');
+const storeSource = readFileSync(new URL('../src/app/store/app-store.ts', import.meta.url), 'utf8');
 
 test('keeps profile selection, creation, and management in the curve header', () => {
   assert.match(source, /data-curve-profile-toolbar/);
@@ -78,10 +79,26 @@ test('reveals history upward and keeps focused-entry layout stable', () => {
   assert.match(styles, /\[data-page-reveal="cards-reverse"\] > :nth-last-child\(7\)/);
 });
 
-test('uses normal curve navigation and keeps history hydration out of the entry animation', () => {
+test('keeps curve jump aligned until the target layout stabilizes', () => {
+  assert.match(source, /const FOCUS_SCROLL_STABLE_FRAMES = 8/);
+  assert.match(source, /const FOCUS_SCROLL_TIMEOUT_MS = 1_200/);
+  assert.match(source, /if \(!target\) \{\s*onFocusHandled\(\);\s*return;/);
+  assert.match(source, /target\.getBoundingClientRect\(\)\.top/);
+  assert.match(source, /stableFrameCount >= FOCUS_SCROLL_STABLE_FRAMES/);
+  assert.match(source, /window\.requestAnimationFrame\(scrollUntilStable\)/);
+});
+
+test('uses normal curve navigation and keeps history ownership outside page mounts', () => {
   assert.match(pageSource, /onOpenCurveEditor=\{\(\) => setActiveTab\('curve'\)\}/);
   assert.match(pageSource, /onOpenHistoryDetails=\{\(\) => openCurveTab\('history-details'\)\}/);
-  assert.match(historyHookSource, /startTransition\(\(\) => \{/);
+  assert.doesNotMatch(historyHookSource, /apiService|useEffect|useState|useRef|startTransition/);
+  assert.match(historyHookSource, /state\.temperatureHistoryPoints/);
+  assert.match(historyHookSource, /state\.setTemperatureHistoryEnabled/);
+  assert.match(storeSource, /temperatureHistoryInitialized: boolean/);
+  assert.match(storeSource, /temperatureHistoryPoints: TemperatureHistoryPoint\[\]/);
+  assert.match(storeSource, /if \(!force && \(state\.temperatureHistoryInitialized \|\| state\.temperatureHistoryLoading\)\)/);
+  assert.match(storeSource, /apiService\.onTemperatureHistoryUpdate/);
+  assert.match(storeSource, /void get\(\)\.loadTemperatureHistory\(\)/);
   assert.match(styles, /\[data-theme-card="curve-history"\] \[data-theme-ui="switch-thumb"\][^}]+transition: none;/s);
 });
 
@@ -94,10 +111,18 @@ test('splits power history into an aligned conditional chart with a shared full-
   assert.equal([...source.matchAll(/margin=\{\{ top: 12, right: 16, left: 4, bottom: 8 \}\}/g)].length, 2);
 });
 
-test('defers the offscreen power chart until history approaches the viewport', () => {
-  assert.match(source, /const \[historyPowerChartReady, setHistoryPowerChartReady\] = useState\(false\)/);
+test('defers all offscreen history charts until history approaches the viewport', () => {
+  assert.match(source, /const \[historyChartsReady, setHistoryChartsReady\] = useState\(false\)/);
   assert.match(source, /new IntersectionObserver/);
   assert.match(source, /observer\.observe\(historyDetailsRef\.current\)/);
-  assert.match(source, /showHistoryPowerChart && \(/);
-  assert.match(source, /historyPowerChartReady \? \(\s*<ResponsiveContainer/s);
+  assert.match(source, /historyChartsReady \? \(\s*historyChartData\.length < 2/s);
+  assert.doesNotMatch(source, /historyPowerChartReady/);
+});
+
+test('provides positive initial dimensions for every responsive chart', () => {
+  const responsiveContainers = [...source.matchAll(/<ResponsiveContainer\b[^>]*>/g)].map((match) => match[0]);
+  assert.equal(responsiveContainers.length, 3);
+  for (const container of responsiveContainers) {
+    assert.match(container, /initialDimension=\{\{ width: [1-9]\d*, height: [1-9]\d* \}\}/);
+  }
 });
