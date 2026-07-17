@@ -85,6 +85,9 @@ const DEFAULT_RPM_FAN_CURVE: types.FanCurvePoint[] = [
 ];
 const SMART_CONTROL_TARGET_TEMP_MIN = 45;
 const SMART_CONTROL_TARGET_TEMP_MAX = 90;
+const FOCUS_SCROLL_STABLE_FRAMES = 8;
+const FOCUS_SCROLL_TIMEOUT_MS = 1_200;
+const FOCUS_SCROLL_EPSILON_PX = 0.5;
 type CurveProfile = { id: string; name: string; curve: types.FanCurvePoint[] };
 
 const LEARNING_BIAS_OPTIONS = [
@@ -450,7 +453,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [isInteracting, setIsInteracting] = useState(false);
   const [historyDisplayDialogOpen, setHistoryDisplayDialogOpen] = useState(false);
-  const [historyPowerChartReady, setHistoryPowerChartReady] = useState(false);
+  const [historyChartsReady, setHistoryChartsReady] = useState(false);
   const [draggedHistorySeries, setDraggedHistorySeries] = useState<HistorySeriesKey | null>(null);
   const {
     orderedSeries,
@@ -634,13 +637,32 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
 
     const target = focusTarget === 'history-details' ? historyDetailsRef.current : curveEditorRef.current;
     if (!target) {
+      onFocusHandled();
       return;
     }
 
-    const frame = window.requestAnimationFrame(() => {
+    const startedAt = performance.now();
+    let frame = 0;
+    let lastTop: number | null = null;
+    let stableFrameCount = 0;
+
+    const scrollUntilStable = (timestamp: number) => {
       target.scrollIntoView({ block: 'start' });
-      onFocusHandled();
-    });
+      const nextTop = target.getBoundingClientRect().top;
+      stableFrameCount = lastTop !== null && Math.abs(nextTop - lastTop) <= FOCUS_SCROLL_EPSILON_PX
+        ? stableFrameCount + 1
+        : 0;
+      lastTop = nextTop;
+
+      if (stableFrameCount >= FOCUS_SCROLL_STABLE_FRAMES || timestamp - startedAt >= FOCUS_SCROLL_TIMEOUT_MS) {
+        onFocusHandled();
+        return;
+      }
+
+      frame = window.requestAnimationFrame(scrollUntilStable);
+    };
+
+    frame = window.requestAnimationFrame(scrollUntilStable);
 
     return () => {
       window.cancelAnimationFrame(frame);
@@ -648,21 +670,21 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   }, [focusTarget, onFocusHandled]);
 
   useEffect(() => {
-    if (historyPowerChartReady) return;
+    if (historyChartsReady) return;
     if (typeof IntersectionObserver === 'undefined') {
-      setHistoryPowerChartReady(true);
+      setHistoryChartsReady(true);
       return;
     }
     if (!historyDetailsRef.current) return;
 
     const observer = new IntersectionObserver(([entry]) => {
       if (!entry?.isIntersecting) return;
-      setHistoryPowerChartReady(true);
+      setHistoryChartsReady(true);
       observer.disconnect();
     }, { rootMargin: '360px 0px' });
     observer.observe(historyDetailsRef.current);
     return () => observer.disconnect();
-  }, [historyPowerChartReady]);
+  }, [historyChartsReady]);
 
   const learnedOffsetSummary = useMemo(() => {
     const sourceCurve = localCurve.length > 0 ? localCurve : (config.fanCurve || []);
@@ -680,7 +702,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       }));
   }, [config.fanCurve, currentLearningBias, localCurve, smartControl.learnedOffsets, speedUnit]);
 
-  const detailHistoryPoints = useMemo(() => temperatureHistory.slice(-720), [temperatureHistory]);
+  const detailHistoryPoints = useMemo(
+    () => historyChartsReady ? temperatureHistory.slice(-720) : [],
+    [historyChartsReady, temperatureHistory],
+  );
 
   const historySummary = useMemo(() => {
     const latest = temperatureHistory[temperatureHistory.length - 1] ?? null;
@@ -1771,7 +1796,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
             className={clsx('relative rounded-3xl border bg-card p-4 shadow-sm', dragIndex !== null ? 'ring-2 ring-primary/40 border-primary/30' : 'border-border/70')}
           >
             <div className="h-80 md:h-96 relative">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 960, height: 384 }}>
                 <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                   <XAxis dataKey="temperature" type="number" domain={[temperatureRange.min, temperatureRange.max]} ticks={temperatureRange.ticks} interval={0} minTickGap={0} tickLine={false} axisLine={{ stroke: 'var(--chart-axis)' }} tick={{ fill: 'var(--chart-tick)', fontSize: 10 }} label={{ value: t('fanCurve.chart.axes.temperature'), position: 'insideBottom', offset: -10, fill: 'var(--chart-tick)', fontSize: 12 }} />
@@ -2013,12 +2038,13 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                   </div>
                 </div>
 
-                {historyChartData.length < 2 ? (
-                  <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">{t('fanCurve.history.waitingMoreSamples')}</div>
-                ) : (
-                  <>
+                {historyChartsReady ? (
+                  historyChartData.length < 2 ? (
+                    <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">{t('fanCurve.history.waitingMoreSamples')}</div>
+                  ) : (
+                    <>
                     <div data-history-chart="thermal-fan" className="h-72">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 960, height: 288 }}>
                         <LineChart data={historyChartData} margin={{ top: 12, right: 16, left: 4, bottom: 8 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                           <XAxis
@@ -2121,8 +2147,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                       <div data-history-chart="power" className="border-t border-border/60 pt-3">
                         <div className="mb-2 text-xs font-medium text-muted-foreground">{t('fanCurve.history.powerTrend')}</div>
                         <div className="h-48">
-                          {historyPowerChartReady ? (
-                            <ResponsiveContainer width="100%" height="100%">
+                          <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 960, height: 192 }}>
                               <LineChart data={historyChartData} margin={{ top: 12, right: 16, left: 4, bottom: 8 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                                 <XAxis
@@ -2178,13 +2203,13 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                                   );
                                 })}
                               </LineChart>
-                            </ResponsiveContainer>
-                          ) : null}
+                          </ResponsiveContainer>
                         </div>
                       </div>
                     )}
-                  </>
-                )}
+                    </>
+                  )
+                ) : null}
               </div>
               <Dialog open={historyDisplayDialogOpen} onOpenChange={setHistoryDisplayDialogOpen}>
                 <DialogContent data-theme-ui="history-display-dialog" className="max-w-md will-change-auto">
