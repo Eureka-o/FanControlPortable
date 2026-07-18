@@ -98,6 +98,15 @@ func (m *Manager) disconnectBLELocked() bool {
 	return true
 }
 
+func (m *Manager) markBS1DisconnectedLocked() func() {
+	if !m.isConnected || m.deviceType != types.DeviceTransportBLE || m.activeProfile.ID != types.FlyDigiBS1ProfileID {
+		return nil
+	}
+	m.connectionGen.Add(1)
+	m.disconnectBLELocked()
+	return m.onDisconnect
+}
+
 // refreshBLEStateWithChangeDetection 是 RefreshBLEState 的内部比较逻辑，
 // 用轻量字段比较替代 reflect.DeepEqual（BLE 刷新频率高，避免每次反射开销）。
 func refreshBLEStateWithChangeDetection(prev, next *types.FanData) bool {
@@ -138,8 +147,12 @@ func (m *Manager) RefreshBLEState() bool {
 	}
 	fanData, err := m.refreshBLEStateLocked()
 	if err != nil {
+		callback := m.markBS1DisconnectedLocked()
 		m.mutex.Unlock()
 		m.logError("BLE controller state refresh failed: %v", err)
+		if callback != nil {
+			callback()
+		}
 		return false
 	}
 	var callback func(data *types.FanData)
@@ -203,6 +216,9 @@ func (m *Manager) setBLETargetSpeedWithContextLocked(ctx context.Context, speed 
 	next, err := m.bleExecutor.SetSpeed(ctx, speed)
 	if err != nil {
 		m.logError("BLE profile speed command failed: %v", err)
+		if callback := m.markBS1DisconnectedLocked(); callback != nil {
+			go callback()
+		}
 		return false
 	}
 	next.Transport = types.DeviceTransportBLE

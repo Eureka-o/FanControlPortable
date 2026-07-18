@@ -111,6 +111,7 @@ func TestNormalizeSpeedConfigKeepsRPMCurve(t *testing.T) {
 	}
 	cfg := types.GetDefaultConfig(false)
 	cfg.DeviceTransport = types.DeviceTransportSerial
+	cfg.SerialCompatibilityEnabled = true
 	cfg.ActiveDeviceProfileID = serial.ID
 	cfg.DeviceProfiles = []types.DeviceProfile{serial}
 	cfg.FanCurve = types.GetDefaultRPMFanCurve()
@@ -130,10 +131,11 @@ func TestNormalizeSpeedConfigKeepsRPMCurve(t *testing.T) {
 
 func TestNormalizeSpeedConfigBackfillsOldWiFiProfile(t *testing.T) {
 	cfg := types.AppConfig{
-		DeviceTransport:    types.DeviceTransportWiFi,
-		FanControlDeviceIp: "10.0.0.9",
-		FanCurve:           types.GetDefaultFanCurve(),
-		CustomSpeedRPM:     45,
+		DeviceTransport:          types.DeviceTransportWiFi,
+		FanControlDeviceIp:       "10.0.0.9",
+		WiFiCompatibilityEnabled: true,
+		FanCurve:                 types.GetDefaultFanCurve(),
+		CustomSpeedRPM:           45,
 	}
 
 	normalizeSpeedConfig(&cfg)
@@ -383,6 +385,8 @@ func TestLoadUpgradeConfigPreservesDeviceProfilesAndLearningState(t *testing.T) 
 	}
 	cfg := types.GetDefaultConfig(false)
 	cfg.DeviceTransport = types.DeviceTransportSerial
+	cfg.WiFiCompatibilityEnabled = true
+	cfg.SerialCompatibilityEnabled = true
 	cfg.FanControlDeviceIp = "10.8.0.77"
 	cfg.ActiveDeviceProfileID = serial.ID
 	cfg.ActiveDeviceProfileIDsByTransport = map[string]string{

@@ -446,16 +446,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
         return status;
       }
       const coreServiceError = status?.error ? getCoreServiceErrorMessage(status.error) : null;
+	  const connected = status?.connected === true;
       set({
         config: appConfig ? types.AppConfig.createFrom(appConfig) : get().config,
-        isConnected: status?.connected || false,
+		isConnected: connected,
         deviceRuntimeState: runtimeStateFromStatus(status),
-        deviceSettings: status?.deviceSettings || null,
-        deviceProductId: status?.productId || null,
-        deviceModel: status?.model || null,
-        runtimeDeviceProfile: status?.deviceProfile || null,
-        runtimeDeviceCapabilities: status?.deviceCapabilities || status?.deviceProfile?.capabilities || null,
-        fanData: status?.currentData || null,
+		deviceSettings: connected ? status?.deviceSettings || null : null,
+		deviceProductId: connected ? status?.productId || null : null,
+		deviceModel: connected ? status?.model || null : null,
+		runtimeDeviceProfile: connected ? status?.deviceProfile || null : null,
+		runtimeDeviceCapabilities: connected ? status?.deviceCapabilities || status?.deviceProfile?.capabilities || null : null,
+		fanData: connected ? status?.currentData || null : null,
         coreServiceError,
         error: coreServiceError,
       });
@@ -476,18 +477,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   startEventListeners: () => {
     const unsubscribers: Array<() => void> = [];
-    let pendingDisconnectTimer: number | null = null;
-    const clearPendingDisconnect = () => {
-      if (pendingDisconnectTimer !== null) {
-        window.clearTimeout(pendingDisconnectTimer);
-        pendingDisconnectTimer = null;
-      }
-    };
 
     unsubscribers.push(
       apiService.onCoreServiceError((message) => {
         deviceContextRequestGate.invalidate();
-        clearPendingDisconnect();
         const coreServiceError = getCoreServiceErrorMessage(message);
         set({
           coreServiceError,
@@ -516,7 +509,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
     unsubscribers.push(
       apiService.onDeviceConnected((deviceInfo) => {
         console.log('设备已连接:', deviceInfo);
-        clearPendingDisconnect();
         const info = deviceInfo;
         const settings = info.deviceSettings || null;
         const connectedDeviceName = [
@@ -552,23 +544,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
       apiService.onDeviceDisconnected(() => {
         deviceContextRequestGate.invalidate();
         console.log('设备已断开');
-        clearPendingDisconnect();
         set((state) => ({
+		  isConnected: false,
+		  deviceRuntimeState: 'disconnected',
+		  deviceProductId: null,
+		  deviceModel: null,
+		  deviceSettings: null,
+		  runtimeDeviceProfile: null,
+		  runtimeDeviceCapabilities: null,
+		  fanData: null,
           timelineEvents: appendTimelineEvent(state.timelineEvents, { timestamp: Date.now(), type: 'disconnect' }),
         }));
-        if (!get().isConnected) {
-          set({ isConnected: false, deviceRuntimeState: 'disconnected', deviceProductId: null, deviceModel: null, deviceSettings: null, runtimeDeviceProfile: null, runtimeDeviceCapabilities: null, fanData: null });
-          return;
-        }
-        pendingDisconnectTimer = window.setTimeout(() => {
-          pendingDisconnectTimer = null;
-          set({ isConnected: false, deviceRuntimeState: 'disconnected', deviceProductId: null, deviceModel: null, deviceSettings: null, runtimeDeviceProfile: null, runtimeDeviceCapabilities: null, fanData: null });
-        }, 2200);
       })
     );
 
     unsubscribers.push(
       apiService.onDeviceSettingsUpdate((settings) => {
+		if (!get().isConnected) return;
         set({ deviceSettings: settings || null });
         void get().refreshDeviceContext();
       })
@@ -584,6 +576,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     unsubscribers.push(
       apiService.onFanDataUpdate((data) => {
         const current = get();
+		if (!current.isConnected) return;
         if (fanDataEquals(current.fanData, data)) return;
         set({ fanData: data });
       })
@@ -664,7 +657,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
     void get().loadTemperatureHistory();
 
     return () => {
-      clearPendingDisconnect();
       unsubscribers.forEach((unsubscribe) => unsubscribe());
     };
   },

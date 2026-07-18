@@ -145,6 +145,12 @@ func (a *CoreApp) Start() error {
 		a.hidNotifyStop = stop
 		a.logInfo("已注册飞智 HID 接口到达通知")
 	}
+	if stop, err := powernotify.RegisterBluetoothLEInterfaceArrivalNotifications(a.onSupportedBLEArrival); err != nil {
+		a.logDebug("Bluetooth LE interface arrival notifications unavailable; using reconnect backoff: %v", err)
+	} else {
+		a.bleNotifyStop = stop
+		a.logInfo("Bluetooth LE interface arrival notifications registered")
+	}
 
 	// 启动健康监控
 	if cfg.GuiMonitoring {
@@ -196,6 +202,10 @@ func (a *CoreApp) Stop() {
 	if a.hidNotifyStop != nil {
 		a.safeRun("hid-notify-unregister", a.hidNotifyStop)
 		a.hidNotifyStop = nil
+	}
+	if a.bleNotifyStop != nil {
+		a.safeRun("ble-notify-unregister", a.bleNotifyStop)
+		a.bleNotifyStop = nil
 	}
 	a.stopTemperatureMonitoring()
 	a.monitoringMutex.Lock()

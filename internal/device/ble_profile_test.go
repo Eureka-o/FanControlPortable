@@ -5,6 +5,7 @@ package device
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/TIANLI0/THRM/internal/deviceprofileexec"
 	"github.com/TIANLI0/THRM/internal/deviceproto"
@@ -12,9 +13,10 @@ import (
 )
 
 type managerFakeBLEClient struct {
-	reads  [][]byte
-	writes []managerFakeBLEWrite
-	closed bool
+	reads    [][]byte
+	writes   []managerFakeBLEWrite
+	writeErr error
+	closed   bool
 }
 
 type managerFakeBLEWrite struct {
@@ -27,7 +29,7 @@ func (c *managerFakeBLEClient) WriteBLECommand(ctx context.Context, payload []by
 		payload:      append([]byte(nil), payload...),
 		withResponse: withResponse,
 	})
-	return nil
+	return c.writeErr
 }
 
 func (c *managerFakeBLEClient) ReadBLEFrame(ctx context.Context) ([]byte, error) {
@@ -162,5 +164,32 @@ func TestBLEManagerRefreshBS1ReadsNotifyState(t *testing.T) {
 	after := m.GetCurrentFanData()
 	if after == nil || after.CurrentRPM != 1700 || after.TargetRPM != 1800 {
 		t.Fatalf("after refresh fan data = %#v, want current/target 1700/1800", after)
+	}
+}
+
+func TestBLEManagerFailedBS1WriteMarksDisconnectedAndNotifiesCore(t *testing.T) {
+	client := &managerFakeBLEClient{writeErr: context.Canceled}
+	m := NewManager(nil)
+	m.bleConnector = deviceprofileexec.BLEConnectorFunc(func(ctx context.Context, profile types.DeviceProfile) (deviceprofileexec.BLEClient, error) {
+		return client, nil
+	})
+	disconnected := make(chan struct{}, 1)
+	m.SetCallbacks(nil, func() { disconnected <- struct{}{} })
+	m.ConfigureProfile(types.FlyDigiBS1Profile(), "")
+
+	connected, _ := m.Connect()
+	if !connected {
+		t.Fatal("expected BS1 BLE profile to connect")
+	}
+	if m.SetTargetSpeed(1800, types.FanSpeedUnitRPM) {
+		t.Fatal("expected failed BS1 speed write")
+	}
+	if m.IsConnected() || m.GetDeviceType() != "" || m.GetCurrentFanData() != nil {
+		t.Fatalf("failed BS1 write left stale manager state: connected=%v type=%q data=%#v", m.IsConnected(), m.GetDeviceType(), m.GetCurrentFanData())
+	}
+	select {
+	case <-disconnected:
+	case <-time.After(time.Second):
+		t.Fatal("failed BS1 write did not notify Core")
 	}
 }

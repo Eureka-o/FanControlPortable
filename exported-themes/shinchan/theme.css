@@ -904,7 +904,18 @@ html[data-theme="shinchan"] .glacier-stat-tile:active {
   font-weight: 400 800;
   font-style: normal;
   font-display: swap;
-}/* Shin-chan repair: use a compact bundled rounded Chinese subset and restore card feedback. */
+}
+
+@font-face {
+  font-family: "FanControl Advanced Glyph Patch";
+  src: url("assets/fonts/advanced-glyph-patch-603b.woff") format("woff");
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+603B;
+}
+
+/* Shin-chan repair: use a compact bundled rounded Chinese subset and restore card feedback. */
 html[data-theme="shinchan"] {
   --shinchan-cjk-font:
     "Shin-chan Round",

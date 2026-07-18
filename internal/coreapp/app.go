@@ -79,6 +79,7 @@ type CoreApp struct {
 
 	powerNotifyStop func()
 	hidNotifyStop   func()
+	bleNotifyStop   func()
 
 	guiLastResponse   int64
 	guiMonitorEnabled bool

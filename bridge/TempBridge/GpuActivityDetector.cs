@@ -23,7 +23,6 @@ namespace FanControl.TempBridge
     internal static class GpuActivityDetector
     {
         private const ulong DiscreteMemoryThreshold = 512UL * 1024UL * 1024UL;
-        private const double ActiveDedicatedMemoryThreshold = 128 * 1024 * 1024;
         private const double ActiveEngineUtilizationThreshold = 2;
         private const int AdapterCacheSeconds = 300;
         private static readonly object cacheLock = new object();
@@ -32,10 +31,6 @@ namespace FanControl.TempBridge
         private static readonly Regex EngineLuidPattern = new Regex(
             @"luid_(0x[0-9a-f]+)_(0x[0-9a-f]+).*engtype_([a-z0-9]*)",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        private static readonly Regex AdapterLuidPattern = new Regex(
-            @"luid_(0x[0-9a-f]+)_(0x[0-9a-f]+)",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
         [StructLayout(LayoutKind.Sequential)]
         private struct Luid
         {
@@ -122,10 +117,9 @@ namespace FanControl.TempBridge
             }
 
             var activeEngines = ReadActiveGpuEngineLuids(discreteLuids).ToArray();
-            var activeMemory = ReadActiveGpuMemoryLuids(discreteLuids).ToArray();
-            status.IsActive = activeEngines.Length > 0 || activeMemory.Length > 0;
+            status.IsActive = activeEngines.Length > 0;
             status.Detail = status.IsActive
-                ? "active discrete GPU: " + string.Join(", ", activeEngines.Concat(activeMemory).Take(3))
+                ? "active discrete GPU: " + string.Join(", ", activeEngines.Take(3))
                 : "discrete GPU idle";
             return status;
         }
@@ -193,28 +187,6 @@ namespace FanControl.TempBridge
                     yield return string.IsNullOrWhiteSpace(processName)
                         ? "engine:" + name
                         : string.Format("engine:{0}:{1:0.#}%", processName, utilization);
-                }
-            }
-        }
-
-        private static IEnumerable<string> ReadActiveGpuMemoryLuids(HashSet<string> discreteLuids)
-        {
-            using (var searcher = new ManagementObjectSearcher("SELECT Name, DedicatedUsage FROM Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory"))
-            using (var results = searcher.Get())
-            {
-                foreach (ManagementObject item in results)
-                {
-                    double dedicatedUsage = ReadDouble(item["DedicatedUsage"]);
-                    if (dedicatedUsage < ActiveDedicatedMemoryThreshold)
-                    {
-                        continue;
-                    }
-
-                    string luid = ParseAdapterLuid(Convert.ToString(item["Name"]));
-                    if (luid.Length > 0 && discreteLuids.Contains(luid))
-                    {
-                        yield return "memory:" + luid;
-                    }
                 }
             }
         }
@@ -298,17 +270,6 @@ namespace FanControl.TempBridge
 
             int pid;
             return int.TryParse(match.Groups[1].Value, out pid) ? pid : 0;
-        }
-
-        private static string ParseAdapterLuid(string instanceName)
-        {
-            var match = AdapterLuidPattern.Match(instanceName ?? string.Empty);
-            if (!match.Success)
-            {
-                return string.Empty;
-            }
-
-            return NormalizeLuid(match.Groups[1].Value, match.Groups[2].Value);
         }
 
         private static string FormatLuid(Luid luid)

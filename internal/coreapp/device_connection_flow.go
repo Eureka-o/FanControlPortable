@@ -21,7 +21,7 @@ func (f deviceConnectionFlow) connectBestScannedDevice() bool {
 	cfg := f.app.configManager.Get()
 	selectionCfg := cfg
 	types.NormalizeDeviceProfileConfig(&cfg)
-	for _, transport := range []string{types.DeviceTransportHID, types.DeviceTransportBLE} {
+	for _, transport := range []string{types.DeviceTransportBLE, types.DeviceTransportHID} {
 		devices := f.app.deviceManager.ScanNativeDevicesProfilesByTransport(cfg.DeviceProfiles, transport)
 		if len(devices) > 0 {
 			selected, ok := selectNativeAutoConnectCandidate(devices, selectionCfg, transport)

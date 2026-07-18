@@ -90,10 +90,10 @@ func TestNativeAutoConnectCandidatesKeepUserNativeProfilesBeforeBuiltInFallbacks
 		gotIDs = append(gotIDs, profile.ID)
 	}
 	wantIDs := []string{
-		userHID.ID,
-		types.LegacyRPMProfileID,
 		userBLE.ID,
 		types.FlyDigiBS1ProfileID,
+		userHID.ID,
+		types.LegacyRPMProfileID,
 	}
 	if len(gotIDs) != len(wantIDs) {
 		t.Fatalf("candidate IDs = %#v, want %#v", gotIDs, wantIDs)
@@ -101,6 +101,32 @@ func TestNativeAutoConnectCandidatesKeepUserNativeProfilesBeforeBuiltInFallbacks
 	for i := range wantIDs {
 		if gotIDs[i] != wantIDs[i] {
 			t.Fatalf("candidate IDs = %#v, want %#v", gotIDs, wantIDs)
+		}
+	}
+}
+
+func TestNativeAutoConnectCandidatesKeepHIDPreferenceBehindBLE(t *testing.T) {
+	previous := types.FlyDigiBS2PROProfile()
+	candidates := nativeAutoConnectCandidates(nil, previous)
+	if len(candidates) < 2 {
+		t.Fatalf("candidate IDs = %#v, want BLE and HID candidates", candidates)
+	}
+	if candidates[0].Transport != types.DeviceTransportBLE {
+		t.Fatalf("first candidate transport = %q, want BLE", candidates[0].Transport)
+	}
+	hidIndex := -1
+	for index, candidate := range candidates {
+		if candidate.Transport == types.DeviceTransportHID {
+			hidIndex = index
+			break
+		}
+	}
+	if hidIndex <= 0 {
+		t.Fatalf("HID candidate index = %d, want it after at least one BLE candidate", hidIndex)
+	}
+	for _, candidate := range candidates[:hidIndex] {
+		if candidate.Transport != types.DeviceTransportBLE {
+			t.Fatalf("candidate before HID has transport %q, want BLE group", candidate.Transport)
 		}
 	}
 }

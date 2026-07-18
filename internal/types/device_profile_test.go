@@ -129,6 +129,25 @@ func TestBuiltInDeviceProfilesIncludeFlyDigiProfiles(t *testing.T) {
 	}
 }
 
+func TestDefaultConfigDoesNotPersistWiFiWithoutCompatibility(t *testing.T) {
+	cfg := GetDefaultConfig(false)
+
+	if cfg.WiFiCompatibilityEnabled {
+		t.Fatal("WiFi compatibility should be disabled by default")
+	}
+	if cfg.DeviceTransport != "" || cfg.ActiveDeviceProfileID != "" {
+		t.Fatalf("default compatibility identity = %q/%q, want empty", cfg.DeviceTransport, cfg.ActiveDeviceProfileID)
+	}
+	for _, profile := range cfg.DeviceProfiles {
+		if NormalizeDeviceTransport(profile.Transport) == DeviceTransportWiFi {
+			t.Fatalf("default config persisted WiFi profile %#v", profile)
+		}
+	}
+	if active := ActiveDeviceProfile(&cfg); active.ID != "" || active.Transport != "" {
+		t.Fatalf("active profile = %#v, want no compatibility profile", active)
+	}
+}
+
 func TestFlyDigiBuiltInProfilesDeclareExpectedCapabilities(t *testing.T) {
 	bs1 := NormalizeDeviceProfile(FlyDigiBS1Profile(), "")
 	if bs1.ID != FlyDigiBS1ProfileID {
@@ -196,8 +215,9 @@ func TestNormalizeDeviceProfilePreservesValidPercentTickScale(t *testing.T) {
 
 func TestNormalizeDeviceProfileConfigDerivesFromOldFields(t *testing.T) {
 	cfg := &AppConfig{
-		DeviceTransport:    DeviceTransportWiFi,
-		FanControlDeviceIp: "10.0.0.25",
+		DeviceTransport:          DeviceTransportWiFi,
+		FanControlDeviceIp:       "10.0.0.25",
+		WiFiCompatibilityEnabled: true,
 	}
 	if !NormalizeDeviceProfileConfig(cfg) {
 		t.Fatal("expected missing profile fields to be filled")
@@ -229,8 +249,8 @@ func TestNormalizeDeviceProfileConfigDerivesFromOldFields(t *testing.T) {
 
 	cfg = &AppConfig{DeviceTransport: DeviceTransportHID}
 	NormalizeDeviceProfileConfig(cfg)
-	if cfg.DeviceTransport != DeviceTransportWiFi {
-		t.Fatalf("HID legacy config transport = %q, want wifi", cfg.DeviceTransport)
+	if cfg.DeviceTransport != "" {
+		t.Fatalf("HID persistent config transport = %q, want empty", cfg.DeviceTransport)
 	}
 	if DeviceProfileSpeedUnit(cfg) != FanSpeedUnitPercent {
 		t.Fatalf("HID legacy config unit = %q, want percent", DeviceProfileSpeedUnit(cfg))
@@ -238,8 +258,8 @@ func TestNormalizeDeviceProfileConfigDerivesFromOldFields(t *testing.T) {
 
 	cfg = &AppConfig{DeviceTransport: DeviceTransportBLE}
 	NormalizeDeviceProfileConfig(cfg)
-	if cfg.DeviceTransport != DeviceTransportWiFi {
-		t.Fatalf("BLE legacy config transport = %q, want wifi", cfg.DeviceTransport)
+	if cfg.DeviceTransport != "" {
+		t.Fatalf("BLE persistent config transport = %q, want empty", cfg.DeviceTransport)
 	}
 	if DeviceProfileSpeedUnit(cfg) != FanSpeedUnitPercent {
 		t.Fatalf("BLE legacy config unit = %q, want percent", DeviceProfileSpeedUnit(cfg))
@@ -248,10 +268,11 @@ func TestNormalizeDeviceProfileConfigDerivesFromOldFields(t *testing.T) {
 
 func TestNormalizeDeviceProfileConfigMigratesNativeTransportToCompatibilityWiFi(t *testing.T) {
 	cfg := &AppConfig{
-		DeviceTransport:       DeviceTransportBLE,
-		FanControlDeviceIp:    "10.0.0.25",
-		ActiveDeviceProfileID: DefaultWiFiPercentProfileID,
-		DeviceProfiles:        []DeviceProfile{DefaultWiFiPercentProfile("10.0.0.25")},
+		DeviceTransport:          DeviceTransportBLE,
+		FanControlDeviceIp:       "10.0.0.25",
+		WiFiCompatibilityEnabled: true,
+		ActiveDeviceProfileID:    DefaultWiFiPercentProfileID,
+		DeviceProfiles:           []DeviceProfile{DefaultWiFiPercentProfile("10.0.0.25")},
 	}
 
 	if !NormalizeDeviceProfileConfig(cfg) {
@@ -274,9 +295,10 @@ func TestNormalizeDeviceProfileConfigMigratesNativeTransportToCompatibilityWiFi(
 
 func TestNormalizeDeviceProfileConfigMigratesPersistedBS1ActiveConfig(t *testing.T) {
 	cfg := &AppConfig{
-		DeviceTransport:       DeviceTransportBLE,
-		FanControlDeviceIp:    "192.168.137.2",
-		ActiveDeviceProfileID: FlyDigiBS1ProfileID,
+		DeviceTransport:          DeviceTransportBLE,
+		FanControlDeviceIp:       "192.168.137.2",
+		WiFiCompatibilityEnabled: true,
+		ActiveDeviceProfileID:    FlyDigiBS1ProfileID,
 		ActiveDeviceProfileIDsByTransport: map[string]string{
 			DeviceTransportBLE:  FlyDigiBS1ProfileID,
 			DeviceTransportWiFi: DefaultWiFiPercentProfileID,
@@ -327,10 +349,11 @@ func TestNormalizeDeviceProfileConfigSwitchesToExistingSerialProfile(t *testing.
 		},
 	}
 	cfg := &AppConfig{
-		DeviceTransport:       DeviceTransportSerial,
-		FanControlDeviceIp:    "10.0.0.25",
-		ActiveDeviceProfileID: DefaultWiFiPercentProfileID,
-		DeviceProfiles:        []DeviceProfile{DefaultWiFiPercentProfile("10.0.0.25"), serial},
+		DeviceTransport:            DeviceTransportSerial,
+		FanControlDeviceIp:         "10.0.0.25",
+		SerialCompatibilityEnabled: true,
+		ActiveDeviceProfileID:      DefaultWiFiPercentProfileID,
+		DeviceProfiles:             []DeviceProfile{DefaultWiFiPercentProfile("10.0.0.25"), serial},
 	}
 
 	if !NormalizeDeviceProfileConfig(cfg) {
@@ -368,9 +391,10 @@ func TestNormalizeDeviceProfileConfigPreservesActiveProfileWithinRequestedTransp
 	second.Connection.SerialPort = "COM9"
 
 	cfg := &AppConfig{
-		DeviceTransport:       DeviceTransportSerial,
-		FanControlDeviceIp:    "10.0.0.25",
-		ActiveDeviceProfileID: second.ID,
+		DeviceTransport:            DeviceTransportSerial,
+		FanControlDeviceIp:         "10.0.0.25",
+		SerialCompatibilityEnabled: true,
+		ActiveDeviceProfileID:      second.ID,
 		ActiveDeviceProfileIDsByTransport: map[string]string{
 			DeviceTransportSerial: second.ID,
 		},
@@ -414,10 +438,12 @@ func TestNormalizeDeviceProfileConfigUsesRememberedProfileForTransport(t *testin
 	second.Connection.SerialPort = "COM9"
 
 	cfg := &AppConfig{
-		DeviceTransport:       DeviceTransportSerial,
-		FanControlDeviceIp:    "10.0.0.25",
-		ActiveDeviceProfileID: DefaultWiFiPercentProfileID,
-		DeviceProfiles:        []DeviceProfile{DefaultWiFiPercentProfile("10.0.0.25"), first, second},
+		DeviceTransport:            DeviceTransportSerial,
+		FanControlDeviceIp:         "10.0.0.25",
+		WiFiCompatibilityEnabled:   true,
+		SerialCompatibilityEnabled: true,
+		ActiveDeviceProfileID:      DefaultWiFiPercentProfileID,
+		DeviceProfiles:             []DeviceProfile{DefaultWiFiPercentProfile("10.0.0.25"), first, second},
 		ActiveDeviceProfileIDsByTransport: map[string]string{
 			DeviceTransportWiFi:   DefaultWiFiPercentProfileID,
 			DeviceTransportSerial: second.ID,
@@ -437,9 +463,10 @@ func TestNormalizeDeviceProfileConfigUsesRememberedProfileForTransport(t *testin
 
 func TestActiveDeviceProfileIgnoresNativeTransportInPersistentConfig(t *testing.T) {
 	cfg := &AppConfig{
-		DeviceTransport:       DeviceTransportHID,
-		FanControlDeviceIp:    "10.0.0.25",
-		ActiveDeviceProfileID: DefaultWiFiPercentProfileID,
+		DeviceTransport:          DeviceTransportHID,
+		FanControlDeviceIp:       "10.0.0.25",
+		WiFiCompatibilityEnabled: true,
+		ActiveDeviceProfileID:    DefaultWiFiPercentProfileID,
 		DeviceProfiles: []DeviceProfile{
 			DefaultWiFiPercentProfile("10.0.0.25"),
 			LegacyRPMProfile(),
@@ -461,10 +488,11 @@ func TestActiveDeviceProfileIgnoresNativeTransportInPersistentConfig(t *testing.
 
 func TestActiveDeviceProfileFallsBackToWiFiWhenNativeProfileMissingFromConfig(t *testing.T) {
 	cfg := &AppConfig{
-		DeviceTransport:       DeviceTransportHID,
-		FanControlDeviceIp:    "10.0.0.25",
-		ActiveDeviceProfileID: DefaultWiFiPercentProfileID,
-		DeviceProfiles:        []DeviceProfile{DefaultWiFiPercentProfile("10.0.0.25")},
+		DeviceTransport:          DeviceTransportHID,
+		FanControlDeviceIp:       "10.0.0.25",
+		WiFiCompatibilityEnabled: true,
+		ActiveDeviceProfileID:    DefaultWiFiPercentProfileID,
+		DeviceProfiles:           []DeviceProfile{DefaultWiFiPercentProfile("10.0.0.25")},
 	}
 
 	active := ActiveDeviceProfile(cfg)
@@ -473,5 +501,58 @@ func TestActiveDeviceProfileFallsBackToWiFiWhenNativeProfileMissingFromConfig(t 
 	}
 	if active.ID != DefaultWiFiPercentProfileID {
 		t.Fatalf("active profile = %q, want %q", active.ID, DefaultWiFiPercentProfileID)
+	}
+}
+
+func TestNormalizeDeviceProfileConfigHidesBuiltInWiFiWhenCompatibilityDisabled(t *testing.T) {
+	custom := DefaultWiFiPercentProfile("10.0.0.50")
+	custom.ID = "user.wifi.custom"
+	custom.DisplayName = "Custom WiFi"
+	custom.BuiltIn = false
+	cfg := &AppConfig{
+		DeviceTransport:       DeviceTransportWiFi,
+		FanControlDeviceIp:    "10.0.0.25",
+		ActiveDeviceProfileID: DefaultWiFiPercentProfileID,
+		ActiveDeviceProfileIDsByTransport: map[string]string{
+			DeviceTransportWiFi: DefaultWiFiPercentProfileID,
+		},
+		DeviceProfiles: []DeviceProfile{
+			DefaultWiFiPercentProfile("10.0.0.25"),
+			custom,
+		},
+	}
+
+	NormalizeDeviceProfileConfig(cfg)
+	if cfg.DeviceTransport != "" || cfg.ActiveDeviceProfileID != "" {
+		t.Fatalf("disabled WiFi compatibility identity = %q/%q, want empty", cfg.DeviceTransport, cfg.ActiveDeviceProfileID)
+	}
+	if _, ok := cfg.ActiveDeviceProfileIDsByTransport[DeviceTransportWiFi]; ok {
+		t.Fatalf("disabled WiFi active identity should be removed: %#v", cfg.ActiveDeviceProfileIDsByTransport)
+	}
+	foundCustom := false
+	for _, profile := range cfg.DeviceProfiles {
+		if profile.ID == DefaultWiFiPercentProfileID {
+			t.Fatalf("built-in WiFi profile should not persist while compatibility is disabled: %#v", profile)
+		}
+		if profile.ID == custom.ID {
+			foundCustom = true
+		}
+	}
+	if !foundCustom {
+		t.Fatal("custom WiFi profile should be preserved for upgrade safety")
+	}
+}
+
+func TestNormalizeDeviceProfileConfigRestoresBuiltInWiFiWhenCompatibilityEnabled(t *testing.T) {
+	cfg := GetDefaultConfig(false)
+	cfg.WiFiCompatibilityEnabled = true
+	cfg.DeviceTransport = DeviceTransportWiFi
+
+	NormalizeDeviceProfileConfig(&cfg)
+	if cfg.DeviceTransport != DeviceTransportWiFi || cfg.ActiveDeviceProfileID != DefaultWiFiPercentProfileID {
+		t.Fatalf("enabled WiFi compatibility identity = %q/%q", cfg.DeviceTransport, cfg.ActiveDeviceProfileID)
+	}
+	if active := ActiveDeviceProfile(&cfg); active.ID != DefaultWiFiPercentProfileID || active.Transport != DeviceTransportWiFi {
+		t.Fatalf("active WiFi profile = %#v", active)
 	}
 }

@@ -62,7 +62,11 @@ func ensureBuiltInDeviceProfiles(cfg *AppConfig) bool {
 		return false
 	}
 	changed := false
-	for _, builtIn := range BuiltInDeviceProfiles(cfg.FanControlDeviceIp) {
+	builtIns := FlyDigiBuiltInProfiles()
+	if cfg.WiFiCompatibilityEnabled {
+		builtIns = append([]DeviceProfile{DefaultWiFiPercentProfile(cfg.FanControlDeviceIp)}, builtIns...)
+	}
+	for _, builtIn := range builtIns {
 		builtIn = NormalizeDeviceProfile(builtIn, cfg.FanControlDeviceIp)
 		found := false
 		for i := range cfg.DeviceProfiles {

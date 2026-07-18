@@ -63,6 +63,7 @@ func TestDeviceCurveProfilesFollowActiveDeviceProfile(t *testing.T) {
 
 	cfg := types.GetDefaultConfig(false)
 	cfg.DeviceTransport = types.DeviceTransportWiFi
+	cfg.WiFiCompatibilityEnabled = true
 	cfg.FanControlDeviceIp = "10.0.0.25"
 	cfg.ActiveDeviceProfileID = wifi.ID
 	cfg.DeviceProfiles = []types.DeviceProfile{wifi, rpm}
@@ -177,6 +178,7 @@ func TestLearningOffsetsAreScopedByDeviceAndCurveProfile(t *testing.T) {
 
 	cfg := types.GetDefaultConfig(false)
 	cfg.DeviceTransport = types.DeviceTransportWiFi
+	cfg.WiFiCompatibilityEnabled = true
 	cfg.FanControlDeviceIp = "10.0.0.25"
 	cfg.ActiveDeviceProfileID = wifi.ID
 	cfg.DeviceProfiles = []types.DeviceProfile{wifi, rpm}

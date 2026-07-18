@@ -708,6 +708,9 @@
       "emptyDisabled": "バックグラウンド記録は無効です。このタブで有効にできます。",
       "recentTrend": "最近の推移",
       "powerTrend": "電力トレンド",
+      "resetZoom": "ズームをリセット",
+      "zoomHint": "グラフ上をドラッグして時間範囲を選択",
+      "zoomSelecting": "選択中 {{from}} - {{to}}",
       "events": {
         "disconnect": "デバイス切断",
         "reconnect": "デバイス接続",
@@ -720,7 +723,8 @@
         "gpu": "GPU 温度",
         "fan": "ファン回転数",
         "cpuPower": "CPU 電力",
-        "gpuPower": "GPU 電力"
+        "gpuPower": "GPU 電力",
+        "totalPower": "合計電力"
       },
       "duration": {
         "ltOneMinute": "< 1 分",
@@ -744,6 +748,13 @@
       },
       "displaySettings": "表示設定",
       "displaySettingsDescription": "表示する推移ラインを選び、ホバー時の表示順を調整します。",
+      "statistics": {
+        "enabled": "統計マーカーを表示",
+        "description": "単一系列のグラフに最大、最小、平均値を表示します。",
+        "max": "最大",
+        "min": "最小",
+        "average": "平均"
+      },
       "moveUp": "上へ",
       "moveDown": "下へ",
       "resetDisplaySettings": "初期設定に戻す"

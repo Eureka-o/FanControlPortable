@@ -136,9 +136,11 @@ const formatGpuPowerWatts = (watts: number | undefined | null, readState?: strin
   return formatPowerWatts(watts);
 };
 
+const CPU_TEMP_STROKE = 'var(--chart-cpu-temperature)';
+const GPU_TEMP_STROKE = 'var(--chart-gpu-temperature)';
+const FAN_SPEED_STROKE = 'var(--chart-fan-speed)';
 const CPU_POWER_STROKE = 'var(--chart-cpu-power)';
 const GPU_POWER_STROKE = 'var(--chart-gpu-power)';
-const FAN_TREND_STROKE = 'color-mix(in srgb, var(--chart-3) 70%, var(--foreground) 30%)';
 
 type HistoryPathMap = Partial<Record<HistorySeriesKey, string>>;
 
@@ -636,11 +638,11 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
                 }
 
                 const stroke = series === 'cpu'
-                  ? 'var(--chart-primary)'
+                  ? CPU_TEMP_STROKE
                   : series === 'gpu'
-                    ? 'var(--chart-temperature-indicator)'
+                    ? GPU_TEMP_STROKE
                     : series === 'fan'
-                      ? FAN_TREND_STROKE
+                      ? FAN_SPEED_STROKE
                       : series === 'cpuPower'
                         ? CPU_POWER_STROKE
                         : GPU_POWER_STROKE;

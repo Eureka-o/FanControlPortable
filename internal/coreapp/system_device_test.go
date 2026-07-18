@@ -24,7 +24,7 @@ func TestManualDisconnectInvalidatesBlockedReconnectSuccess(t *testing.T) {
 	loopDone := make(chan struct{})
 	go func() {
 		defer close(loopDone)
-		app.runReconnectLoop(ctx, "blocked-test", []time.Duration{0}, 1, func() reconnectAttemptResult {
+		app.runReconnectLoop(ctx, "blocked-test", []time.Duration{0}, 1, func(context.Context) reconnectAttemptResult {
 			close(attemptStarted)
 			<-releaseAttempt
 			return reconnectAttemptResult{
@@ -87,7 +87,7 @@ func TestStaleReconnectCleanupCompletesBeforeNewGenerationCommit(t *testing.T) {
 	newLoopDone := make(chan struct{})
 	go func() {
 		defer close(newLoopDone)
-		app.runReconnectLoop(context.Background(), "new", []time.Duration{0}, 2, func() reconnectAttemptResult {
+		app.runReconnectLoop(context.Background(), "new", []time.Duration{0}, 2, func(context.Context) reconnectAttemptResult {
 			close(newAttemptStarted)
 			physicalConnected.Store(true)
 			return reconnectAttemptResult{
@@ -292,7 +292,7 @@ func TestReconnectNativeTransportKeepsLastSuccessfulProfile(t *testing.T) {
 }
 
 func TestSupportedHIDArrivalReconnectPolicy(t *testing.T) {
-	if !shouldReconnectOnHIDArrival(false, false, false, false, false) {
+	if !shouldReconnectOnNativeArrival(false, false, false, false, false) {
 		t.Fatal("available HID arrival should trigger reconnect")
 	}
 	for _, test := range []struct {
@@ -310,7 +310,7 @@ func TestSupportedHIDArrivalReconnectPolicy(t *testing.T) {
 		{name: "manager connected", manager: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if shouldReconnectOnHIDArrival(test.stopping, test.suspended, test.suppressed, test.core, test.manager) {
+			if shouldReconnectOnNativeArrival(test.stopping, test.suspended, test.suppressed, test.core, test.manager) {
 				t.Fatal("HID arrival should not trigger reconnect")
 			}
 		})
@@ -327,6 +327,33 @@ func TestReapplyConfigAfterReconnectKeepsNativeRuntimeProfile(t *testing.T) {
 
 	if got := app.deviceManager.ActiveProfile().ID; got != types.FlyDigiBS1ProfileID {
 		t.Fatalf("active profile = %q, want %q", got, types.FlyDigiBS1ProfileID)
+	}
+}
+
+func TestUnrelatedConfigUpdateKeepsNativeRuntimeProfile(t *testing.T) {
+	cfg := types.GetDefaultConfig(false)
+	app := newDeviceProfileTestApp(t, cfg)
+	app.deviceManager.ConfigureProfile(types.FlyDigiBS1Profile(), "")
+
+	cfg.ThemeMode = types.ThemeModeDark
+	if err := app.UpdateConfig(cfg); err != nil {
+		t.Fatalf("UpdateConfig() error = %v", err)
+	}
+
+	if profile := app.deviceManager.ActiveProfile(); profile.ID != types.FlyDigiBS1ProfileID || profile.Transport != types.DeviceTransportBLE {
+		t.Fatalf("unrelated config update replaced native runtime profile: %#v", profile)
+	}
+}
+
+func TestConfigureDeviceManagerKeepsCompatibilityDisabled(t *testing.T) {
+	app := newDeviceProfileTestApp(t, types.GetDefaultConfig(false))
+	app.configureDeviceManager(types.GetDefaultConfig(false))
+
+	if profile := app.deviceManager.ActiveProfile(); profile.ID != "" || profile.Transport != "" {
+		t.Fatalf("disabled compatibility configured runtime profile: %#v", profile)
+	}
+	if connected, info := app.deviceManager.Connect(); connected || info != nil {
+		t.Fatalf("disabled compatibility Connect() = %v, %#v, want false/nil", connected, info)
 	}
 }
 
