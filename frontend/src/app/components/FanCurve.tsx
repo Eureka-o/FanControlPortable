@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, memo, useMemo, useRef } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { Area, ComposedChart, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, ReferenceDot } from 'recharts';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   RotateCw,
@@ -30,7 +30,7 @@ import { useTemperatureHistory } from '../hooks/useTemperatureHistory';
 import { useHistoryDisplayPreferences } from '../hooks/useHistoryDisplayPreferences';
 import { useLocale } from '../lib/i18n';
 import { getFanSpeedUnit, getFanSpeedRange, getFanSpeedTicks, fanSpeedUnitLabel } from '../lib/fan-speed';
-import { type HistorySeriesKey } from '../lib/temperature-history';
+import { type HistorySeriesKey, type TemperatureHistoryPoint } from '../lib/temperature-history';
 import { useAppStore, type CurveFocusTarget } from '../store/app-store';
 import { types } from '../../../wailsjs/go/models';
 import { ClipboardSetText } from '../../../wailsjs/runtime/runtime';
@@ -145,18 +145,123 @@ function formatPowerValue(value: number) {
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
+function getAvailableTotalPowerWatts(point: TemperatureHistoryPoint) {
+  const cpu = Number(point.cpuPowerWatts || 0);
+  const gpu = Number(point.gpuPowerWatts || 0);
+  const total = (Number.isFinite(cpu) && cpu > 0 ? cpu : 0) + (Number.isFinite(gpu) && gpu > 0 ? gpu : 0);
+  return total > 0 ? Math.round(total * 10) / 10 : undefined;
+}
+
+type HistoryChartPoint = {
+  timestamp: number;
+  cpuTemp?: number;
+  gpuTemp?: number;
+  fanRpm?: number;
+  cpuPowerWatts?: number;
+  gpuPowerWatts?: number;
+  totalPowerWatts?: number;
+};
+
+const HISTORY_SMOOTHING_FIELDS = [
+  'cpuTemp',
+  'gpuTemp',
+  'fanRpm',
+  'cpuPowerWatts',
+  'gpuPowerWatts',
+  'totalPowerWatts',
+] as const;
+
+type HistorySmoothingField = (typeof HISTORY_SMOOTHING_FIELDS)[number];
+
+function getHistorySmoothingWindow(sampleCount: number) {
+  if (sampleCount < 180) return 1;
+  if (sampleCount < 360) return 3;
+  if (sampleCount < 540) return 5;
+  return 7;
+}
+
+function roundHistoryChartValue(field: HistorySmoothingField, value: number) {
+  return field === 'fanRpm' ? Math.round(value) : Math.round(value * 10) / 10;
+}
+
+function smoothHistoryChartData(points: HistoryChartPoint[]) {
+  const windowSize = getHistorySmoothingWindow(points.length);
+  if (windowSize === 1) {
+    return points;
+  }
+
+  const radius = Math.floor(windowSize / 2);
+  const rawExtrema = {} as Record<HistorySmoothingField, { min: number; max: number }>;
+  for (const field of HISTORY_SMOOTHING_FIELDS) {
+    let min = Number.POSITIVE_INFINITY;
+    let max = Number.NEGATIVE_INFINITY;
+    for (const point of points) {
+      const value = Number(point[field]);
+      if (!Number.isFinite(value) || value <= 0) continue;
+      min = Math.min(min, value);
+      max = Math.max(max, value);
+    }
+    rawExtrema[field] = { min, max };
+  }
+
+  return points.map((point, index) => {
+    const smoothedPoint = { ...point };
+
+    for (const field of HISTORY_SMOOTHING_FIELDS) {
+      const sourceValue = Number(point[field]);
+      if (!Number.isFinite(sourceValue) || sourceValue <= 0) {
+        smoothedPoint[field] = undefined;
+        continue;
+      }
+      if (sourceValue === rawExtrema[field].min || sourceValue === rawExtrema[field].max) {
+        smoothedPoint[field] = sourceValue;
+        continue;
+      }
+
+      let sum = sourceValue;
+      let count = 1;
+
+      // Stop at the first gap on either side so a disconnected device does not
+      // bleed values across the missing-data boundary.
+      for (let distance = 1; distance <= radius; distance += 1) {
+        const leftIndex = index - distance;
+        if (leftIndex < 0) break;
+        const leftValue = Number(points[leftIndex][field]);
+        if (!Number.isFinite(leftValue) || leftValue <= 0) break;
+        sum += leftValue;
+        count += 1;
+      }
+
+      for (let distance = 1; distance <= radius; distance += 1) {
+        const rightIndex = index + distance;
+        if (rightIndex >= points.length) break;
+        const rightValue = Number(points[rightIndex][field]);
+        if (!Number.isFinite(rightValue) || rightValue <= 0) break;
+        sum += rightValue;
+        count += 1;
+      }
+
+      smoothedPoint[field] = roundHistoryChartValue(field, sum / count);
+    }
+
+    return smoothedPoint;
+  });
+}
+
 const CPU_TEMP_STROKE = 'var(--chart-cpu-temperature)';
 const GPU_TEMP_STROKE = 'var(--chart-gpu-temperature)';
 const FAN_SPEED_STROKE = 'var(--chart-fan-speed)';
 const CPU_POWER_STROKE = 'var(--chart-cpu-power)';
 const GPU_POWER_STROKE = 'var(--chart-gpu-power)';
+const TOTAL_POWER_STROKE = 'var(--chart-primary)';
 
-const HISTORY_SERIES_DATA_KEY: Record<HistorySeriesKey, 'cpuTemp' | 'gpuTemp' | 'fanRpm' | 'cpuPowerWatts' | 'gpuPowerWatts'> = {
+const HISTORY_SERIES_DATA_KEY: Record<HistorySeriesKey, 'cpuTemp' | 'gpuTemp' | 'fanRpm' | 'cpuPowerWatts' | 'gpuPowerWatts' | 'totalPowerWatts'> = {
   cpu: 'cpuTemp',
   gpu: 'gpuTemp',
   fan: 'fanRpm',
   cpuPower: 'cpuPowerWatts',
   gpuPower: 'gpuPowerWatts',
+  totalPower: 'totalPowerWatts',
 };
 
 const HISTORY_SERIES_AXIS: Record<HistorySeriesKey, 'temp' | 'fan' | 'power'> = {
@@ -165,6 +270,7 @@ const HISTORY_SERIES_AXIS: Record<HistorySeriesKey, 'temp' | 'fan' | 'power'> = 
   fan: 'fan',
   cpuPower: 'power',
   gpuPower: 'power',
+  totalPower: 'power',
 };
 
 function normalizeCurvePoint(point: types.FanCurvePoint, minSpeed: number, maxSpeed: number): types.FanCurvePoint {
@@ -454,6 +560,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const [isInteracting, setIsInteracting] = useState(false);
   const [historyDisplayDialogOpen, setHistoryDisplayDialogOpen] = useState(false);
   const [historyChartsReady, setHistoryChartsReady] = useState(false);
+  const [historyZoomDomain, setHistoryZoomDomain] = useState<[number, number] | null>(null);
+  const [historyZoomSelect, setHistoryZoomSelect] = useState<{ start: number; end: number } | null>(null);
   const [draggedHistorySeries, setDraggedHistorySeries] = useState<HistorySeriesKey | null>(null);
   const {
     orderedSeries,
@@ -462,6 +570,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     moveSeries,
     reorderSeries,
     resetPreferences: resetHistoryDisplayPreferences,
+    showStatistics: historyShowStatistics,
+    setShowStatistics: setHistoryShowStatistics,
   } = useHistoryDisplayPreferences();
   const chartRef = useRef<HTMLDivElement>(null);
   const profileFileInputRef = useRef<HTMLInputElement>(null);
@@ -474,6 +584,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const historySeriesItemRefs = useRef<Partial<Record<HistorySeriesKey, HTMLDivElement>>>({});
   const historySeriesDragRef = useRef<{ key: HistorySeriesKey; target?: HistorySeriesKey; placement?: 'before' | 'after' } | null>(null);
   const historySeriesDragCleanupRef = useRef<(() => void) | null>(null);
+
   const runtimeProfileForSpeed = useMemo(() => {
     if (!isConnected) {
       return null;
@@ -507,6 +618,11 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     setEnabled: setTemperatureHistoryEnabled,
   } = useTemperatureHistory();
 
+  useEffect(() => {
+    setHistoryZoomSelect(null);
+    setHistoryZoomDomain(null);
+  }, [isConnected, temperatureHistoryEnabled]);
+
   const activeProfile = useMemo(() => curveProfiles.find((p) => p.id === activeProfileId) ?? null, [curveProfiles, activeProfileId]);
   const pendingDeleteProfile = useMemo(
     () => curveProfiles.find((profile) => profile.id === pendingDeleteProfileId) ?? null,
@@ -536,6 +652,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   }, [onConfigChange]);
 
   const loadCurveProfiles = useCallback(async () => {
+    if (!isConnected) return;
     try {
       const payload = await apiService.getFanCurveProfiles();
       const profiles = Array.isArray(payload?.profiles) ? payload.profiles : [];
@@ -551,7 +668,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     } catch {
       /* noop */
     }
-  }, [defaultCurve, speedRange.max, speedRange.min]);
+  }, [defaultCurve, isConnected, speedRange.max, speedRange.min]);
 
   const curveSpeedBounds = useMemo(() => {
     const source = localCurve.length > 0 ? localCurve : (config.fanCurve ?? []);
@@ -616,15 +733,32 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const [targetTempDraft, setTargetTempDraft] = useState(() => normalizeTargetTemp((config.smartControl as any)?.targetTemp ?? 68));
 
   useEffect(() => {
-    setCurveDraftDirty(hasUnsavedChanges);
-  }, [hasUnsavedChanges, setCurveDraftDirty]);
+    setCurveDraftDirty(isConnected && hasUnsavedChanges);
+  }, [hasUnsavedChanges, isConnected, setCurveDraftDirty]);
 
   useEffect(() => {
     if (pendingTab) {
+      if (!isConnected) {
+        completePendingTabChange();
+        return;
+      }
       setPendingProfileId('');
       setProfileSwitchDialogOpen(true);
     }
-  }, [pendingTab]);
+  }, [completePendingTabChange, isConnected, pendingTab]);
+
+  useEffect(() => {
+    if (isConnected) return;
+    setHasUnsavedChanges(false);
+    setIsInteracting(false);
+    setCreateProfileDialogOpen(false);
+    setManageProfilesDialogOpen(false);
+    setProfileSwitchDialogOpen(false);
+    setDeleteProfileDialogOpen(false);
+    setGearEditOpen(false);
+    setPendingProfileId('');
+    setPendingDeleteProfileId('');
+  }, [isConnected]);
 
   useEffect(() => {
     setTargetTempDraft(normalizeTargetTemp((smartControl as any).targetTemp ?? 68));
@@ -632,6 +766,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
 
   useEffect(() => {
     if (!focusTarget) {
+      return;
+    }
+    if (!isConnected && focusTarget !== 'history-details') {
+      onFocusHandled();
       return;
     }
 
@@ -667,7 +805,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [focusTarget, onFocusHandled]);
+  }, [focusTarget, isConnected, onFocusHandled]);
 
   useEffect(() => {
     if (historyChartsReady) return;
@@ -764,9 +902,9 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       latest,
       latestLabel: latest ? formatHistoryDateTime(latest.timestamp, locale) : '--',
       durationLabel: first && latest ? formatHistoryDuration(first.timestamp, latest.timestamp, t) : '--',
-      cpuPeak,
+      cpuPeak: Number(formatSpeedValue(cpuPeak)),
       cpuAverage: average(cpuSum, cpuCount),
-      gpuPeak,
+      gpuPeak: Number(formatSpeedValue(gpuPeak)),
       gpuAverage: average(gpuSum, gpuCount),
       fanPeak,
       fanAverage: average(fanSum, fanCount),
@@ -782,11 +920,15 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     const data = detailHistoryPoints.map((point) => {
       const cpuPowerWatts = Number(point.cpuPowerWatts || 0);
       const gpuPowerWatts = Number(point.gpuPowerWatts || 0);
+      const totalPowerWatts = getAvailableTotalPowerWatts(point);
       if (historySeriesVisibility.cpuPower) {
         maxPower = Math.max(maxPower, cpuPowerWatts);
       }
       if (historySeriesVisibility.gpuPower) {
         maxPower = Math.max(maxPower, gpuPowerWatts);
+      }
+      if (historySeriesVisibility.totalPower) {
+        maxPower = Math.max(maxPower, totalPowerWatts || 0);
       }
       const rawFanRpm = Number(point.fanRpm || 0);
       return {
@@ -796,6 +938,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
         fanRpm: rawFanRpm > 0 ? normalizeSpeedValue(rawFanRpm, speedRange.min, speedRange.max) : undefined,
         cpuPowerWatts: cpuPowerWatts > 0 ? Math.round(cpuPowerWatts * 10) / 10 : undefined,
         gpuPowerWatts: gpuPowerWatts > 0 ? Math.round(gpuPowerWatts * 10) / 10 : undefined,
+        totalPowerWatts,
       };
     });
 
@@ -806,21 +949,195 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       powerMax,
       hasPower: maxPower > 0,
     };
-  }, [detailHistoryPoints, historySeriesVisibility.cpuPower, historySeriesVisibility.gpuPower, speedRange.max, speedRange.min]);
+  }, [detailHistoryPoints, historySeriesVisibility.cpuPower, historySeriesVisibility.gpuPower, historySeriesVisibility.totalPower, speedRange.max, speedRange.min]);
   const historyChartData = historyChartStats.data;
   const historyPowerMax = historyChartStats.powerMax;
   const historyHasPower = historyChartStats.hasPower;
+  const zoomedHistoryChartData = useMemo(() => {
+    if (!historyZoomDomain) {
+      return historyChartData;
+    }
+    const [from, to] = historyZoomDomain;
+    const selected = historyChartData.filter((point) => point.timestamp >= from && point.timestamp <= to);
+    return selected.length >= 2 ? selected : historyChartData;
+  }, [historyChartData, historyZoomDomain]);
+  const smoothedHistoryChartData = useMemo(
+    () => smoothHistoryChartData(zoomedHistoryChartData),
+    [zoomedHistoryChartData],
+  );
+  const historySeriesMeta = useMemo(() => {
+    const meta: Record<HistorySeriesKey, { key: HistorySeriesKey; label: string; color: string; dataKey: 'cpuTemp' | 'gpuTemp' | 'fanRpm' | 'cpuPowerWatts' | 'gpuPowerWatts' | 'totalPowerWatts'; axisId: 'temp' | 'fan' | 'power' }> = {
+      cpu: { key: 'cpu', label: t('fanCurve.history.series.cpu'), color: CPU_TEMP_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.cpu, axisId: HISTORY_SERIES_AXIS.cpu },
+      gpu: { key: 'gpu', label: t('fanCurve.history.series.gpu'), color: GPU_TEMP_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.gpu, axisId: HISTORY_SERIES_AXIS.gpu },
+      fan: { key: 'fan', label: t('fanCurve.history.series.fan'), color: FAN_SPEED_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.fan, axisId: HISTORY_SERIES_AXIS.fan },
+      cpuPower: { key: 'cpuPower', label: t('fanCurve.history.series.cpuPower'), color: CPU_POWER_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.cpuPower, axisId: HISTORY_SERIES_AXIS.cpuPower },
+      gpuPower: { key: 'gpuPower', label: t('fanCurve.history.series.gpuPower'), color: GPU_POWER_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.gpuPower, axisId: HISTORY_SERIES_AXIS.gpuPower },
+      totalPower: { key: 'totalPower', label: t('fanCurve.history.series.totalPower'), color: TOTAL_POWER_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.totalPower, axisId: HISTORY_SERIES_AXIS.totalPower },
+    };
+    return orderedSeries.map((key) => meta[key]).filter(Boolean);
+  }, [orderedSeries, t, locale]);
+  const historyStatistics = useMemo(() => {
+    const values: Partial<Record<HistorySeriesKey, { min: number; max: number; average: number; minTimestamp: number; maxTimestamp: number }>> = {};
+    const seriesWithData = historySeriesMeta.filter((series) => {
+      if (!historySeriesVisibility[series.key]) {
+        return false;
+      }
+      let count = 0;
+      let sum = 0;
+      let min = Number.POSITIVE_INFINITY;
+      let max = Number.NEGATIVE_INFINITY;
+      let minTimestamp = 0;
+      let maxTimestamp = 0;
+      for (const point of zoomedHistoryChartData) {
+        const value = Number(point[series.dataKey] ?? 0);
+        if (!Number.isFinite(value) || value <= 0) {
+          continue;
+        }
+        count += 1;
+        sum += value;
+        if (value < min) {
+          min = value;
+          minTimestamp = point.timestamp;
+        }
+        if (value > max) {
+          max = value;
+          maxTimestamp = point.timestamp;
+        }
+      }
+      if (count === 0) {
+        return false;
+      }
+      values[series.key] = {
+        min,
+        max,
+        average: Math.round((sum / count) * 10) / 10,
+        minTimestamp,
+        maxTimestamp,
+      };
+      return true;
+    });
+
+    return {
+      values,
+      thermalSeries: seriesWithData.filter((series) => series.axisId !== 'power'),
+      powerSeries: seriesWithData.filter((series) => series.axisId === 'power'),
+    };
+  }, [historySeriesMeta, historySeriesVisibility, zoomedHistoryChartData]);
+  const historyRightTimestamp = zoomedHistoryChartData[zoomedHistoryChartData.length - 1]?.timestamp ?? 0;
+  const renderHistoryStatistics = useCallback((series: (typeof historySeriesMeta)[number] | undefined, yAxisId: 'temp' | 'fan' | 'power') => {
+    if (!historyShowStatistics || !series) {
+      return null;
+    }
+    const statistics = historyStatistics.values[series.key];
+    if (!statistics) {
+      return null;
+    }
+    const formatValue = (value: number) => series.axisId === 'power'
+      ? formatPowerValue(value)
+      : formatSpeedValue(value);
+    const entries = [
+      { key: 'max', value: statistics.max, timestamp: statistics.maxTimestamp, color: 'var(--chart-stat-max)', opacity: 0.9 },
+      { key: 'min', value: statistics.min, timestamp: statistics.minTimestamp, color: 'var(--chart-stat-min)', opacity: 0.72 },
+      { key: 'average', value: statistics.average, timestamp: 0, color: 'var(--chart-stat-average)', opacity: 0.82 },
+    ] as const;
+    return entries.flatMap(({ key, value, timestamp, color, opacity }) => [
+      <ReferenceLine
+        key={`${series.key}-${key}`}
+        yAxisId={yAxisId}
+        y={key === 'average' ? value : undefined}
+        segment={key === 'average' ? undefined : [
+          { x: timestamp, y: value },
+          { x: historyRightTimestamp, y: value },
+        ]}
+        stroke={color}
+        strokeOpacity={opacity}
+        strokeDasharray="5 4"
+        strokeWidth={1.5}
+        label={({ viewBox }: { viewBox?: { x?: number; y?: number; width?: number } }) => (
+          <text
+            x={(viewBox?.x ?? 0) + (viewBox?.width ?? 0)}
+            y={viewBox?.y ?? 0}
+            dx={-8}
+            dy={key === 'min' ? 14 : -6}
+            textAnchor="end"
+            fill={color}
+            stroke="var(--chart-stat-label-halo)"
+            strokeWidth={3}
+            paintOrder="stroke"
+            strokeLinejoin="round"
+            fontSize={10}
+            fontWeight={600}
+          >
+            {`${t(`fanCurve.history.statistics.${key}`)} ${formatValue(value)}`}
+          </text>
+        )}
+      />,
+      ...(timestamp > 0 && key !== 'average' ? [
+        <ReferenceDot
+          key={`${series.key}-${key}-point`}
+          x={timestamp}
+          y={value}
+          yAxisId={yAxisId}
+          r={5}
+          fill={color}
+          stroke="var(--card)"
+          strokeWidth={2}
+        />,
+      ] : []),
+    ]);
+  }, [historyRightTimestamp, historyShowStatistics, historyStatistics.values, t]);
+  const handleHistoryZoomMouseDown = useCallback((state: { activeLabel?: string | number } | null) => {
+    if (state?.activeLabel == null) {
+      return;
+    }
+    const timestamp = Number(state.activeLabel);
+    if (!Number.isFinite(timestamp)) {
+      return;
+    }
+    setHistoryZoomSelect({ start: timestamp, end: timestamp });
+  }, []);
+  const handleHistoryZoomMouseMove = useCallback((state: { activeLabel?: string | number } | null) => {
+    if (state?.activeLabel == null) {
+      return;
+    }
+    const timestamp = Number(state.activeLabel);
+    if (!Number.isFinite(timestamp)) {
+      return;
+    }
+    setHistoryZoomSelect((current) => current ? { ...current, end: timestamp } : current);
+  }, []);
+  const handleHistoryZoomMouseUp = useCallback(() => {
+    setHistoryZoomSelect((selection) => {
+      if (selection) {
+        const from = Math.min(selection.start, selection.end);
+        const to = Math.max(selection.start, selection.end);
+        const sampleCount = historyChartData.filter((point) => point.timestamp >= from && point.timestamp <= to).length;
+        if (sampleCount >= 2) {
+          setHistoryZoomDomain([from, to]);
+        }
+      }
+      return null;
+    });
+  }, [historyChartData]);
+  const resetHistoryZoom = useCallback(() => {
+    setHistoryZoomSelect(null);
+    setHistoryZoomDomain(null);
+  }, []);
+  const historyZoomSelectionBounds = historyZoomSelect && historyZoomSelect.start !== historyZoomSelect.end
+    ? [Math.min(historyZoomSelect.start, historyZoomSelect.end), Math.max(historyZoomSelect.start, historyZoomSelect.end)] as const
+    : null;
   const visibleTimelineEvents = useMemo(() => {
-    const firstTimestamp = detailHistoryPoints[0]?.timestamp ?? 0;
+    const firstTimestamp = zoomedHistoryChartData[0]?.timestamp ?? 0;
+    const lastTimestamp = zoomedHistoryChartData[zoomedHistoryChartData.length - 1]?.timestamp ?? firstTimestamp;
     if (!firstTimestamp) return [];
-    return timelineEvents.filter((event) => event.timestamp >= firstTimestamp).slice(-12);
-  }, [detailHistoryPoints, timelineEvents]);
+    return timelineEvents.filter((event) => event.timestamp >= firstTimestamp && event.timestamp <= lastTimestamp).slice(-12);
+  }, [timelineEvents, zoomedHistoryChartData]);
   const historyTimeDomain = useMemo<[number, number]>(() => {
-    const firstTimestamp = detailHistoryPoints[0]?.timestamp ?? 0;
-    const lastSampleTimestamp = detailHistoryPoints[detailHistoryPoints.length - 1]?.timestamp ?? firstTimestamp;
+    const firstTimestamp = zoomedHistoryChartData[0]?.timestamp ?? 0;
+    const lastSampleTimestamp = zoomedHistoryChartData[zoomedHistoryChartData.length - 1]?.timestamp ?? firstTimestamp;
     const lastEventTimestamp = visibleTimelineEvents[visibleTimelineEvents.length - 1]?.timestamp ?? firstTimestamp;
     return [firstTimestamp, Math.max(firstTimestamp + 1, lastSampleTimestamp, lastEventTimestamp)];
-  }, [detailHistoryPoints, visibleTimelineEvents]);
+  }, [visibleTimelineEvents, zoomedHistoryChartData]);
   const timelineEventLayout = useMemo(() => {
     const [firstTimestamp, lastTimestamp] = historyTimeDomain;
     const range = Math.max(1, lastTimestamp - firstTimestamp);
@@ -838,17 +1155,9 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     });
   }, [historyTimeDomain, visibleTimelineEvents]);
 
-  const historySeriesMeta = useMemo(() => {
-    const meta: Record<HistorySeriesKey, { key: HistorySeriesKey; label: string; color: string; dataKey: string; axisId: 'temp' | 'fan' | 'power' }> = {
-      cpu: { key: 'cpu', label: t('fanCurve.history.series.cpu'), color: CPU_TEMP_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.cpu, axisId: HISTORY_SERIES_AXIS.cpu },
-      gpu: { key: 'gpu', label: t('fanCurve.history.series.gpu'), color: GPU_TEMP_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.gpu, axisId: HISTORY_SERIES_AXIS.gpu },
-      fan: { key: 'fan', label: t('fanCurve.history.series.fan'), color: FAN_SPEED_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.fan, axisId: HISTORY_SERIES_AXIS.fan },
-      cpuPower: { key: 'cpuPower', label: t('fanCurve.history.series.cpuPower'), color: CPU_POWER_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.cpuPower, axisId: HISTORY_SERIES_AXIS.cpuPower },
-      gpuPower: { key: 'gpuPower', label: t('fanCurve.history.series.gpuPower'), color: GPU_POWER_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.gpuPower, axisId: HISTORY_SERIES_AXIS.gpuPower },
-    };
-    return orderedSeries.map((key) => meta[key]).filter(Boolean);
-  }, [orderedSeries, t, locale]);
-  const showHistoryPowerChart = historyHasPower && (historySeriesVisibility.cpuPower || historySeriesVisibility.gpuPower);
+  const showHistoryPowerChart = historyHasPower && (historySeriesVisibility.cpuPower || historySeriesVisibility.gpuPower || historySeriesVisibility.totalPower);
+  const thermalSingleSeries = historyStatistics.thermalSeries.length === 1 ? historyStatistics.thermalSeries[0] : undefined;
+  const powerSingleSeries = historyStatistics.powerSeries.length === 1 ? historyStatistics.powerSeries[0] : undefined;
 
   const renderHistoryTooltip = useCallback(({ active, label, payload }: any) => {
     const point = payload?.[0]?.payload;
@@ -860,7 +1169,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       if (!historySeriesVisibility[series.key]) {
         return [];
       }
-      const numericValue = Number(point[series.dataKey] ?? 0);
+      const numericValue = Number(formatSpeedValue(Number(point[series.dataKey] ?? 0)));
       if (!Number.isFinite(numericValue) || numericValue <= 0) {
         return [];
       }
@@ -969,15 +1278,17 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   /* ── Init ── */
 
   useEffect(() => {
+    if (!isConnected) return;
     if ((!isInitialized || !hasUnsavedChanges) && !isInteracting && config.fanCurve && config.fanCurve.length > 0) {
       setLocalCurve(normalizeFanCurve(config.fanCurve, speedRange.min, speedRange.max, defaultCurve));
       setIsInitialized(true);
     }
-  }, [config.fanCurve, defaultCurve, hasUnsavedChanges, isInitialized, isInteracting, speedRange.max, speedRange.min]);
+  }, [config.fanCurve, defaultCurve, hasUnsavedChanges, isConnected, isInitialized, isInteracting, speedRange.max, speedRange.min]);
 
   useEffect(() => {
+    if (!isConnected) return;
     loadCurveProfiles().catch(() => {});
-  }, [externalActiveProfileId, externalDeviceCurveKey, loadCurveProfiles]);
+  }, [externalActiveProfileId, externalDeviceCurveKey, isConnected, loadCurveProfiles]);
 
   /* ── Chart data ── */
 
@@ -1088,7 +1399,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   /* ── Save / Reset ── */
 
   const persistCurrentCurve = useCallback(async () => {
-    if (isSaving) return;
+    if (!isConnected || isSaving) return false;
     try {
       setIsSaving(true);
       const curveToSave = normalizeFanCurve(localCurve, speedRange.min, speedRange.max, defaultCurve);
@@ -1106,7 +1417,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     } finally {
       setIsSaving(false);
     }
-  }, [activeProfile?.name, activeProfileId, config, isSaving, loadCurveProfiles, localCurve, syncConfigFromBackend, t]);
+  }, [activeProfile?.name, activeProfileId, config, isConnected, isSaving, loadCurveProfiles, localCurve, syncConfigFromBackend, t]);
 
   const saveCurve = useCallback(async () => {
     await persistCurrentCurve();
@@ -1557,9 +1868,13 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   return (
     <div
       data-theme-section="curve-page"
-      data-page-reveal={initialFocusTarget === 'history-details' ? 'cards-reverse' : initialFocusTarget ? undefined : 'cards'}
+      data-page-reveal={initialFocusTarget === 'history-details'
+        ? 'cards-reverse'
+        : (!isConnected && !initialFocusTarget ? 'cards-delayed' : (!initialFocusTarget ? 'cards' : undefined))}
       className="relative space-y-4 px-1 pb-2"
     >
+      {isConnected && (
+        <>
         <motion.div
           data-theme-card="curve-header"
           initial={initialFocusTarget ? false : { opacity: 0, y: 8 }}
@@ -1961,6 +2276,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
           <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur-lg">拖动蓝色点调整速度（{speedUnitSuffix}）</span>
           {showCoupledCurve && <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur-lg">{t('fanCurve.hints.curveLegend')}</span>}
         </div>
+        </>
+      )}
 
         <section ref={historyDetailsRef} data-theme-card="curve-history" className="rounded-2xl border border-border/70 bg-card p-4 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2007,7 +2324,27 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
 
               <div data-theme-card="curve-history-chart" className="rounded-xl border border-border/70 bg-background/35 p-3 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.history.recentTrend')}</div>
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.history.recentTrend')}</div>
+                    {historyZoomSelectionBounds ? (
+                      <span className="rounded-full border border-primary/45 bg-primary/12 px-2 py-0.5 text-[11px] font-medium text-primary">
+                        {t('fanCurve.history.zoomSelecting', {
+                          from: formatHistoryDateTime(historyZoomSelectionBounds[0], locale),
+                          to: formatHistoryDateTime(historyZoomSelectionBounds[1], locale),
+                        })}
+                      </span>
+                    ) : historyZoomDomain ? (
+                      <button
+                        type="button"
+                        onClick={resetHistoryZoom}
+                        className="cursor-pointer rounded-full border border-border/70 bg-card px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
+                      >
+                        {t('fanCurve.history.resetZoom')}
+                      </button>
+                    ) : (
+                      <span className="text-[11px] text-muted-foreground/60">{t('fanCurve.history.zoomHint')}</span>
+                    )}
+                  </div>
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     {historySeriesMeta.map((series) => (
                       <button
@@ -2043,9 +2380,26 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                     <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">{t('fanCurve.history.waitingMoreSamples')}</div>
                   ) : (
                     <>
-                    <div data-history-chart="thermal-fan" className="h-72">
+                    <div data-history-chart="thermal-fan" className="h-72 cursor-crosshair select-none">
                       <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 960, height: 288 }}>
-                        <LineChart data={historyChartData} margin={{ top: 12, right: 16, left: 4, bottom: 8 }}>
+                        <ComposedChart
+                          data={smoothedHistoryChartData}
+                          syncId="historyTrend"
+                          margin={{ top: 12, right: 16, left: 4, bottom: 8 }}
+                          onMouseDown={handleHistoryZoomMouseDown}
+                          onMouseMove={handleHistoryZoomMouseMove}
+                          onMouseUp={handleHistoryZoomMouseUp}
+                          onMouseLeave={handleHistoryZoomMouseUp}
+                          onDoubleClick={resetHistoryZoom}
+                        >
+                          {thermalSingleSeries && (
+                            <defs>
+                              <linearGradient id={`history-thermal-area-${thermalSingleSeries.key}`} x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor={thermalSingleSeries.color} stopOpacity="var(--chart-area-opacity-start)" />
+                                <stop offset="100%" stopColor={thermalSingleSeries.color} stopOpacity="var(--chart-area-opacity-end)" />
+                              </linearGradient>
+                            </defs>
+                          )}
                           <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                           <XAxis
                             dataKey="timestamp"
@@ -2119,6 +2473,19 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                               />
                             );
                           })}
+                          {thermalSingleSeries && (
+                            <Area
+                              yAxisId={thermalSingleSeries.axisId}
+                              type="monotone"
+                              dataKey={thermalSingleSeries.dataKey}
+                              stroke="none"
+                              fill={`url(#history-thermal-area-${thermalSingleSeries.key})`}
+                              baseValue="dataMin"
+                              tooltipType="none"
+                              isAnimationActive={false}
+                              connectNulls={false}
+                            />
+                          )}
                           {historySeriesMeta.map((series) => {
                             if (series.axisId === 'power' || !historySeriesVisibility[series.key]) {
                               return null;
@@ -2137,18 +2504,52 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                                 isAnimationActive={false}
                                 connectNulls={false}
                               />
-                            );
+                              );
                           })}
-                        </LineChart>
+                          {renderHistoryStatistics(thermalSingleSeries, thermalSingleSeries?.axisId === 'fan' ? 'fan' : 'temp')}
+                          {historyZoomSelectionBounds && (
+                            <>
+                              <ReferenceArea
+                                yAxisId="temp"
+                                x1={historyZoomSelectionBounds[0]}
+                                x2={historyZoomSelectionBounds[1]}
+                                fill="var(--chart-primary)"
+                                fillOpacity={0.22}
+                                stroke="var(--chart-primary-active)"
+                                strokeOpacity={0.95}
+                                strokeWidth={2}
+                              />
+                              <ReferenceLine x={historyZoomSelectionBounds[0]} yAxisId="temp" stroke="var(--chart-primary-active)" strokeOpacity={0.95} strokeWidth={2} />
+                              <ReferenceLine x={historyZoomSelectionBounds[1]} yAxisId="temp" stroke="var(--chart-primary-active)" strokeOpacity={0.95} strokeWidth={2} />
+                            </>
+                          )}
+                        </ComposedChart>
                       </ResponsiveContainer>
                     </div>
 
                     {showHistoryPowerChart && (
                       <div data-history-chart="power" className="border-t border-border/60 pt-3">
                         <div className="mb-2 text-xs font-medium text-muted-foreground">{t('fanCurve.history.powerTrend')}</div>
-                        <div className="h-48">
+                        <div className="h-48 cursor-crosshair select-none">
                           <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 960, height: 192 }}>
-                              <LineChart data={historyChartData} margin={{ top: 12, right: 16, left: 4, bottom: 8 }}>
+                              <ComposedChart
+                                data={smoothedHistoryChartData}
+                                syncId="historyTrend"
+                                margin={{ top: 12, right: 16, left: 4, bottom: 8 }}
+                                onMouseDown={handleHistoryZoomMouseDown}
+                                onMouseMove={handleHistoryZoomMouseMove}
+                                onMouseUp={handleHistoryZoomMouseUp}
+                                onMouseLeave={handleHistoryZoomMouseUp}
+                                onDoubleClick={resetHistoryZoom}
+                              >
+                                {powerSingleSeries && (
+                                  <defs>
+                                    <linearGradient id={`history-power-area-${powerSingleSeries.key}`} x1="0" y1="0" x2="0" y2="1">
+                                      <stop offset="0%" stopColor={powerSingleSeries.color} stopOpacity="var(--chart-area-opacity-start)" />
+                                      <stop offset="100%" stopColor={powerSingleSeries.color} stopOpacity="var(--chart-area-opacity-end)" />
+                                    </linearGradient>
+                                  </defs>
+                                )}
                                 <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                                 <XAxis
                                   dataKey="timestamp"
@@ -2182,6 +2583,19 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                                   width={44}
                                 />
                                 <RechartsTooltip content={renderHistoryTooltip} />
+                                {powerSingleSeries && (
+                                  <Area
+                                    yAxisId="power"
+                                    type="monotone"
+                                    dataKey={powerSingleSeries.dataKey}
+                                    stroke="none"
+                                    fill={`url(#history-power-area-${powerSingleSeries.key})`}
+                                    baseValue="dataMin"
+                                    tooltipType="none"
+                                    isAnimationActive={false}
+                                    connectNulls={false}
+                                  />
+                                )}
                                 {historySeriesMeta.map((series) => {
                                   if (series.axisId !== 'power' || !historySeriesVisibility[series.key]) {
                                     return null;
@@ -2202,7 +2616,24 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                                     />
                                   );
                                 })}
-                              </LineChart>
+                                {renderHistoryStatistics(powerSingleSeries, 'power')}
+                                {historyZoomSelectionBounds && (
+                                  <>
+                                    <ReferenceArea
+                                      yAxisId="power"
+                                      x1={historyZoomSelectionBounds[0]}
+                                      x2={historyZoomSelectionBounds[1]}
+                                      fill="var(--chart-primary)"
+                                      fillOpacity={0.22}
+                                      stroke="var(--chart-primary-active)"
+                                      strokeOpacity={0.95}
+                                      strokeWidth={2}
+                                    />
+                                    <ReferenceLine x={historyZoomSelectionBounds[0]} yAxisId="power" stroke="var(--chart-primary-active)" strokeOpacity={0.95} strokeWidth={2} />
+                                    <ReferenceLine x={historyZoomSelectionBounds[1]} yAxisId="power" stroke="var(--chart-primary-active)" strokeOpacity={0.95} strokeWidth={2} />
+                                  </>
+                                )}
+                              </ComposedChart>
                           </ResponsiveContainer>
                         </div>
                       </div>
@@ -2217,6 +2648,19 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                     <DialogTitle>{t('fanCurve.history.displaySettings')}</DialogTitle>
                     <DialogDescription>{t('fanCurve.history.displaySettingsDescription')}</DialogDescription>
                   </DialogHeader>
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-background/45 px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-foreground">{t('fanCurve.history.statistics.enabled')}</div>
+                      <div className="text-[11px] text-muted-foreground">{t('fanCurve.history.statistics.description')}</div>
+                    </div>
+                    <ToggleSwitch
+                      enabled={historyShowStatistics}
+                      onChange={() => setHistoryShowStatistics(!historyShowStatistics)}
+                      size="sm"
+                      color="blue"
+                      srLabel={t('fanCurve.history.statistics.enabled')}
+                    />
+                  </div>
                   <div className="space-y-2">
                     {historySeriesMeta.map((series, index) => (
                       <div
@@ -2293,6 +2737,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
           )}
         </section>
 
+      {isConnected && (
+        <>
         <Dialog open={createProfileDialogOpen} onOpenChange={setCreateProfileDialogOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>
@@ -2498,6 +2944,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </>
+      )}
 
       </div>
   );

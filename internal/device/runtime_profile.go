@@ -1,6 +1,10 @@
 package device
 
-import "github.com/TIANLI0/THRM/internal/types"
+import (
+	"strings"
+
+	"github.com/TIANLI0/THRM/internal/types"
+)
 
 // ActiveProfile returns the runtime device profile currently held by the
 // manager. Hidden FlyDigi profiles are allowed here because this value is not
@@ -20,6 +24,11 @@ func (m *Manager) activeProfileLocked() types.DeviceProfile {
 		if profile, ok := types.FlyDigiProfileForHIDProductID(m.productID); ok {
 			return types.NormalizeDeviceProfile(profile, m.wifiEndpoint)
 		}
+	}
+	if strings.TrimSpace(m.activeProfile.ID) == "" &&
+		strings.TrimSpace(m.activeProfile.DisplayName) == "" &&
+		strings.TrimSpace(m.activeProfile.Transport) == "" {
+		return types.DeviceProfile{}
 	}
 	return types.NormalizeDeviceProfile(m.activeProfile, m.wifiEndpoint)
 }

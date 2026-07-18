@@ -149,6 +149,12 @@ func TestScanBLEDevicesWithScannerReturnsEmptyResult(t *testing.T) {
 	}
 }
 
+func TestDefaultBLEScanTimeoutMatchesStableWindowsScanWindow(t *testing.T) {
+	if got := clampBLEScanTimeout(0); got != 10000 {
+		t.Fatalf("default BLE scan timeout = %d, want 10000", got)
+	}
+}
+
 func TestMatchedBLEAdvertisementStopsScanWithoutWaitingForTimeout(t *testing.T) {
 	stopScan := make(chan struct{}, 1)
 	started := time.Now()
@@ -177,6 +183,70 @@ func TestMatchedBLEAdvertisementStopsScanWithoutWaitingForTimeout(t *testing.T) 
 	}
 	if elapsed := time.Since(started); elapsed >= 200*time.Millisecond {
 		t.Fatalf("matched BLE scan took %v, want immediate stop", elapsed)
+	}
+	if len(devices) != 1 || devices[0].Name != "FlyDigi BS1" {
+		t.Fatalf("devices = %#v, want matched BS1", devices)
+	}
+}
+
+func TestBLEScanStopsWhenContextIsCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	started := make(chan struct{})
+	stopped := make(chan struct{}, 1)
+	done := make(chan error, 1)
+
+	go func() {
+		_, err := scanBLEAdvertisements(
+			ctx,
+			types.BLEScanParams{NameFilter: "BS1", OnlyMatched: true},
+			func(func(types.BLEDeviceInfo)) error {
+				close(started)
+				<-stopped
+				return nil
+			},
+			func() error {
+				select {
+				case stopped <- struct{}{}:
+				default:
+				}
+				return nil
+			},
+		)
+		done <- err
+	}()
+
+	<-started
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("canceled BLE scan returned error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("canceled BLE scan did not stop")
+	}
+}
+
+func TestIntentionalBLEScanStopIgnoresWindowsStopError(t *testing.T) {
+	stopCalls := 0
+	devices, err := scanBLEAdvertisements(
+		context.Background(),
+		types.BLEScanParams{NameFilter: "BS1", OnlyMatched: true},
+		func(report func(types.BLEDeviceInfo)) error {
+			report(types.BLEDeviceInfo{Address: "AA:BB:CC:00:00:08", Name: "FlyDigi BS1"})
+			return errors.New("The function is incorrect")
+		},
+		func() error {
+			stopCalls++
+			return errors.New("The function is incorrect")
+		},
+	)
+	if err != nil {
+		t.Fatalf("intentional BLE stop returned error: %v", err)
+	}
+	if stopCalls != 1 {
+		t.Fatalf("StopScan calls = %d, want 1", stopCalls)
 	}
 	if len(devices) != 1 || devices[0].Name != "FlyDigi BS1" {
 		t.Fatalf("devices = %#v, want matched BS1", devices)

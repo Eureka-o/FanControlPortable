@@ -113,14 +113,52 @@ func (m *Manager) Configure(transport, endpoint string) {
 	m.configureProfileLocked(types.DefaultWiFiPercentProfile(endpoint), endpoint)
 }
 
-func (m *Manager) ConfigureProfile(profile types.DeviceProfile, fallbackEndpoint string) {
+func (m *Manager) ConfigureProfile(profile types.DeviceProfile, fallbackEndpoint string) bool {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
+	if m.isConnected {
+		return false
+	}
 	m.configureProfileLocked(profile, fallbackEndpoint)
+	return true
+}
+
+func (m *Manager) ClearProfile() {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	if m.isConnected {
+		return
+	}
+	m.clearProfileLocked()
+}
+
+func (m *Manager) clearProfileLocked() {
+	m.connectionGen.Add(1)
+	m.activeProfile = types.DeviceProfile{}
+	m.deviceTransport = ""
+	m.wifiEndpoint = ""
+	m.wifiExecutor = nil
+	if m.bleExecutor != nil {
+		if err := m.bleExecutor.Close(); err != nil {
+			m.logWarn("BLE profile executor close failed while clearing profile: %v", err)
+		}
+	}
+	m.bleExecutor = nil
+	if m.serialExecutor != nil {
+		if err := m.serialExecutor.Close(); err != nil {
+			m.logWarn("Serial profile executor close failed while clearing profile: %v", err)
+		}
+	}
+	m.serialExecutor = nil
+	m.deviceType = ""
+	m.productID = 0
+	m.currentFanData.Store(nil)
 }
 
 func (m *Manager) configureProfileLocked(profile types.DeviceProfile, fallbackEndpoint string) {
+	m.connectionGen.Add(1)
 	profile = types.NormalizeDeviceProfile(profile, fallbackEndpoint)
 	m.activeProfile = profile
 	m.deviceTransport = profile.Transport
@@ -178,7 +216,7 @@ func (m *Manager) configureProfileLocked(profile types.DeviceProfile, fallbackEn
 }
 
 func (m *Manager) shouldUseWiFiLocked() bool {
-	return m.deviceTransport == "" || m.deviceTransport == types.DeviceTransportWiFi
+	return m.deviceTransport == types.DeviceTransportWiFi
 }
 
 func (m *Manager) shouldUseWiFi() bool {

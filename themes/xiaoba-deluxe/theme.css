@@ -952,6 +952,15 @@ html[data-theme="xiaoba-deluxe"] .glacier-stat-tile:active {
   unicode-range: U+8D28;
 }
 
+@font-face {
+  font-family: "FanControl Advanced Glyph Patch";
+  src: url("assets/fonts/advanced-glyph-patch-603b.woff") format("woff");
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+603B;
+}
+
 /* Xiaoba Plus repair: use a compact bundled rounded Chinese subset and restore card feedback. */
 html[data-theme="xiaoba-deluxe"] {
   --xiaoba-deluxe-cjk-font:

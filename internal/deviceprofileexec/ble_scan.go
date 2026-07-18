@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	defaultBLEScanTimeoutMs = 5000
+	defaultBLEScanTimeoutMs = 10000
 	maxBLEScanTimeoutMs     = 15000
 )
 
@@ -96,27 +96,20 @@ func scanBLEAdvertisements(
 ) ([]types.BLEDeviceInfo, error) {
 	var mutex sync.Mutex
 	seen := make(map[string]types.BLEDeviceInfo)
-	stopRequested := make(chan struct{}, 1)
-	stopWatch := make(chan struct{})
-	watchDone := make(chan struct{})
+	stopRequested := make(chan struct{})
+	scanDone := make(chan struct{})
+	var stopOnce sync.Once
+	requestStop := func() {
+		stopOnce.Do(func() {
+			close(stopRequested)
+			_ = stop()
+		})
+	}
 	go func() {
-		defer close(watchDone)
 		select {
 		case <-ctx.Done():
-		case <-stopRequested:
-		case <-stopWatch:
-			return
-		}
-		for {
-			err := stop()
-			if err == nil || !strings.Contains(strings.ToLower(err.Error()), "not scanning") {
-				return
-			}
-			select {
-			case <-stopWatch:
-				return
-			case <-time.After(10 * time.Millisecond):
-			}
+			requestStop()
+		case <-scanDone:
 		}
 	}()
 	err := scan(func(info types.BLEDeviceInfo) {
@@ -129,16 +122,17 @@ func scanBLEAdvertisements(
 		matched := params.OnlyMatched && scoreBLEDevice(seen[key], params).Matched
 		mutex.Unlock()
 		if matched {
-			select {
-			case stopRequested <- struct{}{}:
-			default:
-			}
+			requestStop()
 		}
 	})
-	close(stopWatch)
-	<-watchDone
-	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "not scanning") {
-		return nil, err
+	close(scanDone)
+	if err != nil {
+		select {
+		case <-stopRequested:
+			// Windows may return ERROR_INVALID_FUNCTION after an intentional StopScan.
+		default:
+			return nil, err
+		}
 	}
 
 	mutex.Lock()

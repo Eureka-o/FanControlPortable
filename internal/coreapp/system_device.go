@@ -232,7 +232,7 @@ func (a *CoreApp) runReconnectLoop(
 	reason string,
 	retryDelays []time.Duration,
 	generation uint64,
-	attempt func() reconnectAttemptResult,
+	attempt func(context.Context) reconnectAttemptResult,
 ) {
 	a.logInfo("启动设备重连流程: %s", reason)
 
@@ -292,7 +292,7 @@ func (a *CoreApp) runReconnectLoop(
 		}
 
 		a.logInfo("尝试第 %d 次重连设备...", i+1)
-		result := attempt()
+		result := attempt(ctx)
 		current, connected := a.completeReconnectAttempt(ctx, generation, result, "reconnect@"+reason)
 		if !current {
 			return
@@ -359,7 +359,7 @@ func waitForReconnectDelay(ctx context.Context, delay time.Duration) bool {
 	}
 }
 
-func (a *CoreApp) reconnectDevice() reconnectAttemptResult {
+func (a *CoreApp) reconnectDevice(ctx context.Context) reconnectAttemptResult {
 	a.connectMutex.Lock()
 	defer a.connectMutex.Unlock()
 	a.connectionPhase.Store(deviceConnectionPhaseConnecting)
@@ -376,13 +376,18 @@ func (a *CoreApp) reconnectDevice() reconnectAttemptResult {
 			return reconnectNativeTransport(
 				lastConnectionWasNative,
 				activeProfile,
-				a.deviceManager.ConnectNativeProfile,
+				func(profile types.DeviceProfile) (bool, map[string]string) {
+					return a.deviceManager.ConnectNativeProfileContext(ctx, profile)
+				},
 				func() (bool, map[string]string) {
-					return a.deviceManager.AutoConnectNativeProfiles(cfg.DeviceProfiles)
+					return a.deviceManager.AutoConnectNativeProfilesContext(ctx, cfg.DeviceProfiles)
 				},
 			)
 		},
 		func() (bool, map[string]string) {
+			if !compatibilityConnectionEnabled(cfg) {
+				return false, nil
+			}
 			a.configureDeviceManager(cfg)
 			return connectCompatibilityWithRecovery(
 				a.deviceManager.Connect,
@@ -392,10 +397,13 @@ func (a *CoreApp) reconnectDevice() reconnectAttemptResult {
 			)
 		},
 	)
+	connectionGeneration := a.deviceManager.ConnectionGeneration()
 	return reconnectAttemptResult{
-		connected:   connected,
-		deviceInfo:  deviceInfo,
-		disconnect:  a.deviceManager.DisconnectSilently,
+		connected:  connected,
+		deviceInfo: deviceInfo,
+		disconnect: func() {
+			a.deviceManager.DisconnectIfConnectionGeneration(connectionGeneration)
+		},
 		isConnected: a.deviceManager.IsConnected,
 	}
 }
@@ -556,7 +564,7 @@ func (a *CoreApp) onSystemResume() {
 	a.triggerResumeRecovery("power-event", 0, true)
 }
 
-func shouldReconnectOnHIDArrival(stopping, suspended, suppressed, coreConnected, managerConnected bool) bool {
+func shouldReconnectOnNativeArrival(stopping, suspended, suppressed, coreConnected, managerConnected bool) bool {
 	return !stopping && !suspended && !suppressed && !coreConnected && !managerConnected
 }
 
@@ -564,7 +572,7 @@ func (a *CoreApp) onSupportedHIDArrival(devicePath string) {
 	a.mutex.RLock()
 	coreConnected := a.isConnected
 	a.mutex.RUnlock()
-	if !shouldReconnectOnHIDArrival(
+	if !shouldReconnectOnNativeArrival(
 		a.stopping.Load(),
 		a.systemSuspended.Load(),
 		a.autoReconnectSuppressed.Load(),
@@ -576,6 +584,24 @@ func (a *CoreApp) onSupportedHIDArrival(devicePath string) {
 
 	a.logInfo("检测到飞智 HID 接口已就绪，立即触发重连: %s", devicePath)
 	a.requestReconnect("hid-interface-arrival", []time.Duration{0})
+}
+
+func (a *CoreApp) onSupportedBLEArrival(devicePath string) {
+	a.mutex.RLock()
+	coreConnected := a.isConnected
+	a.mutex.RUnlock()
+	if !shouldReconnectOnNativeArrival(
+		a.stopping.Load(),
+		a.systemSuspended.Load(),
+		a.autoReconnectSuppressed.Load(),
+		coreConnected,
+		a.deviceManager.IsConnected(),
+	) {
+		return
+	}
+
+	a.logInfo("Bluetooth LE interface is ready; waking reconnect: %s", devicePath)
+	a.requestReconnect("ble-interface-arrival", []time.Duration{0})
 }
 
 // triggerResumeRecovery 以节流方式触发唤醒恢复，避免电源事件与基于时间间隔的检测重复执行。

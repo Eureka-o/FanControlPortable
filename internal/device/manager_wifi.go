@@ -65,10 +65,10 @@ type Manager struct {
 func NewManager(logger types.Logger) *Manager {
 	return &Manager{
 		logger:          logger,
-		deviceTransport: types.DeviceTransportWiFi,
+		deviceTransport: "",
 		wifiEndpoint:    types.DefaultFanDeviceIP,
 		wifiHTTPClient:  newWiFiHTTPClient(),
-		activeProfile:   types.DefaultWiFiPercentProfile(types.DefaultFanDeviceIP),
+		activeProfile:   types.DeviceProfile{},
 		bleConnector:    deviceprofileexec.DefaultBLEConnector{},
 		serialDialer:    deviceprofileexec.DefaultSerialDialer{},
 	}
@@ -95,6 +95,9 @@ func (m *Manager) Connect() (bool, map[string]string) {
 		return false, nil
 	}
 	if m.isConnected {
+		if types.IsNativeDeviceTransport(m.deviceType) {
+			return false, nil
+		}
 		return true, m.connectedInfoLocked()
 	}
 	ctx, finishOperation := m.operationControl.begin()
@@ -114,6 +117,9 @@ func (m *Manager) Connect() (bool, map[string]string) {
 	}
 	if m.shouldUseLegacyHIDLocked() {
 		return m.connectLegacyHIDLocked()
+	}
+	if strings.TrimSpace(m.deviceTransport) == "" {
+		return false, nil
 	}
 
 	if !m.shouldUseWiFiLocked() {
@@ -138,16 +144,29 @@ func (m *Manager) DisconnectSilently() {
 	m.disconnect(false)
 }
 
+func (m *Manager) DisconnectIfConnectionGeneration(expected uint64) bool {
+	return m.disconnectWithGeneration(false, expected)
+}
+
 func (m *Manager) DisconnectForRecovery() {
 	m.disconnect(false)
 }
 
 func (m *Manager) disconnect(notify bool) {
+	m.disconnectWithGeneration(notify, 0)
+}
+
+func (m *Manager) disconnectWithGeneration(notify bool, expected uint64) bool {
 	m.operationControl.cancelActive()
 	m.mutex.Lock()
+	if expected != 0 && m.connectionGen.Load() != expected {
+		m.mutex.Unlock()
+		return false
+	}
+	m.connectionGen.Add(1)
 	if !m.isConnected {
 		m.mutex.Unlock()
-		return
+		return false
 	}
 
 	if m.deviceType == types.DeviceTransportBLE {
@@ -166,6 +185,7 @@ func (m *Manager) disconnect(notify bool) {
 	if shouldNotify {
 		m.onDisconnect()
 	}
+	return true
 }
 
 func (m *Manager) IsConnected() bool {

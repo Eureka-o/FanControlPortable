@@ -37,6 +37,12 @@
   --chart-fan-speed: #10b981;
   --chart-cpu-power: color-mix(in srgb, #0891b2 88%, var(--foreground) 12%);
   --chart-gpu-power: color-mix(in srgb, #a855f7 84%, var(--foreground) 16%);
+  --chart-stat-max: var(--destructive);
+  --chart-stat-min: color-mix(in srgb, var(--primary) 48%, var(--muted-foreground) 52%);
+  --chart-stat-average: var(--primary);
+  --chart-stat-label-halo: color-mix(in srgb, var(--card) 92%, transparent);
+  --chart-area-opacity-start: 0.12;
+  --chart-area-opacity-end: 0.015;
   --status-temperature-hot: #ef4444;
   --status-temperature-warm: #f97316;
   --chart-temperature-indicator: #ef4444;
@@ -228,6 +234,12 @@
   --chart-fan-speed: #34d399;
   --chart-cpu-power: color-mix(in srgb, #22d3ee 78%, var(--foreground) 22%);
   --chart-gpu-power: color-mix(in srgb, #c084fc 78%, var(--foreground) 22%);
+  --chart-stat-max: var(--destructive);
+  --chart-stat-min: color-mix(in srgb, var(--primary) 52%, var(--muted-foreground) 48%);
+  --chart-stat-average: var(--primary);
+  --chart-stat-label-halo: color-mix(in srgb, var(--card) 94%, transparent);
+  --chart-area-opacity-start: 0.1;
+  --chart-area-opacity-end: 0.01;
   --status-temperature-hot: #ef4444;
   --status-temperature-warm: #fb923c;
   --chart-temperature-indicator: #ff7048;
@@ -460,8 +472,13 @@ html[data-window-blur="on"]:not([data-theme]) {
 }
 
 [data-page-reveal="cards"] > *,
-[data-page-reveal="cards-reverse"] > * {
+[data-page-reveal="cards-reverse"] > *,
+[data-page-reveal="cards-delayed"] > * {
   animation: glacier-page-card-fade 0.285s ease-out both;
+}
+
+[data-page-reveal="cards-delayed"] > * {
+  animation-delay: 0.09s;
 }
 
 [data-page-reveal="cards"] > :nth-child(2) {
@@ -506,7 +523,8 @@ html[data-window-blur="on"]:not([data-theme]) {
 
 @media (prefers-reduced-motion: reduce) {
   [data-page-reveal="cards"] > *,
-  [data-page-reveal="cards-reverse"] > * {
+  [data-page-reveal="cards-reverse"] > *,
+  [data-page-reveal="cards-delayed"] > * {
     animation: none;
   }
 }

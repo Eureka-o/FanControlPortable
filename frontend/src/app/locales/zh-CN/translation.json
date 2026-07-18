@@ -708,6 +708,9 @@
       "emptyDisabled": "后台记录当前已关闭，可在本页开启。",
       "recentTrend": "最近趋势",
       "powerTrend": "功耗趋势",
+      "resetZoom": "重置缩放",
+      "zoomHint": "在图表上拖拽可框选时间范围",
+      "zoomSelecting": "选择中 {{from}} - {{to}}",
       "events": {
         "disconnect": "设备断开",
         "reconnect": "设备连接",
@@ -720,7 +723,8 @@
         "gpu": "GPU 温度",
         "fan": "风扇转速",
         "cpuPower": "CPU 功耗",
-        "gpuPower": "GPU 功耗"
+        "gpuPower": "GPU 功耗",
+        "totalPower": "总功耗"
       },
       "duration": {
         "ltOneMinute": "< 1 分钟",
@@ -744,6 +748,13 @@
       },
       "displaySettings": "展示设定",
       "displaySettingsDescription": "选择趋势曲线展示的信息，并调整鼠标悬停时的显示顺序。",
+      "statistics": {
+        "enabled": "显示统计标记",
+        "description": "单曲线图显示最大值、最小值和平均值。",
+        "max": "最大",
+        "min": "最小",
+        "average": "平均"
+      },
       "moveUp": "上移",
       "moveDown": "下移",
       "resetDisplaySettings": "恢复默认"

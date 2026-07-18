@@ -2,7 +2,11 @@
 
 package device
 
-import "github.com/TIANLI0/THRM/internal/types"
+import (
+	"context"
+
+	"github.com/TIANLI0/THRM/internal/types"
+)
 
 func (m *Manager) ScanNativeDevices() []map[string]string {
 	return m.ScanNativeDevicesProfiles(nil)
@@ -20,5 +24,23 @@ func (m *Manager) AutoConnectNative() (bool, map[string]string) {
 }
 
 func (m *Manager) AutoConnectNativeProfiles(_ []types.DeviceProfile) (bool, map[string]string) {
+	return m.Connect()
+}
+
+func (m *Manager) AutoConnectNativeProfilesContext(ctx context.Context, profiles []types.DeviceProfile) (bool, map[string]string) {
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return false, nil
+		}
+	}
+	return m.AutoConnectNativeProfiles(profiles)
+}
+
+func (m *Manager) ConnectNativeProfileContext(ctx context.Context, profile types.DeviceProfile) (bool, map[string]string) {
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return false, nil
+		}
+	}
 	return m.Connect()
 }

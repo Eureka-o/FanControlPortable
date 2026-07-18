@@ -56,6 +56,9 @@ func (a *CoreApp) GetUserDeviceProfiles() []types.DeviceProfile {
 
 func (a *CoreApp) SetActiveDeviceProfile(profileID string) (types.DeviceProfile, error) {
 	cfg := a.configManager.Get()
+	if idx := deviceprofiles.FindIndex(cfg.DeviceProfiles, profileID); idx >= 0 {
+		markCompatibilityModeForTransport(&cfg, cfg.DeviceProfiles[idx].Transport)
+	}
 	types.NormalizeDeviceProfileConfig(&cfg)
 
 	idx := deviceprofiles.FindIndex(cfg.DeviceProfiles, profileID)
@@ -131,6 +134,11 @@ func (a *CoreApp) SaveDeviceProfile(params ipc.SaveDeviceProfileParams) (types.D
 
 func (a *CoreApp) DeleteDeviceProfile(profileID string) error {
 	cfg := a.configManager.Get()
+	if cfg.ActiveDeviceProfileID != "" {
+		if idx := deviceprofiles.FindIndex(cfg.DeviceProfiles, cfg.ActiveDeviceProfileID); idx >= 0 {
+			markCompatibilityModeForTransport(&cfg, cfg.DeviceProfiles[idx].Transport)
+		}
+	}
 	types.NormalizeDeviceProfileConfig(&cfg)
 
 	if len(cfg.DeviceProfiles) <= 1 {

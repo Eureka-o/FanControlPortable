@@ -56,6 +56,7 @@ func TestApplyCurrentGearSettingSendsConfiguredManualSpeedWithoutFanData(t *test
 	cfg := types.GetDefaultConfig(false)
 	cfg.FanControlDeviceIp = server.URL
 	cfg.DeviceTransport = types.DeviceTransportWiFi
+	cfg.WiFiCompatibilityEnabled = true
 	cfg.ActiveDeviceProfileID = types.DefaultWiFiPercentProfileID
 	cfg.ActiveDeviceProfileIDsByTransport = map[string]string{
 		types.DeviceTransportWiFi: types.DefaultWiFiPercentProfileID,
@@ -116,6 +117,7 @@ func TestSetAutoControlOffAppliesConfiguredManualSpeed(t *testing.T) {
 	cfg := types.GetDefaultConfig(false)
 	cfg.FanControlDeviceIp = server.URL
 	cfg.DeviceTransport = types.DeviceTransportWiFi
+	cfg.WiFiCompatibilityEnabled = true
 	cfg.ActiveDeviceProfileID = types.DefaultWiFiPercentProfileID
 	cfg.ActiveDeviceProfileIDsByTransport = map[string]string{
 		types.DeviceTransportWiFi: types.DefaultWiFiPercentProfileID,
@@ -172,6 +174,7 @@ func TestSetAutoControlOffDoesNotPersistWhenManualApplyFails(t *testing.T) {
 	cfg := types.GetDefaultConfig(false)
 	cfg.FanControlDeviceIp = server.URL
 	cfg.DeviceTransport = types.DeviceTransportWiFi
+	cfg.WiFiCompatibilityEnabled = true
 	cfg.ActiveDeviceProfileID = types.DefaultWiFiPercentProfileID
 	cfg.ActiveDeviceProfileIDsByTransport = map[string]string{
 		types.DeviceTransportWiFi: types.DefaultWiFiPercentProfileID,
@@ -236,6 +239,7 @@ func TestSetManualGearDisablesCompetingModesAndSendsConfiguredSpeed(t *testing.T
 	cfg := types.GetDefaultConfig(false)
 	cfg.FanControlDeviceIp = server.URL
 	cfg.DeviceTransport = types.DeviceTransportWiFi
+	cfg.WiFiCompatibilityEnabled = true
 	cfg.ActiveDeviceProfileID = types.DefaultWiFiPercentProfileID
 	cfg.ActiveDeviceProfileIDsByTransport = map[string]string{
 		types.DeviceTransportWiFi: types.DefaultWiFiPercentProfileID,
@@ -295,6 +299,7 @@ func TestSetManualGearDoesNotPersistWhenConnectedDeviceRejectsCommand(t *testing
 	cfg := types.GetDefaultConfig(false)
 	cfg.FanControlDeviceIp = server.URL
 	cfg.DeviceTransport = types.DeviceTransportWiFi
+	cfg.WiFiCompatibilityEnabled = true
 	cfg.ActiveDeviceProfileID = types.DefaultWiFiPercentProfileID
 	cfg.ActiveDeviceProfileIDsByTransport = map[string]string{
 		types.DeviceTransportWiFi: types.DefaultWiFiPercentProfileID,

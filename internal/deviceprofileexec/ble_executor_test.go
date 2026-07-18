@@ -12,12 +12,20 @@ import (
 )
 
 type fakeBLEConnector struct {
-	client  *fakeBLEClient
-	profile types.DeviceProfile
+	client   *fakeBLEClient
+	clients  []*fakeBLEClient
+	profile  types.DeviceProfile
+	connects int
 }
 
 func (c *fakeBLEConnector) ConnectBLEDevice(ctx context.Context, profile types.DeviceProfile) (BLEClient, error) {
 	c.profile = profile
+	c.connects++
+	if len(c.clients) > 0 {
+		client := c.clients[0]
+		c.clients = c.clients[1:]
+		return client, nil
+	}
 	return c.client, nil
 }
 
@@ -183,6 +191,28 @@ func TestBLEExecutorFlyDigiBS1SetSpeedDoesNotFakeCurrentRPM(t *testing.T) {
 	}
 	if state.CurrentRPM != 1234 || state.TargetRPM != 1800 {
 		t.Fatalf("BS1 state = %d/%d, want 1234/1800", state.CurrentRPM, state.TargetRPM)
+	}
+}
+
+func TestBLEExecutorFlyDigiBS1SetSpeedReconnectsOnceAfterWriteFailure(t *testing.T) {
+	failed := &fakeBLEClient{writeErr: io.ErrClosedPipe}
+	recovered := &fakeBLEClient{}
+	connector := &fakeBLEConnector{clients: []*fakeBLEClient{failed, recovered}}
+	executor, err := NewBLEExecutor(types.FlyDigiBS1Profile(), connector)
+	if err != nil {
+		t.Fatalf("NewBLEExecutor() error = %v", err)
+	}
+	defer executor.Close()
+
+	state, err := executor.SetSpeed(nil, types.NewRPMSpeed(1800))
+	if err != nil {
+		t.Fatalf("SetSpeed() error = %v", err)
+	}
+	if connector.connects != 2 || !failed.closed {
+		t.Fatalf("recovery connects = %d, failed client closed = %v", connector.connects, failed.closed)
+	}
+	if len(recovered.writes) != 2 || state.TargetRPM != 1800 {
+		t.Fatalf("recovered writes/state = %d/%#v, want two writes and 1800 RPM", len(recovered.writes), state)
 	}
 }
 

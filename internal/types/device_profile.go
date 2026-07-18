@@ -442,53 +442,39 @@ func DeviceProfileSpeedUnit(cfg *AppConfig) string {
 
 func ActiveDeviceProfile(cfg *AppConfig) DeviceProfile {
 	if cfg == nil {
-		return DefaultWiFiPercentProfile(DefaultFanDeviceIP)
+		return DeviceProfile{}
 	}
 	transport := NormalizeDeviceTransport(cfg.DeviceTransport)
-	if !IsManualCompatibilityDeviceTransport(transport) {
-		if profile, ok := activeCompatibilityProfile(cfg); ok {
-			return profile
-		}
-		return DefaultWiFiPercentProfile(cfg.FanControlDeviceIp)
+	if !compatibilityModeEnabled(cfg, transport) {
+		profile, _ := activeCompatibilityProfile(cfg)
+		return profile
 	}
-	if transport != "" {
-		if id := activeDeviceProfileIDFromTransportMap(cfg.DeviceProfiles, cfg.ActiveDeviceProfileIDsByTransport, transport); id != "" {
-			for _, profile := range cfg.DeviceProfiles {
-				if profile.ID == id {
-					return NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp)
-				}
+	if id := activeDeviceProfileIDFromTransportMap(cfg.DeviceProfiles, cfg.ActiveDeviceProfileIDsByTransport, transport); id != "" {
+		for _, profile := range cfg.DeviceProfiles {
+			if profile.ID == id {
+				return NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp)
 			}
-		}
-		activeID := strings.TrimSpace(cfg.ActiveDeviceProfileID)
-		if activeID != "" {
-			for _, profile := range cfg.DeviceProfiles {
-				if profile.ID == activeID && NormalizeDeviceTransport(profile.Transport) == transport {
-					return NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp)
-				}
-			}
-		}
-		if id := firstDeviceProfileIDForTransport(cfg.DeviceProfiles, transport); id != "" {
-			for _, profile := range cfg.DeviceProfiles {
-				if profile.ID == id {
-					return NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp)
-				}
-			}
-		}
-		switch transport {
-		case DeviceTransportWiFi:
-			return DefaultWiFiPercentProfile(cfg.FanControlDeviceIp)
 		}
 	}
 	activeID := strings.TrimSpace(cfg.ActiveDeviceProfileID)
-	for _, profile := range cfg.DeviceProfiles {
-		if profile.ID == activeID && profile.ID != "" {
-			return NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp)
+	if activeID != "" {
+		for _, profile := range cfg.DeviceProfiles {
+			if profile.ID == activeID && NormalizeDeviceTransport(profile.Transport) == transport {
+				return NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp)
+			}
 		}
 	}
-	if len(cfg.DeviceProfiles) > 0 {
-		return NormalizeDeviceProfile(cfg.DeviceProfiles[0], cfg.FanControlDeviceIp)
+	if id := firstDeviceProfileIDForTransport(cfg.DeviceProfiles, transport); id != "" {
+		for _, profile := range cfg.DeviceProfiles {
+			if profile.ID == id {
+				return NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp)
+			}
+		}
 	}
-	return DefaultWiFiPercentProfile(cfg.FanControlDeviceIp)
+	if transport == DeviceTransportWiFi {
+		return DefaultWiFiPercentProfile(cfg.FanControlDeviceIp)
+	}
+	return DeviceProfile{}
 }
 
 func ActiveDeviceProfileIDForTransport(cfg *AppConfig, transport string) string {
@@ -527,22 +513,45 @@ func activeCompatibilityProfile(cfg *AppConfig) (DeviceProfile, bool) {
 		return DeviceProfile{}, false
 	}
 	if profile, ok := deviceProfileByID(cfg.DeviceProfiles, cfg.ActiveDeviceProfileID); ok &&
-		IsManualCompatibilityDeviceTransport(profile.Transport) {
+		compatibilityModeEnabled(cfg, profile.Transport) {
 		return NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp), true
 	}
 	for _, transport := range []string{DeviceTransportWiFi, DeviceTransportSerial} {
+		if !compatibilityModeEnabled(cfg, transport) {
+			continue
+		}
 		id := activeDeviceProfileIDFromTransportMap(cfg.DeviceProfiles, cfg.ActiveDeviceProfileIDsByTransport, transport)
 		if profile, ok := deviceProfileByID(cfg.DeviceProfiles, id); ok {
 			return NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp), true
 		}
 	}
 	for _, transport := range []string{DeviceTransportWiFi, DeviceTransportSerial} {
+		if !compatibilityModeEnabled(cfg, transport) {
+			continue
+		}
 		id := firstDeviceProfileIDForTransport(cfg.DeviceProfiles, transport)
 		if profile, ok := deviceProfileByID(cfg.DeviceProfiles, id); ok {
 			return NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp), true
 		}
 	}
-	return DefaultWiFiPercentProfile(cfg.FanControlDeviceIp), true
+	if cfg.WiFiCompatibilityEnabled {
+		return DefaultWiFiPercentProfile(cfg.FanControlDeviceIp), true
+	}
+	return DeviceProfile{}, false
+}
+
+func compatibilityModeEnabled(cfg *AppConfig, transport string) bool {
+	if cfg == nil {
+		return false
+	}
+	switch NormalizeDeviceTransport(transport) {
+	case DeviceTransportWiFi:
+		return cfg.WiFiCompatibilityEnabled
+	case DeviceTransportSerial:
+		return cfg.SerialCompatibilityEnabled
+	default:
+		return false
+	}
 }
 
 func firstDeviceProfileIDForTransport(profiles []DeviceProfile, transport string) string {
@@ -662,20 +671,6 @@ func NormalizeDeviceProfileConfig(cfg *AppConfig) bool {
 		changed = true
 	}
 
-	if len(cfg.DeviceProfiles) == 0 {
-		profile, ok := builtInDeviceProfileForTransport(cfg.FanControlDeviceIp, cfg.DeviceTransport)
-		if !ok || !IsManualCompatibilityDeviceTransport(profile.Transport) {
-			profile = DefaultWiFiPercentProfile(cfg.FanControlDeviceIp)
-		}
-		cfg.DeviceProfiles = []DeviceProfile{profile}
-		cfg.ActiveDeviceProfileID = profile.ID
-		cfg.DeviceTransport = profile.Transport
-		ensureBuiltInDeviceProfiles(cfg)
-		setActiveDeviceProfileIDForTransport(cfg, cfg.DeviceProfiles[0])
-		return true
-	}
-
-	foundActive := false
 	seen := make(map[string]bool, len(cfg.DeviceProfiles))
 	normalized := make([]DeviceProfile, 0, len(cfg.DeviceProfiles))
 	for _, profile := range cfg.DeviceProfiles {
@@ -684,23 +679,16 @@ func NormalizeDeviceProfileConfig(cfg *AppConfig) bool {
 			changed = true
 			continue
 		}
+		if profile.ID == DefaultWiFiPercentProfileID && !cfg.WiFiCompatibilityEnabled {
+			changed = true
+			continue
+		}
 		if seen[profile.ID] {
 			changed = true
 			continue
 		}
 		seen[profile.ID] = true
-		if profile.ID == cfg.ActiveDeviceProfileID {
-			foundActive = true
-		}
 		normalized = append(normalized, profile)
-	}
-	if len(normalized) == 0 {
-		normalized = []DeviceProfile{DefaultWiFiPercentProfile(cfg.FanControlDeviceIp)}
-		cfg.ActiveDeviceProfileID = normalized[0].ID
-		changed = true
-	} else if !foundActive {
-		cfg.ActiveDeviceProfileID = normalized[0].ID
-		changed = true
 	}
 	if len(normalized) != len(cfg.DeviceProfiles) {
 		changed = true
@@ -714,77 +702,88 @@ func NormalizeDeviceProfileConfig(cfg *AppConfig) bool {
 	if activeIDsChanged {
 		changed = true
 	}
+	for transport := range cfg.ActiveDeviceProfileIDsByTransport {
+		if !compatibilityModeEnabled(cfg, transport) {
+			delete(cfg.ActiveDeviceProfileIDsByTransport, transport)
+			changed = true
+		}
+	}
 
-	if !IsManualCompatibilityDeviceTransport(requestedTransport) {
-		active, _ := activeCompatibilityProfile(cfg)
-		if cfg.ActiveDeviceProfileID != active.ID {
-			cfg.ActiveDeviceProfileID = active.ID
+	if !compatibilityModeEnabled(cfg, requestedTransport) {
+		requestedTransport = ""
+	}
+	if requestedTransport == "" {
+		if profile, ok := deviceProfileByID(cfg.DeviceProfiles, cfg.ActiveDeviceProfileID); ok && compatibilityModeEnabled(cfg, profile.Transport) {
+			requestedTransport = NormalizeDeviceTransport(profile.Transport)
+		}
+	}
+	if requestedTransport == "" {
+		for _, transport := range []string{DeviceTransportWiFi, DeviceTransportSerial} {
+			if compatibilityModeEnabled(cfg, transport) && activeDeviceProfileIDFromTransportMap(cfg.DeviceProfiles, cfg.ActiveDeviceProfileIDsByTransport, transport) != "" {
+				requestedTransport = transport
+				break
+			}
+		}
+	}
+	if requestedTransport == "" {
+		if cfg.WiFiCompatibilityEnabled {
+			requestedTransport = DeviceTransportWiFi
+		} else if cfg.SerialCompatibilityEnabled {
+			requestedTransport = DeviceTransportSerial
+		}
+	}
+
+	if requestedTransport == "" {
+		if cfg.ActiveDeviceProfileID != "" {
+			cfg.ActiveDeviceProfileID = ""
 			changed = true
 		}
-		if cfg.DeviceTransport != active.Transport {
-			cfg.DeviceTransport = active.Transport
-			changed = true
-		}
-		if setActiveDeviceProfileIDForTransport(cfg, active) {
-			changed = true
-		}
-		if active.Transport == DeviceTransportWiFi && active.Connection.Endpoint != "" && cfg.FanControlDeviceIp != active.Connection.Endpoint {
-			cfg.FanControlDeviceIp = active.Connection.Endpoint
+		if cfg.DeviceTransport != "" {
+			cfg.DeviceTransport = ""
 			changed = true
 		}
 		return changed
 	}
 
-	active := ActiveDeviceProfile(cfg)
-	activeExists := false
-	for _, profile := range cfg.DeviceProfiles {
-		if profile.ID == active.ID && profile.ID != "" {
-			activeExists = true
-			break
-		}
+	profileID := activeDeviceProfileIDFromTransportMap(cfg.DeviceProfiles, cfg.ActiveDeviceProfileIDsByTransport, requestedTransport)
+	if profile, ok := deviceProfileByID(cfg.DeviceProfiles, cfg.ActiveDeviceProfileID); profileID == "" && ok && NormalizeDeviceTransport(profile.Transport) == requestedTransport {
+		profileID = profile.ID
 	}
-	if !activeExists {
-		if builtInID, added := upsertBuiltInProfileForTransport(cfg, active.Transport); added {
-			cfg.ActiveDeviceProfileID = builtInID
-			changed = true
-			active = ActiveDeviceProfile(cfg)
-		}
+	if profileID == "" {
+		profileID = firstDeviceProfileIDForTransport(cfg.DeviceProfiles, requestedTransport)
 	}
-	if active.ID != "" && cfg.ActiveDeviceProfileID != active.ID {
-		cfg.ActiveDeviceProfileID = active.ID
-		changed = true
-	}
-	if setActiveDeviceProfileIDForTransport(cfg, active) {
-		changed = true
-	}
-
-	if NormalizeDeviceTransport(active.Transport) != requestedTransport {
-		profileIDForRequestedTransport := activeDeviceProfileIDFromTransportMap(cfg.DeviceProfiles, cfg.ActiveDeviceProfileIDsByTransport, requestedTransport)
-		if profileIDForRequestedTransport == "" {
-			profileIDForRequestedTransport = firstDeviceProfileIDForTransport(cfg.DeviceProfiles, requestedTransport)
-		}
-		if profileIDForRequestedTransport == "" {
-			if builtInID, added := upsertBuiltInProfileForTransport(cfg, requestedTransport); added {
-				profileIDForRequestedTransport = builtInID
-				changed = true
-			}
-		}
-		if profileIDForRequestedTransport != "" && cfg.ActiveDeviceProfileID != profileIDForRequestedTransport {
-			cfg.ActiveDeviceProfileID = profileIDForRequestedTransport
+	if profileID == "" && requestedTransport == DeviceTransportWiFi {
+		if builtInID, added := upsertBuiltInProfileForTransport(cfg, requestedTransport); added {
+			profileID = builtInID
 			changed = true
 		}
-		active = ActiveDeviceProfile(cfg)
 	}
-	if setActiveDeviceProfileIDForTransport(cfg, active) {
+	profile, ok := deviceProfileByID(cfg.DeviceProfiles, profileID)
+	if !ok {
+		if cfg.ActiveDeviceProfileID != "" {
+			cfg.ActiveDeviceProfileID = ""
+			changed = true
+		}
+		if cfg.DeviceTransport != "" {
+			cfg.DeviceTransport = ""
+			changed = true
+		}
+		return changed
+	}
+	profile = NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp)
+	if cfg.ActiveDeviceProfileID != profile.ID {
+		cfg.ActiveDeviceProfileID = profile.ID
 		changed = true
 	}
-
-	if cfg.DeviceTransport != active.Transport {
-		cfg.DeviceTransport = active.Transport
+	if cfg.DeviceTransport != profile.Transport {
+		cfg.DeviceTransport = profile.Transport
 		changed = true
 	}
-	if active.Transport == DeviceTransportWiFi && active.Connection.Endpoint != "" && cfg.FanControlDeviceIp != active.Connection.Endpoint {
-		cfg.FanControlDeviceIp = active.Connection.Endpoint
+	if setActiveDeviceProfileIDForTransport(cfg, profile) {
+		changed = true
+	}
+	if profile.Transport == DeviceTransportWiFi && profile.Connection.Endpoint != "" && cfg.FanControlDeviceIp != profile.Connection.Endpoint {
+		cfg.FanControlDeviceIp = profile.Connection.Endpoint
 		changed = true
 	}
 	return changed

@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { HistorySeriesKey } from '../lib/temperature-history';
 
-export const HISTORY_SERIES_ORDER: HistorySeriesKey[] = ['cpu', 'gpu', 'fan', 'cpuPower', 'gpuPower'];
+export const HISTORY_SERIES_ORDER: HistorySeriesKey[] = ['cpu', 'gpu', 'fan', 'cpuPower', 'gpuPower', 'totalPower'];
 
 export type HistorySeriesVisibility = Record<HistorySeriesKey, boolean>;
 
 export interface HistoryDisplayPreferences {
   visible: HistorySeriesVisibility;
   order: HistorySeriesKey[];
+  showStatistics: boolean;
 }
 
 const STORAGE_KEY = 'fancontrol.historyDisplayPreferences.v1';
@@ -21,6 +22,7 @@ const DEFAULT_VISIBILITY: HistorySeriesVisibility = {
   fan: true,
   cpuPower: true,
   gpuPower: true,
+  totalPower: false,
 };
 
 const isHistorySeriesKey = (value: unknown): value is HistorySeriesKey => (
@@ -47,7 +49,11 @@ export function normalizeHistoryDisplayPreferences(input?: Partial<HistoryDispla
     }
   }
 
-  return { visible, order: uniqueOrder };
+  return {
+    visible,
+    order: uniqueOrder,
+    showStatistics: typeof input?.showStatistics === 'boolean' ? input.showStatistics : true,
+  };
 }
 
 function readHistoryDisplayPreferences() {
@@ -119,6 +125,10 @@ export function useHistoryDisplayPreferences() {
     }));
   }, [updatePreferences]);
 
+  const setShowStatistics = useCallback((showStatistics: boolean) => {
+    updatePreferences((current) => ({ ...current, showStatistics }));
+  }, [updatePreferences]);
+
   const moveSeries = useCallback((series: HistorySeriesKey, direction: -1 | 1) => {
     updatePreferences((current) => {
       const order = [...current.order];
@@ -161,5 +171,7 @@ export function useHistoryDisplayPreferences() {
     moveSeries,
     reorderSeries,
     resetPreferences,
-  }), [moveSeries, preferences, reorderSeries, resetPreferences, setSeriesVisible, toggleSeriesVisible]);
+    showStatistics: preferences.showStatistics,
+    setShowStatistics,
+  }), [moveSeries, preferences, reorderSeries, resetPreferences, setSeriesVisible, setShowStatistics, toggleSeriesVisible]);
 }

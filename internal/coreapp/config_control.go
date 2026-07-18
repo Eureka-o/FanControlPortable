@@ -82,7 +82,6 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 
 	oldCfg := a.configManager.Get()
 	oldConnectionKey := deviceProfileConnectionKey(oldCfg)
-	wasConnected := a.isConnected
 	if len(cfg.FanCurveProfiles) == 0 && len(oldCfg.FanCurveProfiles) > 0 {
 		cfg.FanCurveProfiles = curveprofiles.CloneProfiles(oldCfg.FanCurveProfiles)
 		cfg.ActiveFanCurveProfileID = oldCfg.ActiveFanCurveProfileID
@@ -150,22 +149,23 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 		a.mutex.Unlock()
 		return err
 	}
-	a.configureDeviceManager(cfg)
-	connectionChanged := wasConnected && oldConnectionKey != deviceProfileConnectionKey(cfg)
-	if connectionChanged {
-		a.isConnected = false
-		a.deviceSettings = nil
-		a.autoReconnectSuppressed.Store(true)
-	}
+	configConnectionChanged := oldConnectionKey != deviceProfileConnectionKey(cfg)
 	a.syncManualGearLevelMemoryLocked(cfg)
 	a.applyHotkeyBindings(cfg)
 	a.applyPluginConfig(cfg)
 	a.mutex.Unlock()
 
-	if connectionChanged {
-		a.deviceManager.DisconnectSilently()
-		if a.ipcServer != nil {
-			a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
+	if configConnectionChanged || a.deviceManager == nil {
+		if configConnectionChanged {
+			a.cancelReconnect()
+		}
+		if disconnected := a.reconcileDeviceManagerProfile(cfg); disconnected {
+			if configConnectionChanged {
+				a.autoReconnectSuppressed.Store(true)
+			}
+			if a.ipcServer != nil {
+				a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
+			}
 		}
 	}
 	if a.ipcServer != nil {

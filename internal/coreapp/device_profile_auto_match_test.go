@@ -30,6 +30,7 @@ func TestConnectedFlyDigiProfileIDMatchesBS1BLEModel(t *testing.T) {
 func TestSyncConnectedBuiltInDeviceProfileDoesNotPersistFlyDigiProfile(t *testing.T) {
 	cfg := types.GetDefaultConfig(false)
 	cfg.DeviceTransport = types.DeviceTransportWiFi
+	cfg.WiFiCompatibilityEnabled = true
 	cfg.ActiveDeviceProfileID = types.DefaultWiFiPercentProfileID
 	cfg.DeviceProfiles = []types.DeviceProfile{
 		types.DefaultWiFiPercentProfile("10.0.0.25"),

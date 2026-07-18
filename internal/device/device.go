@@ -66,6 +66,7 @@ type Manager struct {
 	logger           types.Logger
 	currentFanData   atomic.Pointer[types.FanData]
 	writesBlocked    atomic.Bool
+	connectionGen    atomic.Uint64
 
 	// HID 监控协程生命周期（监控协程是 HID 句柄的唯一拥有者，负责最终关闭）。
 	monitorStop        chan struct{}
@@ -228,11 +229,24 @@ func (m *Manager) DisconnectSilently() {
 	m.disconnect(false)
 }
 
+func (m *Manager) DisconnectIfConnectionGeneration(expected uint64) bool {
+	return m.disconnectWithGeneration(false, expected)
+}
+
 func (m *Manager) disconnect(notify bool) {
+	m.disconnectWithGeneration(notify, 0)
+}
+
+func (m *Manager) disconnectWithGeneration(notify bool, expected uint64) bool {
 	m.mutex.Lock()
+	if expected != 0 && m.connectionGen.Load() != expected {
+		m.mutex.Unlock()
+		return false
+	}
+	m.connectionGen.Add(1)
 	if !m.isConnected {
 		m.mutex.Unlock()
-		return
+		return false
 	}
 
 	if m.deviceType == types.DeviceTypeBLE {
@@ -246,7 +260,7 @@ func (m *Manager) disconnect(notify bool) {
 		if onDisconnect {
 			m.onDisconnect()
 		}
-		return
+		return true
 	}
 
 	if m.deviceType == types.DeviceTransportSerial {
@@ -258,7 +272,7 @@ func (m *Manager) disconnect(notify bool) {
 		if onDisconnect {
 			m.onDisconnect()
 		}
-		return
+		return true
 	}
 
 	if m.deviceType == types.DeviceTransportWiFi {
@@ -270,7 +284,7 @@ func (m *Manager) disconnect(notify bool) {
 		if onDisconnect {
 			m.onDisconnect()
 		}
-		return
+		return true
 	}
 
 	// HID：不在此处直接 Close（监控协程可能正阻塞在读操作上，直接 Close 会触发
@@ -317,6 +331,7 @@ func (m *Manager) disconnect(notify bool) {
 	if onDisconnect {
 		m.onDisconnect()
 	}
+	return true
 }
 
 // closeDeviceLocked 在持有锁的情况下安全关闭 HID 句柄。

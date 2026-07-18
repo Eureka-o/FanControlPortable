@@ -708,6 +708,9 @@
       "emptyDisabled": "Background recording is currently disabled. You can enable it on this page.",
       "recentTrend": "Recent trend",
       "powerTrend": "Power trend",
+      "resetZoom": "Reset zoom",
+      "zoomHint": "Drag on the chart to select a time range",
+      "zoomSelecting": "Selecting {{from}} - {{to}}",
       "events": {
         "disconnect": "Device disconnected",
         "reconnect": "Device connected",
@@ -720,7 +723,8 @@
         "gpu": "GPU temp",
         "fan": "Fan speed",
         "cpuPower": "CPU power",
-        "gpuPower": "GPU power"
+        "gpuPower": "GPU power",
+        "totalPower": "Total power"
       },
       "duration": {
         "ltOneMinute": "< 1 minute",
@@ -744,6 +748,13 @@
       },
       "displaySettings": "Display",
       "displaySettingsDescription": "Choose which trend lines to show and adjust the hover tooltip order.",
+      "statistics": {
+        "enabled": "Show statistics",
+        "description": "Single-series charts show maximum, minimum, and average values.",
+        "max": "Max",
+        "min": "Min",
+        "average": "Avg"
+      },
       "moveUp": "Move up",
       "moveDown": "Move down",
       "resetDisplaySettings": "Reset default"

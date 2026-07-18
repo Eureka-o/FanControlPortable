@@ -1,6 +1,8 @@
 package smartcontrol
 
 import (
+	"time"
+
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -34,6 +36,11 @@ const (
 	stablePowerRelBand       = 0.15
 	powerHistoryAbsBandWatts = 25.0
 	powerHistoryRelBand      = 0.25
+
+	longTermSteadyWindows = 3
+	longTermMinDuration   = 90 * time.Second
+	longTermMaxDuration   = 5 * time.Minute
+	longTermMaxGap        = 2 * time.Minute
 
 	rawPercentUnit = "percent-raw"
 )
@@ -172,11 +179,26 @@ type SteadyResult struct {
 	MeanTemp           int     // 稳态平均温度 (°C)
 	MeanRPM            int     // 稳态期间的平均下发转速 (RPM)
 	MeanPower          float64 // 稳态期间的平均 CPU+GPU 功耗 (W)
+	MeanEffectivePower EffectivePower
 	HavePower          bool    // 稳态样本是否具备可用功耗
 	LocalEff           float64 // 局部冷却效率 (°C/RPM)，正值
 	HaveEff            bool    // 是否成功估计出冷却效率
 	QuietLearningReady bool    // 连续两次同桶、同功耗或同无功耗上下文的稳态确认
+	LearningReady      bool    // 长期稳态窗口已汇总足够的稳定片段，可更新学习偏移
 	Ready              bool    // 是否达到稳态、可触发一次学习
+}
+
+type steadyLearningAggregate struct {
+	windows       int
+	firstAt       time.Time
+	lastAt        time.Time
+	tempSum       int
+	rpmSum        int
+	powerSum      EffectivePower
+	powerRef      EffectivePower
+	powerKnown    bool
+	localEffSum   float64
+	localEffCount int
 }
 
 // StableObserver 为每个曲线点累积稳态采样，并维护 (转速,温度) 平衡点历史。
@@ -186,6 +208,7 @@ type StableObserver struct {
 	samples          [][]int // 每个温度桶的温度采样
 	rpmSamples       [][]int // 与 samples 平行的转速采样
 	powerSamples     [][]EffectivePower
+	sampleTimes      [][]time.Time
 	history          [][]eqPoint // 每个温度桶最近的稳态平衡点
 	settle           []int       // 每个温度桶进入稳定采样前的延迟计数
 	lastTemps        []int       // 最近一次观测温度
@@ -196,6 +219,7 @@ type StableObserver struct {
 	lastSteadyBucket int
 	lastSteadyPower  EffectivePower
 	lastSteadySeen   bool
+	longTerm         []steadyLearningAggregate
 }
 
 // NewStableObserver 创建针对当前曲线长度的观察者。
@@ -229,6 +253,7 @@ func (o *StableObserver) allocBuffers(curveLen int) {
 	o.samples = make([][]int, curveLen)
 	o.rpmSamples = make([][]int, curveLen)
 	o.powerSamples = make([][]EffectivePower, curveLen)
+	o.sampleTimes = make([][]time.Time, curveLen)
 	o.history = make([][]eqPoint, curveLen)
 	o.settle = make([]int, curveLen)
 	o.lastTemps = make([]int, curveLen)
@@ -236,11 +261,13 @@ func (o *StableObserver) allocBuffers(curveLen int) {
 	o.lastPowers = make([]EffectivePower, curveLen)
 	o.seen = make([]bool, curveLen)
 	o.powerSeen = make([]bool, curveLen)
+	o.longTerm = make([]steadyLearningAggregate, curveLen)
 	o.clearQuietLearningContext()
 	for i := range o.samples {
 		o.samples[i] = make([]int, 0, 24)
 		o.rpmSamples[i] = make([]int, 0, 24)
 		o.powerSamples[i] = make([]EffectivePower, 0, 24)
+		o.sampleTimes[i] = make([]time.Time, 0, 24)
 		o.history[i] = make([]eqPoint, 0, effHistoryLen)
 	}
 }
@@ -264,12 +291,14 @@ func (o *StableObserver) Reset() {
 		o.samples[i] = o.samples[i][:0]
 		o.rpmSamples[i] = o.rpmSamples[i][:0]
 		o.powerSamples[i] = o.powerSamples[i][:0]
+		o.sampleTimes[i] = o.sampleTimes[i][:0]
 		o.settle[i] = 0
 		o.lastTemps[i] = 0
 		o.lastRPMs[i] = 0
 		o.lastPowers[i] = EffectivePower{}
 		o.seen[i] = false
 		o.powerSeen[i] = false
+		o.longTerm[i] = steadyLearningAggregate{}
 	}
 	o.clearQuietLearningContext()
 }
@@ -331,17 +360,29 @@ func pickBucketIndex(temp int, curve []types.FanCurvePoint) int {
 // Observe 把一次 (温度, 实际转速) 采样放入对应温度桶。
 // 达到稳态时返回平均温度、平均转速及局部冷却效率估计。
 func (o *StableObserver) Observe(temp, effectiveRPM int, curve []types.FanCurvePoint, cfg types.SmartControlConfig) SteadyResult {
-	return o.ObserveWithPower(temp, effectiveRPM, 0, false, curve, cfg)
+	return o.ObserveWithPowerAt(time.Now(), temp, effectiveRPM, 0, false, curve, cfg)
 }
 
 // ObserveWithPower 把功耗作为稳态判定条件；无功耗时自动退回温度/转速学习。
 func (o *StableObserver) ObserveWithPower(temp, effectiveRPM int, totalPowerWatts float64, havePower bool, curve []types.FanCurvePoint, cfg types.SmartControlConfig) SteadyResult {
-	return o.ObserveWithEffectivePower(temp, effectiveRPM, effectivePowerFromTotal(totalPowerWatts, havePower), curve, cfg)
+	return o.ObserveWithPowerAt(time.Now(), temp, effectiveRPM, totalPowerWatts, havePower, curve, cfg)
+}
+
+func (o *StableObserver) ObserveWithPowerAt(now time.Time, temp, effectiveRPM int, totalPowerWatts float64, havePower bool, curve []types.FanCurvePoint, cfg types.SmartControlConfig) SteadyResult {
+	return o.ObserveWithEffectivePowerAt(now, temp, effectiveRPM, effectivePowerFromTotal(totalPowerWatts, havePower), curve, cfg)
 }
 
 // ObserveWithEffectivePower uses the CPU/GPU readings that are valid for this
 // sample. The legacy total-power method remains available for existing callers.
 func (o *StableObserver) ObserveWithEffectivePower(temp, effectiveRPM int, power EffectivePower, curve []types.FanCurvePoint, cfg types.SmartControlConfig) SteadyResult {
+	return o.ObserveWithEffectivePowerAt(time.Now(), temp, effectiveRPM, power, curve, cfg)
+}
+
+// ObserveWithEffectivePowerAt uses elapsed time for long-term steady learning.
+func (o *StableObserver) ObserveWithEffectivePowerAt(now time.Time, temp, effectiveRPM int, power EffectivePower, curve []types.FanCurvePoint, cfg types.SmartControlConfig) SteadyResult {
+	if now.IsZero() {
+		now = time.Now()
+	}
 	idx := pickBucketIndex(temp, curve)
 	if idx < 0 || idx >= len(o.samples) {
 		return SteadyResult{BucketIdx: -1}
@@ -364,7 +405,9 @@ func (o *StableObserver) ObserveWithEffectivePower(temp, effectiveRPM int, power
 			o.samples[idx] = o.samples[idx][:0]
 			o.rpmSamples[idx] = o.rpmSamples[idx][:0]
 			o.powerSamples[idx] = o.powerSamples[idx][:0]
+			o.sampleTimes[idx] = o.sampleTimes[idx][:0]
 			o.settle[idx] = 0
+			o.longTerm[idx] = steadyLearningAggregate{}
 			o.clearQuietLearningContext()
 		}
 	} else {
@@ -384,10 +427,12 @@ func (o *StableObserver) ObserveWithEffectivePower(temp, effectiveRPM int, power
 	o.samples[idx] = append(o.samples[idx], temp)
 	o.rpmSamples[idx] = append(o.rpmSamples[idx], effectiveRPM)
 	o.powerSamples[idx] = append(o.powerSamples[idx], power)
+	o.sampleTimes[idx] = append(o.sampleTimes[idx], now)
 	if len(o.samples[idx]) > window {
 		o.samples[idx] = o.samples[idx][len(o.samples[idx])-window:]
 		o.rpmSamples[idx] = o.rpmSamples[idx][len(o.rpmSamples[idx])-window:]
 		o.powerSamples[idx] = o.powerSamples[idx][len(o.powerSamples[idx])-window:]
+		o.sampleTimes[idx] = o.sampleTimes[idx][len(o.sampleTimes[idx])-window:]
 	}
 
 	if len(o.samples[idx]) < window {
@@ -437,6 +482,12 @@ func (o *StableObserver) ObserveWithEffectivePower(temp, effectiveRPM int, power
 
 	meanT := sumT / len(o.samples[idx])
 	meanR := sumR / len(o.rpmSamples[idx])
+	windowStart := now
+	windowEnd := now
+	if len(o.sampleTimes[idx]) > 0 {
+		windowStart = o.sampleTimes[idx][0]
+		windowEnd = o.sampleTimes[idx][len(o.sampleTimes[idx])-1]
+	}
 	quietLearningReady := o.lastSteadySeen && o.lastSteadyBucket == idx &&
 		((!meanPower.hasPower() && !o.lastSteadyPower.hasPower()) ||
 			effectivePowerContextClose(meanPower, o.lastSteadyPower, stablePowerAbsBandWatts, stablePowerRelBand))
@@ -446,22 +497,113 @@ func (o *StableObserver) ObserveWithEffectivePower(temp, effectiveRPM int, power
 	o.samples[idx] = o.samples[idx][:0]
 	o.rpmSamples[idx] = o.rpmSamples[idx][:0]
 	o.powerSamples[idx] = o.powerSamples[idx][:0]
+	o.sampleTimes[idx] = o.sampleTimes[idx][:0]
 	o.settle[idx] = 0
 
 	o.recordEquilibrium(idx, meanR, meanT, meanPower)
 	eff, haveEff := o.localEfficiencyForEffectivePower(idx, meanPower)
 
-	return SteadyResult{
+	steady := SteadyResult{
 		BucketIdx:          idx,
 		MeanTemp:           meanT,
 		MeanRPM:            meanR,
 		MeanPower:          meanP,
+		MeanEffectivePower: meanPower,
 		HavePower:          steadyHavePower,
 		LocalEff:           eff,
 		HaveEff:            haveEff,
 		QuietLearningReady: quietLearningReady,
 		Ready:              true,
 	}
+	return o.aggregateLongTermSteady(idx, steady, windowStart, windowEnd)
+}
+
+// aggregateLongTermSteady combines separately confirmed steady windows. A
+// power context change or a long observation gap starts a new long-term run.
+func (o *StableObserver) aggregateLongTermSteady(idx int, steady SteadyResult, firstAt, lastAt time.Time) SteadyResult {
+	if idx < 0 || idx >= len(o.longTerm) || !steady.Ready {
+		return steady
+	}
+	if firstAt.IsZero() {
+		firstAt = lastAt
+	}
+	if lastAt.IsZero() {
+		lastAt = firstAt
+	}
+	agg := &o.longTerm[idx]
+	compatible := agg.windows > 0
+	if compatible {
+		gap := firstAt.Sub(agg.lastAt)
+		compatible = gap >= 0 && gap <= longTermMaxGap && lastAt.Sub(agg.firstAt) <= longTermMaxDuration
+		if compatible && agg.powerKnown != steady.HavePower {
+			compatible = false
+		}
+		if compatible && steady.HavePower {
+			compatible = effectivePowerContextClose(steady.MeanEffectivePower, agg.powerRef, stablePowerAbsBandWatts, stablePowerRelBand)
+		}
+	}
+	if !compatible {
+		*agg = steadyLearningAggregate{}
+		agg.firstAt = firstAt
+	}
+	if agg.windows == 0 {
+		agg.firstAt = firstAt
+		agg.powerKnown = steady.HavePower
+		agg.powerRef = steady.MeanEffectivePower
+	}
+	agg.lastAt = lastAt
+	agg.windows++
+	agg.tempSum += steady.MeanTemp
+	agg.rpmSum += steady.MeanRPM
+	if steady.HavePower {
+		agg.powerSum.CPUValid = steady.MeanEffectivePower.CPUValid
+		agg.powerSum.GPUValid = steady.MeanEffectivePower.GPUValid
+		if steady.MeanEffectivePower.CPUValid {
+			agg.powerSum.CPUWatts += steady.MeanEffectivePower.CPUWatts
+		}
+		if steady.MeanEffectivePower.GPUValid {
+			agg.powerSum.GPUWatts += steady.MeanEffectivePower.GPUWatts
+		}
+	}
+	if steady.HaveEff {
+		agg.localEffSum += steady.LocalEff
+		agg.localEffCount++
+	}
+
+	if agg.windows < longTermSteadyWindows || agg.lastAt.Sub(agg.firstAt) < longTermMinDuration {
+		return steady
+	}
+
+	result := steady
+	result.MeanTemp = agg.tempSum / agg.windows
+	result.MeanRPM = agg.rpmSum / agg.windows
+	if agg.powerKnown {
+		result.MeanEffectivePower = meanEffectivePower(agg.powerSum, agg.windows)
+		result.MeanPower = result.MeanEffectivePower.total()
+		result.HavePower = result.MeanEffectivePower.hasPower()
+	}
+	if agg.localEffCount > 0 {
+		result.LocalEff = agg.localEffSum / float64(agg.localEffCount)
+		result.HaveEff = true
+	}
+	result.QuietLearningReady = true
+	result.LearningReady = true
+	*agg = steadyLearningAggregate{}
+	return result
+}
+
+func meanEffectivePower(sum EffectivePower, count int) EffectivePower {
+	if count <= 0 || !sum.hasPower() {
+		return EffectivePower{}
+	}
+	mean := EffectivePower{CPUValid: sum.CPUValid, GPUValid: sum.GPUValid}
+	if mean.CPUValid {
+		mean.CPUWatts = sum.CPUWatts / float64(count)
+	}
+	if mean.GPUValid {
+		mean.GPUWatts = sum.GPUWatts / float64(count)
+	}
+	return normalizeEffectivePower(mean)
 }
 
 func averageEffectivePower(samples []EffectivePower) (EffectivePower, bool) {
@@ -685,6 +827,18 @@ func AllowsSteadyOffsetLearning(steady SteadyResult, cfg types.SmartControlConfi
 		return false
 	}
 	return steady.MeanTemp >= targetTempCeiling(cfg)-comfortBandWidth(cfg) || steady.QuietLearningReady
+}
+
+// AllowsLongTermOffsetLearning preserves immediate safety correction while
+// requiring the long-term window for quiet/downward learning.
+func AllowsLongTermOffsetLearning(steady SteadyResult, cfg types.SmartControlConfig) bool {
+	if !AllowsSteadyOffsetLearning(steady, cfg) {
+		return false
+	}
+	if steady.MeanTemp >= targetTempCeiling(cfg)-comfortBandWidth(cfg) {
+		return true
+	}
+	return steady.LearningReady
 }
 
 // solveLearnStep 依据稳态温度、目标温度带与冷却效率，求出本次应施加的转速调整 (RPM)。

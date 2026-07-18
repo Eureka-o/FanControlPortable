@@ -1009,26 +1009,23 @@ func CloneDefaultManualGearRPMForUnit(unit string) map[string]map[string]int {
 func GetDefaultConfig(isAutoStart bool) AppConfig {
 	defaultCurve := GetDefaultFanCurve()
 	defaultTempSelection := GetDefaultTemperatureSelection()
-	defaultDeviceProfile := DefaultWiFiPercentProfile(DefaultFanDeviceIP)
-	defaultDeviceProfiles := BuiltInDeviceProfiles(DefaultFanDeviceIP)
+	defaultDeviceProfiles := FlyDigiBuiltInProfiles()
 
 	return AppConfig{
-		DeviceTransport:                   DeviceTransportWiFi,
+		DeviceTransport:                   "",
 		FanControlDeviceIp:                DefaultFanDeviceIP,
-		WiFiCompatibilityEnabled:          true,
+		WiFiCompatibilityEnabled:          false,
 		WiFiDynamicIPCompatibilityEnabled: true,
 		WiFiSmartStartStopEnabled:         false,
 		WiFiSmartStartStopStandbySpeed:    WiFiSmartStartStopStandbyMinPercent,
 		SerialCompatibilityEnabled:        false,
-		ActiveDeviceProfileID:             defaultDeviceProfile.ID,
-		ActiveDeviceProfileIDsByTransport: map[string]string{
-			DeviceTransportWiFi: defaultDeviceProfile.ID,
-		},
-		DeviceProfiles:           defaultDeviceProfiles,
-		AutoControl:              false,
-		ManualGearToggleHotkey:   "Ctrl+Alt+Shift+M",
-		AutoControlToggleHotkey:  "Ctrl+Alt+Shift+A",
-		CurveProfileToggleHotkey: "Ctrl+Alt+Shift+C",
+		ActiveDeviceProfileID:             "",
+		ActiveDeviceProfileIDsByTransport: map[string]string{},
+		DeviceProfiles:                    defaultDeviceProfiles,
+		AutoControl:                       false,
+		ManualGearToggleHotkey:            "Ctrl+Alt+Shift+M",
+		AutoControlToggleHotkey:           "Ctrl+Alt+Shift+A",
+		CurveProfileToggleHotkey:          "Ctrl+Alt+Shift+C",
 		ManualGearLevels: map[string]string{
 			"静音": "中",
 			"标准": "中",

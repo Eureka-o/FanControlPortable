@@ -7,7 +7,7 @@ export interface TemperatureHistoryPoint {
   gpuPowerWatts?: number;
 }
 
-export type HistorySeriesKey = 'cpu' | 'gpu' | 'fan' | 'cpuPower' | 'gpuPower';
+export type HistorySeriesKey = 'cpu' | 'gpu' | 'fan' | 'cpuPower' | 'gpuPower' | 'totalPower';
 
 export const CORE_HISTORY_LIMIT = 720;
 export const SESSION_HISTORY_LIMIT = 60;

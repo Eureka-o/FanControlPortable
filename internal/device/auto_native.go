@@ -3,6 +3,7 @@
 package device
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -16,18 +17,22 @@ func (m *Manager) ScanNativeDevices() []map[string]string {
 }
 
 func (m *Manager) ScanNativeDevicesProfiles(profiles []types.DeviceProfile) []map[string]string {
-	devices := m.ScanNativeDevicesProfilesByTransport(profiles, types.DeviceTransportHID)
-	devices = append(devices, m.ScanNativeDevicesProfilesByTransport(profiles, types.DeviceTransportBLE)...)
+	devices := m.ScanNativeDevicesProfilesByTransport(profiles, types.DeviceTransportBLE)
+	devices = append(devices, m.ScanNativeDevicesProfilesByTransport(profiles, types.DeviceTransportHID)...)
 	return devices
 }
 
 func (m *Manager) ScanNativeDevicesProfilesByTransport(profiles []types.DeviceProfile, transport string) []map[string]string {
+	return m.ScanNativeDevicesProfilesByTransportContext(context.Background(), profiles, transport)
+}
+
+func (m *Manager) ScanNativeDevicesProfilesByTransportContext(ctx context.Context, profiles []types.DeviceProfile, transport string) []map[string]string {
 	candidates := nativeAutoConnectCandidates(profiles)
 	switch types.NormalizeDeviceTransport(transport) {
 	case types.DeviceTransportHID:
 		return scanNativeHIDDevices(candidates)
 	case types.DeviceTransportBLE:
-		devices, err := scanNativeBLEDevices(candidates)
+		devices, err := scanNativeBLEDevices(ctx, candidates)
 		if err != nil {
 			m.logWarn("BLE native scan failed: %v", err)
 			return nil
@@ -39,19 +44,21 @@ func (m *Manager) ScanNativeDevicesProfilesByTransport(profiles []types.DevicePr
 }
 
 // AutoConnectNative enumerates built-in FlyDigi native transports.
-// It follows the reference app order: HID BS2/BS2PRO/BS3/BS3PRO first,
-// then BLE BS1. WiFi and serial remain compatibility-mode transports.
+// BLE is attempted before HID for automatic native-device arbitration.
+// WiFi and serial remain compatibility-mode transports.
 func (m *Manager) AutoConnectNative() (bool, map[string]string) {
 	return m.AutoConnectNativeProfiles(nil)
 }
 
 func (m *Manager) AutoConnectNativeProfiles(profiles []types.DeviceProfile) (bool, map[string]string) {
-	m.mutex.RLock()
-	if m.isConnected && (m.deviceType == types.DeviceTransportHID || m.deviceType == types.DeviceTransportBLE) {
-		info := m.connectedInfoLocked()
-		m.mutex.RUnlock()
-		return true, info
+	return m.AutoConnectNativeProfilesContext(context.Background(), profiles)
+}
+
+func (m *Manager) AutoConnectNativeProfilesContext(ctx context.Context, profiles []types.DeviceProfile) (bool, map[string]string) {
+	if ctx == nil {
+		ctx = context.Background()
 	}
+	m.mutex.RLock()
 	wasConnected := m.isConnected
 	m.mutex.RUnlock()
 
@@ -63,9 +70,6 @@ func (m *Manager) AutoConnectNativeProfiles(profiles []types.DeviceProfile) (boo
 	defer m.mutex.Unlock()
 
 	if m.isConnected {
-		if m.deviceType == types.DeviceTransportHID || m.deviceType == types.DeviceTransportBLE {
-			return true, m.connectedInfoLocked()
-		}
 		return false, nil
 	}
 
@@ -73,6 +77,10 @@ func (m *Manager) AutoConnectNativeProfiles(profiles []types.DeviceProfile) (boo
 	previousEndpoint := m.wifiEndpoint
 
 	for _, profile := range nativeAutoConnectCandidates(profiles, previousProfile) {
+		if ctx.Err() != nil {
+			m.configureProfileLocked(previousProfile, previousEndpoint)
+			return false, nil
+		}
 		m.configureProfileLocked(profile, previousEndpoint)
 		switch profile.Transport {
 		case types.DeviceTransportHID:
@@ -80,7 +88,7 @@ func (m *Manager) AutoConnectNativeProfiles(profiles []types.DeviceProfile) (boo
 				return true, info
 			}
 		case types.DeviceTransportBLE:
-			if success, info := m.connectBLELocked(); success {
+			if success, info := m.connectBLEWithContextLocked(ctx); success {
 				return true, info
 			}
 		}
@@ -91,6 +99,13 @@ func (m *Manager) AutoConnectNativeProfiles(profiles []types.DeviceProfile) (boo
 }
 
 func (m *Manager) ConnectNativeProfile(profile types.DeviceProfile) (bool, map[string]string) {
+	return m.ConnectNativeProfileContext(context.Background(), profile)
+}
+
+func (m *Manager) ConnectNativeProfileContext(ctx context.Context, profile types.DeviceProfile) (bool, map[string]string) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	profile = types.NormalizeDeviceProfile(profile, "")
 	if !types.IsNativeDeviceTransport(profile.Transport) {
 		return false, nil
@@ -109,6 +124,9 @@ func (m *Manager) ConnectNativeProfile(profile types.DeviceProfile) (bool, map[s
 
 	previousProfile := m.activeProfile
 	previousEndpoint := m.wifiEndpoint
+	if ctx.Err() != nil {
+		return false, nil
+	}
 	m.configureProfileLocked(profile, previousEndpoint)
 	switch profile.Transport {
 	case types.DeviceTransportHID:
@@ -116,7 +134,7 @@ func (m *Manager) ConnectNativeProfile(profile types.DeviceProfile) (bool, map[s
 			return true, info
 		}
 	case types.DeviceTransportBLE:
-		if success, info := m.connectBLELocked(); success {
+		if success, info := m.connectBLEWithContextLocked(ctx); success {
 			return true, info
 		}
 	}
@@ -126,7 +144,8 @@ func (m *Manager) ConnectNativeProfile(profile types.DeviceProfile) (bool, map[s
 
 func nativeAutoConnectCandidates(profiles []types.DeviceProfile, preferred ...types.DeviceProfile) []types.DeviceProfile {
 	seen := map[string]bool{}
-	preferredProfiles := make([]types.DeviceProfile, 0, len(preferred))
+	preferredBLEProfiles := make([]types.DeviceProfile, 0, len(preferred))
+	preferredHIDProfiles := make([]types.DeviceProfile, 0, len(preferred))
 	hidProfiles := make([]types.DeviceProfile, 0)
 	bleProfiles := make([]types.DeviceProfile, 0)
 
@@ -147,7 +166,11 @@ func nativeAutoConnectCandidates(profiles []types.DeviceProfile, preferred ...ty
 	}
 
 	for _, profile := range preferred {
-		add(&preferredProfiles, profile)
+		if types.NormalizeDeviceTransport(profile.Transport) == types.DeviceTransportBLE {
+			add(&preferredBLEProfiles, profile)
+		} else {
+			add(&preferredHIDProfiles, profile)
+		}
 	}
 	for _, profile := range profiles {
 		if profile.BuiltIn && deviceprofiles.IsBuiltInProfileID(profile.ID) {
@@ -162,7 +185,8 @@ func nativeAutoConnectCandidates(profiles []types.DeviceProfile, preferred ...ty
 	add(&hidProfiles, types.LegacyRPMProfileForTransport(types.DeviceTransportHID))
 	add(&bleProfiles, types.FlyDigiBS1Profile())
 
-	return append(preferredProfiles, append(hidProfiles, bleProfiles...)...)
+	// Keep the previous profile preferred only inside its transport group.
+	return append(preferredBLEProfiles, append(bleProfiles, append(preferredHIDProfiles, hidProfiles...)...)...)
 }
 
 func scanNativeHIDDevices(profiles []types.DeviceProfile) []map[string]string {
@@ -185,7 +209,7 @@ func scanNativeHIDDevices(profiles []types.DeviceProfile) []map[string]string {
 	return devices
 }
 
-func scanNativeBLEDevices(profiles []types.DeviceProfile) ([]map[string]string, error) {
+func scanNativeBLEDevices(ctx context.Context, profiles []types.DeviceProfile) ([]map[string]string, error) {
 	bleProfiles := make([]types.DeviceProfile, 0)
 	for _, profile := range profiles {
 		profile = types.NormalizeDeviceProfile(profile, "")
@@ -196,7 +220,7 @@ func scanNativeBLEDevices(profiles []types.DeviceProfile) ([]map[string]string, 
 	if len(bleProfiles) == 0 {
 		return nil, nil
 	}
-	bleDevices, err := deviceprofileexec.ScanBLEDevices(types.BLEScanParams{
+	bleDevices, err := deviceprofileexec.ScanBLEDevicesWithScanner(ctx, deviceprofileexec.DefaultBLEScanner{}, types.BLEScanParams{
 		OnlyMatched: true,
 		Profiles:    bleProfiles,
 	})

@@ -48,6 +48,7 @@ func TestSetActiveDeviceProfileKeepsSelectedTransport(t *testing.T) {
 	serial := testSerialDeviceProfile()
 	cfg := types.GetDefaultConfig(false)
 	cfg.DeviceTransport = types.DeviceTransportWiFi
+	cfg.WiFiCompatibilityEnabled = true
 	cfg.FanControlDeviceIp = "10.0.0.25"
 	cfg.ActiveDeviceProfileID = types.DefaultWiFiPercentProfileID
 	cfg.DeviceProfiles = []types.DeviceProfile{
@@ -82,6 +83,7 @@ func TestSetActiveDeviceProfileKeepsSelectedTransport(t *testing.T) {
 func TestSaveDeviceProfileSetActiveKeepsSelectedTransport(t *testing.T) {
 	cfg := types.GetDefaultConfig(false)
 	cfg.DeviceTransport = types.DeviceTransportWiFi
+	cfg.WiFiCompatibilityEnabled = true
 	cfg.FanControlDeviceIp = "10.0.0.25"
 	cfg.ActiveDeviceProfileID = types.DefaultWiFiPercentProfileID
 	cfg.DeviceProfiles = []types.DeviceProfile{types.DefaultWiFiPercentProfile("10.0.0.25")}
@@ -114,6 +116,7 @@ func TestExportDeviceProfilesExportsOnlyUserDevices(t *testing.T) {
 	cfg.FanControlDeviceIp = "10.0.0.25"
 	cfg.ActiveDeviceProfileID = serial.ID
 	cfg.DeviceTransport = types.DeviceTransportSerial
+	cfg.SerialCompatibilityEnabled = true
 	cfg.DeviceProfiles = []types.DeviceProfile{
 		types.DefaultWiFiPercentProfile("10.0.0.25"),
 		serial,
@@ -155,6 +158,7 @@ func TestImportDeviceProfilesMergesUserDevicesWithoutDeletingExisting(t *testing
 	cfg.FanControlDeviceIp = "10.0.0.25"
 	cfg.ActiveDeviceProfileID = existing.ID
 	cfg.DeviceTransport = types.DeviceTransportSerial
+	cfg.SerialCompatibilityEnabled = true
 	cfg.DeviceProfiles = []types.DeviceProfile{
 		types.DefaultWiFiPercentProfile("10.0.0.25"),
 		existing,
@@ -216,6 +220,7 @@ func TestDeleteDeviceProfileFallsBackWithinTransport(t *testing.T) {
 	cfg.FanControlDeviceIp = "10.0.0.25"
 	cfg.ActiveDeviceProfileID = second.ID
 	cfg.DeviceTransport = types.DeviceTransportSerial
+	cfg.SerialCompatibilityEnabled = true
 	cfg.DeviceProfiles = []types.DeviceProfile{
 		types.DefaultWiFiPercentProfile("10.0.0.25"),
 		first,
@@ -240,5 +245,60 @@ func TestDeleteDeviceProfileFallsBackWithinTransport(t *testing.T) {
 	}
 	if got.ActiveDeviceProfileIDsByTransport[types.DeviceTransportSerial] != first.ID {
 		t.Fatalf("remembered serial profile after delete = %q, want %q", got.ActiveDeviceProfileIDsByTransport[types.DeviceTransportSerial], first.ID)
+	}
+}
+
+func TestDeviceProfileAPIsKeepWiFiProfilesVisibleButInactive(t *testing.T) {
+	wifi := types.DefaultWiFiPercentProfile("10.0.0.25")
+	wifi.ID = "user.wifi.hidden"
+	wifi.DisplayName = "Hidden WiFi"
+	wifi.BuiltIn = false
+	serial := testSerialDeviceProfile()
+	cfg := types.GetDefaultConfig(false)
+	cfg.DeviceProfiles = append(cfg.DeviceProfiles, wifi, serial)
+	app := newDeviceProfileTestApp(t, cfg)
+
+	payload := app.GetDeviceProfiles()
+	foundWiFi := false
+	for _, profile := range payload.Profiles {
+		if types.NormalizeDeviceTransport(profile.Transport) == types.DeviceTransportWiFi {
+			foundWiFi = true
+		}
+	}
+	if !foundWiFi {
+		t.Fatal("disabled WiFi profile should remain visible through GetDeviceProfiles")
+	}
+	if payload.ActiveID != "" {
+		t.Fatalf("disabled compatibility active ID = %q, want empty", payload.ActiveID)
+	}
+	supported := app.GetSupportedDeviceProfiles()
+	if len(supported) == 0 || types.NormalizeDeviceTransport(supported[0].Transport) != types.DeviceTransportWiFi {
+		t.Fatalf("WiFi device library = %#v, want visible WiFi template", supported)
+	}
+	foundUserWiFi := false
+	for _, profile := range app.GetUserDeviceProfiles() {
+		if types.NormalizeDeviceTransport(profile.Transport) == types.DeviceTransportWiFi {
+			foundUserWiFi = true
+		}
+	}
+	if !foundUserWiFi {
+		t.Fatal("disabled user WiFi profile should remain visible through GetUserDeviceProfiles")
+	}
+
+	persisted := app.configManager.Get()
+	if deviceprofiles.FindIndex(persisted.DeviceProfiles, wifi.ID) < 0 {
+		t.Fatal("hidden custom WiFi profile should remain persisted")
+	}
+}
+
+func TestSupportedWiFiProfilesAppearWhenCompatibilityEnabled(t *testing.T) {
+	cfg := types.GetDefaultConfig(false)
+	cfg.WiFiCompatibilityEnabled = true
+	cfg.DeviceTransport = types.DeviceTransportWiFi
+	types.NormalizeDeviceProfileConfig(&cfg)
+	app := newDeviceProfileTestApp(t, cfg)
+
+	if supported := app.GetSupportedDeviceProfiles(); len(supported) == 0 || supported[0].Transport != types.DeviceTransportWiFi {
+		t.Fatalf("enabled WiFi templates = %#v, want WiFi template", supported)
 	}
 }

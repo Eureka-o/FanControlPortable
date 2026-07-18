@@ -15,6 +15,18 @@ func TestHIDNotifyFilterLayout(t *testing.T) {
 	}
 }
 
+func TestBluetoothLENotifyFilterLayout(t *testing.T) {
+	if got := unsafe.Sizeof(hidNotifyFilter{}); got != 416 {
+		t.Fatalf("BLE notify filter size = %d, want 416", got)
+	}
+	if !matchesBluetoothLEInterfacePath(`\\?\BTHLEDEVICE#abc`) {
+		t.Fatal("Bluetooth LE interface path was not matched")
+	}
+	if matchesBluetoothLEInterfacePath(`\\?\HID#VID_37D7&PID_1002#abc`) {
+		t.Fatal("unrelated HID interface path was matched as Bluetooth LE")
+	}
+}
+
 func TestHIDInterfacePathAndMatch(t *testing.T) {
 	want := `\\?\HID#VID_37D7&PID_1002#abc`
 	encoded := append(utf16.Encode([]rune(want)), 0)

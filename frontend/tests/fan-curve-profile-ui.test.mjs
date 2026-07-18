@@ -72,11 +72,13 @@ test('exports by clipboard or file and imports pasted, selected, or dropped cont
 
 test('reveals history upward and keeps focused-entry layout stable', () => {
   assert.match(source, /const initialFocusTarget = useRef\(focusTarget\)\.current/);
-  assert.match(source, /initialFocusTarget === 'history-details' \? 'cards-reverse' : initialFocusTarget \? undefined : 'cards'/);
+  assert.match(source, /!isConnected && !initialFocusTarget \? 'cards-delayed'/);
   assert.match(source, /initial=\{initialFocusTarget \? false : \{ opacity: 0, y: 8 \}\}/);
   assert.match(source, /initial=\{initialFocusTarget \? false : \{ opacity: 0, height: 0 \}\}/);
   assert.match(styles, /\[data-page-reveal="cards-reverse"\] > :nth-last-child\(2\)/);
   assert.match(styles, /\[data-page-reveal="cards-reverse"\] > :nth-last-child\(7\)/);
+  assert.match(styles, /\[data-page-reveal="cards-delayed"\] > \* \{\s*animation-delay: 0\.09s;/);
+  assert.doesNotMatch(source, /pageRevealReady|setPageRevealReady/);
 });
 
 test('keeps curve jump aligned until the target layout stabilizes', () => {
@@ -86,6 +88,16 @@ test('keeps curve jump aligned until the target layout stabilizes', () => {
   assert.match(source, /target\.getBoundingClientRect\(\)\.top/);
   assert.match(source, /stableFrameCount >= FOCUS_SCROLL_STABLE_FRAMES/);
   assert.match(source, /window\.requestAnimationFrame\(scrollUntilStable\)/);
+});
+
+test('shows only history and never normalizes or saves a curve while disconnected', () => {
+  assert.match(source, /\{isConnected && \(\s*<>\s*<motion\.div\s*data-theme-card="curve-header"/s);
+  assert.match(source, /<\/>,?\s*\)\}\s*<section ref=\{historyDetailsRef\} data-theme-card="curve-history"/s);
+  assert.match(source, /if \(!isConnected && focusTarget !== 'history-details'\) \{\s*onFocusHandled\(\);\s*return;/);
+  assert.match(source, /setCurveDraftDirty\(isConnected && hasUnsavedChanges\)/);
+  assert.match(source, /if \(!isConnected \|\| isSaving\) return false;/);
+  assert.match(source, /if \(!isConnected\) return;\s*if \(\(!isInitialized \|\| !hasUnsavedChanges\)/);
+  assert.match(source, /if \(!isConnected\) return;\s*loadCurveProfiles\(\)\.catch/);
 });
 
 test('uses normal curve navigation and keeps history ownership outside page mounts', () => {
@@ -107,8 +119,22 @@ test('splits power history into an aligned conditional chart with a shared full-
   assert.match(source, /data-history-chart="power"/);
   assert.match(source, /const renderHistoryTooltip = useCallback/);
   assert.match(source, /const point = payload\?\.\[0\]\?\.payload/);
-  assert.match(source, /const showHistoryPowerChart = historyHasPower && \(historySeriesVisibility\.cpuPower \|\| historySeriesVisibility\.gpuPower\)/);
+  assert.match(source, /const showHistoryPowerChart = historyHasPower && \(historySeriesVisibility\.cpuPower \|\| historySeriesVisibility\.gpuPower \|\| historySeriesVisibility\.totalPower\)/);
   assert.equal([...source.matchAll(/margin=\{\{ top: 12, right: 16, left: 4, bottom: 8 \}\}/g)].length, 2);
+});
+
+test('lets the history detail page select one time range for both trend charts', () => {
+  assert.match(source, /const \[historyZoomDomain, setHistoryZoomDomain\] = useState/);
+  assert.match(source, /const \[historyZoomSelect, setHistoryZoomSelect\] = useState/);
+  assert.equal([...source.matchAll(/data=\{smoothedHistoryChartData\}/g)].length, 2);
+  assert.equal([...source.matchAll(/syncId="historyTrend"/g)].length, 2);
+  assert.equal([...source.matchAll(/onMouseDown=\{handleHistoryZoomMouseDown\}/g)].length, 2);
+  assert.equal([...source.matchAll(/onMouseMove=\{handleHistoryZoomMouseMove\}/g)].length, 2);
+  assert.equal([...source.matchAll(/<ReferenceArea/g)].length, 2);
+  assert.equal([...source.matchAll(/fill="var\(--chart-primary\)"/g)].length, 2);
+  assert.match(source, /stroke="var\(--chart-primary-active\)"/);
+  assert.match(source, /onDoubleClick=\{resetHistoryZoom\}/);
+  assert.match(source, /onClick=\{resetHistoryZoom\}/);
 });
 
 test('defers all offscreen history charts until history approaches the viewport', () => {

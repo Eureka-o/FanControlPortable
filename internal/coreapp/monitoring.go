@@ -500,8 +500,8 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				}
 
 				if smartCfg.Learning && advancedSampleUsable && !predictionActive && !targetLimited {
-					steady := steadyObserver.ObserveWithEffectivePower(controlTemp, observedRPM, effectivePower, controlCurve, smartCfg)
-					if steady.BucketIdx >= 0 && smartcontrol.AllowsSteadyOffsetLearning(steady, smartCfg) {
+					steady := steadyObserver.ObserveWithEffectivePowerAt(now, controlTemp, observedRPM, effectivePower, controlCurve, smartCfg)
+					if steady.BucketIdx >= 0 && smartcontrol.AllowsLongTermOffsetLearning(steady, smartCfg) {
 						newOffsets, changed := learnSteadyOffsetForActiveUnit(steady.BucketIdx, steady.MeanTemp, steady.MeanPower, steady.HavePower, steady.LocalEff, steady.HaveEff, cfg.FanCurve, smartCfg.LearnedOffsets, smartCfg, speedUnit)
 						if changed {
 							nextSmartCfg := smartCfg

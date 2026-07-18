@@ -222,13 +222,31 @@ func (e *BLEExecutor) setFlyDigiBS1Speed(ctx context.Context, speed types.FanSpe
 	e.mutex.Lock()
 	defer e.mutex.Unlock()
 
-	if err := e.ensureOpenLocked(ctx); err != nil {
-		return nil, err
-	}
 	rpm := types.ClampRPM(speed.Value)
 	if rpm > 4000 {
 		rpm = 4000
 	}
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := e.ensureOpenLocked(ctx); err != nil {
+			lastErr = err
+		} else {
+			state, err := e.setFlyDigiBS1SpeedOnceLocked(ctx, rpm)
+			if err == nil {
+				e.lastState = cloneFanData(state)
+				return state, nil
+			}
+			lastErr = err
+		}
+		e.invalidateClientLocked()
+		if err := ctxWithDefault(ctx).Err(); err != nil {
+			return nil, err
+		}
+	}
+	return nil, lastErr
+}
+
+func (e *BLEExecutor) setFlyDigiBS1SpeedOnceLocked(ctx context.Context, rpm int) (*types.FanData, error) {
 	if err := e.writeRawLocked(ctx, deviceproto.BuildFrame(deviceproto.CmdRGBEnable, 0x01)); err != nil {
 		return nil, fmt.Errorf("enter BS1 dynamic RPM mode: %w", err)
 	}
@@ -245,7 +263,6 @@ func (e *BLEExecutor) setFlyDigiBS1Speed(ctx context.Context, speed types.FanSpe
 		current = int(e.lastState.CurrentRPM)
 	}
 	state := e.stateWithValues(current, rpm, "自动模式(实时转速)")
-	e.lastState = cloneFanData(state)
 	return state, nil
 }
 
@@ -461,6 +478,11 @@ func (e *BLEExecutor) bs1HeartbeatLoop(stop <-chan struct{}) {
 		case <-stop:
 			return
 		case <-ticker.C:
+			select {
+			case <-stop:
+				return
+			default:
+			}
 			if err := e.writeHeartbeat(context.Background(), commands[index%len(commands)]); err != nil {
 				return
 			}
@@ -689,30 +711,24 @@ func (c *realBLEClient) WriteBLECommand(ctx context.Context, payload []byte, wit
 	if len(payload) > maxBLEFrameBytes {
 		return fmt.Errorf("ble command exceeded %d bytes", maxBLEFrameBytes)
 	}
-	done := make(chan error, 1)
-	payload = append([]byte(nil), payload...)
-	go func() {
-		var n int
-		var err error
-		if withResponse {
-			n, err = c.writeChar.Write(payload)
-		} else {
-			n, err = c.writeChar.WriteWithoutResponse(payload)
-			if err != nil {
-				n, err = c.writeChar.Write(payload)
-			}
-		}
-		if err == nil && n != len(payload) {
-			err = io.ErrShortWrite
-		}
-		done <- err
-	}()
-	select {
-	case <-ctxWithDefault(ctx).Done():
-		return ctxWithDefault(ctx).Err()
-	case err := <-done:
+	if err := ctxWithDefault(ctx).Err(); err != nil {
 		return err
 	}
+	payload = append([]byte(nil), payload...)
+	var n int
+	var err error
+	if withResponse {
+		n, err = c.writeChar.Write(payload)
+	} else {
+		n, err = c.writeChar.WriteWithoutResponse(payload)
+		if err != nil {
+			n, err = c.writeChar.Write(payload)
+		}
+	}
+	if err == nil && n != len(payload) {
+		return io.ErrShortWrite
+	}
+	return err
 }
 
 func (c *realBLEClient) ReadBLEFrame(ctx context.Context) ([]byte, error) {
