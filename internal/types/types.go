@@ -548,6 +548,7 @@ type AppConfig struct {
 	FanCurve                          []FanCurvePoint                        `json:"fanCurve"`                   // 风扇曲线
 	FanCurveProfiles                  []FanCurveProfile                      `json:"fanCurveProfiles"`           // 风扇曲线方案列表
 	FanCurveProfilesByDevice          map[string]DeviceFanCurveProfilesState `json:"fanCurveProfilesByDevice,omitempty"`
+	NoiseDiagnosticsByDevice          map[string]NoiseDiagnosticResult       `json:"noiseDiagnosticsByDevice,omitempty"`
 	ActiveFanCurveProfileID           string                                 `json:"activeFanCurveProfileId"` // 当前激活曲线方案ID
 	GearLight                         bool                                   `json:"gearLight"`               // 挡位灯
 	PowerOnStart                      bool                                   `json:"powerOnStart"`            // 通电自启动
