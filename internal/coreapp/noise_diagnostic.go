@@ -11,7 +11,12 @@ import (
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
-const noiseDiagnosticLeaseDuration = 20 * time.Minute
+const (
+	noiseDiagnosticLeaseDuration = 20 * time.Minute
+	noiseDiagnosticSettleTimeout = 20 * time.Second
+	noiseDiagnosticSettlePoll    = 500 * time.Millisecond
+	noiseDiagnosticAirflowDelay  = 1500 * time.Millisecond
+)
 
 type noiseDiagnosticLease struct {
 	sessionID      string
@@ -144,6 +149,32 @@ func (a *CoreApp) noiseDiagnosticLeaseActive() bool {
 	return active
 }
 
+func noiseDiagnosticActualSpeed(fanData *types.FanData, unit string) int {
+	if fanData == nil {
+		return 0
+	}
+	if types.IsPercentSpeedUnit(unit) {
+		return int(fanData.TargetRPM)
+	}
+	return int(fanData.CurrentRPM)
+}
+
+func noiseDiagnosticSettleOutcome(requested, actual, targetHitCount, stableCount int, unit string) (int, string, error) {
+	if types.IsPercentSpeedUnit(unit) {
+		return requested, "command-accepted", nil
+	}
+	if actual <= 0 {
+		return 0, "no-telemetry", fmt.Errorf("未收到有效的实际转速")
+	}
+	if targetHitCount >= 2 {
+		return actual, "target", nil
+	}
+	if stableCount >= 4 {
+		return actual, "plateau", nil
+	}
+	return actual, "timeout-fallback", nil
+}
+
 // SetNoiseDiagnosticTarget changes only the temporary target owned by the lease.
 func (a *CoreApp) SetNoiseDiagnosticTarget(sessionID string, value int) (types.NoiseDiagnosticTargetResult, error) {
 	lease, err := a.noiseDiagnosticLeaseFor(sessionID)
@@ -169,52 +200,65 @@ func (a *CoreApp) SetNoiseDiagnosticTarget(sessionID string, value int) (types.N
 		return types.NoiseDiagnosticTargetResult{}, fmt.Errorf("目标转速下发失败")
 	}
 
+	startedAt := time.Now()
 	actual := 0
 	lastActual := 0
 	targetHitCount := 0
 	stableCount := 0
-	deadline := time.Now().Add(4 * time.Second)
-	for {
-		if !a.noiseDiagnosticLeaseActive() {
-			return types.NoiseDiagnosticTargetResult{}, fmt.Errorf("诊断会话已结束")
-		}
-		if fanData := a.deviceManager.GetCurrentFanData(); fanData != nil {
-			if types.IsPercentSpeedUnit(unit) && fanData.TargetRPM > 0 {
-				actual = types.PercentTicksToIntegerPercent(int(fanData.TargetRPM))
+	if types.IsRPMSpeedUnit(unit) {
+		deadline := time.Now().Add(noiseDiagnosticSettleTimeout)
+		for {
+			select {
+			case <-lease.done:
+				return types.NoiseDiagnosticTargetResult{}, fmt.Errorf("诊断会话已结束")
+			default:
+			}
+			if fanData := a.deviceManager.GetCurrentFanData(); fanData != nil {
+				if types.IsRPMSpeedUnit(unit) && fanData.CurrentRPM > 0 {
+					actual = noiseDiagnosticActualSpeed(fanData, unit)
+					tolerance := max(120, value*6/100)
+					if actual >= value-tolerance && actual <= value+tolerance {
+						targetHitCount++
+					} else {
+						targetHitCount = 0
+					}
+					if lastActual > 0 && actual >= lastActual-30 && actual <= lastActual+30 {
+						stableCount++
+					} else {
+						stableCount = 0
+					}
+					lastActual = actual
+				}
+			}
+			if targetHitCount >= 2 || stableCount >= 4 {
 				break
 			}
-			if types.IsRPMSpeedUnit(unit) && fanData.CurrentRPM > 0 {
-				actual = int(fanData.CurrentRPM)
-				tolerance := max(120, value*6/100)
-				if actual >= value-tolerance && actual <= value+tolerance {
-					targetHitCount++
-				} else {
-					targetHitCount = 0
-				}
-				if lastActual > 0 && actual >= lastActual-30 && actual <= lastActual+30 {
-					stableCount++
-				} else {
-					stableCount = 0
-				}
-				lastActual = actual
-				if targetHitCount >= 2 || stableCount >= 4 {
-					break
-				}
+			if time.Now().After(deadline) {
+				break
+			}
+			timer := time.NewTimer(noiseDiagnosticSettlePoll)
+			select {
+			case <-timer.C:
+			case <-lease.done:
+				timer.Stop()
+				return types.NoiseDiagnosticTargetResult{}, fmt.Errorf("诊断会话已结束")
 			}
 		}
-		if time.Now().After(deadline) {
-			break
-		}
-		time.Sleep(250 * time.Millisecond)
 	}
-	if types.IsPercentSpeedUnit(unit) && actual <= 0 {
-		// Percentage controllers expose the commanded setpoint rather than a
-		// tachometer value; the accepted target is the stable device state here.
-		actual = value
+
+	actual, settleReason, err := noiseDiagnosticSettleOutcome(value, actual, targetHitCount, stableCount, unit)
+	if err != nil {
+		a.logDebug("噪声诊断转速等待失败: requested=%d%s elapsed=%s reason=%s", value, types.FanSpeedDisplaySuffix(unit), time.Since(startedAt).Round(time.Millisecond), settleReason)
+		return types.NoiseDiagnosticTargetResult{}, err
 	}
-	if actual <= 0 || (types.IsRPMSpeedUnit(unit) && targetHitCount < 2 && stableCount < 4) {
-		return types.NoiseDiagnosticTargetResult{}, fmt.Errorf("实际转速未能稳定")
+	stabilizeTimer := time.NewTimer(noiseDiagnosticAirflowDelay)
+	select {
+	case <-stabilizeTimer.C:
+	case <-lease.done:
+		stabilizeTimer.Stop()
+		return types.NoiseDiagnosticTargetResult{}, fmt.Errorf("诊断会话已结束")
 	}
+	a.logDebug("噪声诊断转速就绪: requested=%d%s actual=%d%s elapsed=%s reason=%s", value, types.FanSpeedDisplaySuffix(unit), actual, types.FanSpeedDisplaySuffix(unit), time.Since(startedAt).Round(time.Millisecond), settleReason)
 	return types.NoiseDiagnosticTargetResult{Requested: value, Actual: actual, Unit: unit}, nil
 }
 
@@ -333,4 +377,74 @@ func (a *CoreApp) SaveNoiseDiagnosticResult(result types.NoiseDiagnosticResult) 
 		return nil
 	}
 	return fmt.Errorf("保存噪声诊断结果时配置已变化")
+}
+
+func (a *CoreApp) SaveAxisNoiseProfile(profile types.AxisNoiseProfile) (types.AxisNoiseProfile, error) {
+	if a == nil || a.configManager == nil || a.deviceManager == nil || !a.deviceManager.IsConnected() {
+		return types.AxisNoiseProfile{}, fmt.Errorf("设备未连接")
+	}
+	_, activeProfile, caps, deviceKey, err := a.noiseDiagnosticDeviceContext()
+	if err != nil {
+		return types.AxisNoiseProfile{}, err
+	}
+	if strings.TrimSpace(profile.DeviceKey) == "" {
+		profile.DeviceKey = deviceKey
+	}
+	if profile.DeviceKey != deviceKey {
+		return types.AxisNoiseProfile{}, fmt.Errorf("轴噪扫描设备已变化")
+	}
+	allowed, err := types.NoiseDiagnosticRangeForProfile(activeProfile, caps, a.deviceManager.GetCurrentFanData())
+	if err != nil {
+		return types.AxisNoiseProfile{}, err
+	}
+	deleteRequested := len(profile.Points) == 0 && profile.TestedAt == 0
+	if deleteRequested {
+		profile = types.AxisNoiseProfile{DeviceKey: deviceKey, Unit: allowed.Unit, Range: allowed}
+	} else {
+		profile, err = types.NormalizeAxisNoiseProfile(profile, allowed)
+		if err != nil {
+			return types.AxisNoiseProfile{}, err
+		}
+		if len(profile.Zones) == 0 {
+			profile.Enabled = false
+		}
+	}
+
+	for attempt := 0; attempt < 2; attempt++ {
+		_, revision := a.configManager.GetWithRevision()
+		updated, _, applied := a.configManager.MutateIfRevision(revision, func(current *types.AppConfig) {
+			if deleteRequested {
+				delete(current.AxisNoiseProfilesByDevice, deviceKey)
+				return
+			}
+			if current.AxisNoiseProfilesByDevice == nil {
+				current.AxisNoiseProfilesByDevice = map[string]types.AxisNoiseProfile{}
+			}
+			current.AxisNoiseProfilesByDevice[deviceKey] = profile
+		})
+		if !applied {
+			continue
+		}
+		if err := a.configManager.Save(); err != nil {
+			return types.AxisNoiseProfile{}, err
+		}
+		a.forceNextAutoTarget.Store(true)
+		if a.ipcServer != nil {
+			a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, updated)
+		}
+		return profile, nil
+	}
+	return types.AxisNoiseProfile{}, fmt.Errorf("保存轴噪避让配置时配置已变化")
+}
+
+func axisNoiseTargetForDevice(cfg types.AppConfig, deviceKey string, target, previous int, unit string) (int, bool) {
+	deviceKey = strings.TrimSpace(deviceKey)
+	if deviceKey == "" || cfg.AxisNoiseProfilesByDevice == nil {
+		return target, false
+	}
+	profile, ok := cfg.AxisNoiseProfilesByDevice[deviceKey]
+	if !ok {
+		return target, false
+	}
+	return types.ApplyAxisNoiseAvoidance(target, previous, unit, profile)
 }

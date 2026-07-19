@@ -534,6 +534,9 @@ func TestManagerConfigSnapshotsDoNotShareMutableState(t *testing.T) {
 	cfg.FanCurveProfiles[0].Curve[0].RPM = 22
 	cfg.SmartControl.LearnedOffsets[0] = 23
 	cfg.SmartControl.LearnedOffsetsByProfile = map[string][]int{"profile": {24}}
+	cfg.AxisNoiseProfilesByDevice = map[string]types.AxisNoiseProfile{
+		"hid::flydigi.bs3": {DeviceKey: "hid::flydigi.bs3", Points: []types.AxisNoisePoint{{Actual: 2000, Severity: types.AxisNoiseSeverityMild}}},
+	}
 	cfg.LightStrip.Colors[0].R = 25
 	cfg.LegionFnQ.ModeMapping["Quiet"] = types.FanGearTarget{Gear: "quiet", Level: "low"}
 	manager.Set(cfg)
@@ -544,6 +547,7 @@ func TestManagerConfigSnapshotsDoNotShareMutableState(t *testing.T) {
 	cfg.FanCurveProfiles[0].Curve[0].RPM = 91
 	cfg.SmartControl.LearnedOffsets[0] = 92
 	cfg.SmartControl.LearnedOffsetsByProfile["profile"][0] = 93
+	cfg.AxisNoiseProfilesByDevice["hid::flydigi.bs3"].Points[0].Actual = 9000
 	cfg.LightStrip.Colors[0].R = 94
 	cfg.LegionFnQ.ModeMapping["Quiet"] = types.FanGearTarget{Gear: "mutated", Level: "high"}
 
@@ -554,6 +558,7 @@ func TestManagerConfigSnapshotsDoNotShareMutableState(t *testing.T) {
 		first.FanCurveProfiles[0].Curve[0].RPM != 22 ||
 		first.SmartControl.LearnedOffsets[0] != 23 ||
 		first.SmartControl.LearnedOffsetsByProfile["profile"][0] != 24 ||
+		first.AxisNoiseProfilesByDevice["hid::flydigi.bs3"].Points[0].Actual != 2000 ||
 		first.LightStrip.Colors[0].R != 25 ||
 		first.LegionFnQ.ModeMapping["Quiet"].Gear != "quiet" {
 		t.Fatalf("manager retained mutable input references: %#v", first)
@@ -565,6 +570,7 @@ func TestManagerConfigSnapshotsDoNotShareMutableState(t *testing.T) {
 	first.FanCurveProfiles[0].Curve[0].RPM = 81
 	first.SmartControl.LearnedOffsets[0] = 82
 	first.SmartControl.LearnedOffsetsByProfile["profile"][0] = 83
+	first.AxisNoiseProfilesByDevice["hid::flydigi.bs3"].Points[0].Actual = 8000
 	first.LightStrip.Colors[0].R = 84
 	first.LegionFnQ.ModeMapping["Quiet"] = types.FanGearTarget{Gear: "output", Level: "high"}
 
@@ -575,6 +581,7 @@ func TestManagerConfigSnapshotsDoNotShareMutableState(t *testing.T) {
 		second.FanCurveProfiles[0].Curve[0].RPM != 22 ||
 		second.SmartControl.LearnedOffsets[0] != 23 ||
 		second.SmartControl.LearnedOffsetsByProfile["profile"][0] != 24 ||
+		second.AxisNoiseProfilesByDevice["hid::flydigi.bs3"].Points[0].Actual != 2000 ||
 		second.LightStrip.Colors[0].R != 25 ||
 		second.LegionFnQ.ModeMapping["Quiet"].Gear != "quiet" {
 		t.Fatalf("manager exposed mutable snapshot references: %#v", second)

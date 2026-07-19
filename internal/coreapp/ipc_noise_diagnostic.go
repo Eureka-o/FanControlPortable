@@ -62,6 +62,17 @@ func (a *CoreApp) handleNoiseDiagnosticIPCRequest(req ipc.Request) (ipc.Response
 			return a.errorResponse(err.Error()), true
 		}
 		return a.successResponse(true), true
+
+	case ipc.ReqSaveAxisNoiseProfile:
+		var params ipc.SaveAxisNoiseProfileParams
+		if err := json.Unmarshal(req.Data, &params); err != nil {
+			return a.errorResponse("解析参数失败: " + err.Error()), true
+		}
+		profile, err := a.SaveAxisNoiseProfile(params.Profile)
+		if err != nil {
+			return a.errorResponse(err.Error()), true
+		}
+		return a.dataResponse(profile), true
 	default:
 		return ipc.Response{}, false
 	}

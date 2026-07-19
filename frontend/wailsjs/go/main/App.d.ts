@@ -119,6 +119,8 @@ export function RestartPawnIO():Promise<types.BridgeTemperatureData>;
 
 export function ResumeUpdateDownload():Promise<boolean>;
 
+export function SaveAxisNoiseProfile(arg1:types.AxisNoiseProfile):Promise<types.AxisNoiseProfile>;
+
 export function SaveDeviceProfile(arg1:types.DeviceProfile,arg2:boolean):Promise<types.DeviceProfile>;
 
 export function SaveFanCurveProfile(arg1:string,arg2:string,arg3:Array<types.FanCurvePoint>,arg4:boolean):Promise<types.FanCurveProfile>;

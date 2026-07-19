@@ -763,6 +763,19 @@ func cloneNoiseDiagnosticsExact(input map[string]types.NoiseDiagnosticResult) ma
 	return out
 }
 
+func cloneAxisNoiseProfilesExact(input map[string]types.AxisNoiseProfile) map[string]types.AxisNoiseProfile {
+	if input == nil {
+		return nil
+	}
+	out := make(map[string]types.AxisNoiseProfile, len(input))
+	for key, profile := range input {
+		profile.Points = append([]types.AxisNoisePoint(nil), profile.Points...)
+		profile.Zones = append([]types.AxisNoiseZone(nil), profile.Zones...)
+		out[key] = profile
+	}
+	return out
+}
+
 func cloneAppConfig(input types.AppConfig) types.AppConfig {
 	input.LegionFnQ.ModeMapping = func() map[string]types.FanGearTarget {
 		if input.LegionFnQ.ModeMapping == nil {
@@ -782,6 +795,7 @@ func cloneAppConfig(input types.AppConfig) types.AppConfig {
 	input.FanCurveProfiles = cloneFanCurveProfilesExact(input.FanCurveProfiles)
 	input.FanCurveProfilesByDevice = cloneDeviceCurveStatesExact(input.FanCurveProfilesByDevice)
 	input.NoiseDiagnosticsByDevice = cloneNoiseDiagnosticsExact(input.NoiseDiagnosticsByDevice)
+	input.AxisNoiseProfilesByDevice = cloneAxisNoiseProfilesExact(input.AxisNoiseProfilesByDevice)
 	input.SmartControl = cloneSmartControlConfig(input.SmartControl)
 	if input.LightStrip.Colors != nil {
 		input.LightStrip.Colors = append([]types.RGBColor{}, input.LightStrip.Colors...)

@@ -657,6 +657,43 @@
       "failed": "噪声测试失败：{{error}}"
     }
   },
+  "axisNoise": {
+    "toolsTitle": "设备噪声工具",
+    "toolsDescription": "分别进行噪声变化测试与轴噪区间扫描，结果跟随当前设备保存。",
+    "open": "轴噪扫描",
+    "title": "轴噪扫描",
+    "description": "自动逐点调整转速，由你判断当前转速是否存在轴噪。",
+    "disclaimer": "扫描会自动改变风扇转速。请保持出风口无遮挡并留意温度；发现异常可随时停止，已标记的数据会全部丢弃。",
+    "confirmation": "你修改了扫描范围。风扇将自动遍历所选区间，并在每个稳定转速点等待你的轴噪判断。",
+    "confirmAcknowledgement": "我了解自动变速风险，并同意开始轴噪扫描。",
+    "confirmStart": "确认开始",
+    "start": "开始扫描",
+    "progress": "扫描进度",
+    "current": "当前稳定转速",
+    "ratePrompt": "请判断当前转速下的轴噪程度",
+    "confirmRatePrompt": "检测到轴噪，请在相同转速复核一次",
+    "stopDiscard": "停止并丢弃",
+    "severity": {
+      "none": "没有",
+      "mild": "轻微",
+      "obvious": "明显"
+    },
+    "saved": {
+      "title": "当前设备避噪配置",
+      "zones": "已识别 {{count}} 个区间",
+      "enabled": "启用轴噪避让",
+      "reset": "重置"
+    },
+    "result": {
+      "title": "扫描完成",
+      "description": "已生成 {{count}} 个软避让区间",
+      "none": "本次扫描没有发现需要避让的轴噪区间。"
+    },
+    "errors": {
+      "invalidRange": "请选择有效的扫描范围。",
+      "failed": "轴噪扫描失败：{{error}}"
+    }
+  },
   "fanCurve": {
     "title": "风扇曲线",
     "badges": {

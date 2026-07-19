@@ -657,6 +657,43 @@
       "failed": "Noise test failed: {{error}}"
     }
   },
+  "axisNoise": {
+    "toolsTitle": "Device noise tools",
+    "toolsDescription": "Measure noise changes and scan bearing-noise ranges independently for the connected device.",
+    "open": "Bearing-noise scan",
+    "title": "Bearing-noise scan",
+    "description": "The fan speed changes automatically while you rate bearing noise at each point.",
+    "disclaimer": "The scan changes fan speed automatically. Keep airflow unobstructed and watch temperatures; stopping discards every rating from this run.",
+    "confirmation": "You changed the scan range. FanControl will sweep the selected interval and wait for your rating at each stable speed.",
+    "confirmAcknowledgement": "I understand the automatic speed changes and agree to start the scan.",
+    "confirmStart": "Confirm and start",
+    "start": "Start scan",
+    "progress": "Scan progress",
+    "current": "Current stable speed",
+    "ratePrompt": "Rate the bearing noise at this speed",
+    "confirmRatePrompt": "Bearing noise was reported. Rate the same speed once more to confirm.",
+    "stopDiscard": "Stop and discard",
+    "severity": {
+      "none": "None",
+      "mild": "Mild",
+      "obvious": "Obvious"
+    },
+    "saved": {
+      "title": "Avoidance for this device",
+      "zones": "{{count}} ranges identified",
+      "enabled": "Enable bearing-noise avoidance",
+      "reset": "Reset"
+    },
+    "result": {
+      "title": "Scan complete",
+      "description": "Generated {{count}} soft-avoidance ranges",
+      "none": "No bearing-noise range requiring avoidance was found."
+    },
+    "errors": {
+      "invalidRange": "Choose a valid scan range.",
+      "failed": "Bearing-noise scan failed: {{error}}"
+    }
+  },
   "fanCurve": {
     "title": "Fan curve",
     "badges": {

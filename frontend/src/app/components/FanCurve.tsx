@@ -23,6 +23,7 @@ import {
   ArrowUp,
   ArrowDown,
   AudioLines,
+  Ear,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
@@ -38,6 +39,7 @@ import { ClipboardSetText } from '../../../wailsjs/runtime/runtime';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import NoiseDiagnostic from './NoiseDiagnostic';
+import AxisNoiseScan from './AxisNoiseScan';
 import {
   ToggleSwitch,
   Button,
@@ -569,6 +571,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const [learningConfigLoading, setLearningConfigLoading] = useState(false);
   const [learningResetLoading, setLearningResetLoading] = useState(false);
   const [noiseDiagnosticOpen, setNoiseDiagnosticOpen] = useState(false);
+  const [axisNoiseScanOpen, setAxisNoiseScanOpen] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [isInteracting, setIsInteracting] = useState(false);
   const [historyDisplayDialogOpen, setHistoryDisplayDialogOpen] = useState(false);
@@ -2303,15 +2306,20 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
               </div>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="text-sm font-medium text-foreground">{t('noiseDiagnostic.title')}</div>
+                  <div className="text-sm font-medium text-foreground">{t('axisNoise.toolsTitle')}</div>
                   <Badge variant="success">{deviceModel || t('noiseDiagnostic.connected')}</Badge>
                 </div>
-                <div className="text-xs leading-relaxed text-muted-foreground">{t('noiseDiagnostic.description')}</div>
+                <div className="text-xs leading-relaxed text-muted-foreground">{t('axisNoise.toolsDescription')}</div>
               </div>
             </div>
-            <Button variant="secondary" size="sm" onClick={() => setNoiseDiagnosticOpen(true)} disabled={!isConnected} icon={<AudioLines className="h-3.5 w-3.5" />}>
-              {t('noiseDiagnostic.open')}
-            </Button>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setNoiseDiagnosticOpen(true)} disabled={!isConnected} icon={<AudioLines className="h-3.5 w-3.5" />}>
+                {t('noiseDiagnostic.open')}
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setAxisNoiseScanOpen(true)} disabled={!isConnected} icon={<Ear className="h-3.5 w-3.5" />}>
+                {t('axisNoise.open')}
+              </Button>
+            </div>
           </div>
         </section>
 
@@ -3026,6 +3034,18 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       <NoiseDiagnostic
         open={noiseDiagnosticOpen}
         onOpenChange={setNoiseDiagnosticOpen}
+        config={config}
+        onConfigChange={onConfigChange}
+        isConnected={isConnected}
+        fanData={fanData}
+        runtimeDeviceProfile={runtimeDeviceProfile}
+        runtimeDeviceCapabilities={runtimeDeviceCapabilities}
+        deviceModel={deviceModel}
+      />
+
+      <AxisNoiseScan
+        open={axisNoiseScanOpen}
+        onOpenChange={setAxisNoiseScanOpen}
         config={config}
         onConfigChange={onConfigChange}
         isConnected={isConnected}
