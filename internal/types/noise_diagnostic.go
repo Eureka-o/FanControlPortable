@@ -4,12 +4,18 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 )
 
 const (
 	NoiseDiagnosticFlyDigiMinRPM = 1000
 	NoiseDiagnosticPercentMin    = 5
 	NoiseDiagnosticDefaultStep   = 1
+	AxisNoiseSeverityNone        = "none"
+	AxisNoiseSeverityMild        = "mild"
+	AxisNoiseSeverityObvious     = "obvious"
+	AxisNoisePercentFineStep     = 1
+	AxisNoiseRPMFineStep         = 100
 )
 
 type NoiseDiagnosticRange struct {
@@ -60,6 +66,28 @@ type NoiseDiagnosticTargetResult struct {
 	Requested int    `json:"requested"`
 	Actual    int    `json:"actual"`
 	Unit      string `json:"unit"`
+}
+
+type AxisNoisePoint struct {
+	Requested int    `json:"requested"`
+	Actual    int    `json:"actual"`
+	Severity  string `json:"severity"`
+}
+
+type AxisNoiseZone struct {
+	Min      int    `json:"min"`
+	Max      int    `json:"max"`
+	Severity string `json:"severity"`
+}
+
+type AxisNoiseProfile struct {
+	DeviceKey string               `json:"deviceKey"`
+	Unit      string               `json:"unit"`
+	Enabled   bool                 `json:"enabled"`
+	Range     NoiseDiagnosticRange `json:"range"`
+	Points    []AxisNoisePoint     `json:"points"`
+	Zones     []AxisNoiseZone      `json:"zones"`
+	TestedAt  int64                `json:"testedAt"`
 }
 
 func NoiseDiagnosticRangeForProfile(profile DeviceProfile, capabilities DeviceCapabilities, fanData *FanData) (NoiseDiagnosticRange, error) {
@@ -200,6 +228,144 @@ func NormalizeNoiseDiagnosticResult(result NoiseDiagnosticResult) (NoiseDiagnost
 		changed = true
 	}
 	return result, changed
+}
+
+func AxisNoiseFineStep(unit string) int {
+	if IsRPMSpeedUnit(unit) {
+		return AxisNoiseRPMFineStep
+	}
+	return AxisNoisePercentFineStep
+}
+
+func NormalizeAxisNoiseProfile(profile AxisNoiseProfile, allowed NoiseDiagnosticRange) (AxisNoiseProfile, error) {
+	profile.DeviceKey = strings.TrimSpace(profile.DeviceKey)
+	if profile.DeviceKey == "" {
+		return AxisNoiseProfile{}, fmt.Errorf("axis-noise profile has no device key")
+	}
+	profile.Unit = NormalizeFanSpeedUnit(profile.Unit)
+	allowed.Unit = NormalizeFanSpeedUnit(allowed.Unit)
+	if profile.Unit != allowed.Unit {
+		return AxisNoiseProfile{}, fmt.Errorf("axis-noise speed unit does not match active device")
+	}
+	rangeConfig, err := NormalizeNoiseDiagnosticRange(profile.Range, allowed)
+	if err != nil {
+		return AxisNoiseProfile{}, err
+	}
+	profile.Range = rangeConfig
+
+	points := make([]AxisNoisePoint, 0, len(profile.Points))
+	for _, point := range profile.Points {
+		point.Severity = normalizeAxisNoiseSeverity(point.Severity)
+		if point.Severity == "" || point.Requested < rangeConfig.Min || point.Requested > rangeConfig.Max || point.Actual < rangeConfig.Min || point.Actual > rangeConfig.Max {
+			continue
+		}
+		points = append(points, point)
+	}
+	sort.SliceStable(points, func(i, j int) bool {
+		if points[i].Actual == points[j].Actual {
+			return axisNoiseSeverityRank(points[i].Severity) > axisNoiseSeverityRank(points[j].Severity)
+		}
+		return points[i].Actual < points[j].Actual
+	})
+	deduped := points[:0]
+	for _, point := range points {
+		if len(deduped) > 0 && deduped[len(deduped)-1].Actual == point.Actual {
+			continue
+		}
+		deduped = append(deduped, point)
+	}
+	profile.Points = deduped
+	profile.Zones = buildAxisNoiseZones(deduped, rangeConfig)
+	return profile, nil
+}
+
+func ApplyAxisNoiseAvoidance(target, previous int, unit string, profile AxisNoiseProfile) (int, bool) {
+	unit = NormalizeFanSpeedUnit(unit)
+	if !profile.Enabled || NormalizeFanSpeedUnit(profile.Unit) != unit || target <= 0 {
+		return target, false
+	}
+	displayTarget := target
+	displayPrevious := previous
+	if IsPercentSpeedUnit(unit) {
+		displayTarget = PercentTicksToIntegerPercent(target)
+		if previous > 0 {
+			displayPrevious = PercentTicksToIntegerPercent(previous)
+		}
+	}
+	for _, zone := range profile.Zones {
+		if displayTarget < zone.Min || displayTarget > zone.Max || zone.Max <= zone.Min {
+			continue
+		}
+		ratio := 45
+		if zone.Severity == AxisNoiseSeverityObvious {
+			ratio = 75
+		}
+		delta := zone.Max - displayTarget
+		adjusted := displayTarget + (delta*ratio+99)/100
+		if displayPrevious > adjusted && displayPrevious < zone.Max {
+			adjusted = displayPrevious
+		}
+		if adjusted >= zone.Max && displayTarget < zone.Max {
+			adjusted = zone.Max - 1
+		}
+		if adjusted <= displayTarget {
+			return target, false
+		}
+		if IsPercentSpeedUnit(unit) {
+			adjusted = PercentToTicks(adjusted)
+		}
+		return adjusted, adjusted != target
+	}
+	return target, false
+}
+
+func buildAxisNoiseZones(points []AxisNoisePoint, rangeConfig NoiseDiagnosticRange) []AxisNoiseZone {
+	step := max(AxisNoiseFineStep(rangeConfig.Unit), rangeConfig.Step)
+	zones := make([]AxisNoiseZone, 0)
+	for _, point := range points {
+		if point.Severity == AxisNoiseSeverityNone {
+			continue
+		}
+		next := AxisNoiseZone{
+			Min:      max(rangeConfig.Min, point.Actual-step),
+			Max:      min(rangeConfig.Max, point.Actual+step),
+			Severity: point.Severity,
+		}
+		if len(zones) == 0 || next.Min > zones[len(zones)-1].Max {
+			zones = append(zones, next)
+			continue
+		}
+		last := &zones[len(zones)-1]
+		last.Max = max(last.Max, next.Max)
+		if axisNoiseSeverityRank(next.Severity) > axisNoiseSeverityRank(last.Severity) {
+			last.Severity = next.Severity
+		}
+	}
+	return zones
+}
+
+func normalizeAxisNoiseSeverity(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case AxisNoiseSeverityNone:
+		return AxisNoiseSeverityNone
+	case AxisNoiseSeverityMild:
+		return AxisNoiseSeverityMild
+	case AxisNoiseSeverityObvious:
+		return AxisNoiseSeverityObvious
+	default:
+		return ""
+	}
+}
+
+func axisNoiseSeverityRank(value string) int {
+	switch value {
+	case AxisNoiseSeverityObvious:
+		return 2
+	case AxisNoiseSeverityMild:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func finiteNoiseValue(value float64) bool {

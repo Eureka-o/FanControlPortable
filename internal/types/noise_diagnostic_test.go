@@ -65,3 +65,49 @@ func TestNormalizeNoiseDiagnosticResultDropsInvalidPoints(t *testing.T) {
 		t.Fatalf("normalized result = %#v, changed=%v", got, changed)
 	}
 }
+
+func TestNormalizeAxisNoiseProfileBuildsSoftAvoidanceZone(t *testing.T) {
+	allowed := NoiseDiagnosticRange{Unit: FanSpeedUnitRPM, Min: 1000, Max: 3600, Step: 100}
+	profile := AxisNoiseProfile{
+		DeviceKey: "hid::flydigi.bs3",
+		Unit:      FanSpeedUnitRPM,
+		Enabled:   true,
+		Range:     allowed,
+		Points: []AxisNoisePoint{
+			{Requested: 1500, Actual: 1500, Severity: AxisNoiseSeverityNone},
+			{Requested: 2000, Actual: 2000, Severity: AxisNoiseSeverityMild},
+			{Requested: 2100, Actual: 2100, Severity: AxisNoiseSeverityObvious},
+			{Requested: 2600, Actual: 2600, Severity: AxisNoiseSeverityNone},
+		},
+	}
+
+	got, err := NormalizeAxisNoiseProfile(profile, allowed)
+	if err != nil {
+		t.Fatalf("NormalizeAxisNoiseProfile() error = %v", err)
+	}
+	if len(got.Zones) != 1 {
+		t.Fatalf("zones = %#v, want one merged zone", got.Zones)
+	}
+	zone := got.Zones[0]
+	if zone.Min != 1900 || zone.Max != 2200 || zone.Severity != AxisNoiseSeverityObvious {
+		t.Fatalf("zone = %#v, want 1900..2200 obvious", zone)
+	}
+
+	adjusted, changed := ApplyAxisNoiseAvoidance(2050, -1, FanSpeedUnitRPM, got)
+	if !changed || adjusted <= 2050 || adjusted >= zone.Max {
+		t.Fatalf("soft avoidance = %d, changed=%v; want a partial upward shift below %d", adjusted, changed, zone.Max)
+	}
+}
+
+func TestApplyAxisNoiseAvoidancePreservesPercentTargetUnits(t *testing.T) {
+	profile := AxisNoiseProfile{
+		Unit:    FanSpeedUnitPercent,
+		Enabled: true,
+		Zones:   []AxisNoiseZone{{Min: 40, Max: 50, Severity: AxisNoiseSeverityMild}},
+	}
+	target := PercentToTicks(45)
+	adjusted, changed := ApplyAxisNoiseAvoidance(target, -1, FanSpeedUnitPercent, profile)
+	if !changed || adjusted <= target || adjusted >= PercentToTicks(50) {
+		t.Fatalf("percent target = %d, changed=%v; want a partial upward shift in ticks", adjusted, changed)
+	}
+}

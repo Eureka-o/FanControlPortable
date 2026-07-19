@@ -37,6 +37,7 @@ import {
 } from '../../../wailsjs/go/main/App';
 
 import { types } from '../../../wailsjs/go/models';
+import type { AxisNoiseProfile } from '../lib/noise-diagnostic';
 
 import type {
   DeviceInfo,
@@ -463,6 +464,10 @@ class ApiService {
 
   async saveNoiseDiagnosticResult(result: types.NoiseDiagnosticResult): Promise<void> {
     return await (window as any).go?.main?.App?.SaveNoiseDiagnosticResult(result);
+  }
+
+  async saveAxisNoiseProfile(profile: AxisNoiseProfile): Promise<AxisNoiseProfile> {
+    return await (window as any).go?.main?.App?.SaveAxisNoiseProfile(profile);
   }
 
   async testTemperatureReading(): Promise<types.TemperatureData> {

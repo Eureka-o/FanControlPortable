@@ -16,6 +16,35 @@ export interface NoiseDiagnosticPoint {
   reason?: string;
 }
 
+export type AxisNoiseSeverity = 'none' | 'mild' | 'obvious';
+
+export function confirmAxisNoiseSeverity(first: AxisNoiseSeverity, second: AxisNoiseSeverity): AxisNoiseSeverity {
+  if (first === 'none' || second === 'none') return 'none';
+  return first === 'obvious' && second === 'obvious' ? 'obvious' : 'mild';
+}
+
+export interface AxisNoisePoint {
+  requested: number;
+  actual: number;
+  severity: AxisNoiseSeverity;
+}
+
+export interface AxisNoiseZone {
+  min: number;
+  max: number;
+  severity: AxisNoiseSeverity;
+}
+
+export interface AxisNoiseProfile {
+  deviceKey: string;
+  unit: string;
+  enabled: boolean;
+  range: NoiseDiagnosticRange;
+  points: AxisNoisePoint[];
+  zones: AxisNoiseZone[];
+  testedAt: number;
+}
+
 export interface NoiseSample {
   levelDb: number;
   spreadDb: number;
@@ -41,6 +70,10 @@ export interface NoiseDiagnosticAnalysis {
   suspectedPeak?: number;
 }
 
+export function fanSpeedDisplaySuffix(unit: string | null | undefined) {
+  return String(unit).toLowerCase() === 'rpm' ? 'RPM' : '%';
+}
+
 export function deriveNoiseDiagnosticRange(
   profile: { id?: string; model?: string; transport?: string; speedUnit?: string; speedRange?: { min?: number; max?: number; step?: number } } | null | undefined,
   capabilities: { speedUnit?: string; speedRange?: { min?: number; max?: number; step?: number } } | null | undefined,
@@ -59,6 +92,30 @@ export function deriveNoiseDiagnosticRange(
     : max;
   if (runtimeMax <= min) return null;
   return { unit, min, max: runtimeMax, step: Math.max(1, Number(profileRange.step || 1)), minSource: unit === 'percent' ? 'percent-diagnostic-floor' : isFlyDigi ? 'flydigi-diagnostic-floor' : 'profile', maxSource: runtimeMax < max ? 'runtime-capability' : 'profile' };
+}
+
+export function noiseDiagnosticDeviceKey(profile: { transport?: string; id?: string; model?: string; displayName?: string } | null | undefined) {
+  const transport = String(profile?.transport || '').trim().toLowerCase();
+  const id = String(profile?.id || profile?.model || profile?.displayName || '').trim();
+  return transport && id ? `${transport}::${id}` : '';
+}
+
+export function buildAxisNoiseRefinementSteps(
+  range: NoiseDiagnosticRange,
+  center: number,
+  existingSteps: number[],
+) {
+  const fineStep = Math.max(Number(range.step || 1), String(range.unit).toLowerCase() === 'rpm' ? 100 : 1);
+  const radius = fineStep * (String(range.unit).toLowerCase() === 'rpm' ? 3 : 5);
+  const lower = Math.max(range.min, center - radius);
+  const upper = Math.min(range.max, center + radius);
+  const existing = new Set(existingSteps.map((value) => Math.round(value)));
+  const refined: number[] = [];
+  for (let value = lower; value <= upper; value += fineStep) {
+    const rounded = Math.round(value);
+    if (rounded !== Math.round(center) && !existing.has(rounded)) refined.push(rounded);
+  }
+  return refined;
 }
 
 const MIN_DB = -100;
@@ -185,24 +242,31 @@ export class NoiseMeter {
   private closed = false;
 
   static async listMicrophones(): Promise<MicrophoneOption[]> {
-    if (!navigator.mediaDevices?.getUserMedia) throw new Error('media-devices-unavailable');
-    const probe = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    const mediaDevices = navigator.mediaDevices;
+    if (!mediaDevices?.enumerateDevices) throw new Error('media-devices-unavailable');
+    let devices = await mediaDevices.enumerateDevices();
+    let probe: MediaStream | null = null;
     try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      return devices.filter((device) => device.kind === 'audioinput' && device.deviceId).map((device, index) => ({
-        deviceId: device.deviceId,
-        label: device.label || `Microphone ${index + 1}`,
-      }));
+      probe = await mediaDevices.getUserMedia({ audio: true, video: false });
+      devices = await mediaDevices.enumerateDevices();
+    } catch {
+      // Keep the pre-permission device list; opening the selected input will
+      // request permission again from the user's direct Start action.
     } finally {
-      probe.getTracks().forEach((track) => track.stop());
+      probe?.getTracks().forEach((track) => track.stop());
     }
+    const options = devices.filter((device) => device.kind === 'audioinput').map((device, index) => ({
+      deviceId: device.deviceId || 'default',
+      label: device.label || `Microphone ${index + 1}`,
+    }));
+    return [...new Map(options.map((option) => [option.deviceId, option])).values()];
   }
 
   static async open(deviceId?: string): Promise<NoiseMeter> {
     const meter = new NoiseMeter();
     const media = await navigator.mediaDevices.getUserMedia({
       audio: {
-        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+        ...(deviceId && deviceId !== 'default' ? { deviceId: { exact: deviceId } } : {}),
         echoCancellation: false,
         noiseSuppression: false,
         autoGainControl: false,

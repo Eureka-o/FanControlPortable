@@ -230,6 +230,10 @@ export function ResumeUpdateDownload() {
   return window['go']['main']['App']['ResumeUpdateDownload']();
 }
 
+export function SaveAxisNoiseProfile(arg1) {
+  return window['go']['main']['App']['SaveAxisNoiseProfile'](arg1);
+}
+
 export function SaveDeviceProfile(arg1, arg2) {
   return window['go']['main']['App']['SaveDeviceProfile'](arg1, arg2);
 }

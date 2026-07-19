@@ -85,6 +85,7 @@ const (
 	ReqEndNoiseDiagnostic                RequestType = "EndNoiseDiagnostic"
 	ReqCancelNoiseDiagnostic             RequestType = "CancelNoiseDiagnostic"
 	ReqSaveNoiseDiagnosticResult         RequestType = "SaveNoiseDiagnosticResult"
+	ReqSaveAxisNoiseProfile              RequestType = "SaveAxisNoiseProfile"
 
 	// 温度相关
 	ReqGetTemperature               RequestType = "GetTemperature"
@@ -299,6 +300,31 @@ func (s *Server) closeClient(state *clientState) {
 	})
 }
 
+func (s *Server) handleRequest(state *clientState, req Request) {
+	resp := s.handler(req)
+	if resp.ProtocolVersion == "" {
+		resp.ProtocolVersion = currentProtocolVersion
+	}
+	if resp.RequestID == "" {
+		resp.RequestID = req.RequestID
+	}
+	if resp.Timestamp == 0 {
+		resp.Timestamp = time.Now().UnixMilli()
+	}
+	resp.IsResponse = true
+
+	respBytes, err := json.Marshal(resp)
+	if err != nil {
+		s.logError("序列化响应失败: %v", err)
+		return
+	}
+	select {
+	case state.writeCh <- append(respBytes, '\n'):
+	case <-state.closed:
+		s.logDebug("IPC 客户端已断开，响应已丢弃: request=%s", req.RequestID)
+	}
+}
+
 // handleClient 处理客户端连接
 func (s *Server) handleClient(conn net.Conn, state *clientState) {
 	defer func() {
@@ -331,32 +357,13 @@ func (s *Server) handleClient(conn net.Conn, state *clientState) {
 			req.Timestamp = time.Now().UnixMilli()
 		}
 		s.logDebug("IPC 请求[%s]: %s", req.RequestID, req.Type)
-		resp := s.handler(req)
-		if resp.ProtocolVersion == "" {
-			resp.ProtocolVersion = currentProtocolVersion
-		}
-		if resp.RequestID == "" {
-			resp.RequestID = req.RequestID
-		}
-		if resp.Timestamp == 0 {
-			resp.Timestamp = time.Now().UnixMilli()
-		}
-		resp.IsResponse = true
-
-		respBytes, err := json.Marshal(resp)
-		if err != nil {
-			s.logError("序列化响应失败: %v", err)
+		// Target settling is long-running; keep this reader free so cancellation
+		// can close the diagnostic lease on the same connection.
+		if req.Type == ReqSetNoiseDiagnosticTarget {
+			go s.handleRequest(state, req)
 			continue
 		}
-
-		if _, err := conn.Write(append(respBytes, '\n')); err != nil {
-			if isClosedConnectionError(err) {
-				s.logDebug("IPC 客户端已断开，响应已丢弃: %v", err)
-			} else {
-				s.logError("发送响应失败: %v", err)
-			}
-			return
-		}
+		s.handleRequest(state, req)
 	}
 }
 
@@ -876,6 +883,10 @@ type NoiseDiagnosticSessionParams struct {
 
 type SaveNoiseDiagnosticResultParams struct {
 	Result types.NoiseDiagnosticResult `json:"result"`
+}
+
+type SaveAxisNoiseProfileParams struct {
+	Profile types.AxisNoiseProfile `json:"profile"`
 }
 
 // SetActiveFanCurveProfileParams 设置激活曲线方案参数

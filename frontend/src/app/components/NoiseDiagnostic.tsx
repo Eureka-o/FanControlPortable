@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { types } from '../../../wailsjs/go/models';
 import { apiService } from '../services/api';
-import { buildDiagnosticSteps, deriveNoiseDiagnosticRange, NoiseMeter, analyzeNoiseDiagnostic, type NoiseDiagnosticPoint } from '../lib/noise-diagnostic';
+import { buildDiagnosticSteps, deriveNoiseDiagnosticRange, fanSpeedDisplaySuffix, NoiseMeter, analyzeNoiseDiagnostic, type NoiseDiagnosticPoint } from '../lib/noise-diagnostic';
 import { Badge, Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, NumberInput, Select } from './ui/index';
 
 type Phase = 'setup' | 'confirm' | 'running' | 'result';
@@ -91,9 +91,12 @@ export default function NoiseDiagnostic({
     void NoiseMeter.listMicrophones().then((options) => {
       if (!alive) return;
       setMicrophones(options);
-      setSelectedMicrophone((current) => current || options[0]?.deviceId || '');
+      setSelectedMicrophone((current) => options.some((option) => option.deviceId === current) ? current : options[0]?.deviceId || '');
     }).catch(() => {
-      if (alive) setMicrophones([]);
+      if (alive) {
+        setMicrophones([]);
+        setSelectedMicrophone('');
+      }
     }).finally(() => {
       if (alive) setMicrophoneLoading(false);
     });
@@ -282,8 +285,8 @@ export default function NoiseDiagnostic({
             </div>
             {range ? (
               <div className="grid gap-3 md:grid-cols-2">
-                <NumberInput label={t('noiseDiagnostic.min')} value={range.min} onChange={(value) => setRange({ ...range, min: Math.max(derivedRange?.min || range.min, Math.min(value, range.max - 1)) })} min={derivedRange?.min} max={range.max - 1} step={range.step} suffix={range.unit.toUpperCase()} />
-                <NumberInput label={t('noiseDiagnostic.max')} value={range.max} onChange={(value) => setRange({ ...range, max: Math.min(derivedRange?.max || range.max, Math.max(value, range.min + 1)) })} min={range.min + 1} max={derivedRange?.max} step={range.step} suffix={range.unit.toUpperCase()} />
+                <NumberInput label={t('noiseDiagnostic.min')} value={range.min} onChange={(value) => setRange({ ...range, min: Math.max(derivedRange?.min || range.min, Math.min(value, range.max - 1)) })} min={derivedRange?.min} max={range.max - 1} step={range.step} suffix={fanSpeedDisplaySuffix(range.unit)} />
+                <NumberInput label={t('noiseDiagnostic.max')} value={range.max} onChange={(value) => setRange({ ...range, max: Math.min(derivedRange?.max || range.max, Math.max(value, range.min + 1)) })} min={range.min + 1} max={derivedRange?.max} step={range.step} suffix={fanSpeedDisplaySuffix(range.unit)} />
               </div>
             ) : (
               <div className="rounded-xl border border-dashed border-border/70 px-3 py-4 text-sm text-muted-foreground">{t('noiseDiagnostic.errors.unavailable')}</div>
@@ -297,7 +300,7 @@ export default function NoiseDiagnostic({
               placeholder={microphoneLoading ? t('noiseDiagnostic.loadingMicrophones') : t('noiseDiagnostic.noMicrophone')}
               className="w-full"
             />
-            {range && <div className="text-xs text-muted-foreground">{t('noiseDiagnostic.bounds', { min: range.min, max: range.max, unit: range.unit.toUpperCase() })}</div>}
+            {range && <div className="text-xs text-muted-foreground">{t('noiseDiagnostic.bounds', { min: range.min, max: range.max, unit: fanSpeedDisplaySuffix(range.unit) })}</div>}
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-xs leading-relaxed text-amber-800 dark:text-amber-200">{t('noiseDiagnostic.disclaimer')}</div>
             <DialogFooter>
               <Button variant="secondary" size="sm" onClick={() => handleOpenChange(false)} icon={<X className="h-3.5 w-3.5" />}>{t('common.actions.cancel')}</Button>
@@ -325,11 +328,11 @@ export default function NoiseDiagnostic({
             <div className="flex items-center justify-between text-sm"><span>{t('noiseDiagnostic.progress')}</span><span className="font-semibold tabular-nums">{progress}%</span></div>
             <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${progress}%` }} /></div>
             <div className="grid grid-cols-2 gap-3 text-center">
-              <div className="rounded-xl border border-border/70 bg-muted/20 p-3"><div className="text-xs text-muted-foreground">{t('noiseDiagnostic.currentTarget')}</div><div className="mt-1 text-xl font-semibold tabular-nums">{currentTarget ?? '--'} {range?.unit.toUpperCase()}</div></div>
+              <div className="rounded-xl border border-border/70 bg-muted/20 p-3"><div className="text-xs text-muted-foreground">{t('noiseDiagnostic.currentTarget')}</div><div className="mt-1 text-xl font-semibold tabular-nums">{currentTarget ?? '--'} {fanSpeedDisplaySuffix(range?.unit)}</div></div>
               <div className="rounded-xl border border-border/70 bg-muted/20 p-3"><div className="text-xs text-muted-foreground">{t('noiseDiagnostic.samples')}</div><div className="mt-1 text-xl font-semibold tabular-nums">{points.length}</div></div>
             </div>
             <div className="max-h-48 space-y-2 overflow-y-auto rounded-xl border border-border/70 p-3">
-              {points.map((point) => <div key={`${point.actual}-${point.requested}`} className="flex items-center justify-between text-xs"><span className="tabular-nums">{point.actual} {range?.unit.toUpperCase()}</span><span className={point.valid ? 'text-foreground' : 'text-amber-600'}>{point.valid ? formatDb(point.levelDb) : t('noiseDiagnostic.invalidSample')}</span></div>)}
+              {points.map((point) => <div key={`${point.actual}-${point.requested}`} className="flex items-center justify-between text-xs"><span className="tabular-nums">{point.actual} {fanSpeedDisplaySuffix(range?.unit)}</span><span className={point.valid ? 'text-foreground' : 'text-amber-600'}>{point.valid ? formatDb(point.levelDb) : t('noiseDiagnostic.invalidSample')}</span></div>)}
             </div>
             <DialogFooter><Button variant="danger" size="sm" onClick={() => void cancelDiagnostic()} icon={<Pause className="h-3.5 w-3.5" />}>{t('noiseDiagnostic.cancel')}</Button></DialogFooter>
           </div>
@@ -339,8 +342,8 @@ export default function NoiseDiagnostic({
           <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-4">
               <div className="rounded-xl border border-border/70 bg-muted/20 p-3"><div className="text-xs text-muted-foreground">{t('noiseDiagnostic.rise')}</div><div className="mt-1 text-xl font-semibold">{formatDb(result.riseDb)}</div></div>
-              <div className="rounded-xl border border-border/70 bg-muted/20 p-3"><div className="text-xs text-muted-foreground">{t('noiseDiagnostic.knee')}</div><div className="mt-1 text-xl font-semibold">{result.knee} {result.unit.toUpperCase()}</div></div>
-              <div className="rounded-xl border border-border/70 bg-muted/20 p-3"><div className="text-xs text-muted-foreground">{t('noiseDiagnostic.peak')}</div><div className="mt-1 text-xl font-semibold">{result.suspectedPeak ? `${result.suspectedPeak} ${result.unit.toUpperCase()}` : '--'}</div></div>
+              <div className="rounded-xl border border-border/70 bg-muted/20 p-3"><div className="text-xs text-muted-foreground">{t('noiseDiagnostic.knee')}</div><div className="mt-1 text-xl font-semibold">{result.knee} {fanSpeedDisplaySuffix(result.unit)}</div></div>
+              <div className="rounded-xl border border-border/70 bg-muted/20 p-3"><div className="text-xs text-muted-foreground">{t('noiseDiagnostic.peak')}</div><div className="mt-1 text-xl font-semibold">{result.suspectedPeak ? `${result.suspectedPeak} ${fanSpeedDisplaySuffix(result.unit)}` : '--'}</div></div>
               <div className="rounded-xl border border-border/70 bg-muted/20 p-3"><div className="text-xs text-muted-foreground">{t('noiseDiagnostic.confidence')}</div><div className="mt-1 text-xl font-semibold capitalize">{result.confidence}</div></div>
             </div>
             <div className="space-y-2 rounded-xl border border-border/70 p-3">

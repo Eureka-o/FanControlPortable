@@ -476,6 +476,13 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					}
 				}
 
+				rawAxisNoiseTarget := targetRPM
+				axisNoiseAdjusted := false
+				if adjustedTarget, adjusted := axisNoiseTargetForDevice(cfg, a.activeDeviceCurveScopeKey(cfg), targetRPM, prevTargetRPM, speedUnit); adjusted {
+					targetRPM = min(adjustedTarget, curveMaxRPM)
+					axisNoiseAdjusted = targetRPM != rawAxisNoiseTarget
+				}
+
 				targetLimited := false
 				requestedTargetRPM := targetRPM
 				targetRPM, targetLimited = applyFlyDigiRuntimeCapabilityToTarget(targetRPM, fanData, speedUnit)
@@ -502,7 +509,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					}
 				}
 
-				if smartCfg.Learning && advancedSampleUsable && !predictionActive && !targetLimited && !a.noiseDiagnosticLeaseActive() {
+				if smartCfg.Learning && advancedSampleUsable && !predictionActive && !targetLimited && !axisNoiseAdjusted && !a.noiseDiagnosticLeaseActive() {
 					steady := steadyObserver.ObserveWithEffectivePowerAt(now, controlTemp, observedRPM, effectivePower, controlCurve, smartCfg)
 					if steady.BucketIdx >= 0 && smartcontrol.AllowsLongTermOffsetLearning(steady, smartCfg) {
 						newOffsets, changed := learnSteadyOffsetForActiveUnit(steady.BucketIdx, steady.MeanTemp, steady.MeanPower, steady.HavePower, steady.LocalEff, steady.HaveEff, cfg.FanCurve, smartCfg.LearnedOffsets, smartCfg, speedUnit)

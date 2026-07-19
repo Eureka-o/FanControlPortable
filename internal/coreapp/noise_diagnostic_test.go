@@ -43,6 +43,30 @@ func TestNoiseDiagnosticLeaseExpires(t *testing.T) {
 	}
 }
 
+func TestNoiseDiagnosticActualSpeedKeepsPercentInDisplayUnits(t *testing.T) {
+	fanData := &types.FanData{CurrentRPM: 2400, TargetRPM: 79}
+	if got := noiseDiagnosticActualSpeed(fanData, types.FanSpeedUnitPercent); got != 79 {
+		t.Fatalf("percent target = %d; want 79", got)
+	}
+	if got := noiseDiagnosticActualSpeed(fanData, types.FanSpeedUnitRPM); got != 2400 {
+		t.Fatalf("RPM actual = %d; want 2400", got)
+	}
+}
+
+func TestNoiseDiagnosticSettleOutcomeKeepsLastValidRPMOnTimeout(t *testing.T) {
+	actual, reason, err := noiseDiagnosticSettleOutcome(1000, 1400, 0, 0, types.FanSpeedUnitRPM)
+	if err != nil || actual != 1400 || reason != "timeout-fallback" {
+		t.Fatalf("outcome = actual %d, reason %q, error %v; want 1400, timeout-fallback, nil", actual, reason, err)
+	}
+	if _, _, err := noiseDiagnosticSettleOutcome(1000, 0, 0, 0, types.FanSpeedUnitRPM); err == nil {
+		t.Fatal("missing RPM telemetry unexpectedly succeeded")
+	}
+	actual, reason, err = noiseDiagnosticSettleOutcome(5, 0, 0, 0, types.FanSpeedUnitPercent)
+	if err != nil || actual != 5 || reason != "command-accepted" {
+		t.Fatalf("percent outcome = actual %d, reason %q, error %v; want 5, command-accepted, nil", actual, reason, err)
+	}
+}
+
 func TestNoiseDiagnosticResultNormalizationBeforePersistence(t *testing.T) {
 	result, changed := types.NormalizeNoiseDiagnosticResult(types.NoiseDiagnosticResult{
 		Unit: "rpm",
@@ -57,5 +81,26 @@ func TestNoiseDiagnosticResultNormalizationBeforePersistence(t *testing.T) {
 	}
 	if result.Points[0].Actual != 1000 || result.Points[1].Actual != 2000 {
 		t.Fatalf("result points not sorted: %#v", result.Points)
+	}
+}
+
+func TestAxisNoiseAvoidanceUsesOnlyActiveDeviceProfile(t *testing.T) {
+	profile := types.AxisNoiseProfile{
+		DeviceKey: "hid::flydigi.bs3",
+		Unit:      types.FanSpeedUnitRPM,
+		Enabled:   true,
+		Range:     types.NoiseDiagnosticRange{Unit: types.FanSpeedUnitRPM, Min: 1000, Max: 3600, Step: 100},
+		Zones:     []types.AxisNoiseZone{{Min: 1900, Max: 2200, Severity: types.AxisNoiseSeverityObvious}},
+	}
+	cfg := types.GetDefaultConfig(false)
+	cfg.AxisNoiseProfilesByDevice = map[string]types.AxisNoiseProfile{profile.DeviceKey: profile}
+
+	adjusted, changed := axisNoiseTargetForDevice(cfg, profile.DeviceKey, 2050, -1, types.FanSpeedUnitRPM)
+	if !changed || adjusted <= 2050 {
+		t.Fatalf("active device target = %d, changed=%v; want upward soft avoidance", adjusted, changed)
+	}
+	unchanged, changed := axisNoiseTargetForDevice(cfg, "ble::flydigi.bs1", 2050, -1, types.FanSpeedUnitRPM)
+	if changed || unchanged != 2050 {
+		t.Fatalf("other device target = %d, changed=%v; want unchanged", unchanged, changed)
 	}
 }

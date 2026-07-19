@@ -25,7 +25,7 @@ func (a *App) BeginNoiseDiagnostic(request types.NoiseDiagnosticBeginRequest) (t
 }
 
 func (a *App) SetNoiseDiagnosticTarget(sessionID string, value int) (types.NoiseDiagnosticTargetResult, error) {
-	resp, err := a.sendRequestWithTimeout(ipc.ReqSetNoiseDiagnosticTarget, ipc.SetNoiseDiagnosticTargetParams{SessionID: sessionID, Value: value}, 5*time.Second)
+	resp, err := a.sendRequestWithTimeout(ipc.ReqSetNoiseDiagnosticTarget, ipc.SetNoiseDiagnosticTargetParams{SessionID: sessionID, Value: value}, 30*time.Second)
 	if err != nil {
 		return types.NoiseDiagnosticTargetResult{}, err
 	}
@@ -67,4 +67,19 @@ func (a *App) SaveNoiseDiagnosticResult(result types.NoiseDiagnosticResult) erro
 		return fmt.Errorf("%s", resp.Error)
 	}
 	return nil
+}
+
+func (a *App) SaveAxisNoiseProfile(profile types.AxisNoiseProfile) (types.AxisNoiseProfile, error) {
+	resp, err := a.sendRequestWithTimeout(ipc.ReqSaveAxisNoiseProfile, ipc.SaveAxisNoiseProfileParams{Profile: profile}, 3*time.Second)
+	if err != nil {
+		return types.AxisNoiseProfile{}, err
+	}
+	if !resp.Success {
+		return types.AxisNoiseProfile{}, fmt.Errorf("%s", resp.Error)
+	}
+	var saved types.AxisNoiseProfile
+	if err := json.Unmarshal(resp.Data, &saved); err != nil {
+		return types.AxisNoiseProfile{}, err
+	}
+	return saved, nil
 }

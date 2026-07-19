@@ -430,6 +430,92 @@ func TestStopDoesNotHoldServerMutexWhileClientCloseWaits(t *testing.T) {
 	}
 }
 
+func TestNoiseDiagnosticCancelIsHandledWhileTargetWaits(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+
+	targetStarted := make(chan struct{})
+	releaseTarget := make(chan struct{})
+	defer func() {
+		select {
+		case <-releaseTarget:
+		default:
+			close(releaseTarget)
+		}
+	}()
+	cancelHandled := make(chan struct{})
+	server := NewServer(func(req Request) Response {
+		switch req.Type {
+		case ReqSetNoiseDiagnosticTarget:
+			close(targetStarted)
+			<-releaseTarget
+		case ReqCancelNoiseDiagnostic:
+			close(cancelHandled)
+		}
+		return Response{Success: true}
+	}, nil)
+	server.running.Store(true)
+	state := &clientState{
+		conn:    serverConn,
+		writeCh: make(chan []byte, clientWriteQueueSize),
+		closed:  make(chan struct{}),
+	}
+	go server.clientWriter(state)
+	go server.handleClient(serverConn, state)
+
+	writeRequest := func(req Request) error {
+		payload, err := json.Marshal(req)
+		if err != nil {
+			return err
+		}
+		if _, err := clientConn.Write(append(payload, '\n')); err != nil {
+			return err
+		}
+		return nil
+	}
+	if err := writeRequest(Request{RequestID: "target", Type: ReqSetNoiseDiagnosticTarget}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-targetStarted:
+	case <-time.After(time.Second):
+		t.Fatal("target request did not start")
+	}
+	writeDone := make(chan error, 1)
+	go func() {
+		writeDone <- writeRequest(Request{RequestID: "cancel", Type: ReqCancelNoiseDiagnostic})
+	}()
+	select {
+	case <-cancelHandled:
+	case <-time.After(time.Second):
+		t.Fatal("cancel request waited behind target settling")
+	}
+	if err := <-writeDone; err != nil {
+		t.Fatal(err)
+	}
+
+	reader := bufio.NewReader(clientConn)
+	readResponseID := func() string {
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			t.Fatal(err)
+		}
+		var response Response
+		if err := json.Unmarshal(line, &response); err != nil {
+			t.Fatal(err)
+		}
+		return response.RequestID
+	}
+	if got := readResponseID(); got != "cancel" {
+		t.Fatalf("first response = %q; want cancel", got)
+	}
+	close(releaseTarget)
+	if got := readResponseID(); got != "target" {
+		t.Fatalf("second response = %q; want target", got)
+	}
+	server.running.Store(false)
+}
+
 func TestEventHandlerConcurrentUpdate(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer serverConn.Close()
