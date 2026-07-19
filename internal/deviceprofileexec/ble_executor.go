@@ -24,6 +24,16 @@ type BLEClient interface {
 	Close() error
 }
 
+// BLEAddressProvider lets native clients expose the address used for a
+// successful connection so BS1 can try direct recovery before scanning.
+type BLEAddressProvider interface {
+	BLEAddress() string
+}
+
+type BLENotificationConsumer interface {
+	SetBLENotificationCallback(func([]byte))
+}
+
 type BLEConnector interface {
 	ConnectBLEDevice(ctx context.Context, profile types.DeviceProfile) (BLEClient, error)
 }
@@ -61,7 +71,10 @@ type BLEExecutor struct {
 	now       func() time.Time
 	sleep     func(context.Context, time.Duration) error
 
-	heartbeatStop chan struct{}
+	heartbeatStop      chan struct{}
+	connectionLost     func()
+	notificationUpdate func(*types.FanData)
+	lastAddress        string
 }
 
 func NewBLEExecutor(profile types.DeviceProfile, connector BLEConnector) (*BLEExecutor, error) {
@@ -100,6 +113,24 @@ func (e *BLEExecutor) Profile() types.DeviceProfile {
 	return e.profile
 }
 
+func (e *BLEExecutor) SetConnectionLostCallback(callback func()) {
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	e.connectionLost = callback
+}
+
+func (e *BLEExecutor) SetNotificationCallback(callback func(*types.FanData)) {
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	e.notificationUpdate = callback
+}
+
+func (e *BLEExecutor) IsConnected() bool {
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	return e.client != nil
+}
+
 func (e *BLEExecutor) Open(ctx context.Context) (*types.FanData, error) {
 	e.mutex.Lock()
 	defer e.mutex.Unlock()
@@ -125,6 +156,8 @@ func (e *BLEExecutor) Close() error {
 	defer e.mutex.Unlock()
 
 	e.stopHeartbeatLocked()
+	e.connectionLost = nil
+	e.notificationUpdate = nil
 	if e.client == nil {
 		return nil
 	}
@@ -439,13 +472,35 @@ func (e *BLEExecutor) ensureOpenLocked(ctx context.Context) error {
 	if e.client != nil {
 		return nil
 	}
-	opCtx, cancel := e.operationContext(ctx)
-	defer cancel()
-	client, err := e.connector.ConnectBLEDevice(opCtx, e.profile)
+	connectProfile := e.profile
+	cachedAddress := strings.TrimSpace(e.lastAddress)
+	if e.profile.ID == types.FlyDigiBS1ProfileID && cachedAddress != "" {
+		connectProfile.Connection.Endpoint = cachedAddress
+	}
+	connect := func(profile types.DeviceProfile) (BLEClient, error) {
+		opCtx, cancel := e.operationContext(ctx)
+		defer cancel()
+		return e.connector.ConnectBLEDevice(opCtx, profile)
+	}
+	client, err := connect(connectProfile)
+	if err != nil && cachedAddress != "" {
+		// Windows can assign a new address after a device reset; fall back to
+		// the normal profile scan after invalidating only this runtime hint.
+		e.lastAddress = ""
+		client, err = connect(e.profile)
+	}
 	if err != nil {
 		return err
 	}
 	e.client = client
+	if addressClient, ok := client.(BLEAddressProvider); ok {
+		if address := strings.TrimSpace(addressClient.BLEAddress()); address != "" {
+			e.lastAddress = address
+		}
+	}
+	if notificationClient, ok := client.(BLENotificationConsumer); ok && e.profile.ID == types.FlyDigiBS1ProfileID {
+		notificationClient.SetBLENotificationCallback(e.handleBS1Notification)
+	}
 	e.startBS1HeartbeatLocked()
 	return nil
 }
@@ -484,10 +539,34 @@ func (e *BLEExecutor) bs1HeartbeatLoop(stop <-chan struct{}) {
 			default:
 			}
 			if err := e.writeHeartbeat(context.Background(), commands[index%len(commands)]); err != nil {
+				e.notifyConnectionLost()
 				return
 			}
 			index++
 		}
+	}
+}
+
+func (e *BLEExecutor) notifyConnectionLost() {
+	e.mutex.Lock()
+	callback := e.connectionLost
+	e.mutex.Unlock()
+	if callback != nil {
+		callback()
+	}
+}
+
+func (e *BLEExecutor) handleBS1Notification(body []byte) {
+	state, ok := parseFlyDigiBS1Notification(body)
+	if !ok {
+		return
+	}
+	e.mutex.Lock()
+	e.lastState = cloneFanData(state)
+	callback := e.notificationUpdate
+	e.mutex.Unlock()
+	if callback != nil {
+		callback(state)
 	}
 }
 
@@ -585,6 +664,7 @@ func (c DefaultBLEConnector) ConnectBLEDevice(ctx context.Context, profile types
 		_ = device.Disconnect()
 		return nil, err
 	}
+	client.address = address.String()
 	return client, nil
 }
 
@@ -626,10 +706,13 @@ func parseBluetoothAddress(value string) (bluetooth.Address, error) {
 
 type realBLEClient struct {
 	device               bluetooth.Device
+	address              string
 	writeChar            *bluetooth.DeviceCharacteristic
 	readChar             *bluetooth.DeviceCharacteristic
 	notifications        chan []byte
 	notificationsEnabled bool
+	notificationMutex    sync.RWMutex
+	notificationCallback func([]byte)
 }
 
 func discoverBLEClient(device bluetooth.Device, profile types.DeviceProfile) (*realBLEClient, error) {
@@ -766,6 +849,16 @@ func (c *realBLEClient) Close() error {
 	return c.device.Disconnect()
 }
 
+func (c *realBLEClient) BLEAddress() string {
+	return c.address
+}
+
+func (c *realBLEClient) SetBLENotificationCallback(callback func([]byte)) {
+	c.notificationMutex.Lock()
+	defer c.notificationMutex.Unlock()
+	c.notificationCallback = callback
+}
+
 func (c *realBLEClient) enqueueNotification(buf []byte) {
 	frame := append([]byte(nil), buf...)
 	select {
@@ -776,6 +869,12 @@ func (c *realBLEClient) enqueueNotification(buf []byte) {
 		default:
 		}
 		c.notifications <- frame
+	}
+	c.notificationMutex.RLock()
+	callback := c.notificationCallback
+	c.notificationMutex.RUnlock()
+	if callback != nil {
+		callback(frame)
 	}
 }
 

@@ -335,6 +335,9 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			}
 			controlReady := a.deviceControlReady()
 			if applySafetyFallback && controlReady {
+				if a.noiseDiagnosticLeaseActive() {
+					a.cancelNoiseDiagnosticLease("温度遥测安全回退")
+				}
 				speedUnit = a.activeDeviceSpeedUnit(&cfg)
 				target := temperatureSafetyFallbackTarget(cfg.FanCurve, speedUnit, fanData)
 				if target > 0 {
@@ -487,7 +490,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				if targetRPM > 0 {
 					forceSend = a.forceNextAutoTarget.Swap(false)
 				}
-				if targetRPM > 0 && (forceSend || shouldSendTargetSpeed(targetRPM, prevTargetRPM, smartCfg.MinRPMChange, fanData, speedUnit)) {
+				if targetRPM > 0 && !a.noiseDiagnosticLeaseActive() && (forceSend || shouldSendTargetSpeed(targetRPM, prevTargetRPM, smartCfg.MinRPMChange, fanData, speedUnit)) {
 					if a.deviceManager.SetTargetSpeed(targetRPM, speedUnit) {
 						lastTargetRPM = targetRPM
 						if a.deviceManager.GetDeviceType() == types.DeviceTransportWiFi {
@@ -499,7 +502,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					}
 				}
 
-				if smartCfg.Learning && advancedSampleUsable && !predictionActive && !targetLimited {
+				if smartCfg.Learning && advancedSampleUsable && !predictionActive && !targetLimited && !a.noiseDiagnosticLeaseActive() {
 					steady := steadyObserver.ObserveWithEffectivePowerAt(now, controlTemp, observedRPM, effectivePower, controlCurve, smartCfg)
 					if steady.BucketIdx >= 0 && smartcontrol.AllowsLongTermOffsetLearning(steady, smartCfg) {
 						newOffsets, changed := learnSteadyOffsetForActiveUnit(steady.BucketIdx, steady.MeanTemp, steady.MeanPower, steady.HavePower, steady.LocalEff, steady.HaveEff, cfg.FanCurve, smartCfg.LearnedOffsets, smartCfg, speedUnit)

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { HistorySeriesKey } from '../lib/temperature-history';
 
 export const HISTORY_SERIES_ORDER: HistorySeriesKey[] = ['cpu', 'gpu', 'fan', 'cpuPower', 'gpuPower', 'totalPower'];
@@ -9,6 +9,7 @@ export type HistorySeriesVisibility = Record<HistorySeriesKey, boolean>;
 
 export interface HistoryDisplayPreferences {
   visible: HistorySeriesVisibility;
+  homeVisible: HistorySeriesVisibility;
   order: HistorySeriesKey[];
   showStatistics: boolean;
 }
@@ -39,6 +40,18 @@ export function normalizeHistoryDisplayPreferences(input?: Partial<HistoryDispla
     }
   }
 
+  const homeVisible = { ...DEFAULT_VISIBILITY };
+  const homeVisibilityInput = input?.homeVisible && typeof input.homeVisible === 'object'
+    ? input.homeVisible
+    : input?.visible;
+  if (homeVisibilityInput && typeof homeVisibilityInput === 'object') {
+    for (const key of HISTORY_SERIES_ORDER) {
+      if (typeof homeVisibilityInput[key] === 'boolean') {
+        homeVisible[key] = homeVisibilityInput[key];
+      }
+    }
+  }
+
   const order = Array.isArray(input?.order)
     ? input.order.filter(isHistorySeriesKey)
     : [];
@@ -51,6 +64,7 @@ export function normalizeHistoryDisplayPreferences(input?: Partial<HistoryDispla
 
   return {
     visible,
+    homeVisible,
     order: uniqueOrder,
     showStatistics: typeof input?.showStatistics === 'boolean' ? input.showStatistics : true,
   };
@@ -81,12 +95,17 @@ function writeHistoryDisplayPreferences(preferences: HistoryDisplayPreferences) 
 
 export function useHistoryDisplayPreferences() {
   const [preferences, setPreferences] = useState<HistoryDisplayPreferences>(() => readHistoryDisplayPreferences());
+  const preferencesRef = useRef(preferences);
 
   useEffect(() => {
-    const syncFromStorage = () => setPreferences(readHistoryDisplayPreferences());
+    const applyPreferences = (next: HistoryDisplayPreferences) => {
+      preferencesRef.current = next;
+      setPreferences(next);
+    };
+    const syncFromStorage = () => applyPreferences(readHistoryDisplayPreferences());
     const syncFromEvent = (event: Event) => {
       const detail = (event as CustomEvent<HistoryDisplayPreferences>).detail;
-      setPreferences(normalizeHistoryDisplayPreferences(detail));
+      applyPreferences(normalizeHistoryDisplayPreferences(detail));
     };
 
     window.addEventListener('storage', syncFromStorage);
@@ -98,11 +117,10 @@ export function useHistoryDisplayPreferences() {
   }, []);
 
   const updatePreferences = useCallback((updater: (current: HistoryDisplayPreferences) => HistoryDisplayPreferences) => {
-    setPreferences((current) => {
-      const next = normalizeHistoryDisplayPreferences(updater(current));
-      writeHistoryDisplayPreferences(next);
-      return next;
-    });
+    const next = normalizeHistoryDisplayPreferences(updater(preferencesRef.current));
+    preferencesRef.current = next;
+    setPreferences(next);
+    writeHistoryDisplayPreferences(next);
   }, []);
 
   const setSeriesVisible = useCallback((series: HistorySeriesKey, visible: boolean) => {
@@ -121,6 +139,26 @@ export function useHistoryDisplayPreferences() {
       visible: {
         ...current.visible,
         [series]: !current.visible[series],
+      },
+    }));
+  }, [updatePreferences]);
+
+  const setHomeSeriesVisible = useCallback((series: HistorySeriesKey, visible: boolean) => {
+    updatePreferences((current) => ({
+      ...current,
+      homeVisible: {
+        ...current.homeVisible,
+        [series]: visible,
+      },
+    }));
+  }, [updatePreferences]);
+
+  const toggleHomeSeriesVisible = useCallback((series: HistorySeriesKey) => {
+    updatePreferences((current) => ({
+      ...current,
+      homeVisible: {
+        ...current.homeVisible,
+        [series]: !current.homeVisible[series],
       },
     }));
   }, [updatePreferences]);
@@ -166,12 +204,15 @@ export function useHistoryDisplayPreferences() {
     preferences,
     orderedSeries: preferences.order,
     seriesVisibility: preferences.visible,
+    homeSeriesVisibility: preferences.homeVisible,
     setSeriesVisible,
     toggleSeriesVisible,
+    setHomeSeriesVisible,
+    toggleHomeSeriesVisible,
     moveSeries,
     reorderSeries,
     resetPreferences,
     showStatistics: preferences.showStatistics,
     setShowStatistics,
-  }), [moveSeries, preferences, reorderSeries, resetPreferences, setSeriesVisible, setShowStatistics, toggleSeriesVisible]);
+  }), [moveSeries, preferences, reorderSeries, resetPreferences, setHomeSeriesVisible, setSeriesVisible, setShowStatistics, toggleHomeSeriesVisible, toggleSeriesVisible]);
 }

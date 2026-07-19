@@ -20,7 +20,7 @@ import {
 import { types } from '../../../wailsjs/go/models';
 import { apiService } from '../services/api';
 import { useTemperatureHistory } from '../hooks/useTemperatureHistory';
-import { useHistoryDisplayPreferences } from '../hooks/useHistoryDisplayPreferences';
+import { HISTORY_SERIES_ORDER, useHistoryDisplayPreferences } from '../hooks/useHistoryDisplayPreferences';
 import { type HistorySeriesKey, type TemperatureHistoryPoint } from '../lib/temperature-history';
 import {
   clampFanSpeedToRange,
@@ -141,6 +141,14 @@ const GPU_TEMP_STROKE = 'var(--chart-gpu-temperature)';
 const FAN_SPEED_STROKE = 'var(--chart-fan-speed)';
 const CPU_POWER_STROKE = 'var(--chart-cpu-power)';
 const GPU_POWER_STROKE = 'var(--chart-gpu-power)';
+const TOTAL_POWER_STROKE = 'var(--chart-primary)';
+
+const getAvailableTotalPowerWatts = (point: TemperatureHistoryPoint) => {
+  const cpu = Number(point.cpuPowerWatts || 0);
+  const gpu = Number(point.gpuPowerWatts || 0);
+  const total = (Number.isFinite(cpu) && cpu > 0 ? cpu : 0) + (Number.isFinite(gpu) && gpu > 0 ? gpu : 0);
+  return total > 0 ? Math.round(total * 10) / 10 : 0;
+};
 
 type HistoryPathMap = Partial<Record<HistorySeriesKey, string>>;
 
@@ -517,6 +525,9 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
       if (visibleSeries.gpuPower) {
         maxPower = Math.max(maxPower, Number(point.gpuPowerWatts || 0));
       }
+      if (visibleSeries.totalPower) {
+        maxPower = Math.max(maxPower, getAvailableTotalPowerWatts(point));
+      }
     }
 
     const hasPower = maxPower > 0;
@@ -556,6 +567,7 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
       fan: buildPath((point) => Number(point.fanRpm || 0), yForFan),
       cpuPower: buildPath((point) => Number(point.cpuPowerWatts || 0), yForPower),
       gpuPower: buildPath((point) => Number(point.gpuPowerWatts || 0), yForPower),
+      totalPower: buildPath(getAvailableTotalPowerWatts, yForPower),
     };
 
     return {
@@ -569,7 +581,7 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
       paths,
       gridLines: [0.2, 0.5, 0.8],
     };
-  }, [maxSpeed, minSpeed, points, visibleSeries.cpuPower, visibleSeries.gpuPower]);
+  }, [maxSpeed, minSpeed, points, visibleSeries.cpuPower, visibleSeries.gpuPower, visibleSeries.totalPower]);
   const { width, height, pad, plotWidth, plotTop, plotHeight, hasPower, paths, gridLines } = chart;
   const handlePanelKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (!onOpen) return;
@@ -628,7 +640,7 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
                 if (!visibleSeries[series]) {
                   return null;
                 }
-                if ((series === 'cpuPower' || series === 'gpuPower') && !hasPower) {
+                if ((series === 'cpuPower' || series === 'gpuPower' || series === 'totalPower') && !hasPower) {
                   return null;
                 }
 
@@ -645,9 +657,12 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
                       ? FAN_SPEED_STROKE
                       : series === 'cpuPower'
                         ? CPU_POWER_STROKE
-                        : GPU_POWER_STROKE;
-                const strokeWidth = series === 'fan' ? '1.8' : series === 'cpuPower' || series === 'gpuPower' ? '2' : '2.4';
-                const opacity = series === 'fan' ? '0.45' : series === 'cpuPower' || series === 'gpuPower' ? '0.9' : undefined;
+                        : series === 'gpuPower'
+                          ? GPU_POWER_STROKE
+                          : TOTAL_POWER_STROKE;
+                const isPowerSeries = series === 'cpuPower' || series === 'gpuPower' || series === 'totalPower';
+                const strokeWidth = series === 'fan' ? '1.8' : isPowerSeries ? '2' : '2.4';
+                const opacity = series === 'fan' ? '0.45' : isPowerSeries ? '0.9' : undefined;
                 return (
                   <path
                     key={series}
@@ -700,8 +715,7 @@ export default function DeviceStatus({
     source: temperatureHistorySource,
   } = useTemperatureHistory();
   const {
-    orderedSeries: historySeriesOrder,
-    seriesVisibility: historySeriesVisibility,
+    homeSeriesVisibility,
   } = useHistoryDisplayPreferences();
   const hasBridgeWarning = isConnected && temperature?.bridgeOk === false;
   const configuredDeviceProfile = useMemo(() => (getActiveDeviceProfile(config as any) as types.DeviceProfile | undefined) || null, [config]);
@@ -1194,8 +1208,8 @@ export default function DeviceStatus({
             source={temperatureHistorySource}
             minSpeed={fanSpeedRange.min}
             maxSpeed={fanSpeedRange.max}
-            visibleSeries={historySeriesVisibility}
-            orderedSeries={historySeriesOrder}
+            visibleSeries={homeSeriesVisibility}
+            orderedSeries={HISTORY_SERIES_ORDER}
             onOpen={onOpenHistoryDetails}
           />
         </motion.div>

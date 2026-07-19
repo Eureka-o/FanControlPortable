@@ -2,6 +2,8 @@ package coreapp
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -135,16 +137,17 @@ func TestReconnectDelayCanBeCanceled(t *testing.T) {
 	}
 }
 
-func TestReconnectRequestSupersedesWaitingGeneration(t *testing.T) {
+func TestReconnectRequestCoalescesAndWakesWaitingGeneration(t *testing.T) {
 	app := &CoreApp{}
 	app.requestReconnect("first", []time.Duration{time.Hour})
 	app.requestReconnect("second", []time.Duration{time.Hour})
+	app.requestReconnect("wake", []time.Duration{0})
 
 	app.reconnectMutex.Lock()
 	generation := app.reconnectGeneration
 	app.reconnectMutex.Unlock()
-	if generation != 2 {
-		t.Fatalf("reconnect generation = %d, want 2", generation)
+	if generation != 1 {
+		t.Fatalf("reconnect generation = %d, want 1", generation)
 	}
 
 	app.cancelReconnect()
@@ -385,5 +388,58 @@ func TestGetDeviceStatusRequiresManagerConnection(t *testing.T) {
 	}
 	if _, ok := status["deviceCapabilities"]; ok {
 		t.Fatalf("disconnected status should not expose configured capabilities: %#v", status)
+	}
+}
+
+func TestGetDeviceStatusDoesNotWaitForDisconnectedManagerOperation(t *testing.T) {
+	requestStarted := make(chan struct{}, 1)
+	releaseRequest := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		select {
+		case requestStarted <- struct{}{}:
+		default:
+		}
+		<-releaseRequest
+		_, _ = w.Write([]byte(`{"fan_speed":0}`))
+	}))
+	defer server.Close()
+
+	cfg := types.GetDefaultConfig(false)
+	profile := types.DefaultWiFiPercentProfile(server.URL)
+	app := newDeviceProfileTestApp(t, cfg)
+	app.deviceManager.ConfigureProfile(profile, server.URL)
+
+	connectDone := make(chan struct{})
+	go func() {
+		defer close(connectDone)
+		app.deviceManager.Connect()
+	}()
+	select {
+	case <-requestStarted:
+	case <-time.After(time.Second):
+		close(releaseRequest)
+		<-connectDone
+		t.Fatal("device operation did not start")
+	}
+
+	statusDone := make(chan map[string]any, 1)
+	go func() {
+		statusDone <- app.GetDeviceStatus()
+	}()
+
+	var status map[string]any
+	timedOut := false
+	select {
+	case status = <-statusDone:
+	case <-time.After(100 * time.Millisecond):
+		timedOut = true
+	}
+	close(releaseRequest)
+	<-connectDone
+	if timedOut {
+		t.Fatal("GetDeviceStatus waited for an unrelated device operation")
+	}
+	if connected, _ := status["connected"].(bool); connected {
+		t.Fatalf("connected = true during disconnected device operation: %#v", status)
 	}
 }

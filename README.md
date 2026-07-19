@@ -37,8 +37,8 @@ FanControl 现在以内置设备档案的方式支持多种设备。不同设备
 
 ## 下载哪个文件
 
-- `FanControl-2.6.0-preview.1-amd64-installer.exe`：2.6.0 Preview 1 安装包，升级时会保留已有配置。
-- `FanControl-2.6.0-preview.1-portable.zip`：2.6.0 Preview 1 便携包，解压到固定文件夹后运行 `FanControl.exe`。
+- `FanControl-2.6.0-amd64-installer.exe`：2.6.0 安装包，升级时会保留已有配置。
+- `FanControl-2.6.0-portable.zip`：2.6.0 便携包，解压到固定文件夹后运行 `FanControl.exe`。
 
 首次启动时如果 Windows 弹出权限确认，请选择允许。软件需要管理员权限读取硬件温度，并可能安装或调用温度读取所需的辅助组件。
 
@@ -65,9 +65,7 @@ FanControl 现在以内置设备档案的方式支持多种设备。不同设备
 
 ## 最新版本
 
-当前正式版本：`2.5.2`
-
-当前预览版本：`2.6.0 Preview 1`
+当前正式版本：`2.6.0`
 
 - WiFi 兼容模式支持启动自动连接，并在启用动态 IP 兼容时安全发现新地址后重试。
 - 改进睡眠/休眠后的设备恢复，并在温度遥测连续失效时临时使用安全转速。

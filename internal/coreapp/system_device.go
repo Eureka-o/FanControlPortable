@@ -109,6 +109,7 @@ func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
 
 // onDeviceDisconnect 设备断开回调
 func (a *CoreApp) onDeviceDisconnect() {
+	a.cancelNoiseDiagnosticLease("设备断开")
 	a.mutex.Lock()
 	wasConnected := a.isConnected
 	a.isConnected = false
@@ -187,11 +188,22 @@ func (a *CoreApp) requestReconnect(reason string, retryDelays []time.Duration) {
 		return
 	}
 	if a.reconnectCancel != nil {
-		a.reconnectCancel()
+		wake := a.reconnectWake
+		a.reconnectMutex.Unlock()
+		cancel()
+		if len(retryDelays) == 1 && retryDelays[0] <= 0 && wake != nil {
+			select {
+			case wake <- struct{}{}:
+			default:
+			}
+		}
+		return
 	}
 	a.reconnectGeneration++
 	generation := a.reconnectGeneration
 	a.reconnectCancel = cancel
+	wake := make(chan struct{}, 1)
+	a.reconnectWake = wake
 	a.reconnectInProgress.Store(true)
 	a.reconnectMutex.Unlock()
 
@@ -201,11 +213,12 @@ func (a *CoreApp) requestReconnect(reason string, retryDelays []time.Duration) {
 			a.reconnectMutex.Lock()
 			if a.reconnectGeneration == generation {
 				a.reconnectCancel = nil
+				a.reconnectWake = nil
 				a.reconnectInProgress.Store(false)
 			}
 			a.reconnectMutex.Unlock()
 		}()
-		a.runReconnectLoop(ctx, reason, delays, generation, a.reconnectDevice)
+		a.runReconnectLoopWithWake(ctx, reason, delays, generation, wake, a.reconnectDevice)
 	})
 }
 
@@ -232,6 +245,17 @@ func (a *CoreApp) runReconnectLoop(
 	reason string,
 	retryDelays []time.Duration,
 	generation uint64,
+	attempt func(context.Context) reconnectAttemptResult,
+) {
+	a.runReconnectLoopWithWake(ctx, reason, retryDelays, generation, nil, attempt)
+}
+
+func (a *CoreApp) runReconnectLoopWithWake(
+	ctx context.Context,
+	reason string,
+	retryDelays []time.Duration,
+	generation uint64,
+	wake <-chan struct{},
 	attempt func(context.Context) reconnectAttemptResult,
 ) {
 	a.logInfo("启动设备重连流程: %s", reason)
@@ -262,7 +286,7 @@ func (a *CoreApp) runReconnectLoop(
 
 		if delay > 0 {
 			a.logInfo("等待 %v 后尝试第 %d 次重连...", delay, i+1)
-			if !waitForReconnectDelay(ctx, delay) {
+			if !waitForReconnectDelayWithWake(ctx, delay, wake) {
 				a.logDebug("重连等待已被更新请求取消: %s", reason)
 				return
 			}
@@ -346,6 +370,10 @@ func (a *CoreApp) completeReconnectAttempt(ctx context.Context, generation uint6
 }
 
 func waitForReconnectDelay(ctx context.Context, delay time.Duration) bool {
+	return waitForReconnectDelayWithWake(ctx, delay, nil)
+}
+
+func waitForReconnectDelayWithWake(ctx context.Context, delay time.Duration, wake <-chan struct{}) bool {
 	if delay <= 0 {
 		return ctx.Err() == nil
 	}
@@ -356,6 +384,8 @@ func waitForReconnectDelay(ctx context.Context, delay time.Duration) bool {
 		return true
 	case <-ctx.Done():
 		return false
+	case <-wake:
+		return true
 	}
 }
 
@@ -481,6 +511,7 @@ func (a *CoreApp) maybeRecoverFromSystemResume(source string, gap, expectedInter
 
 // onSystemSuspend 收到系统挂起（睡眠/休眠）通知时调用。
 func (a *CoreApp) onSystemSuspend() {
+	a.cancelNoiseDiagnosticLease("系统挂起")
 	if !a.systemSuspended.CompareAndSwap(false, true) {
 		return
 	}

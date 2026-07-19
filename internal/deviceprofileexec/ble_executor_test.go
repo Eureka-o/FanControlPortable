@@ -34,6 +34,7 @@ type fakeBLEClient struct {
 	writes   []fakeBLEWrite
 	writeErr error
 	closed   bool
+	address  string
 }
 
 type fakeBLEWrite struct {
@@ -61,6 +62,10 @@ func (c *fakeBLEClient) ReadBLEFrame(ctx context.Context) ([]byte, error) {
 func (c *fakeBLEClient) Close() error {
 	c.closed = true
 	return nil
+}
+
+func (c *fakeBLEClient) BLEAddress() string {
+	return c.address
 }
 
 func TestBLEExecutorOpenReadsStateAndSetSpeed(t *testing.T) {
@@ -293,6 +298,49 @@ func TestBLEExecutorFlyDigiBS1HeartbeatFailureInvalidatesAndReconnects(t *testin
 	defer executor.Close()
 	if state.CurrentRPM != 1500 || state.TargetRPM != 1600 {
 		t.Fatalf("reconnected state = %d/%d, want 1500/1600", state.CurrentRPM, state.TargetRPM)
+	}
+}
+
+func TestBLEExecutorBS1ReusesAddressBeforeScanning(t *testing.T) {
+	first := &fakeBLEClient{address: "AA:BB:CC:DD:EE:01"}
+	reconnected := &fakeBLEClient{address: "AA:BB:CC:DD:EE:01"}
+	connector := &fakeBLEConnector{clients: []*fakeBLEClient{first, reconnected}}
+	executor, err := NewBLEExecutor(types.FlyDigiBS1Profile(), connector)
+	if err != nil {
+		t.Fatalf("NewBLEExecutor() error = %v", err)
+	}
+
+	if _, err := executor.Open(nil); err != nil {
+		t.Fatalf("first Open() error = %v", err)
+	}
+	if err := executor.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if _, err := executor.Open(nil); err != nil {
+		t.Fatalf("reconnect Open() error = %v", err)
+	}
+	if connector.connects != 2 || connector.profile.Connection.Endpoint != "AA:BB:CC:DD:EE:01" {
+		t.Fatalf("reconnect profile = %#v, connects = %d; expected cached address attempt", connector.profile.Connection, connector.connects)
+	}
+}
+
+func TestBLEExecutorBS1NotificationCallbackPublishesState(t *testing.T) {
+	executor, err := NewBLEExecutor(types.FlyDigiBS1Profile(), &fakeBLEConnector{client: &fakeBLEClient{}})
+	if err != nil {
+		t.Fatalf("NewBLEExecutor() error = %v", err)
+	}
+	defer executor.Close()
+	updates := make(chan *types.FanData, 1)
+	executor.SetNotificationCallback(func(data *types.FanData) { updates <- data })
+
+	executor.handleBS1Notification(deviceproto.BuildFrame(deviceproto.CmdStatusNotify, 1, 2, 0, 0xD2, 0x04, 0x08, 0x07))
+	select {
+	case state := <-updates:
+		if state.CurrentRPM != 1234 || state.TargetRPM != 1800 {
+			t.Fatalf("notification state = %d/%d, want 1234/1800", state.CurrentRPM, state.TargetRPM)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("notification callback was not invoked")
 	}
 }
 

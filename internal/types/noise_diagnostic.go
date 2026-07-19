@@ -37,6 +37,7 @@ type NoiseDiagnosticResult struct {
 	BaselineDriftDB  float64                `json:"baselineDriftDb"`
 	RiseDB           float64                `json:"riseDb"`
 	Knee             int                    `json:"knee"`
+	SuspectedPeak    int                    `json:"suspectedPeak,omitempty"`
 	Confidence       string                 `json:"confidence"`
 	ConfidenceReason string                 `json:"confidenceReason"`
 	Microphone       string                 `json:"microphone"`

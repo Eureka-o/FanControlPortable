@@ -60,6 +60,11 @@ func (a *CoreApp) deviceRuntimeStatus() deviceRuntimeStatus {
 	settingsReady := a.deviceSettings != nil && a.deviceSettings.Available
 	a.mutex.RUnlock()
 	connected = connected && manager != nil && manager.IsConnected()
+	cfg := a.configManager.Get()
+	capabilities := types.ActiveDeviceProfile(&cfg).Capabilities
+	if connected {
+		capabilities = manager.ActiveCapabilities()
+	}
 
 	phase := a.connectionPhase.Load()
 	return resolveDeviceRuntimeStatus(deviceRuntimeStatusInput{
@@ -68,7 +73,7 @@ func (a *CoreApp) deviceRuntimeStatus() deviceRuntimeStatus {
 		Connecting:    phase == deviceConnectionPhaseConnecting,
 		Suspended:     a.systemSuspended.Load(),
 		SettingsReady: settingsReady,
-		Capabilities:  a.activeDeviceCapabilities(),
+		Capabilities:  capabilities,
 	})
 }
 

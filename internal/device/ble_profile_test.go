@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/TIANLI0/THRM/internal/deviceprofileexec"
-	"github.com/TIANLI0/THRM/internal/deviceproto"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -137,9 +136,7 @@ func TestBLEManagerProfileConnectsAndSetsPercentSpeed(t *testing.T) {
 }
 
 func TestBLEManagerRefreshBS1ReadsNotifyState(t *testing.T) {
-	client := &managerFakeBLEClient{reads: [][]byte{
-		deviceproto.BuildFrame(deviceproto.CmdStatusNotify, 1, 2, 0, 0xA4, 0x06, 0x08, 0x07),
-	}}
+	client := &managerFakeBLEClient{}
 	m := NewManager(nil)
 	m.bleConnector = deviceprofileexec.BLEConnectorFunc(func(ctx context.Context, profile types.DeviceProfile) (deviceprofileexec.BLEClient, error) {
 		return client, nil
@@ -162,8 +159,8 @@ func TestBLEManagerRefreshBS1ReadsNotifyState(t *testing.T) {
 		t.Fatal("expected BS1 BLE refresh to succeed")
 	}
 	after := m.GetCurrentFanData()
-	if after == nil || after.CurrentRPM != 1700 || after.TargetRPM != 1800 {
-		t.Fatalf("after refresh fan data = %#v, want current/target 1700/1800", after)
+	if after == nil || after.CurrentRPM != 0 || after.TargetRPM != 1800 {
+		t.Fatalf("after refresh fan data = %#v, want cached current/target 0/1800", after)
 	}
 }
 

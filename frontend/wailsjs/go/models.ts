@@ -174,6 +174,78 @@ export namespace types {
 	        this.temperatureRisePredictionMaxBoost = source["temperatureRisePredictionMaxBoost"];
 	    }
 	}
+	export class NoiseDiagnosticPoint {
+	    requested: number;
+	    actual: number;
+	    levelDb: number;
+	    spreadDb: number;
+	    valid: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new NoiseDiagnosticPoint(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.requested = source["requested"];
+	        this.actual = source["actual"];
+	        this.levelDb = source["levelDb"];
+	        this.spreadDb = source["spreadDb"];
+	        this.valid = source["valid"];
+	    }
+	}
+	export class NoiseDiagnosticResult {
+	    deviceKey: string;
+	    unit: string;
+	    points: NoiseDiagnosticPoint[];
+	    baselineDb: number;
+	    baselineDriftDb: number;
+	    riseDb: number;
+	    knee: number;
+	    suspectedPeak?: number;
+	    confidence: string;
+	    confidenceReason: string;
+	    microphone: string;
+	    testedAt: number;
+
+	    static createFrom(source: any = {}) {
+	        return new NoiseDiagnosticResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.deviceKey = source["deviceKey"];
+	        this.unit = source["unit"];
+	        this.points = this.convertValues(source["points"], NoiseDiagnosticPoint);
+	        this.baselineDb = source["baselineDb"];
+	        this.baselineDriftDb = source["baselineDriftDb"];
+	        this.riseDb = source["riseDb"];
+	        this.knee = source["knee"];
+	        this.suspectedPeak = source["suspectedPeak"];
+	        this.confidence = source["confidence"];
+	        this.confidenceReason = source["confidenceReason"];
+	        this.microphone = source["microphone"];
+	        this.testedAt = source["testedAt"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class DeviceFanCurveProfilesState {
 	    profiles: FanCurveProfile[];
 	    activeId: string;
@@ -578,6 +650,7 @@ export namespace types {
 	    fanCurve: FanCurvePoint[];
 	    fanCurveProfiles: FanCurveProfile[];
 	    fanCurveProfilesByDevice?: Record<string, DeviceFanCurveProfilesState>;
+	    noiseDiagnosticsByDevice?: Record<string, NoiseDiagnosticResult>;
 	    activeFanCurveProfileId: string;
 	    gearLight: boolean;
 	    powerOnStart: boolean;
@@ -634,6 +707,7 @@ export namespace types {
 	        this.fanCurve = this.convertValues(source["fanCurve"], FanCurvePoint);
 	        this.fanCurveProfiles = this.convertValues(source["fanCurveProfiles"], FanCurveProfile);
 	        this.fanCurveProfilesByDevice = this.convertValues(source["fanCurveProfilesByDevice"], DeviceFanCurveProfilesState, true);
+	        this.noiseDiagnosticsByDevice = this.convertValues(source["noiseDiagnosticsByDevice"], NoiseDiagnosticResult, true);
 	        this.activeFanCurveProfileId = source["activeFanCurveProfileId"];
 	        this.gearLight = source["gearLight"];
 	        this.powerOnStart = source["powerOnStart"];
@@ -1598,6 +1672,115 @@ export namespace types {
 
 
 
+	export class NoiseDiagnosticRange {
+	    unit: string;
+	    min: number;
+	    max: number;
+	    step: number;
+	    minSource: string;
+	    maxSource: string;
+
+	    static createFrom(source: any = {}) {
+	        return new NoiseDiagnosticRange(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.unit = source["unit"];
+	        this.min = source["min"];
+	        this.max = source["max"];
+	        this.step = source["step"];
+	        this.minSource = source["minSource"];
+	        this.maxSource = source["maxSource"];
+	    }
+	}
+	export class NoiseDiagnosticBeginRequest {
+	    deviceKey: string;
+	    range: NoiseDiagnosticRange;
+
+	    static createFrom(source: any = {}) {
+	        return new NoiseDiagnosticBeginRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.deviceKey = source["deviceKey"];
+	        this.range = this.convertValues(source["range"], NoiseDiagnosticRange);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+
+
+	export class NoiseDiagnosticSession {
+	    sessionId: string;
+	    deviceKey: string;
+	    range: NoiseDiagnosticRange;
+	    configRevision: number;
+
+	    static createFrom(source: any = {}) {
+	        return new NoiseDiagnosticSession(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sessionId = source["sessionId"];
+	        this.deviceKey = source["deviceKey"];
+	        this.range = this.convertValues(source["range"], NoiseDiagnosticRange);
+	        this.configRevision = source["configRevision"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class NoiseDiagnosticTargetResult {
+	    requested: number;
+	    actual: number;
+	    unit: string;
+
+	    static createFrom(source: any = {}) {
+	        return new NoiseDiagnosticTargetResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.requested = source["requested"];
+	        this.actual = source["actual"];
+	        this.unit = source["unit"];
+	    }
+	}
 
 
 	export class SerialPortInfo {

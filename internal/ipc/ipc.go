@@ -80,6 +80,11 @@ const (
 	ReqSetWiFiSmartStartStopStandbySpeed RequestType = "SetWiFiSmartStartStopStandbySpeed"
 	ReqSetBrightness                     RequestType = "SetBrightness"
 	ReqSetLightStrip                     RequestType = "SetLightStrip"
+	ReqBeginNoiseDiagnostic              RequestType = "BeginNoiseDiagnostic"
+	ReqSetNoiseDiagnosticTarget          RequestType = "SetNoiseDiagnosticTarget"
+	ReqEndNoiseDiagnostic                RequestType = "EndNoiseDiagnostic"
+	ReqCancelNoiseDiagnostic             RequestType = "CancelNoiseDiagnostic"
+	ReqSaveNoiseDiagnosticResult         RequestType = "SaveNoiseDiagnosticResult"
 
 	// 温度相关
 	ReqGetTemperature               RequestType = "GetTemperature"
@@ -854,6 +859,23 @@ type SetAutoStartWithMethodParams struct {
 // SetLightStripParams 设置灯带参数
 type SetLightStripParams struct {
 	Config types.LightStripConfig `json:"config"`
+}
+
+type BeginNoiseDiagnosticParams struct {
+	Request types.NoiseDiagnosticBeginRequest `json:"request"`
+}
+
+type SetNoiseDiagnosticTargetParams struct {
+	SessionID string `json:"sessionId"`
+	Value     int    `json:"value"`
+}
+
+type NoiseDiagnosticSessionParams struct {
+	SessionID string `json:"sessionId"`
+}
+
+type SaveNoiseDiagnosticResultParams struct {
+	Result types.NoiseDiagnosticResult `json:"result"`
 }
 
 // SetActiveFanCurveProfileParams 设置激活曲线方案参数

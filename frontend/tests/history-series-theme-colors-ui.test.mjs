@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const statusSource = readFileSync(new URL('../src/app/components/DeviceStatus.tsx', import.meta.url), 'utf8');
 const curveSource = readFileSync(new URL('../src/app/components/FanCurve.tsx', import.meta.url), 'utf8');
+const preferencesSource = readFileSync(new URL('../src/app/hooks/useHistoryDisplayPreferences.ts', import.meta.url), 'utf8');
 const globalStyles = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8');
 
 const seriesVariables = {
@@ -37,6 +38,11 @@ test('supports total power and single-series statistics without hard-coded stat 
   assert.match(curveSource, /var\(--chart-stat-average\)/);
   assert.match(curveSource, /showStatistics/);
   assert.match(curveSource, /segment=\{key === 'average' \? undefined/);
+  assert.match(curveSource, /minTimestamps: number\[\]/);
+  assert.match(curveSource, /maxTimestamps: number\[\]/);
+  assert.match(curveSource, /const leftmostTimestamp = timestamps\[0\] \?\? 0/);
+  assert.match(curveSource, /timestamps\.length <= 3 \? timestamps : timestamps\.slice\(0, 1\)/);
+  assert.match(curveSource, /\{ x: leftmostTimestamp, y: value \}/);
   assert.match(curveSource, /\{ x: historyRightTimestamp, y: value \}/);
   assert.match(curveSource, /textAnchor="end"/);
   assert.match(curveSource, /stroke="var\(--chart-stat-label-halo\)"/);
@@ -51,6 +57,21 @@ test('supports total power and single-series statistics without hard-coded stat 
   assert.match(globalStyles, /--chart-stat-label-halo:/);
   assert.match(globalStyles, /--chart-area-opacity-start:/);
   assert.match(globalStyles, /--chart-area-opacity-end:/);
+});
+
+test('keeps independent home chart visibility and supports total power in the thumbnail', () => {
+  assert.match(preferencesSource, /homeVisible: HistorySeriesVisibility/);
+  assert.match(preferencesSource, /const homeVisibilityInput = input\?\.homeVisible/);
+  assert.match(preferencesSource, /homeSeriesVisibility: preferences\.homeVisible/);
+  assert.match(preferencesSource, /const preferencesRef = useRef\(preferences\)/);
+  assert.match(preferencesSource, /updater\(preferencesRef\.current\)/);
+  assert.doesNotMatch(preferencesSource, /setPreferences\(\(current\) => \{[\s\S]*writeHistoryDisplayPreferences/);
+  assert.match(curveSource, /homeDisplayTitle/);
+  assert.match(curveSource, /toggleHomeSeriesVisible/);
+  assert.match(statusSource, /visibleSeries=\{homeSeriesVisibility\}/);
+  assert.match(statusSource, /orderedSeries=\{HISTORY_SERIES_ORDER\}/);
+  assert.match(statusSource, /totalPower: buildPath\(getAvailableTotalPowerWatts, yForPower\)/);
+  assert.match(statusSource, /const TOTAL_POWER_STROKE = 'var\(--chart-primary\)'/);
 });
 
 test('smooths long history for chart rendering without replacing raw statistics', () => {

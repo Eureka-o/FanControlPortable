@@ -195,6 +195,7 @@ func (a *CoreApp) Stop() {
 		return
 	}
 	a.logInfo("核心服务正在停止...")
+	a.cancelNoiseDiagnosticLease("核心服务停止")
 	if a.powerNotifyStop != nil {
 		a.safeRun("power-notify-unregister", a.powerNotifyStop)
 		a.powerNotifyStop = nil
