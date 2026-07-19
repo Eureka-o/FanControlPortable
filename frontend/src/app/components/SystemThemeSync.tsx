@@ -142,18 +142,23 @@ function applyCachedCustomTheme(snapshot: ThemeBootstrapSnapshot) {
  *   1) 从后端拿到主题列表，确定该主题基于浅色还是深色（base）。
  *   2) 读取该主题的 CSS 文本，注入到 <style id> 中。
  *   3) 给 <html> 打上 data-theme="id"，使主题 CSS 的 html[data-theme="id"] 选择器生效。
- * 任意环节失败（如主题文件被删）时，安全回退到 base 对应的浅色/深色基础主题。
+ * 读取失败时保留当前主题，避免短暂回退到基础主题。
  */
 async function applyCustomTheme(id: string, isCancelled?: () => boolean): Promise<void> {
-  let base: CustomThemeBase = 'light';
-  let layer: CustomThemeLayer = 'basic';
+  const cachedSnapshot = readThemeBootstrapSnapshot();
+  let base: CustomThemeBase = cachedSnapshot?.mode === id && cachedSnapshot.base === 'dark' ? 'dark' : 'light';
+  let layer: CustomThemeLayer = cachedSnapshot?.mode === id
+    ? normalizeCustomThemeLayer(cachedSnapshot.layer)
+    : 'basic';
   try {
     const themes = await apiService.listThemes();
     const meta = themes.find((t) => t.id === id);
-    if (meta?.base === 'dark') base = 'dark';
-    layer = normalizeCustomThemeLayer(meta?.layer);
+    if (meta) {
+      base = meta.base === 'dark' ? 'dark' : 'light';
+      layer = normalizeCustomThemeLayer(meta.layer);
+    }
   } catch {
-    /* 列表获取失败时按浅色基底处理 */
+    /* Keep cached metadata while theme discovery is temporarily unavailable. */
   }
 
   if (isCancelled?.()) {
@@ -172,12 +177,7 @@ async function applyCustomTheme(id: string, isCancelled?: () => boolean): Promis
   }
 
   if (!css) {
-    // 自定义主题不可用：清理并回退到基础主题（按 base 决定浅/深）。
-    applyWithoutThemeTransition(() => {
-      clearCustomTheme();
-      document.documentElement.classList.toggle('dark', base === 'dark');
-    });
-    writeThemeBootstrapSnapshot(createBuiltinThemeSnapshot(base));
+    // ponytail: Keep the last valid theme; add explicit recovery UI if missing themes need user action.
     return;
   }
 

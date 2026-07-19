@@ -445,6 +445,26 @@ class ApiService {
     return await GetCurrentFanData();
   }
 
+  async beginNoiseDiagnostic(request: types.NoiseDiagnosticBeginRequest): Promise<types.NoiseDiagnosticSession> {
+    return await (window as any).go?.main?.App?.BeginNoiseDiagnostic(request);
+  }
+
+  async setNoiseDiagnosticTarget(sessionID: string, value: number): Promise<types.NoiseDiagnosticTargetResult> {
+    return await (window as any).go?.main?.App?.SetNoiseDiagnosticTarget(sessionID, value);
+  }
+
+  async endNoiseDiagnostic(sessionID: string): Promise<void> {
+    return await (window as any).go?.main?.App?.EndNoiseDiagnostic(sessionID);
+  }
+
+  async cancelNoiseDiagnostic(sessionID: string): Promise<void> {
+    return await (window as any).go?.main?.App?.CancelNoiseDiagnostic(sessionID);
+  }
+
+  async saveNoiseDiagnosticResult(result: types.NoiseDiagnosticResult): Promise<void> {
+    return await (window as any).go?.main?.App?.SaveNoiseDiagnosticResult(result);
+  }
+
   async testTemperatureReading(): Promise<types.TemperatureData> {
     return await TestTemperatureReading();
   }

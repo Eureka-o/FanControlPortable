@@ -63,6 +63,7 @@ type CoreApp struct {
 	connectMutex                  sync.Mutex
 	reconnectMutex                sync.Mutex
 	reconnectCancel               context.CancelFunc
+	reconnectWake                 chan struct{}
 	reconnectGeneration           uint64
 	autoReconnectSuppressed       atomic.Bool
 	hasSuccessfulConnection       atomic.Bool
@@ -89,6 +90,9 @@ type CoreApp struct {
 
 	mutex                 sync.RWMutex
 	manualGearLevelMemory map[string]string
+
+	noiseDiagnosticMu    sync.Mutex
+	noiseDiagnosticLease *noiseDiagnosticLease
 }
 
 const (

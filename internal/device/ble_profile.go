@@ -64,6 +64,13 @@ func (m *Manager) connectBLEWithContextLocked(ctx context.Context) (bool, map[st
 		}
 		m.bleExecutor = executor
 	}
+	expectedGeneration := m.connectionGen.Load()
+	m.bleExecutor.SetConnectionLostCallback(func() {
+		m.onBLEConnectionLost(expectedGeneration)
+	})
+	m.bleExecutor.SetNotificationCallback(func(data *types.FanData) {
+		m.onBS1Notification(expectedGeneration, data)
+	})
 
 	fanData, err := m.readBLEStateWithContextLocked(ctx)
 	if err != nil {
@@ -107,6 +114,40 @@ func (m *Manager) markBS1DisconnectedLocked() func() {
 	return m.onDisconnect
 }
 
+func (m *Manager) onBLEConnectionLost(expectedGeneration uint64) {
+	m.mutex.Lock()
+	if expectedGeneration != 0 && m.connectionGen.Load() != expectedGeneration {
+		m.mutex.Unlock()
+		return
+	}
+	callback := m.markBS1DisconnectedLocked()
+	m.mutex.Unlock()
+	if callback != nil {
+		callback()
+	}
+}
+
+func (m *Manager) onBS1Notification(expectedGeneration uint64, data *types.FanData) {
+	if data == nil {
+		return
+	}
+	m.mutex.Lock()
+	if expectedGeneration != 0 && m.connectionGen.Load() != expectedGeneration {
+		m.mutex.Unlock()
+		return
+	}
+	if !m.isConnected || m.deviceType != types.DeviceTransportBLE || m.activeProfile.ID != types.FlyDigiBS1ProfileID {
+		m.mutex.Unlock()
+		return
+	}
+	m.currentFanData.Store(data)
+	callback := m.onFanDataUpdate
+	m.mutex.Unlock()
+	if callback != nil {
+		callback(data)
+	}
+}
+
 // refreshBLEStateWithChangeDetection 是 RefreshBLEState 的内部比较逻辑，
 // 用轻量字段比较替代 reflect.DeepEqual（BLE 刷新频率高，避免每次反射开销）。
 func refreshBLEStateWithChangeDetection(prev, next *types.FanData) bool {
@@ -145,14 +186,21 @@ func (m *Manager) RefreshBLEState() bool {
 		m.mutex.Unlock()
 		return false
 	}
+	if m.activeProfile.ID == types.FlyDigiBS1ProfileID {
+		if m.bleExecutor == nil || !m.bleExecutor.IsConnected() {
+			m.mutex.Unlock()
+			return false
+		}
+		// THRM treats BS1 notifications as the source of truth. A health poll
+		// must not consume the next notification or start a second scan.
+		fanData := m.currentFanData.Load()
+		m.mutex.Unlock()
+		return fanData != nil
+	}
 	fanData, err := m.refreshBLEStateLocked()
 	if err != nil {
-		callback := m.markBS1DisconnectedLocked()
 		m.mutex.Unlock()
 		m.logError("BLE controller state refresh failed: %v", err)
-		if callback != nil {
-			callback()
-		}
 		return false
 	}
 	var callback func(data *types.FanData)

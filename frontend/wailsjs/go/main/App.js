@@ -6,6 +6,14 @@ export function AutoScanDevices() {
   return window['go']['main']['App']['AutoScanDevices']();
 }
 
+export function BeginNoiseDiagnostic(arg1) {
+  return window['go']['main']['App']['BeginNoiseDiagnostic'](arg1);
+}
+
+export function CancelNoiseDiagnostic(arg1) {
+  return window['go']['main']['App']['CancelNoiseDiagnostic'](arg1);
+}
+
 export function CancelUpdateDownload(arg1) {
   return window['go']['main']['App']['CancelUpdateDownload'](arg1);
 }
@@ -48,6 +56,10 @@ export function DisconnectDevice() {
 
 export function DownloadAndInstallUpdate(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['DownloadAndInstallUpdate'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function EndNoiseDiagnostic(arg1) {
+  return window['go']['main']['App']['EndNoiseDiagnostic'](arg1);
 }
 
 export function ExportDeviceProfiles() {
@@ -226,6 +238,10 @@ export function SaveFanCurveProfile(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SaveFanCurveProfile'](arg1, arg2, arg3, arg4);
 }
 
+export function SaveNoiseDiagnosticResult(arg1) {
+  return window['go']['main']['App']['SaveNoiseDiagnosticResult'](arg1);
+}
+
 export function ScanBLEDevices(arg1) {
   return window['go']['main']['App']['ScanBLEDevices'](arg1);
 }
@@ -284,6 +300,10 @@ export function SetLightStrip(arg1) {
 
 export function SetManualGear(arg1, arg2) {
   return window['go']['main']['App']['SetManualGear'](arg1, arg2);
+}
+
+export function SetNoiseDiagnosticTarget(arg1, arg2) {
+  return window['go']['main']['App']['SetNoiseDiagnosticTarget'](arg1, arg2);
 }
 
 export function SetPowerOnStart(arg1) {

@@ -12,6 +12,7 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 	a.logDebug("处理 IPC 请求[%s] type=%s", req.RequestID, req.Type)
 
 	for _, route := range []func(ipc.Request) (ipc.Response, bool){
+		a.handleNoiseDiagnosticIPCRequest,
 		a.handleDeviceIPCRequest,
 		a.handleConfigIPCRequest,
 		a.handleControlIPCRequest,

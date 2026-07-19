@@ -622,6 +622,41 @@
       }
     }
   },
+  "noiseDiagnostic": {
+    "open": "ノイズテスト",
+    "title": "ノイズ診断",
+    "description": "ファン速度を自動的に変化させ、ノイズの相対的な変化を測定します。",
+    "device": "デバイス",
+    "connected": "接続済み",
+    "disconnected": "未接続",
+    "min": "最低速度",
+    "max": "最高速度",
+    "microphone": "マイク",
+    "loadingMicrophones": "マイクを読み込み中…",
+    "noMicrophone": "利用可能なマイクなし",
+    "bounds": "許可範囲: {{min}}-{{max}} {{unit}}",
+    "disclaimer": "テスト中はファン速度が自動的に変わります。周囲をふさがず、異常を感じたらすぐ停止してください。終了後に元の制御状態へ戻します。",
+    "confirmation": "テスト範囲を変更しました。選択範囲を自動的に走査し、各点でマイク測定を行います。",
+    "confirmAcknowledgement": "自動速度テストを開始することを理解しました。",
+    "confirmStart": "テスト開始",
+    "start": "テスト開始",
+    "progress": "テスト中",
+    "currentTarget": "現在の目標",
+    "samples": "サンプル",
+    "invalidSample": "再測定中",
+    "cancel": "停止して破棄",
+    "rise": "ノイズ上昇",
+    "knee": "変化点",
+    "peak": "推定ピーク",
+    "confidence": "信頼度",
+    "resultNote": "信頼度の根拠: {{reason}}。絶対 dBA ではなく相対的なノイズ傾向です。",
+    "errors": {
+      "invalidRange": "有効な速度範囲を選択してください。",
+      "unstableBaseline": "環境ノイズが安定していません。静かな環境で再試行してください。",
+      "unavailable": "接続中のデバイスには診断可能な速度範囲がありません。",
+      "failed": "ノイズテストに失敗しました: {{error}}"
+    }
+  },
   "fanCurve": {
     "title": "ファンカーブ",
     "badges": {
@@ -747,7 +782,11 @@
         "noPowerData": "電力データなし"
       },
       "displaySettings": "表示設定",
-      "displaySettingsDescription": "表示する推移ラインを選び、ホバー時の表示順を調整します。",
+      "displaySettingsDescription": "履歴詳細とホーム概要に表示する推移ラインを個別に設定します。",
+      "detailDisplayTitle": "履歴詳細グラフ",
+      "detailDisplayDescription": "曲線を選択し、凡例とホバー情報の順序を調整します。",
+      "homeDisplayTitle": "ホーム表示設定",
+      "homeDisplayDescription": "ホームの簡略グラフに表示する曲線を選択します。順序は固定です。",
       "statistics": {
         "enabled": "統計マーカーを表示",
         "description": "単一系列のグラフに最大、最小、平均値を表示します。",

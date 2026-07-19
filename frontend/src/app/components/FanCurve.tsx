@@ -22,12 +22,13 @@ import {
   GripVertical,
   ArrowUp,
   ArrowDown,
+  AudioLines,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { apiService } from '../services/api';
 import { useTemperatureHistory } from '../hooks/useTemperatureHistory';
-import { useHistoryDisplayPreferences } from '../hooks/useHistoryDisplayPreferences';
+import { HISTORY_SERIES_ORDER, useHistoryDisplayPreferences } from '../hooks/useHistoryDisplayPreferences';
 import { useLocale } from '../lib/i18n';
 import { getFanSpeedUnit, getFanSpeedRange, getFanSpeedTicks, fanSpeedUnitLabel } from '../lib/fan-speed';
 import { type HistorySeriesKey, type TemperatureHistoryPoint } from '../lib/temperature-history';
@@ -36,6 +37,7 @@ import { types } from '../../../wailsjs/go/models';
 import { ClipboardSetText } from '../../../wailsjs/runtime/runtime';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import NoiseDiagnostic from './NoiseDiagnostic';
 import {
   ToggleSwitch,
   Button,
@@ -213,7 +215,17 @@ function smoothHistoryChartData(points: HistoryChartPoint[]) {
         smoothedPoint[field] = undefined;
         continue;
       }
-      if (sourceValue === rawExtrema[field].min || sourceValue === rawExtrema[field].max) {
+      const leftValue = Number(points[index - 1]?.[field]);
+      const rightValue = Number(points[index + 1]?.[field]);
+      const hasLocalExtremumNeighbors = Number.isFinite(leftValue)
+        && leftValue > 0
+        && Number.isFinite(rightValue)
+        && rightValue > 0;
+      const isLocalExtremum = hasLocalExtremumNeighbors && (
+        (sourceValue >= leftValue && sourceValue >= rightValue)
+        || (sourceValue <= leftValue && sourceValue <= rightValue)
+      );
+      if (sourceValue === rawExtrema[field].min || sourceValue === rawExtrema[field].max || isLocalExtremum) {
         smoothedPoint[field] = sourceValue;
         continue;
       }
@@ -528,7 +540,7 @@ const DraggablePoint = memo(function DraggablePoint({
    ─── Main FanCurve Component ───
    ═══════════════════════════════════════════════════════════ */
 
-const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, fanData, temperature, runtimeDeviceProfile, runtimeDeviceCapabilities, focusTarget, onFocusHandled }: FanCurveProps) {
+const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, fanData, temperature, runtimeDeviceProfile, runtimeDeviceCapabilities, deviceModel, focusTarget, onFocusHandled }: FanCurveProps) {
   const { t } = useTranslation();
   const { locale } = useLocale();
   const [localCurve, setLocalCurve] = useState<types.FanCurvePoint[]>([]);
@@ -556,6 +568,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const [isSaving, setIsSaving] = useState(false);
   const [learningConfigLoading, setLearningConfigLoading] = useState(false);
   const [learningResetLoading, setLearningResetLoading] = useState(false);
+  const [noiseDiagnosticOpen, setNoiseDiagnosticOpen] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [isInteracting, setIsInteracting] = useState(false);
   const [historyDisplayDialogOpen, setHistoryDisplayDialogOpen] = useState(false);
@@ -566,7 +579,9 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const {
     orderedSeries,
     seriesVisibility: historySeriesVisibility,
+    homeSeriesVisibility,
     toggleSeriesVisible,
+    toggleHomeSeriesVisible,
     moveSeries,
     reorderSeries,
     resetPreferences: resetHistoryDisplayPreferences,
@@ -977,7 +992,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     return orderedSeries.map((key) => meta[key]).filter(Boolean);
   }, [orderedSeries, t, locale]);
   const historyStatistics = useMemo(() => {
-    const values: Partial<Record<HistorySeriesKey, { min: number; max: number; average: number; minTimestamp: number; maxTimestamp: number }>> = {};
+    const values: Partial<Record<HistorySeriesKey, { min: number; max: number; average: number; minTimestamps: number[]; maxTimestamps: number[] }>> = {};
     const seriesWithData = historySeriesMeta.filter((series) => {
       if (!historySeriesVisibility[series.key]) {
         return false;
@@ -986,8 +1001,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       let sum = 0;
       let min = Number.POSITIVE_INFINITY;
       let max = Number.NEGATIVE_INFINITY;
-      let minTimestamp = 0;
-      let maxTimestamp = 0;
+      let minTimestamps: number[] = [];
+      let maxTimestamps: number[] = [];
       for (const point of zoomedHistoryChartData) {
         const value = Number(point[series.dataKey] ?? 0);
         if (!Number.isFinite(value) || value <= 0) {
@@ -997,11 +1012,15 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
         sum += value;
         if (value < min) {
           min = value;
-          minTimestamp = point.timestamp;
+          minTimestamps = [point.timestamp];
+        } else if (value === min) {
+          minTimestamps.push(point.timestamp);
         }
         if (value > max) {
           max = value;
-          maxTimestamp = point.timestamp;
+          maxTimestamps = [point.timestamp];
+        } else if (value === max) {
+          maxTimestamps.push(point.timestamp);
         }
       }
       if (count === 0) {
@@ -1011,8 +1030,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
         min,
         max,
         average: Math.round((sum / count) * 10) / 10,
-        minTimestamp,
-        maxTimestamp,
+        minTimestamps,
+        maxTimestamps,
       };
       return true;
     });
@@ -1036,55 +1055,59 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       ? formatPowerValue(value)
       : formatSpeedValue(value);
     const entries = [
-      { key: 'max', value: statistics.max, timestamp: statistics.maxTimestamp, color: 'var(--chart-stat-max)', opacity: 0.9 },
-      { key: 'min', value: statistics.min, timestamp: statistics.minTimestamp, color: 'var(--chart-stat-min)', opacity: 0.72 },
-      { key: 'average', value: statistics.average, timestamp: 0, color: 'var(--chart-stat-average)', opacity: 0.82 },
+      { key: 'max', value: statistics.max, timestamps: statistics.maxTimestamps, color: 'var(--chart-stat-max)', opacity: 0.9 },
+      { key: 'min', value: statistics.min, timestamps: statistics.minTimestamps, color: 'var(--chart-stat-min)', opacity: 0.72 },
+      { key: 'average', value: statistics.average, timestamps: [], color: 'var(--chart-stat-average)', opacity: 0.82 },
     ] as const;
-    return entries.flatMap(({ key, value, timestamp, color, opacity }) => [
-      <ReferenceLine
-        key={`${series.key}-${key}`}
-        yAxisId={yAxisId}
-        y={key === 'average' ? value : undefined}
-        segment={key === 'average' ? undefined : [
-          { x: timestamp, y: value },
-          { x: historyRightTimestamp, y: value },
-        ]}
-        stroke={color}
-        strokeOpacity={opacity}
-        strokeDasharray="5 4"
-        strokeWidth={1.5}
-        label={({ viewBox }: { viewBox?: { x?: number; y?: number; width?: number } }) => (
-          <text
-            x={(viewBox?.x ?? 0) + (viewBox?.width ?? 0)}
-            y={viewBox?.y ?? 0}
-            dx={-8}
-            dy={key === 'min' ? 14 : -6}
-            textAnchor="end"
-            fill={color}
-            stroke="var(--chart-stat-label-halo)"
-            strokeWidth={3}
-            paintOrder="stroke"
-            strokeLinejoin="round"
-            fontSize={10}
-            fontWeight={600}
-          >
-            {`${t(`fanCurve.history.statistics.${key}`)} ${formatValue(value)}`}
-          </text>
-        )}
-      />,
-      ...(timestamp > 0 && key !== 'average' ? [
-        <ReferenceDot
-          key={`${series.key}-${key}-point`}
-          x={timestamp}
-          y={value}
+    return entries.flatMap(({ key, value, timestamps, color, opacity }) => {
+      const leftmostTimestamp = timestamps[0] ?? 0;
+      const emphasizedTimestamps = timestamps.length <= 3 ? timestamps : timestamps.slice(0, 1);
+      return [
+        <ReferenceLine
+          key={`${series.key}-${key}`}
           yAxisId={yAxisId}
-          r={5}
-          fill={color}
-          stroke="var(--card)"
-          strokeWidth={2}
+          y={key === 'average' ? value : undefined}
+          segment={key === 'average' ? undefined : [
+            { x: leftmostTimestamp, y: value },
+            { x: historyRightTimestamp, y: value },
+          ]}
+          stroke={color}
+          strokeOpacity={opacity}
+          strokeDasharray="5 4"
+          strokeWidth={1.5}
+          label={({ viewBox }: { viewBox?: { x?: number; y?: number; width?: number } }) => (
+            <text
+              x={(viewBox?.x ?? 0) + (viewBox?.width ?? 0)}
+              y={viewBox?.y ?? 0}
+              dx={-8}
+              dy={key === 'min' ? 14 : -6}
+              textAnchor="end"
+              fill={color}
+              stroke="var(--chart-stat-label-halo)"
+              strokeWidth={3}
+              paintOrder="stroke"
+              strokeLinejoin="round"
+              fontSize={10}
+              fontWeight={600}
+            >
+              {`${t(`fanCurve.history.statistics.${key}`)} ${formatValue(value)}`}
+            </text>
+          )}
         />,
-      ] : []),
-    ]);
+        ...emphasizedTimestamps.map((timestamp) => (
+          <ReferenceDot
+            key={`${series.key}-${key}-point-${timestamp}`}
+            x={timestamp}
+            y={value}
+            yAxisId={yAxisId}
+            r={5}
+            fill={color}
+            stroke="var(--card)"
+            strokeWidth={2}
+          />
+        )),
+      ];
+    });
   }, [historyRightTimestamp, historyShowStatistics, historyStatistics.values, t]);
   const handleHistoryZoomMouseDown = useCallback((state: { activeLabel?: string | number } | null) => {
     if (state?.activeLabel == null) {
@@ -2272,6 +2295,26 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
           </div>
         </section>
 
+        <section data-theme-card="device-noise" className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <AudioLines className="h-4 w-4 text-primary" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-sm font-medium text-foreground">{t('noiseDiagnostic.title')}</div>
+                  <Badge variant="success">{deviceModel || t('noiseDiagnostic.connected')}</Badge>
+                </div>
+                <div className="text-xs leading-relaxed text-muted-foreground">{t('noiseDiagnostic.description')}</div>
+              </div>
+            </div>
+            <Button variant="secondary" size="sm" onClick={() => setNoiseDiagnosticOpen(true)} disabled={!isConnected} icon={<AudioLines className="h-3.5 w-3.5" />}>
+              {t('noiseDiagnostic.open')}
+            </Button>
+          </div>
+        </section>
+
         <div data-theme-ui="curve-hints" className="flex flex-wrap gap-2">
           <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur-lg">拖动蓝色点调整速度（{speedUnitSuffix}）</span>
           {showCoupledCurve && <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur-lg">{t('fanCurve.hints.curveLegend')}</span>}
@@ -2643,85 +2686,118 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                 ) : null}
               </div>
               <Dialog open={historyDisplayDialogOpen} onOpenChange={setHistoryDisplayDialogOpen}>
-                <DialogContent data-theme-ui="history-display-dialog" className="max-w-md will-change-auto">
+                <DialogContent data-theme-ui="history-display-dialog" className="max-w-4xl will-change-auto">
                   <DialogHeader>
                     <DialogTitle>{t('fanCurve.history.displaySettings')}</DialogTitle>
                     <DialogDescription>{t('fanCurve.history.displaySettingsDescription')}</DialogDescription>
                   </DialogHeader>
-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-background/45 px-3 py-2">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-foreground">{t('fanCurve.history.statistics.enabled')}</div>
-                      <div className="text-[11px] text-muted-foreground">{t('fanCurve.history.statistics.description')}</div>
-                    </div>
-                    <ToggleSwitch
-                      enabled={historyShowStatistics}
-                      onChange={() => setHistoryShowStatistics(!historyShowStatistics)}
-                      size="sm"
-                      color="blue"
-                      srLabel={t('fanCurve.history.statistics.enabled')}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    {historySeriesMeta.map((series, index) => (
-                      <div
-                        key={series.key}
-                        ref={(element) => {
-                          if (element) {
-                            historySeriesItemRefs.current[series.key] = element;
-                          } else {
-                            delete historySeriesItemRefs.current[series.key];
-                          }
-                        }}
-                        data-theme-ui="history-display-row"
-                        className={clsx(
-                          'flex select-none items-center gap-2 rounded-xl border border-border/70 bg-background/45 px-3 py-2 transition-[background-color,border-color] duration-150',
-                          draggedHistorySeries === series.key && 'border-primary/45 bg-primary/10',
-                        )}
-                      >
-                        <button
-                          type="button"
-                          className={clsx(
-                            'inline-flex h-7 w-6 shrink-0 touch-none items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25',
-                            draggedHistorySeries === series.key && 'cursor-grabbing bg-primary/10 text-primary',
-                          )}
-                          onPointerDown={(event) => handleHistorySeriesPointerDown(event, series.key)}
-                          aria-label={series.label}
-                        >
-                          <GripVertical className="h-4 w-4" />
-                        </button>
-                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: series.color }} />
-                        <div className="min-w-0 flex-1 text-sm font-medium text-foreground">{series.label}</div>
-                        <div className="flex shrink-0 items-center gap-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            icon={<ArrowUp className="h-3.5 w-3.5" />}
-                            className="h-7 w-7 px-0"
-                            disabled={index === 0}
-                            aria-label={t('fanCurve.history.moveUp')}
-                            onClick={() => moveSeries(series.key, -1)}
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            icon={<ArrowDown className="h-3.5 w-3.5" />}
-                            className="h-7 w-7 px-0"
-                            disabled={index === historySeriesMeta.length - 1}
-                            aria-label={t('fanCurve.history.moveDown')}
-                            onClick={() => moveSeries(series.key, 1)}
-                          />
+                  <div className="grid gap-5 lg:grid-cols-2">
+                    <div className="space-y-3">
+                      <div>
+                        <div className="text-sm font-semibold text-foreground">{t('fanCurve.history.detailDisplayTitle')}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">{t('fanCurve.history.detailDisplayDescription')}</div>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-background/45 px-3 py-2">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-foreground">{t('fanCurve.history.statistics.enabled')}</div>
+                          <div className="text-[11px] text-muted-foreground">{t('fanCurve.history.statistics.description')}</div>
                         </div>
                         <ToggleSwitch
-                          enabled={historySeriesVisibility[series.key]}
-                          onChange={() => toggleSeriesVisible(series.key)}
+                          enabled={historyShowStatistics}
+                          onChange={() => setHistoryShowStatistics(!historyShowStatistics)}
                           size="sm"
                           color="blue"
-                          srLabel={series.label}
+                          srLabel={t('fanCurve.history.statistics.enabled')}
                         />
                       </div>
-                    ))}
+                      <div className="space-y-2">
+                        {historySeriesMeta.map((series, index) => (
+                          <div
+                            key={series.key}
+                            ref={(element) => {
+                              if (element) {
+                                historySeriesItemRefs.current[series.key] = element;
+                              } else {
+                                delete historySeriesItemRefs.current[series.key];
+                              }
+                            }}
+                            data-theme-ui="history-display-row"
+                            className={clsx(
+                              'flex select-none items-center gap-2 rounded-xl border border-border/70 bg-background/45 px-3 py-2 transition-[background-color,border-color] duration-150',
+                              draggedHistorySeries === series.key && 'border-primary/45 bg-primary/10',
+                            )}
+                          >
+                            <button
+                              type="button"
+                              className={clsx(
+                                'inline-flex h-7 w-6 shrink-0 touch-none items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25',
+                                draggedHistorySeries === series.key && 'cursor-grabbing bg-primary/10 text-primary',
+                              )}
+                              onPointerDown={(event) => handleHistorySeriesPointerDown(event, series.key)}
+                              aria-label={series.label}
+                            >
+                              <GripVertical className="h-4 w-4" />
+                            </button>
+                            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: series.color }} />
+                            <div className="min-w-0 flex-1 text-sm font-medium text-foreground">{series.label}</div>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                icon={<ArrowUp className="h-3.5 w-3.5" />}
+                                className="h-7 w-7 px-0"
+                                disabled={index === 0}
+                                aria-label={t('fanCurve.history.moveUp')}
+                                onClick={() => moveSeries(series.key, -1)}
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                icon={<ArrowDown className="h-3.5 w-3.5" />}
+                                className="h-7 w-7 px-0"
+                                disabled={index === historySeriesMeta.length - 1}
+                                aria-label={t('fanCurve.history.moveDown')}
+                                onClick={() => moveSeries(series.key, 1)}
+                              />
+                            </div>
+                            <ToggleSwitch
+                              enabled={historySeriesVisibility[series.key]}
+                              onChange={() => toggleSeriesVisible(series.key)}
+                              size="sm"
+                              color="blue"
+                              srLabel={series.label}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-3 border-t border-border/70 pt-5 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+                      <div>
+                        <div className="text-sm font-semibold text-foreground">{t('fanCurve.history.homeDisplayTitle')}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">{t('fanCurve.history.homeDisplayDescription')}</div>
+                      </div>
+                      <div className="space-y-2">
+                        {HISTORY_SERIES_ORDER.map((seriesKey) => historySeriesMeta.find((series) => series.key === seriesKey)).filter(Boolean).map((series) => series && (
+                          <div
+                            key={series.key}
+                            data-theme-ui="home-history-display-row"
+                            className="flex items-center gap-3 rounded-xl border border-border/70 bg-background/45 px-3 py-2"
+                          >
+                            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: series.color }} />
+                            <div className="min-w-0 flex-1 text-sm font-medium text-foreground">{series.label}</div>
+                            <ToggleSwitch
+                              enabled={homeSeriesVisibility[series.key]}
+                              onChange={() => toggleHomeSeriesVisible(series.key)}
+                              size="sm"
+                              color="blue"
+                              srLabel={series.label}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                   <DialogFooter>
                     <Button type="button" variant="outline" onClick={resetHistoryDisplayPreferences}>
@@ -2946,6 +3022,18 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
         </Dialog>
         </>
       )}
+
+      <NoiseDiagnostic
+        open={noiseDiagnosticOpen}
+        onOpenChange={setNoiseDiagnosticOpen}
+        config={config}
+        onConfigChange={onConfigChange}
+        isConnected={isConnected}
+        fanData={fanData}
+        runtimeDeviceProfile={runtimeDeviceProfile}
+        runtimeDeviceCapabilities={runtimeDeviceCapabilities}
+        deviceModel={deviceModel}
+      />
 
       </div>
   );

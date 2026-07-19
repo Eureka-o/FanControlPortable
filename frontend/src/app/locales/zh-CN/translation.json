@@ -622,6 +622,41 @@
       }
     }
   },
+  "noiseDiagnostic": {
+    "open": "噪声测试",
+    "title": "噪声诊断",
+    "description": "自动调整风扇转速，测量噪声随转速的相对变化。",
+    "device": "设备",
+    "connected": "已连接",
+    "disconnected": "未连接",
+    "min": "最低转速",
+    "max": "最高转速",
+    "microphone": "麦克风",
+    "loadingMicrophones": "正在读取麦克风…",
+    "noMicrophone": "没有可用麦克风",
+    "bounds": "允许范围：{{min}}-{{max}} {{unit}}",
+    "disclaimer": "测试期间会自动调整风扇转速。请保持设备周围无遮挡，若温度或噪声异常请立即停止。测试结束后会恢复之前的控制状态。",
+    "confirmation": "你修改了测试范围。风扇会自动遍历所选范围，并在每个点短暂停留后采集麦克风数据。",
+    "confirmAcknowledgement": "我了解并同意开始自动转速测试。",
+    "confirmStart": "开始测试",
+    "start": "开始测试",
+    "progress": "测试进度",
+    "currentTarget": "当前目标",
+    "samples": "采样点",
+    "invalidSample": "正在重试",
+    "cancel": "停止并丢弃",
+    "rise": "噪声增幅",
+    "knee": "变化点",
+    "peak": "疑似峰值",
+    "confidence": "可信度",
+    "resultNote": "可信度依据：{{reason}}。结果用于相对噪声趋势，不代表绝对分贝值。",
+    "errors": {
+      "invalidRange": "请选择有效的转速范围。",
+      "unstableBaseline": "环境底噪不稳定，请降低背景噪声后重试。",
+      "unavailable": "当前连接设备没有可用的诊断转速范围。",
+      "failed": "噪声测试失败：{{error}}"
+    }
+  },
   "fanCurve": {
     "title": "风扇曲线",
     "badges": {
@@ -747,7 +782,11 @@
         "noPowerData": "暂无功耗数据"
       },
       "displaySettings": "展示设定",
-      "displaySettingsDescription": "选择趋势曲线展示的信息，并调整鼠标悬停时的显示顺序。",
+      "displaySettingsDescription": "分别设置历史详情图与首页简略图中显示的趋势曲线。",
+      "detailDisplayTitle": "历史详情图",
+      "detailDisplayDescription": "选择曲线并调整图例和悬浮信息的显示顺序。",
+      "homeDisplayTitle": "首页展示设置",
+      "homeDisplayDescription": "选择首页简略图中显示的曲线，顺序保持不变。",
       "statistics": {
         "enabled": "显示统计标记",
         "description": "单曲线图显示最大值、最小值和平均值。",

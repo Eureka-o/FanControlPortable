@@ -109,9 +109,11 @@ export default function SystemSettingsSection({
     const isBuiltin = mode === 'light' || mode === 'dark' || mode === 'system';
     const isKnownCustom = customThemes.some((theme) => theme.id === mode);
     const nextMode = isBuiltin || isKnownCustom ? mode : 'system';
-    const nextThemeIsDark = nextMode === 'dark' || (nextMode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     const previousThemeIsDark = document.documentElement.classList.contains('dark');
-    document.documentElement.classList.toggle('dark', nextThemeIsDark);
+    if (isBuiltin) {
+      const nextThemeIsDark = nextMode === 'dark' || (nextMode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.classList.toggle('dark', nextThemeIsDark);
+    }
     try {
       const newCfg = types.AppConfig.createFrom({
         ...config,
@@ -120,7 +122,9 @@ export default function SystemSettingsSection({
       await apiService.updateConfig(newCfg);
       onConfigChange(newCfg);
     } catch (error) {
-      document.documentElement.classList.toggle('dark', previousThemeIsDark);
+      if (isBuiltin) {
+        document.documentElement.classList.toggle('dark', previousThemeIsDark);
+      }
       reportSettingsError(error);
     }
   }, [config, customThemes, onConfigChange, reportSettingsError]);

@@ -622,6 +622,41 @@
       }
     }
   },
+  "noiseDiagnostic": {
+    "open": "Noise test",
+    "title": "Noise diagnostic",
+    "description": "Automatically sweep the fan speed and measure relative noise changes.",
+    "device": "Device",
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "min": "Minimum speed",
+    "max": "Maximum speed",
+    "microphone": "Microphone",
+    "loadingMicrophones": "Loading microphones...",
+    "noMicrophone": "No microphone available",
+    "bounds": "Allowed range: {{min}}-{{max}} {{unit}}",
+    "disclaimer": "The test temporarily changes fan speed. Keep the device unobstructed and stop immediately if temperatures or noise become unsafe. Previous control settings are restored after the test.",
+    "confirmation": "You changed the test range. The fan will automatically move through the selected range and briefly hold each point while the microphone samples.",
+    "confirmAcknowledgement": "I understand and want to start the automatic speed sweep.",
+    "confirmStart": "Start test",
+    "start": "Start test",
+    "progress": "Testing",
+    "currentTarget": "Current target",
+    "samples": "Samples",
+    "invalidSample": "Retrying sample",
+    "cancel": "Stop and discard",
+    "rise": "Noise rise",
+    "knee": "Change point",
+    "peak": "Suspected peak",
+    "confidence": "Confidence",
+    "resultNote": "Confidence basis: {{reason}}. This result is a relative noise trend, not an absolute dBA measurement.",
+    "errors": {
+      "invalidRange": "Choose a valid speed range.",
+      "unstableBaseline": "The room baseline was unstable. Reduce background noise and try again.",
+      "unavailable": "This connected device does not expose a usable diagnostic speed range.",
+      "failed": "Noise test failed: {{error}}"
+    }
+  },
   "fanCurve": {
     "title": "Fan curve",
     "badges": {
@@ -747,7 +782,11 @@
         "noPowerData": "No power data yet"
       },
       "displaySettings": "Display",
-      "displaySettingsDescription": "Choose which trend lines to show and adjust the hover tooltip order.",
+      "displaySettingsDescription": "Configure the trend lines shown in the history details and the home overview.",
+      "detailDisplayTitle": "History details",
+      "detailDisplayDescription": "Choose curves and arrange the legend and hover details.",
+      "homeDisplayTitle": "Home overview",
+      "homeDisplayDescription": "Choose the curves shown in the home chart. Their order stays fixed.",
       "statistics": {
         "enabled": "Show statistics",
         "description": "Single-series charts show maximum, minimum, and average values.",

@@ -126,6 +126,7 @@ func (a *CoreApp) checkDeviceHealth() {
 	// 达到阈值：重置计数并触发断连。
 	atomic.StoreInt32(&a.healthConsecutiveFailureCount, 0)
 	a.logError("健康检查: 设备连续 %d 次状态刷新失败，触发断开回调", healthConsecutiveFailureThreshold)
+	a.deviceManager.DisconnectForRecovery()
 	a.onDeviceDisconnect()
 }
 
