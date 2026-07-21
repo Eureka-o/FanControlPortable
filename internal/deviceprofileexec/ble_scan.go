@@ -3,6 +3,7 @@ package deviceprofileexec
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"sort"
 	"strconv"
@@ -29,9 +30,81 @@ func (f BLEScannerFunc) ScanBLEDevices(ctx context.Context, params types.BLEScan
 	return f(ctx, params)
 }
 
-type DefaultBLEScanner struct{}
+type DefaultBLEScanner struct {
+	coordinator *bleScanCoordinator
+	scan        BLEScannerFunc
+}
 
-var defaultBLEAdapterLease = make(chan struct{}, 1)
+type bleScanCall struct {
+	done    chan struct{}
+	devices []types.BLEDeviceInfo
+	err     error
+}
+
+type bleScanCoordinator struct {
+	mutex    sync.Mutex
+	inFlight map[string]*bleScanCall
+}
+
+var (
+	defaultBLEAdapterLease    = make(chan struct{}, 1)
+	defaultBLEScanCoordinator = newBLEScanCoordinator()
+)
+
+func newBLEScanCoordinator() *bleScanCoordinator {
+	return &bleScanCoordinator{inFlight: make(map[string]*bleScanCall)}
+}
+
+func (c *bleScanCoordinator) scanDevices(
+	ctx context.Context,
+	params types.BLEScanParams,
+	scan BLEScannerFunc,
+) ([]types.BLEDeviceInfo, error) {
+	keyBytes, err := json.Marshal(params)
+	if err != nil {
+		return nil, err
+	}
+	key := string(keyBytes)
+
+	c.mutex.Lock()
+	if call, ok := c.inFlight[key]; ok {
+		c.mutex.Unlock()
+		select {
+		case <-call.done:
+			return cloneBLEDeviceInfos(call.devices), call.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	call := &bleScanCall{done: make(chan struct{})}
+	c.inFlight[key] = call
+	c.mutex.Unlock()
+
+	devices, scanErr := scan(ctx, params)
+	c.mutex.Lock()
+	call.devices = cloneBLEDeviceInfos(devices)
+	call.err = scanErr
+	delete(c.inFlight, key)
+	close(call.done)
+	c.mutex.Unlock()
+	return cloneBLEDeviceInfos(devices), scanErr
+}
+
+func cloneBLEDeviceInfos(devices []types.BLEDeviceInfo) []types.BLEDeviceInfo {
+	if devices == nil {
+		return nil
+	}
+	cloned := make([]types.BLEDeviceInfo, len(devices))
+	for i, device := range devices {
+		cloned[i] = device
+		cloned[i].ServiceUUIDs = append([]string(nil), device.ServiceUUIDs...)
+		cloned[i].ManufacturerData = append([]types.BLEManufacturerData(nil), device.ManufacturerData...)
+		cloned[i].WriteCharacteristicUUIDs = append([]string(nil), device.WriteCharacteristicUUIDs...)
+		cloned[i].NotifyCharacteristicUUIDs = append([]string(nil), device.NotifyCharacteristicUUIDs...)
+		cloned[i].MatchReasons = append([]string(nil), device.MatchReasons...)
+	}
+	return cloned
+}
 
 func acquireDefaultBLEAdapter(ctx context.Context) (func(), error) {
 	ctx = ctxWithDefault(ctx)
@@ -62,9 +135,21 @@ func ScanBLEDevicesWithScanner(ctx context.Context, scanner BLEScanner, params t
 	return NormalizeAndMatchBLEDevices(devices, params), nil
 }
 
-func (DefaultBLEScanner) ScanBLEDevices(ctx context.Context, params types.BLEScanParams) ([]types.BLEDeviceInfo, error) {
+func (s DefaultBLEScanner) ScanBLEDevices(ctx context.Context, params types.BLEScanParams) ([]types.BLEDeviceInfo, error) {
 	ctx = ctxWithDefault(ctx)
 	params = normalizeBLEScanParams(params)
+	coordinator := s.coordinator
+	if coordinator == nil {
+		coordinator = defaultBLEScanCoordinator
+	}
+	scan := s.scan
+	if scan == nil {
+		scan = scanDefaultBLEDevices
+	}
+	return coordinator.scanDevices(ctx, params, scan)
+}
+
+func scanDefaultBLEDevices(ctx context.Context, params types.BLEScanParams) ([]types.BLEDeviceInfo, error) {
 	release, err := acquireDefaultBLEAdapter(ctx)
 	if err != nil {
 		return nil, err

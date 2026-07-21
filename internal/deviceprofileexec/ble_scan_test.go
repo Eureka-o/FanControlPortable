@@ -3,6 +3,7 @@ package deviceprofileexec
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -146,6 +147,103 @@ func TestScanBLEDevicesWithScannerReturnsEmptyResult(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("got %#v, want empty result", got)
+	}
+}
+
+func TestDefaultBLEScannerCoalescesConcurrentIdenticalScans(t *testing.T) {
+	coordinator := newBLEScanCoordinator()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var scanCalls atomic.Int32
+	scanner := DefaultBLEScanner{
+		coordinator: coordinator,
+		scan: func(ctx context.Context, _ types.BLEScanParams) ([]types.BLEDeviceInfo, error) {
+			if scanCalls.Add(1) == 1 {
+				close(started)
+			}
+			select {
+			case <-release:
+				return []types.BLEDeviceInfo{{
+					Address:      "AA:BB:CC:00:00:09",
+					Name:         "FlyDigi BS1",
+					ServiceUUIDs: []string{"fff0"},
+				}}, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		},
+	}
+	params := types.BLEScanParams{NameFilter: "BS1", TimeoutMs: 1000}
+
+	type scanResult struct {
+		devices []types.BLEDeviceInfo
+		err     error
+	}
+	firstDone := make(chan scanResult, 1)
+	go func() {
+		devices, err := ScanBLEDevicesWithScanner(context.Background(), scanner, params)
+		firstDone <- scanResult{devices: devices, err: err}
+	}()
+	<-started
+
+	time.AfterFunc(50*time.Millisecond, func() { close(release) })
+	secondDevices, secondErr := ScanBLEDevicesWithScanner(context.Background(), scanner, params)
+	first := <-firstDone
+
+	if first.err != nil || secondErr != nil {
+		t.Fatalf("concurrent scans returned errors: first=%v second=%v", first.err, secondErr)
+	}
+	if got := scanCalls.Load(); got != 1 {
+		t.Fatalf("underlying scan calls = %d, want 1", got)
+	}
+	if len(first.devices) != 1 || len(secondDevices) != 1 {
+		t.Fatalf("scan results = %#v and %#v, want one device each", first.devices, secondDevices)
+	}
+	first.devices[0].ServiceUUIDs[0] = "mutated"
+	if secondDevices[0].ServiceUUIDs[0] != "fff0" {
+		t.Fatalf("second result shared mutable data with first: %#v", secondDevices)
+	}
+}
+
+func TestCanceledBLEScanFollowerDoesNotCancelLeader(t *testing.T) {
+	coordinator := newBLEScanCoordinator()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var scanCalls atomic.Int32
+	scanner := DefaultBLEScanner{
+		coordinator: coordinator,
+		scan: func(ctx context.Context, _ types.BLEScanParams) ([]types.BLEDeviceInfo, error) {
+			if scanCalls.Add(1) == 1 {
+				close(started)
+			}
+			select {
+			case <-release:
+				return []types.BLEDeviceInfo{{Address: "AA:BB:CC:00:00:10", Name: "FlyDigi BS1"}}, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		},
+	}
+	params := types.BLEScanParams{NameFilter: "BS1", TimeoutMs: 1000}
+
+	leaderDone := make(chan error, 1)
+	go func() {
+		_, err := ScanBLEDevicesWithScanner(context.Background(), scanner, params)
+		leaderDone <- err
+	}()
+	<-started
+
+	followerCtx, cancelFollower := context.WithCancel(context.Background())
+	cancelFollower()
+	if _, err := ScanBLEDevicesWithScanner(followerCtx, scanner, params); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled follower error = %v, want context canceled", err)
+	}
+	close(release)
+	if err := <-leaderDone; err != nil {
+		t.Fatalf("leader scan failed after follower cancellation: %v", err)
+	}
+	if got := scanCalls.Load(); got != 1 {
+		t.Fatalf("underlying scan calls = %d, want 1", got)
 	}
 }
 

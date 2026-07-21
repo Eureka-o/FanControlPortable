@@ -24,32 +24,33 @@ const (
 // Manager is the default FanControl device manager.
 // It keeps WiFi and profile-driven serial transports in the normal build.
 type Manager struct {
-	isConnected      bool
-	productID        uint16
-	deviceType       string
-	deviceTransport  string
-	wifiEndpoint     string
-	wifiHTTPClient   *http.Client
-	wifiProtocol     string
-	wifiConfig       bool
-	wifiHeartbeat    bool
-	wifiHbStop       chan struct{}
-	wifiHbDone       chan struct{}
-	activeProfile    types.DeviceProfile
-	wifiExecutor     *deviceprofileexec.WiFiExecutor
-	bleConnector     deviceprofileexec.BLEConnector
-	bleExecutor      *deviceprofileexec.BLEExecutor
-	serialDialer     deviceprofileexec.SerialDialer
-	serialExecutor   *deviceprofileexec.SerialExecutor
-	flyDigiHID       *flyDigiHIDDevice
-	flyDigiHIDStop   chan struct{}
-	flyDigiHIDDone   chan struct{}
-	mutex            sync.RWMutex
-	operationControl deviceOperationControl
-	logger           types.Logger
-	currentFanData   atomic.Pointer[types.FanData]
-	writesBlocked    atomic.Bool
-	connectionGen    atomic.Uint64
+	isConnected       bool
+	productID         uint16
+	deviceType        string
+	deviceTransport   string
+	wifiEndpoint      string
+	wifiHTTPClient    *http.Client
+	wifiProtocol      string
+	wifiConfig        bool
+	wifiHeartbeat     bool
+	wifiHbStop        chan struct{}
+	wifiHbDone        chan struct{}
+	activeProfile     types.DeviceProfile
+	wifiExecutor      *deviceprofileexec.WiFiExecutor
+	bleConnector      deviceprofileexec.BLEConnector
+	bleExecutor       *deviceprofileexec.BLEExecutor
+	serialDialer      deviceprofileexec.SerialDialer
+	serialExecutor    *deviceprofileexec.SerialExecutor
+	flyDigiHID        *flyDigiHIDDevice
+	flyDigiHIDStop    chan struct{}
+	flyDigiHIDDone    chan struct{}
+	mutex             sync.RWMutex
+	operationControl  deviceOperationControl
+	logger            types.Logger
+	currentFanData    atomic.Pointer[types.FanData]
+	writesBlocked     atomic.Bool
+	connectionGen     atomic.Uint64
+	lastAutoBLEScanAt time.Time
 
 	onFanDataUpdate func(data *types.FanData)
 	onDisconnect    func()
