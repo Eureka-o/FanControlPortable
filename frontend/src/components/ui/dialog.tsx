@@ -28,8 +28,6 @@ function DialogOverlay({ className, style, ...props }: React.ComponentProps<type
       data-slot="dialog-overlay"
       className={cn(
         "fixed inset-0",
-        "data-[state=open]:animate-in data-[state=closed]:animate-out",
-        "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         className
       )}
       style={{ ...style, zIndex: "var(--layer-dialog-overlay)" }}
@@ -50,10 +48,8 @@ function DialogContent({ className, children, hideClose = false, overlayClassNam
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed left-[50%] top-[50%] grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%]",
-          "gap-4 rounded-xl border bg-card p-6 text-card-foreground duration-200",
-          "data-[state=open]:animate-in data-[state=closed]:animate-out",
-          "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+          "fixed left-[50%] top-[50%] grid w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] overflow-y-auto",
+          "gap-4 rounded-xl border bg-card p-4 text-card-foreground duration-200 sm:p-6",
           className
         )}
         style={{ ...style, zIndex: "var(--layer-dialog-content)" }}
