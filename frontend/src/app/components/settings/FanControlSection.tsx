@@ -24,7 +24,7 @@ import {
 } from '../../lib/fan-speed';
 import { useLocale } from '../../lib/i18n';
 import { apiService } from '../../services/api';
-import { Button, Select, ToggleSwitch } from '../ui';
+import { Button, Dialog, DialogContent, DialogTitle, Select, ToggleSwitch } from '../ui';
 import { Section, SettingRow } from './SettingLayout';
 import TemperatureBaselineSection, { normalizeTemperatureSource } from './TemperatureBaselineSection';
 
@@ -388,66 +388,51 @@ export default function FanControlSection({
         )}
       </Section>
 
-      <AnimatePresence>
-        {showCustomSpeedWarning && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-            onClick={() => setShowCustomSpeedWarning(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-xl"
-              onClick={(event) => event.stopPropagation()}
+      <Dialog open={showCustomSpeedWarning} onOpenChange={setShowCustomSpeedWarning}>
+        <DialogContent hideClose className="max-w-sm">
+          <div className="flex justify-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/15">
+              <TriangleAlert className="h-8 w-8 text-amber-600" />
+            </div>
+          </div>
+
+          <DialogTitle className="text-center text-lg font-bold">
+            {t('controlPanel.customSpeedDialog.title')}
+          </DialogTitle>
+
+          <div className="rounded-xl border border-amber-300/40 bg-amber-500/10 p-3 text-sm">
+            <p className="mb-2 font-medium text-foreground">{t('controlPanel.customSpeedDialog.enabledTitle')}</p>
+            <ul className="space-y-1 text-xs text-muted-foreground">
+              <li>{t('controlPanel.customSpeedDialog.bullets.disableAutoControl')}</li>
+              <li>{t('controlPanel.customSpeedDialog.bullets.fixedSpeed')}</li>
+              <li>{t('controlPanel.customSpeedDialog.bullets.insufficientCooling')}</li>
+            </ul>
+          </div>
+
+          <div className="rounded-xl bg-muted/60 p-3 text-center">
+            <span className="text-xs text-muted-foreground">{t('controlPanel.customSpeedDialog.speedLabel')}</span>
+            <div className="text-xl font-bold text-amber-600">{formatFanSpeedValue(customSpeedDraftValue)}{overviewSpeedLabel}</div>
+          </div>
+
+          <div className="flex flex-col-reverse gap-3 min-[420px]:flex-row">
+            <Button variant="secondary" onClick={() => setShowCustomSpeedWarning(false)} className="flex-1">
+              {t('common.actions.cancel')}
+            </Button>
+            <Button
+              variant="primary"
+              onClick={async () => {
+                if (await handleCustomSpeedApply(true, customSpeedInput)) {
+                  setShowCustomSpeedWarning(false);
+                }
+              }}
+              className="flex-1 bg-amber-600 text-white hover:bg-amber-700"
+              icon={<CheckCircle2 className="h-4 w-4" />}
             >
-              <div className="mb-4 flex justify-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/15">
-                  <TriangleAlert className="h-8 w-8 text-amber-600" />
-                </div>
-              </div>
-
-              <h3 className="mb-3 text-center text-lg font-bold text-foreground">{t('controlPanel.customSpeedDialog.title')}</h3>
-
-              <div className="mb-4 rounded-xl border border-amber-300/40 bg-amber-500/10 p-3 text-sm">
-                <p className="mb-2 font-medium text-foreground">{t('controlPanel.customSpeedDialog.enabledTitle')}</p>
-                <ul className="space-y-1 text-xs text-muted-foreground">
-                  <li>{t('controlPanel.customSpeedDialog.bullets.disableAutoControl')}</li>
-                  <li>{t('controlPanel.customSpeedDialog.bullets.fixedSpeed')}</li>
-                  <li>{t('controlPanel.customSpeedDialog.bullets.insufficientCooling')}</li>
-                </ul>
-              </div>
-
-              <div className="mb-5 rounded-xl bg-muted/60 p-3 text-center">
-                <span className="text-xs text-muted-foreground">{t('controlPanel.customSpeedDialog.speedLabel')}</span>
-                <div className="text-xl font-bold text-amber-600">{formatFanSpeedValue(customSpeedDraftValue)}{overviewSpeedLabel}</div>
-              </div>
-
-              <div className="flex gap-3">
-                <Button variant="secondary" onClick={() => setShowCustomSpeedWarning(false)} className="flex-1">
-                  {t('common.actions.cancel')}
-                </Button>
-                <Button
-                  variant="primary"
-                  onClick={async () => {
-                    if (await handleCustomSpeedApply(true, customSpeedInput)) {
-                      setShowCustomSpeedWarning(false);
-                    }
-                  }}
-                  className="flex-1 bg-amber-600 text-white hover:bg-amber-700"
-                  icon={<CheckCircle2 className="h-4 w-4" />}
-                >
-                  {t('controlPanel.customSpeedDialog.confirm')}
-                </Button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              {t('controlPanel.customSpeedDialog.confirm')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

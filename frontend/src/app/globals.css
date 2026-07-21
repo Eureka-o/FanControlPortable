@@ -781,6 +781,28 @@ html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="c
   transition: none;
 }
 
+@keyframes dialog-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes dialog-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+[data-slot="dialog-overlay"][data-state="open"],
+[data-slot="dialog-content"][data-state="open"] {
+  animation: dialog-fade-in 150ms ease-out;
+}
+
+[data-slot="dialog-overlay"][data-state="closed"],
+[data-slot="dialog-content"][data-state="closed"] {
+  animation: dialog-fade-out 150ms ease-in;
+}
+
 [data-slot="dialog-overlay"] {
   background: var(--theme-dialog-overlay-background);
   backdrop-filter: var(--theme-dialog-overlay-backdrop-filter);
