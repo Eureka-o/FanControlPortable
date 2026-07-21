@@ -43,6 +43,37 @@ func TestNoiseDiagnosticLeaseExpires(t *testing.T) {
 	}
 }
 
+func TestNoiseLearningUsesOnlyActiveDeviceResult(t *testing.T) {
+	result := types.NoiseDiagnosticResult{
+		DeviceKey:  "ble::bs1",
+		Unit:       types.FanSpeedUnitRPM,
+		RiseDB:     9,
+		Confidence: "high",
+		Points: []types.NoiseDiagnosticPoint{
+			{Requested: 1000, Actual: 1000, LevelDB: -60, SpreadDB: 1, Valid: true},
+			{Requested: 2000, Actual: 2000, LevelDB: -59, SpreadDB: 1, Valid: true},
+			{Requested: 3000, Actual: 3000, LevelDB: -57, SpreadDB: 1, Valid: true},
+			{Requested: 4000, Actual: 4000, LevelDB: -50, SpreadDB: 1, Valid: true},
+		},
+	}
+	cfg := types.AppConfig{
+		SmartControl: types.SmartControlConfig{NoiseWeight: 4},
+		NoiseDiagnosticsByDevice: map[string]types.NoiseDiagnosticResult{
+			result.DeviceKey: result,
+		},
+	}
+
+	if gain := noiseLearningGainForDevice(cfg, result.DeviceKey, 3500, types.FanSpeedUnitRPM); gain <= 1 {
+		t.Fatalf("active-device gain = %.2f, want > 1", gain)
+	}
+	if gain := noiseLearningGainForDevice(cfg, "hid::other", 3500, types.FanSpeedUnitRPM); gain != 1 {
+		t.Fatalf("other-device gain = %.2f, want 1", gain)
+	}
+	if gain := noiseLearningGainForDevice(cfg, result.DeviceKey, 3500, types.FanSpeedUnitPercent); gain != 1 {
+		t.Fatalf("unit-mismatched gain = %.2f, want 1", gain)
+	}
+}
+
 func TestNoiseDiagnosticActualSpeedKeepsPercentInDisplayUnits(t *testing.T) {
 	fanData := &types.FanData{CurrentRPM: 2400, TargetRPM: 79}
 	if got := noiseDiagnosticActualSpeed(fanData, types.FanSpeedUnitPercent); got != 79 {
@@ -64,6 +95,27 @@ func TestNoiseDiagnosticSettleOutcomeKeepsLastValidRPMOnTimeout(t *testing.T) {
 	actual, reason, err = noiseDiagnosticSettleOutcome(5, 0, 0, 0, types.FanSpeedUnitPercent)
 	if err != nil || actual != 5 || reason != "command-accepted" {
 		t.Fatalf("percent outcome = actual %d, reason %q, error %v; want 5, command-accepted, nil", actual, reason, err)
+	}
+}
+
+func TestNoiseDiagnosticRPMStabilityToleratesTelemetryJitter(t *testing.T) {
+	if !noiseDiagnosticRPMIsSteady(1400, 1350) {
+		t.Fatal("normal RPM telemetry jitter was treated as movement")
+	}
+	if noiseDiagnosticRPMIsSteady(1400, 1300) {
+		t.Fatal("a changing RPM was treated as stable")
+	}
+}
+
+func TestNoiseDiagnosticConnectionChangeStopsWaiting(t *testing.T) {
+	if noiseDiagnosticConnectionChanged(true, 7, 7) {
+		t.Fatal("unchanged live connection was rejected")
+	}
+	if !noiseDiagnosticConnectionChanged(false, 7, 7) {
+		t.Fatal("disconnect was not detected")
+	}
+	if !noiseDiagnosticConnectionChanged(true, 8, 7) {
+		t.Fatal("connection replacement was not detected")
 	}
 }
 

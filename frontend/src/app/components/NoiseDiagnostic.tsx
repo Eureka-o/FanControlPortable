@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, Check, Mic, Pause, X } from 'lucide-react';
+import { Activity, Check, Clock3, Info, Mic, Pause, ShieldCheck, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { types } from '../../../wailsjs/go/models';
@@ -69,6 +69,8 @@ export default function NoiseDiagnostic({
     runtimeDeviceCapabilities,
     (fanData as any)?.flyDigiCapability,
   ), [fanData, runtimeDeviceCapabilities, runtimeDeviceProfile]);
+  const plannedSteps = useMemo(() => range ? buildDiagnosticSteps(range) : [], [range]);
+  const estimatedMinutes = Math.max(1, Math.ceil((plannedSteps.length * 18 + 8) / 60));
   const relativeResultPoints = useMemo(() => {
     if (!result?.points?.length) return [];
     const floor = Math.min(...result.points.map((point) => point.levelDb));
@@ -301,6 +303,13 @@ export default function NoiseDiagnostic({
               className="w-full"
             />
             {range && <div className="text-xs text-muted-foreground">{t('noiseDiagnostic.bounds', { min: range.min, max: range.max, unit: fanSpeedDisplaySuffix(range.unit) })}</div>}
+            {range && (
+              <div className="grid gap-2 rounded-lg border border-border/70 bg-muted/20 p-3 text-xs leading-relaxed text-muted-foreground sm:grid-cols-2">
+                <div className="flex items-start gap-2"><Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><span>{t('noiseDiagnostic.estimatedTime', { count: plannedSteps.length, minutes: estimatedMinutes })}</span></div>
+                <div className="flex items-start gap-2"><Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><span>{t('noiseDiagnostic.operationReminder')}</span></div>
+                <div className="flex items-start gap-2 sm:col-span-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><span>{t('noiseDiagnostic.learningReminder')}</span></div>
+              </div>
+            )}
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-xs leading-relaxed text-amber-800 dark:text-amber-200">{t('noiseDiagnostic.disclaimer')}</div>
             <DialogFooter>
               <Button variant="secondary" size="sm" onClick={() => handleOpenChange(false)} icon={<X className="h-3.5 w-3.5" />}>{t('common.actions.cancel')}</Button>
@@ -312,6 +321,7 @@ export default function NoiseDiagnostic({
         {phase === 'confirm' && range && (
           <div className="space-y-4">
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-relaxed">{t('noiseDiagnostic.confirmation')}</div>
+            <div className="flex items-start gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground"><Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><span>{t('noiseDiagnostic.estimatedTime', { count: plannedSteps.length, minutes: estimatedMinutes })}</span></div>
             <label className="flex items-start gap-2 text-sm text-muted-foreground">
               <input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} className="mt-1" />
               <span>{t('noiseDiagnostic.confirmAcknowledgement')}</span>
@@ -327,6 +337,7 @@ export default function NoiseDiagnostic({
           <div className="space-y-4">
             <div className="flex items-center justify-between text-sm"><span>{t('noiseDiagnostic.progress')}</span><span className="font-semibold tabular-nums">{progress}%</span></div>
             <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${progress}%` }} /></div>
+            <div aria-live="polite" aria-atomic="true" className="flex items-start gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-xs leading-relaxed text-muted-foreground"><Activity className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><span>{t('noiseDiagnostic.runningReminder')}</span></div>
             <div className="grid grid-cols-2 gap-3 text-center">
               <div className="rounded-xl border border-border/70 bg-muted/20 p-3"><div className="text-xs text-muted-foreground">{t('noiseDiagnostic.currentTarget')}</div><div className="mt-1 text-xl font-semibold tabular-nums">{currentTarget ?? '--'} {fanSpeedDisplaySuffix(range?.unit)}</div></div>
               <div className="rounded-xl border border-border/70 bg-muted/20 p-3"><div className="text-xs text-muted-foreground">{t('noiseDiagnostic.samples')}</div><div className="mt-1 text-xl font-semibold tabular-nums">{points.length}</div></div>
@@ -350,6 +361,10 @@ export default function NoiseDiagnostic({
               {relativeResultPoints.map((point) => <div key={`${point.actual}-${point.requested}`} className="flex items-center gap-3 text-xs"><span className="w-16 tabular-nums">{point.actual}</span><div className="h-2 flex-1 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary/70" style={{ width: `${Math.max(2, (point.relativeDb / relativeResultMax) * 100)}%` }} /></div><span className="w-16 text-right tabular-nums">{formatRelativeDb(point.relativeDb)}</span></div>)}
             </div>
             <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">{t('noiseDiagnostic.resultNote', { reason: result.confidenceReason })}</div>
+            <div className="flex items-start gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+              {result.confidence === 'low' ? <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" /> : <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />}
+              <span>{t(result.confidence === 'low' ? 'noiseDiagnostic.resultLearningSkipped' : 'noiseDiagnostic.resultLearningReady')}</span>
+            </div>
             <DialogFooter><Button variant="primary" size="sm" onClick={() => handleOpenChange(false)} icon={<Check className="h-3.5 w-3.5" />}>{t('common.actions.close')}</Button></DialogFooter>
           </div>
         )}

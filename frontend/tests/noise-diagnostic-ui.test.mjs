@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildAxisNoiseRefinementSteps, buildDiagnosticSteps, confirmAxisNoiseSeverity, fanSpeedDisplaySuffix, noiseDiagnosticDeviceKey, NoiseMeter } from '../src/app/lib/noise-diagnostic.ts';
+import { buildAxisNoiseRefinementSteps, buildDiagnosticSteps, confirmAxisNoiseSeverity, deriveNoiseDiagnosticRange, fanSpeedDisplaySuffix, noiseDiagnosticDeviceKey, NoiseMeter } from '../src/app/lib/noise-diagnostic.ts';
 
 const component = readFileSync(new URL('../src/app/components/NoiseDiagnostic.tsx', import.meta.url), 'utf8');
 const axisComponent = readFileSync(new URL('../src/app/components/AxisNoiseScan.tsx', import.meta.url), 'utf8');
@@ -11,8 +11,19 @@ const selectComponent = readFileSync(new URL('../src/components/ui/select.tsx', 
 const coreDiagnostic = readFileSync(new URL('../../internal/coreapp/noise_diagnostic.go', import.meta.url), 'utf8');
 
 test('noise diagnostic uses device-aware floors and runtime bounds', () => {
-  assert.match(utility, /unit === 'percent' \? 5 : isFlyDigi \? 1000/);
-  assert.match(utility, /Math\.min\(max, Number\(flyDigiCapability\.maxRpm\)\)/);
+  const rpmRange = deriveNoiseDiagnosticRange(
+    { id: 'builtin.flydigi.bs3', transport: 'hid', speedUnit: 'rpm', speedRange: { min: 0, max: 4000, step: 1 } },
+    null,
+    { available: true, maxRpm: 3300 },
+  );
+  const percentRange = deriveNoiseDiagnosticRange(
+    { id: 'custom.percent', transport: 'serial', speedUnit: 'percent', speedRange: { min: 0, max: 100, step: 1 } },
+    null,
+    null,
+  );
+  assert.equal(rpmRange?.min, 1000);
+  assert.equal(rpmRange?.max, 3300);
+  assert.equal(percentRange?.min, 5);
   assert.match(component, /setRange\(\{ \.\.\.range, min:/);
   assert.match(component, /setRange\(\{ \.\.\.range, max:/);
 });
@@ -86,9 +97,43 @@ test('percent sweep spans the configured range and uses percent display units', 
   assert.doesNotMatch(axisComponent, /unit\.toUpperCase\(\)/);
 });
 
+test('RPM sweep points respect the device minimum step', () => {
+  const steps = buildDiagnosticSteps({ unit: 'rpm', min: 1000, max: 4000, step: 100 });
+  assert.equal(steps[0], 1000);
+  assert.equal(steps.at(-1), 4000);
+  assert.ok(steps.every((value) => (value - 1000) % 100 === 0));
+});
+
+test('diagnostic range aligns configured limits but keeps an exact runtime limit', () => {
+  const profile = { id: 'builtin.flydigi.bs3', transport: 'hid', speedUnit: 'rpm', speedRange: { min: 0, max: 3350, step: 1 } };
+  assert.deepEqual(deriveNoiseDiagnosticRange(profile, null, null), {
+    unit: 'rpm', min: 1000, max: 3300, step: 100, minSource: 'flydigi-diagnostic-floor', maxSource: 'profile',
+  });
+  assert.deepEqual(deriveNoiseDiagnosticRange({ ...profile, speedRange: { min: 0, max: 4000, step: 1 } }, null, { available: true, maxRpm: 3350 }), {
+    unit: 'rpm', min: 1000, max: 3350, step: 100, minSource: 'flydigi-diagnostic-floor', maxSource: 'runtime-capability',
+  });
+});
+
 test('microphone selection survives device changes and opens above dialogs', () => {
   assert.match(component, /options\.some\(\(option\) => option\.deviceId === current\)/);
   assert.match(selectComponent, /zIndex: "calc\(var\(--layer-dialog-content\) \+ 1\)"/);
+});
+
+test('diagnostic guidance shows duration, operation reminders, and live status', () => {
+  assert.match(component, /const plannedSteps = useMemo/);
+  assert.match(component, /noiseDiagnostic\.estimatedTime/);
+  assert.match(component, /noiseDiagnostic\.operationReminder/);
+  assert.match(component, /noiseDiagnostic\.learningReminder/);
+  assert.match(component, /noiseDiagnostic\.runningReminder/);
+  assert.match(component, /aria-live="polite"/);
+
+  assert.match(axisComponent, /const plannedSteps = useMemo/);
+  assert.match(axisComponent, /axisNoise\.estimatedTime/);
+  assert.match(axisComponent, /axisNoise\.operationReminder/);
+  assert.match(axisComponent, /axisNoise\.refinementReminder/);
+  assert.match(axisComponent, /axisNoise\.runningReminder/);
+  assert.match(axisComponent, /aria-live="polite"/);
+  assert.match(axisComponent, /min-\[560px\]:grid-cols-3/);
 });
 
 test('microphone enumeration survives a permission probe failure', async () => {

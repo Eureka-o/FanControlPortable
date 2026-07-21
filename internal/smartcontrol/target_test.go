@@ -1,6 +1,7 @@
 package smartcontrol
 
 import (
+	"math"
 	"testing"
 
 	"github.com/TIANLI0/THRM/internal/types"
@@ -37,6 +38,90 @@ func TestCalculateTargetRPMAppliesOffsetsWhenLearningEnabled(t *testing.T) {
 	got := CalculateTargetRPM(60, curve, cfg)
 	if got != 42 {
 		t.Fatalf("CalculateTargetRPM() = %d, want learned curve speed 42", got)
+	}
+}
+
+func TestNoiseLearningDownGainUsesTrustworthyLocalSlope(t *testing.T) {
+	cfg := types.SmartControlConfig{NoiseWeight: 4}
+	result := types.NoiseDiagnosticResult{
+		Unit:       types.FanSpeedUnitRPM,
+		RiseDB:     9,
+		Confidence: "high",
+		Points: []types.NoiseDiagnosticPoint{
+			{Requested: 1000, Actual: 1000, LevelDB: -60, SpreadDB: 1, Valid: true},
+			{Requested: 2000, Actual: 2000, LevelDB: -59, SpreadDB: 1, Valid: true},
+			{Requested: 3000, Actual: 3000, LevelDB: -57, SpreadDB: 1, Valid: true},
+			{Requested: 4000, Actual: 4000, LevelDB: -50, SpreadDB: 1, Valid: true},
+		},
+	}
+
+	if gain := NoiseLearningDownGain(3500, types.FanSpeedUnitRPM, cfg, result); gain <= 1 {
+		t.Fatalf("NoiseLearningDownGain() = %.2f, want > 1 for a steep local slope", gain)
+	}
+	result.Confidence = "low"
+	if gain := NoiseLearningDownGain(3500, types.FanSpeedUnitRPM, cfg, result); gain != 1 {
+		t.Fatalf("low-confidence gain = %.2f, want 1", gain)
+	}
+	result.Confidence = "high"
+	if gain := NoiseLearningDownGain(3500, types.FanSpeedUnitPercent, cfg, result); gain != 1 {
+		t.Fatalf("unit-mismatched gain = %.2f, want 1", gain)
+	}
+}
+
+func TestNoiseLearningDownGainConvertsPercentTicks(t *testing.T) {
+	cfg := types.SmartControlConfig{NoiseWeight: 4}
+	result := types.NoiseDiagnosticResult{
+		Unit:       types.FanSpeedUnitPercent,
+		RiseDB:     9,
+		Confidence: "high",
+		Points: []types.NoiseDiagnosticPoint{
+			{Requested: 5, Actual: 5, LevelDB: -60, SpreadDB: 1, Valid: true},
+			{Requested: 30, Actual: 30, LevelDB: -59, SpreadDB: 1, Valid: true},
+			{Requested: 60, Actual: 60, LevelDB: -57, SpreadDB: 1, Valid: true},
+			{Requested: 90, Actual: 90, LevelDB: -51, SpreadDB: 1, Valid: true},
+		},
+	}
+
+	if gain := NoiseLearningDownGain(types.PercentToTicks(75), types.FanSpeedUnitPercent, cfg, result); gain <= 1 {
+		t.Fatalf("percent-device gain = %.2f, want > 1 after tick conversion", gain)
+	}
+}
+
+func TestNoiseLearningGainChangesOnlyDownwardLearning(t *testing.T) {
+	curve := []types.FanCurvePoint{
+		{Temperature: 50, RPM: 1600},
+		{Temperature: 65, RPM: 2600},
+		{Temperature: 80, RPM: 3600},
+	}
+	cfg := types.SmartControlConfig{
+		LearningBias:   types.LearningBiasBalanced,
+		TargetTemp:     68,
+		Hysteresis:     2,
+		LearnRate:      5,
+		MaxLearnOffset: 600,
+	}
+	previous := []int{0, 0, 0}
+
+	safeBase, _ := LearnSteadyOffsetForUnitWithPowerAndNoiseGain(1, 75, 0, false, 0.02, true, curve, previous, cfg, types.FanSpeedUnitRPM, 1)
+	safeNoise, _ := LearnSteadyOffsetForUnitWithPowerAndNoiseGain(1, 75, 0, false, 0.02, true, curve, previous, cfg, types.FanSpeedUnitRPM, 1.8)
+	for index := range safeBase {
+		if safeNoise[index] != safeBase[index] {
+			t.Fatalf("positive safety learning changed at %d: base=%v noise=%v", index, safeBase, safeNoise)
+		}
+	}
+
+	downBase, _ := LearnSteadyOffsetForUnitWithPowerAndNoiseGain(1, 55, 0, false, 0.02, true, curve, previous, cfg, types.FanSpeedUnitRPM, 1)
+	downNoise, _ := LearnSteadyOffsetForUnitWithPowerAndNoiseGain(1, 55, 0, false, 0.02, true, curve, previous, cfg, types.FanSpeedUnitRPM, 1.8)
+	if downNoise[1] >= downBase[1] {
+		t.Fatalf("noise-aware downward learning = %v, want a larger reduction than %v", downNoise, downBase)
+	}
+	downHuge, _ := LearnSteadyOffsetForUnitWithPowerAndNoiseGain(1, 55, 0, false, 0.02, true, curve, previous, cfg, types.FanSpeedUnitRPM, 100)
+	if downHuge[1] != downNoise[1] {
+		t.Fatalf("oversized gain was not capped: max=%v oversized=%v", downNoise, downHuge)
+	}
+	downInvalid, _ := LearnSteadyOffsetForUnitWithPowerAndNoiseGain(1, 55, 0, false, 0.02, true, curve, previous, cfg, types.FanSpeedUnitRPM, math.NaN())
+	if downInvalid[1] != downBase[1] {
+		t.Fatalf("invalid gain did not fall back to neutral: base=%v invalid=%v", downBase, downInvalid)
 	}
 }
 

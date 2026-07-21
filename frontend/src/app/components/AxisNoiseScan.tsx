@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Ear, RotateCcw, ShieldCheck, TriangleAlert, X } from 'lucide-react';
+import { Check, Clock3, Ear, Info, RotateCcw, ShieldCheck, TriangleAlert, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { types } from '../../../wailsjs/go/models';
@@ -72,6 +72,8 @@ export default function AxisNoiseScan({
     fanData?.flyDigiCapability,
   ), [fanData, runtimeDeviceCapabilities, runtimeDeviceProfile]);
   const deviceKey = useMemo(() => noiseDiagnosticDeviceKey(runtimeDeviceProfile), [runtimeDeviceProfile]);
+  const plannedSteps = useMemo(() => range ? buildDiagnosticSteps(range) : [], [range]);
+  const estimatedMinutes = Math.max(1, Math.ceil((plannedSteps.length * 25) / 60));
   const existingProfile = (config.axisNoiseProfilesByDevice?.[deviceKey] || null) as AxisNoiseProfile | null;
 
   const refreshConfig = useCallback(async () => {
@@ -275,6 +277,13 @@ export default function AxisNoiseScan({
                 <NumberInput label={t('noiseDiagnostic.max')} value={range.max} onChange={(value) => setRange({ ...range, max: Math.min(derivedRange?.max || range.max, Math.max(value, range.min + range.step)) })} min={range.min + range.step} max={derivedRange?.max} step={range.step} suffix={fanSpeedDisplaySuffix(range.unit)} />
               </div>
             ) : <div className="text-sm text-muted-foreground">{t('noiseDiagnostic.errors.unavailable')}</div>}
+            {range && (
+              <div className="grid gap-2 rounded-lg border border-border/70 bg-muted/20 p-3 text-xs leading-relaxed text-muted-foreground sm:grid-cols-2">
+                <div className="flex items-start gap-2"><Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><span>{t('axisNoise.estimatedTime', { count: plannedSteps.length, minutes: estimatedMinutes })}</span></div>
+                <div className="flex items-start gap-2"><Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><span>{t('axisNoise.operationReminder')}</span></div>
+                <div className="flex items-start gap-2 sm:col-span-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><span>{t('axisNoise.refinementReminder')}</span></div>
+              </div>
+            )}
             <div className="flex gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-xs leading-relaxed text-amber-800 dark:text-amber-200"><TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />{t('axisNoise.disclaimer')}</div>
             <DialogFooter>
               <Button variant="secondary" size="sm" onClick={() => handleOpenChange(false)} icon={<X className="h-3.5 w-3.5" />}>{t('common.actions.cancel')}</Button>
@@ -287,8 +296,9 @@ export default function AxisNoiseScan({
           <div className="space-y-4">
             <div className="flex items-center justify-between text-sm"><span>{t('axisNoise.progress')}</span><span className="font-semibold tabular-nums">{progress}%</span></div>
             <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${progress}%` }} /></div>
+            <div aria-live="polite" aria-atomic="true" className="flex items-start gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-xs leading-relaxed text-muted-foreground"><Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><span>{t('axisNoise.runningReminder')}</span></div>
             <div className="py-5 text-center"><div className="text-xs text-muted-foreground">{t('axisNoise.current')}</div><div className="mt-1 text-3xl font-semibold tabular-nums">{current?.actual || current?.requested || '--'} {fanSpeedDisplaySuffix(range?.unit)}</div><div className={confirmingNoise ? 'mt-2 text-sm font-medium text-foreground' : 'mt-2 text-sm text-muted-foreground'}>{t(confirmingNoise ? 'axisNoise.confirmRatePrompt' : 'axisNoise.ratePrompt')}</div></div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 gap-2 min-[560px]:grid-cols-3">
               <Button variant="secondary" disabled={busy} onClick={() => void rateCurrent('none')} icon={<Check className="h-3.5 w-3.5" />}>{t('axisNoise.severity.none')}</Button>
               <Button variant="outline" disabled={busy} onClick={() => void rateCurrent('mild')} icon={<Ear className="h-3.5 w-3.5" />}>{t('axisNoise.severity.mild')}</Button>
               <Button variant="primary" disabled={busy} onClick={() => void rateCurrent('obvious')} icon={<TriangleAlert className="h-3.5 w-3.5" />}>{t('axisNoise.severity.obvious')}</Button>
@@ -300,6 +310,7 @@ export default function AxisNoiseScan({
         {phase === 'confirm' && (
           <div className="space-y-4">
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-relaxed">{t('axisNoise.confirmation')}</div>
+            <div className="flex items-start gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground"><Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><span>{t('axisNoise.estimatedTime', { count: plannedSteps.length, minutes: estimatedMinutes })}</span></div>
             <label className="flex items-start gap-2 text-sm text-muted-foreground">
               <input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} className="mt-1" />
               <span>{t('axisNoise.confirmAcknowledgement')}</span>
@@ -315,6 +326,7 @@ export default function AxisNoiseScan({
           <div className="space-y-4">
             <div className="flex items-center gap-3 border-b border-border/70 pb-3"><ShieldCheck className="h-5 w-5 text-primary" /><div><div className="text-sm font-medium">{t('axisNoise.result.title')}</div><div className="text-xs text-muted-foreground">{t('axisNoise.result.description', { count: result.zones.length })}</div></div></div>
             {result.zones.length > 0 ? <div className="space-y-2">{result.zones.map((zone) => <div key={`${zone.min}-${zone.max}`} className="flex items-center justify-between rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-sm"><span className="tabular-nums">{zone.min}–{zone.max} {fanSpeedDisplaySuffix(result.unit)}</span><Badge variant={zone.severity === 'obvious' ? 'warning' : 'info'}>{t(`axisNoise.severity.${zone.severity}`)}</Badge></div>)}</div> : <div className="text-sm text-muted-foreground">{t('axisNoise.result.none')}</div>}
+            <div className="flex items-start gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-xs leading-relaxed text-muted-foreground"><Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><span>{t('axisNoise.result.automaticOnly')}</span></div>
             <DialogFooter><Button variant="primary" size="sm" onClick={() => handleOpenChange(false)} icon={<Check className="h-3.5 w-3.5" />}>{t('common.actions.close')}</Button></DialogFooter>
           </div>
         )}

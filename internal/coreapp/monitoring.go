@@ -512,11 +512,12 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				if smartCfg.Learning && advancedSampleUsable && !predictionActive && !targetLimited && !axisNoiseAdjusted && !a.noiseDiagnosticLeaseActive() {
 					steady := steadyObserver.ObserveWithEffectivePowerAt(now, controlTemp, observedRPM, effectivePower, controlCurve, smartCfg)
 					if steady.BucketIdx >= 0 && smartcontrol.AllowsLongTermOffsetLearning(steady, smartCfg) {
-						newOffsets, changed := learnSteadyOffsetForActiveUnit(steady.BucketIdx, steady.MeanTemp, steady.MeanPower, steady.HavePower, steady.LocalEff, steady.HaveEff, cfg.FanCurve, smartCfg.LearnedOffsets, smartCfg, speedUnit)
+						scopeKey := a.activeDeviceCurveScopeKey(cfg)
+						noiseGain := noiseLearningGainForDevice(cfg, scopeKey, steady.MeanRPM, speedUnit)
+						newOffsets, changed := learnSteadyOffsetForActiveUnit(steady.BucketIdx, steady.MeanTemp, steady.MeanPower, steady.HavePower, steady.LocalEff, steady.HaveEff, cfg.FanCurve, smartCfg.LearnedOffsets, smartCfg, speedUnit, noiseGain)
 						if changed {
 							nextSmartCfg := smartCfg
 							nextSmartCfg.LearnedOffsets = newOffsets
-							scopeKey := a.activeDeviceCurveScopeKey(cfg)
 							updatedCfg, updatedRevision, applied := a.configManager.MutateIfRevision(cfgRevision, func(current *types.AppConfig) {
 								current.SmartControl = nextSmartCfg
 								storeSmartControlOffsetsForDeviceKey(current, scopeKey)
@@ -725,11 +726,8 @@ func newStableObserverForActiveUnit(curveLen int, unit string) *smartcontrol.Sta
 	return smartcontrol.NewLegacyRPMStableObserver(curveLen)
 }
 
-func learnSteadyOffsetForActiveUnit(bucketIdx int, meanTemp int, meanPower float64, havePower bool, localEff float64, haveEff bool, curve []types.FanCurvePoint, prevOffsets []int, cfg types.SmartControlConfig, unit string) ([]int, bool) {
-	if types.IsPercentSpeedUnit(unit) {
-		return smartcontrol.LearnPercentSteadyOffsetTicksWithPower(bucketIdx, meanTemp, meanPower, havePower, localEff, haveEff, curve, prevOffsets, cfg)
-	}
-	return smartcontrol.LearnLegacyRPMSteadyOffsetWithPower(bucketIdx, meanTemp, meanPower, havePower, localEff, haveEff, curve, prevOffsets, cfg)
+func learnSteadyOffsetForActiveUnit(bucketIdx int, meanTemp int, meanPower float64, havePower bool, localEff float64, haveEff bool, curve []types.FanCurvePoint, prevOffsets []int, cfg types.SmartControlConfig, unit string, noiseGain float64) ([]int, bool) {
+	return smartcontrol.LearnSteadyOffsetForUnitWithPowerAndNoiseGain(bucketIdx, meanTemp, meanPower, havePower, localEff, haveEff, smartcontrol.CurveForUnit(curve, unit), prevOffsets, cfg, unit, noiseGain)
 }
 
 func applyFlyDigiRuntimeCapabilityToTarget(targetRPM int, fanData *types.FanData, unit string) (int, bool) {
