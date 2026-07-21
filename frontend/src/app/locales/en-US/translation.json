@@ -635,7 +635,11 @@
     "loadingMicrophones": "Loading microphones...",
     "noMicrophone": "No microphone available",
     "bounds": "Allowed range: {{min}}-{{max}} {{unit}}",
-    "disclaimer": "The test temporarily changes fan speed. Keep the device unobstructed and stop immediately if temperatures or noise become unsafe. Previous control settings are restored after the test.",
+    "estimatedTime": "{{count}} base samples, approximately {{minutes}} minutes",
+    "operationReminder": "Keep the microphone fixed and avoid speech, impacts, and other background interference.",
+    "learningReminder": "Medium- and high-confidence results improve the noise benefit of safe downward learning.",
+    "runningReminder": "Waiting for stable fan speed and sampling. Keep the room quiet and do not move the microphone.",
+    "disclaimer": "The test temporarily changes fan speed. Keep the device unobstructed and stop immediately if temperatures or noise become unsafe. Previous control settings are restored afterward; stopping discards only this run and keeps saved results.",
     "confirmation": "You changed the test range. The fan will automatically move through the selected range and briefly hold each point while the microphone samples.",
     "confirmAcknowledgement": "I understand and want to start the automatic speed sweep.",
     "confirmStart": "Start test",
@@ -650,6 +654,8 @@
     "peak": "Suspected peak",
     "confidence": "Confidence",
     "resultNote": "Confidence basis: {{reason}}. This result is a relative noise trend, not an absolute dBA measurement.",
+    "resultLearningReady": "The result is saved. Later steady learning will use nearby noise benefit when safely reducing speed.",
+    "resultLearningSkipped": "The result is saved but its confidence is too low for noise-benefit learning. Retest in a quieter environment.",
     "errors": {
       "invalidRange": "Choose a valid speed range.",
       "unstableBaseline": "The room baseline was unstable. Reduce background noise and try again.",
@@ -663,7 +669,11 @@
     "open": "Bearing-noise scan",
     "title": "Bearing-noise scan",
     "description": "The fan speed changes automatically while you rate bearing noise at each point.",
-    "disclaimer": "The scan changes fan speed automatically. Keep airflow unobstructed and watch temperatures; stopping discards every rating from this run.",
+    "estimatedTime": "{{count}} base ratings, usually about {{minutes}} minutes",
+    "operationReminder": "Rate every stable point as none, mild, or obvious bearing noise.",
+    "refinementReminder": "Reported noise is confirmed at the same speed and adds nearby fine-scan points, so the scan may take longer.",
+    "runningReminder": "Listen until the current speed is stable before rating it. Reported noise is confirmed once at the same point.",
+    "disclaimer": "The scan changes fan speed automatically. Keep airflow unobstructed and watch temperatures; stopping discards this run while preserving the saved avoidance profile.",
     "confirmation": "You changed the scan range. FanControl will sweep the selected interval and wait for your rating at each stable speed.",
     "confirmAcknowledgement": "I understand the automatic speed changes and agree to start the scan.",
     "confirmStart": "Confirm and start",
@@ -687,7 +697,8 @@
     "result": {
       "title": "Scan complete",
       "description": "Generated {{count}} soft-avoidance ranges",
-      "none": "No bearing-noise range requiring avoidance was found."
+      "none": "No bearing-noise range requiring avoidance was found.",
+      "automaticOnly": "Soft avoidance applies only to automatic curve control. Manual gears and fixed speed are not changed."
     },
     "errors": {
       "invalidRange": "Choose a valid scan range.",

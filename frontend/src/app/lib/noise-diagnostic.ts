@@ -87,11 +87,12 @@ export function deriveNoiseDiagnosticRange(
     || String(profile?.model || '').toLowerCase().includes('bs1')
     || String(profile?.model || '').toLowerCase().includes('bs2');
   const min = unit === 'percent' ? 5 : isFlyDigi ? 1000 : Number(profileRange.min || 0);
-  const runtimeMax = unit === 'rpm' && flyDigiCapability?.available && Number(flyDigiCapability.maxRpm) > 0
-    ? Math.min(max, Number(flyDigiCapability.maxRpm))
-    : max;
-  if (runtimeMax <= min) return null;
-  return { unit, min, max: runtimeMax, step: Math.max(1, Number(profileRange.step || 1)), minSource: unit === 'percent' ? 'percent-diagnostic-floor' : isFlyDigi ? 'flydigi-diagnostic-floor' : 'profile', maxSource: runtimeMax < max ? 'runtime-capability' : 'profile' };
+  const step = Math.max(isFlyDigi && unit === 'rpm' ? 100 : 1, Number(profileRange.step || 1));
+  const reportedMax = Number(flyDigiCapability?.maxRpm || 0);
+  const usesRuntimeMax = unit === 'rpm' && flyDigiCapability?.available && reportedMax > 0 && reportedMax <= max;
+  const effectiveMax = usesRuntimeMax ? reportedMax : min + Math.floor((max - min) / step) * step;
+  if (effectiveMax <= min) return null;
+  return { unit, min, max: effectiveMax, step, minSource: unit === 'percent' ? 'percent-diagnostic-floor' : isFlyDigi ? 'flydigi-diagnostic-floor' : 'profile', maxSource: usesRuntimeMax ? 'runtime-capability' : 'profile' };
 }
 
 export function noiseDiagnosticDeviceKey(profile: { transport?: string; id?: string; model?: string; displayName?: string } | null | undefined) {
@@ -179,9 +180,13 @@ export function buildDiagnosticSteps(range: NoiseDiagnosticRange): number[] {
   const max = Math.floor(range.max);
   if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return [];
   const span = max - min;
-  const count = Math.min(10, Math.max(5, Math.ceil(span / Math.max(range.step || 1, span / 8)) + 1));
-  const step = span / (count - 1);
-  const values = Array.from({ length: count }, (_, index) => Math.round(min + step * index));
+  const minimumStep = Math.max(1, Math.round(range.step || 1));
+  const count = Math.min(10, Math.max(5, Math.ceil(span / Math.max(minimumStep, span / 8)) + 1));
+  const rawStep = span / (count - 1);
+  const values = Array.from({ length: count }, (_, index) => {
+    if (index === count - 1) return max;
+    return min + Math.round((rawStep * index) / minimumStep) * minimumStep;
+  });
   return [...new Set(values)].filter((value) => value >= min && value <= max);
 }
 

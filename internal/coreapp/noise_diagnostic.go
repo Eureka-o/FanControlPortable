@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/TIANLI0/THRM/internal/ipc"
+	"github.com/TIANLI0/THRM/internal/smartcontrol"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -15,6 +16,7 @@ const (
 	noiseDiagnosticLeaseDuration = 20 * time.Minute
 	noiseDiagnosticSettleTimeout = 20 * time.Second
 	noiseDiagnosticSettlePoll    = 500 * time.Millisecond
+	noiseDiagnosticPlateauDelay  = 4 * time.Second
 	noiseDiagnosticAirflowDelay  = 1500 * time.Millisecond
 )
 
@@ -175,6 +177,18 @@ func noiseDiagnosticSettleOutcome(requested, actual, targetHitCount, stableCount
 	return actual, "timeout-fallback", nil
 }
 
+func noiseDiagnosticRPMIsSteady(actual, previous int) bool {
+	if actual <= 0 || previous <= 0 {
+		return false
+	}
+	tolerance := max(60, actual*2/100)
+	return actual >= previous-tolerance && actual <= previous+tolerance
+}
+
+func noiseDiagnosticConnectionChanged(connected bool, currentGeneration, expectedGeneration uint64) bool {
+	return !connected || currentGeneration != expectedGeneration
+}
+
 // SetNoiseDiagnosticTarget changes only the temporary target owned by the lease.
 func (a *CoreApp) SetNoiseDiagnosticTarget(sessionID string, value int) (types.NoiseDiagnosticTargetResult, error) {
 	lease, err := a.noiseDiagnosticLeaseFor(sessionID)
@@ -196,24 +210,38 @@ func (a *CoreApp) SetNoiseDiagnosticTarget(sessionID string, value int) (types.N
 	if types.IsPercentSpeedUnit(unit) {
 		deviceValue = types.PercentToTicks(value)
 	}
+	connectionGeneration := a.deviceManager.ConnectionGeneration()
+	if noiseDiagnosticConnectionChanged(a.deviceManager.IsConnected(), a.deviceManager.ConnectionGeneration(), connectionGeneration) {
+		return types.NoiseDiagnosticTargetResult{}, fmt.Errorf("诊断设备连接已变化")
+	}
 	if !a.deviceManager.SetTargetSpeed(deviceValue, unit) {
 		return types.NoiseDiagnosticTargetResult{}, fmt.Errorf("目标转速下发失败")
+	}
+	if noiseDiagnosticConnectionChanged(a.deviceManager.IsConnected(), a.deviceManager.ConnectionGeneration(), connectionGeneration) {
+		return types.NoiseDiagnosticTargetResult{}, fmt.Errorf("诊断设备连接已变化")
 	}
 
 	startedAt := time.Now()
 	actual := 0
 	lastActual := 0
+	lastFanData := a.deviceManager.GetCurrentFanData()
+	freshSamples := 0
 	targetHitCount := 0
 	stableCount := 0
 	if types.IsRPMSpeedUnit(unit) {
 		deadline := time.Now().Add(noiseDiagnosticSettleTimeout)
 		for {
+			if noiseDiagnosticConnectionChanged(a.deviceManager.IsConnected(), a.deviceManager.ConnectionGeneration(), connectionGeneration) {
+				return types.NoiseDiagnosticTargetResult{}, fmt.Errorf("诊断设备连接已变化")
+			}
 			select {
 			case <-lease.done:
 				return types.NoiseDiagnosticTargetResult{}, fmt.Errorf("诊断会话已结束")
 			default:
 			}
-			if fanData := a.deviceManager.GetCurrentFanData(); fanData != nil {
+			if fanData := a.deviceManager.GetCurrentFanData(); fanData != nil && fanData != lastFanData {
+				lastFanData = fanData
+				freshSamples++
 				if types.IsRPMSpeedUnit(unit) && fanData.CurrentRPM > 0 {
 					actual = noiseDiagnosticActualSpeed(fanData, unit)
 					tolerance := max(120, value*6/100)
@@ -222,7 +250,7 @@ func (a *CoreApp) SetNoiseDiagnosticTarget(sessionID string, value int) (types.N
 					} else {
 						targetHitCount = 0
 					}
-					if lastActual > 0 && actual >= lastActual-30 && actual <= lastActual+30 {
+					if noiseDiagnosticRPMIsSteady(actual, lastActual) {
 						stableCount++
 					} else {
 						stableCount = 0
@@ -230,7 +258,7 @@ func (a *CoreApp) SetNoiseDiagnosticTarget(sessionID string, value int) (types.N
 					lastActual = actual
 				}
 			}
-			if targetHitCount >= 2 || stableCount >= 4 {
+			if targetHitCount >= 2 || (time.Since(startedAt) >= noiseDiagnosticPlateauDelay && stableCount >= 4) {
 				break
 			}
 			if time.Now().After(deadline) {
@@ -248,7 +276,7 @@ func (a *CoreApp) SetNoiseDiagnosticTarget(sessionID string, value int) (types.N
 
 	actual, settleReason, err := noiseDiagnosticSettleOutcome(value, actual, targetHitCount, stableCount, unit)
 	if err != nil {
-		a.logDebug("噪声诊断转速等待失败: requested=%d%s elapsed=%s reason=%s", value, types.FanSpeedDisplaySuffix(unit), time.Since(startedAt).Round(time.Millisecond), settleReason)
+		a.logDebug("噪声诊断转速等待失败: requested=%d%s elapsed=%s samples=%d reason=%s", value, types.FanSpeedDisplaySuffix(unit), time.Since(startedAt).Round(time.Millisecond), freshSamples, settleReason)
 		return types.NoiseDiagnosticTargetResult{}, err
 	}
 	stabilizeTimer := time.NewTimer(noiseDiagnosticAirflowDelay)
@@ -258,7 +286,10 @@ func (a *CoreApp) SetNoiseDiagnosticTarget(sessionID string, value int) (types.N
 		stabilizeTimer.Stop()
 		return types.NoiseDiagnosticTargetResult{}, fmt.Errorf("诊断会话已结束")
 	}
-	a.logDebug("噪声诊断转速就绪: requested=%d%s actual=%d%s elapsed=%s reason=%s", value, types.FanSpeedDisplaySuffix(unit), actual, types.FanSpeedDisplaySuffix(unit), time.Since(startedAt).Round(time.Millisecond), settleReason)
+	if noiseDiagnosticConnectionChanged(a.deviceManager.IsConnected(), a.deviceManager.ConnectionGeneration(), connectionGeneration) {
+		return types.NoiseDiagnosticTargetResult{}, fmt.Errorf("诊断设备连接已变化")
+	}
+	a.logDebug("噪声诊断转速就绪: requested=%d%s actual=%d%s elapsed=%s samples=%d reason=%s", value, types.FanSpeedDisplaySuffix(unit), actual, types.FanSpeedDisplaySuffix(unit), time.Since(startedAt).Round(time.Millisecond), freshSamples, settleReason)
 	return types.NoiseDiagnosticTargetResult{Requested: value, Actual: actual, Unit: unit}, nil
 }
 
@@ -447,4 +478,16 @@ func axisNoiseTargetForDevice(cfg types.AppConfig, deviceKey string, target, pre
 		return target, false
 	}
 	return types.ApplyAxisNoiseAvoidance(target, previous, unit, profile)
+}
+
+func noiseLearningGainForDevice(cfg types.AppConfig, deviceKey string, steadySpeed int, unit string) float64 {
+	deviceKey = strings.TrimSpace(deviceKey)
+	if deviceKey == "" || cfg.NoiseDiagnosticsByDevice == nil {
+		return 1
+	}
+	result, ok := cfg.NoiseDiagnosticsByDevice[deviceKey]
+	if !ok {
+		return 1
+	}
+	return smartcontrol.NoiseLearningDownGain(steadySpeed, unit, cfg.SmartControl, result)
 }

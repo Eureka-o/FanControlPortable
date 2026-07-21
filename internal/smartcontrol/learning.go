@@ -1,6 +1,7 @@
 package smartcontrol
 
 import (
+	"math"
 	"time"
 
 	"github.com/TIANLI0/THRM/internal/types"
@@ -43,6 +44,14 @@ const (
 	longTermMaxGap        = 2 * time.Minute
 
 	rawPercentUnit = "percent-raw"
+
+	noiseProfileMinPoints = 4
+	noiseProfileMinRiseDB = 2.0
+	noiseGainRawMin       = 0.4
+	noiseGainRawMax       = 2.0
+	noiseGainMin          = 0.4
+	noiseGainMax          = 1.8
+	noiseWeightBaseline   = 4.0
 )
 
 type learningTuning struct {
@@ -855,10 +864,10 @@ func solveLearnStep(steadyTemp int, eff float64, haveEff bool, cfg types.SmartCo
 }
 
 func solveLearnStepForUnit(steadyTemp int, eff float64, haveEff bool, cfg types.SmartControlConfig, unit string) int {
-	return solveLearnStepForUnitWithPower(steadyTemp, eff, haveEff, cfg, unit, 0, false)
+	return solveLearnStepForUnitWithPower(steadyTemp, eff, haveEff, cfg, unit, 0, false, 1)
 }
 
-func solveLearnStepForUnitWithPower(steadyTemp int, eff float64, haveEff bool, cfg types.SmartControlConfig, unit string, meanPower float64, havePower bool) int {
+func solveLearnStepForUnitWithPower(steadyTemp int, eff float64, haveEff bool, cfg types.SmartControlConfig, unit string, meanPower float64, havePower bool, noiseGain float64) int {
 	tuning := learningTuningForUnit(unit)
 	ceiling := targetTempCeiling(cfg)
 	lowTarget := ceiling - comfortBandWidth(cfg)
@@ -887,7 +896,10 @@ func solveLearnStepForUnitWithPower(steadyTemp int, eff float64, haveEff bool, c
 		step *= learningPowerGain(step, meanPower)
 	}
 	if step < 0 {
-		step *= 0.5
+		if math.IsNaN(noiseGain) || math.IsInf(noiseGain, 0) {
+			noiseGain = 1
+		}
+		step *= 0.5 * min(max(noiseGain, noiseGainMin), noiseGainMax)
 	}
 
 	if step > float64(tuning.maxLearnStep) {
@@ -969,6 +981,22 @@ func LearnSteadyOffsetForUnitWithPower(
 	cfg types.SmartControlConfig,
 	unit string,
 ) ([]int, bool) {
+	return LearnSteadyOffsetForUnitWithPowerAndNoiseGain(bucketIdx, steadyMeanTemp, steadyMeanPower, havePower, localEff, haveEff, curve, prevOffsets, cfg, unit, 1)
+}
+
+func LearnSteadyOffsetForUnitWithPowerAndNoiseGain(
+	bucketIdx int,
+	steadyMeanTemp int,
+	steadyMeanPower float64,
+	havePower bool,
+	localEff float64,
+	haveEff bool,
+	curve []types.FanCurvePoint,
+	prevOffsets []int,
+	cfg types.SmartControlConfig,
+	unit string,
+	noiseGain float64,
+) ([]int, bool) {
 	if bucketIdx < 0 || bucketIdx >= len(curve) {
 		return prevOffsets, false
 	}
@@ -981,7 +1009,7 @@ func LearnSteadyOffsetForUnitWithPower(
 		}
 	}
 
-	mainDelta := solveLearnStepForUnitWithPower(steadyMeanTemp, localEff, haveEff, cfg, unit, steadyMeanPower, havePower)
+	mainDelta := solveLearnStepForUnitWithPower(steadyMeanTemp, localEff, haveEff, cfg, unit, steadyMeanPower, havePower, noiseGain)
 	if mainDelta == 0 {
 		return offsets, false
 	}
@@ -1021,6 +1049,51 @@ func LearnSteadyOffsetForUnitWithPower(
 		}
 	}
 	return offsets, changed
+}
+
+// NoiseLearningDownGain weights only safe downward learning by measured noise benefit.
+func NoiseLearningDownGain(steadySpeed int, unit string, cfg types.SmartControlConfig, result types.NoiseDiagnosticResult) float64 {
+	if steadySpeed <= 0 || cfg.NoiseWeight <= 0 {
+		return 1
+	}
+	unit = types.NormalizeFanSpeedUnit(unit)
+	result, _ = types.NormalizeNoiseDiagnosticResult(result)
+	if result.Unit != unit || (result.Confidence != "medium" && result.Confidence != "high") || len(result.Points) < noiseProfileMinPoints || result.RiseDB < noiseProfileMinRiseDB {
+		return 1
+	}
+	if types.IsPercentSpeedUnit(unit) {
+		steadySpeed = types.PercentTicksToIntegerPercent(steadySpeed)
+	}
+	span := result.Points[len(result.Points)-1].Actual - result.Points[0].Actual
+	if span <= 0 {
+		return 1
+	}
+	averageSlope := result.RiseDB / float64(span)
+	localSlope, ok := localDiagnosticNoiseSlope(steadySpeed, result.Points)
+	if !ok || averageSlope <= 0 {
+		return 1
+	}
+	raw := min(max(localSlope/averageSlope, noiseGainRawMin), noiseGainRawMax)
+	influence := min(float64(cfg.NoiseWeight)/noiseWeightBaseline, 1.5)
+	return min(max(1+(raw-1)*influence, noiseGainMin), noiseGainMax)
+}
+
+func localDiagnosticNoiseSlope(speed int, points []types.NoiseDiagnosticPoint) (float64, bool) {
+	segment := len(points) - 2
+	for index := 0; index < len(points)-1; index++ {
+		if speed < points[index+1].Actual {
+			segment = index
+			break
+		}
+	}
+	low := max(segment-1, 0)
+	high := min(segment+2, len(points)-1)
+	span := points[high].Actual - points[low].Actual
+	if span <= 0 {
+		return 0, false
+	}
+	slope := (points[high].LevelDB - points[low].LevelDB) / float64(span)
+	return max(slope, 0), true
 }
 
 // roundFloat 四舍五入到最近整数

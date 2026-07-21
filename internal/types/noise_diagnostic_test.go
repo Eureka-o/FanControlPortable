@@ -10,7 +10,7 @@ func TestNoiseDiagnosticRangeForFlyDigiUsesRuntimeMaximum(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NoiseDiagnosticRangeForProfile() error = %v", err)
 	}
-	if got.Unit != FanSpeedUnitRPM || got.Min != NoiseDiagnosticFlyDigiMinRPM || got.Max != 3300 {
+	if got.Unit != FanSpeedUnitRPM || got.Min != NoiseDiagnosticFlyDigiMinRPM || got.Max != 3300 || got.Step != AxisNoiseRPMFineStep {
 		t.Fatalf("range = %#v, want rpm %d..3300", got, NoiseDiagnosticFlyDigiMinRPM)
 	}
 	if got.MinSource != "flydigi-diagnostic-floor" || got.MaxSource != "runtime-capability" {
@@ -40,13 +40,70 @@ func TestNoiseDiagnosticRangeRejectsUnknownRPMMinimum(t *testing.T) {
 }
 
 func TestNormalizeNoiseDiagnosticRangeClampsEditableBounds(t *testing.T) {
-	allowed := NoiseDiagnosticRange{Unit: FanSpeedUnitRPM, Min: 1000, Max: 3600, Step: 1, MinSource: "floor", MaxSource: "cap"}
-	got, err := NormalizeNoiseDiagnosticRange(NoiseDiagnosticRange{Unit: FanSpeedUnitRPM, Min: 500, Max: 5000}, allowed)
+	allowed := NoiseDiagnosticRange{Unit: FanSpeedUnitRPM, Min: 1000, Max: 3600, Step: 100, MinSource: "floor", MaxSource: "cap"}
+	got, err := NormalizeNoiseDiagnosticRange(NoiseDiagnosticRange{Unit: FanSpeedUnitRPM, Min: 500, Max: 5000, Step: 1}, allowed)
 	if err != nil {
 		t.Fatalf("NormalizeNoiseDiagnosticRange() error = %v", err)
 	}
 	if got.Min != 1000 || got.Max != 3600 {
 		t.Fatalf("range = %#v, want 1000..3600", got)
+	}
+	if got.Step != 100 {
+		t.Fatalf("range step = %d, want device minimum 100", got.Step)
+	}
+}
+
+func TestNoiseDiagnosticRangeAlignsConfiguredBoundsAndKeepsRuntimeMaximum(t *testing.T) {
+	profile := FlyDigiBS1Profile()
+	profile.SpeedRange.Max = 3350
+	profile.Capabilities.SpeedRange.Max = 3350
+
+	configured, err := NoiseDiagnosticRangeForProfile(profile, profile.Capabilities, nil)
+	if err != nil {
+		t.Fatalf("configured range error = %v", err)
+	}
+	if configured.Max != 3300 {
+		t.Fatalf("configured max = %d, want 3300", configured.Max)
+	}
+	higherRuntime, err := NoiseDiagnosticRangeForProfile(profile, profile.Capabilities, &FanData{
+		FlyDigiCapability: &FlyDigiRuntimeCapability{Available: true, MaxRPM: 4000},
+	})
+	if err != nil {
+		t.Fatalf("higher runtime range error = %v", err)
+	}
+	if higherRuntime.Max != 3300 || higherRuntime.MaxSource != "profile" {
+		t.Fatalf("higher runtime range = %#v, want aligned profile max 3300", higherRuntime)
+	}
+
+	profile.SpeedRange.Max = 4000
+	profile.Capabilities.SpeedRange.Max = 4000
+	runtime, err := NoiseDiagnosticRangeForProfile(profile, profile.Capabilities, &FanData{
+		FlyDigiCapability: &FlyDigiRuntimeCapability{Available: true, MaxRPM: 3350},
+	})
+	if err != nil {
+		t.Fatalf("runtime range error = %v", err)
+	}
+	if runtime.Max != 3350 || runtime.MaxSource != "runtime-capability" {
+		t.Fatalf("runtime range = %#v, want exact runtime max 3350", runtime)
+	}
+
+	aligned, err := NormalizeNoiseDiagnosticRange(
+		NoiseDiagnosticRange{Unit: FanSpeedUnitRPM, Min: 1050, Max: 3350, Step: 1},
+		NoiseDiagnosticRange{Unit: FanSpeedUnitRPM, Min: 1000, Max: 4000, Step: 100, MaxSource: "profile"},
+	)
+	if err != nil {
+		t.Fatalf("aligned range error = %v", err)
+	}
+	if aligned.Min != 1100 || aligned.Max != 3300 {
+		t.Fatalf("aligned range = %#v, want 1100..3300", aligned)
+	}
+
+	preserved, err := NormalizeNoiseDiagnosticRange(runtime, runtime)
+	if err != nil {
+		t.Fatalf("preserved runtime range error = %v", err)
+	}
+	if preserved.Max != 3350 {
+		t.Fatalf("preserved runtime max = %d, want 3350", preserved.Max)
 	}
 }
 

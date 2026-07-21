@@ -106,12 +106,13 @@ func NoiseDiagnosticRangeForProfile(profile DeviceProfile, capabilities DeviceCa
 		return NoiseDiagnosticRange{}, fmt.Errorf("device profile has no usable maximum speed")
 	}
 
+	isFlyDigiRPM := unit == FanSpeedUnitRPM && IsFlyDigiDeviceProfileID(profile.ID) && (profile.Transport == DeviceTransportBLE || profile.Transport == DeviceTransportHID)
 	min := speedRange.Min
 	minSource := "profile"
 	if unit == FanSpeedUnitPercent {
 		min = NoiseDiagnosticPercentMin
 		minSource = "percent-diagnostic-floor"
-	} else if IsFlyDigiDeviceProfileID(profile.ID) && (profile.Transport == DeviceTransportBLE || profile.Transport == DeviceTransportHID) {
+	} else if isFlyDigiRPM {
 		min = NoiseDiagnosticFlyDigiMinRPM
 		minSource = "flydigi-diagnostic-floor"
 	} else if min <= 0 {
@@ -121,18 +122,27 @@ func NoiseDiagnosticRangeForProfile(profile DeviceProfile, capabilities DeviceCa
 	max := speedRange.Max
 	maxSource := "profile"
 	if fanData != nil && fanData.FlyDigiCapability != nil && fanData.FlyDigiCapability.Available && fanData.FlyDigiCapability.MaxRPM > 0 && unit == FanSpeedUnitRPM {
-		if fanData.FlyDigiCapability.MaxRPM < max {
+		if fanData.FlyDigiCapability.MaxRPM <= max {
 			max = fanData.FlyDigiCapability.MaxRPM
+			maxSource = "runtime-capability"
 		}
-		maxSource = "runtime-capability"
 	}
 	if max <= min {
 		return NoiseDiagnosticRange{}, fmt.Errorf("device speed range does not contain a diagnostic interval")
 	}
 
 	step := speedRange.Step
+	if isFlyDigiRPM && step < AxisNoiseRPMFineStep {
+		step = AxisNoiseRPMFineStep
+	}
 	if step <= 0 {
 		step = NoiseDiagnosticDefaultStep
+	}
+	if step > 1 && maxSource != "runtime-capability" {
+		max = min + ((max-min)/step)*step
+		if max <= min {
+			return NoiseDiagnosticRange{}, fmt.Errorf("device speed range does not contain a diagnostic interval")
+		}
 	}
 	return NoiseDiagnosticRange{
 		Unit:      unit,
@@ -172,11 +182,17 @@ func NormalizeNoiseDiagnosticRange(requested, allowed NoiseDiagnosticRange) (Noi
 	}
 
 	step := allowed.Step
-	if requested.Step > 0 && requested.Step < step {
-		step = requested.Step
-	}
 	if step <= 0 {
 		step = NoiseDiagnosticDefaultStep
+	}
+	if step > 1 {
+		min = allowed.Min + ((min-allowed.Min+step-1)/step)*step
+		if max != allowed.Max || allowed.MaxSource != "runtime-capability" {
+			max = allowed.Min + ((max-allowed.Min)/step)*step
+		}
+		if max <= min {
+			return NoiseDiagnosticRange{}, fmt.Errorf("diagnostic range is smaller than the device speed step")
+		}
 	}
 	return NoiseDiagnosticRange{
 		Unit:      allowed.Unit,

@@ -635,7 +635,11 @@
     "loadingMicrophones": "正在读取麦克风…",
     "noMicrophone": "没有可用麦克风",
     "bounds": "允许范围：{{min}}-{{max}} {{unit}}",
-    "disclaimer": "测试期间会自动调整风扇转速。请保持设备周围无遮挡，若温度或噪声异常请立即停止。测试结束后会恢复之前的控制状态。",
+    "estimatedTime": "基础 {{count}} 个采样点，预计约 {{minutes}} 分钟",
+    "operationReminder": "保持麦克风位置固定并减少说话、碰撞等环境干扰。",
+    "learningReminder": "中高可信度结果会在开启学习时优化安全降速的噪声收益。",
+    "runningReminder": "正在等待风扇稳定并采样，请保持环境安静，不要移动麦克风。",
+    "disclaimer": "测试期间会自动调整风扇转速。请保持设备周围无遮挡，若温度或噪声异常请立即停止。结束后会恢复之前的控制状态；停止只丢弃本次数据，不影响已保存结果。",
     "confirmation": "你修改了测试范围。风扇会自动遍历所选范围，并在每个点短暂停留后采集麦克风数据。",
     "confirmAcknowledgement": "我了解并同意开始自动转速测试。",
     "confirmStart": "开始测试",
@@ -650,6 +654,8 @@
     "peak": "疑似峰值",
     "confidence": "可信度",
     "resultNote": "可信度依据：{{reason}}。结果用于相对噪声趋势，不代表绝对分贝值。",
+    "resultLearningReady": "结果已保存，后续稳态学习会在安全降速时参考当前转速附近的降噪收益。",
+    "resultLearningSkipped": "结果已保存，但可信度较低，不会参与噪声收益学习；建议在更安静的环境重新测试。",
     "errors": {
       "invalidRange": "请选择有效的转速范围。",
       "unstableBaseline": "环境底噪不稳定，请降低背景噪声后重试。",
@@ -663,7 +669,11 @@
     "open": "轴噪扫描",
     "title": "轴噪扫描",
     "description": "自动逐点调整转速，由你判断当前转速是否存在轴噪。",
-    "disclaimer": "扫描会自动改变风扇转速。请保持出风口无遮挡并留意温度；发现异常可随时停止，已标记的数据会全部丢弃。",
+    "estimatedTime": "基础 {{count}} 个判断点，通常约 {{minutes}} 分钟",
+    "operationReminder": "每个稳定转速都需要手动选择没有、轻微或明显轴噪。",
+    "refinementReminder": "标记轴噪后会在相同转速复核，并追加周边精扫点，实际耗时可能延长。",
+    "runningReminder": "请先听稳当前转速再判断；标记轴噪后同一点会再次确认。",
+    "disclaimer": "扫描会自动改变风扇转速。请保持出风口无遮挡并留意温度；发现异常可随时停止，本次标记会全部丢弃，已保存避让配置不变。",
     "confirmation": "你修改了扫描范围。风扇将自动遍历所选区间，并在每个稳定转速点等待你的轴噪判断。",
     "confirmAcknowledgement": "我了解自动变速风险，并同意开始轴噪扫描。",
     "confirmStart": "确认开始",
@@ -687,7 +697,8 @@
     "result": {
       "title": "扫描完成",
       "description": "已生成 {{count}} 个软避让区间",
-      "none": "本次扫描没有发现需要避让的轴噪区间。"
+      "none": "本次扫描没有发现需要避让的轴噪区间。",
+      "automaticOnly": "软避让仅作用于自动曲线控制；手动挡位和固定转速不会被改写。"
     },
     "errors": {
       "invalidRange": "请选择有效的扫描范围。",
