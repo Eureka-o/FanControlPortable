@@ -144,6 +144,41 @@ func TestNativeAutoConnectCandidatesPreferLastRuntimeProfile(t *testing.T) {
 	}
 }
 
+func TestIdleBLEAutoScanCooldown(t *testing.T) {
+	tests := []struct {
+		name          string
+		sinceLastScan time.Duration
+		wantSkip      bool
+	}{
+		{name: "first automatic scan", sinceLastScan: -1, wantSkip: false},
+		{name: "retry inside cooldown", sinceLastScan: 30 * time.Second, wantSkip: true},
+		{name: "retry at cooldown boundary", sinceLastScan: idleBLEScanCooldown, wantSkip: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := shouldSkipIdleBLEAutoScan(test.sinceLastScan); got != test.wantSkip {
+				t.Fatalf("shouldSkipIdleBLEAutoScan(%v) = %v, want %v", test.sinceLastScan, got, test.wantSkip)
+			}
+		})
+	}
+}
+
+func TestIdleBLECooldownKeepsHIDCandidates(t *testing.T) {
+	candidates := []types.DeviceProfile{
+		types.FlyDigiBS1Profile(),
+		types.FlyDigiBS2PROProfile(),
+	}
+
+	got := filterNativeAutoConnectCandidatesForBLECooldown(candidates, true)
+	if len(got) != 1 {
+		t.Fatalf("filtered candidates = %#v, want one HID candidate", got)
+	}
+	if got[0].ID != types.FlyDigiBS2PROProfileID || got[0].Transport != types.DeviceTransportHID {
+		t.Fatalf("remaining candidate = %#v, want BS2PRO HID", got[0])
+	}
+}
+
 func TestNativeBLEDeviceInfoUsesMatchedUserProfile(t *testing.T) {
 	userBLE := types.FlyDigiBS1Profile()
 	userBLE.ID = "user.ble.rpm"

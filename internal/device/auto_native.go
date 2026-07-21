@@ -6,11 +6,31 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/TIANLI0/THRM/internal/deviceprofileexec"
 	"github.com/TIANLI0/THRM/internal/deviceprofiles"
 	"github.com/TIANLI0/THRM/internal/types"
 )
+
+const idleBLEScanCooldown = 15 * time.Minute
+
+func shouldSkipIdleBLEAutoScan(sinceLastScan time.Duration) bool {
+	return sinceLastScan >= 0 && sinceLastScan < idleBLEScanCooldown
+}
+
+func filterNativeAutoConnectCandidatesForBLECooldown(candidates []types.DeviceProfile, skipBLE bool) []types.DeviceProfile {
+	if !skipBLE {
+		return candidates
+	}
+	filtered := make([]types.DeviceProfile, 0, len(candidates))
+	for _, profile := range candidates {
+		if types.NormalizeDeviceTransport(profile.Transport) != types.DeviceTransportBLE {
+			filtered = append(filtered, profile)
+		}
+	}
+	return filtered
+}
 
 func (m *Manager) ScanNativeDevices() []map[string]string {
 	return m.ScanNativeDevicesProfiles(nil)
@@ -75,8 +95,18 @@ func (m *Manager) AutoConnectNativeProfilesContext(ctx context.Context, profiles
 
 	previousProfile := m.activeProfile
 	previousEndpoint := m.wifiEndpoint
+	sinceLastBLEScan := time.Duration(-1)
+	if !m.lastAutoBLEScanAt.IsZero() {
+		sinceLastBLEScan = time.Since(m.lastAutoBLEScanAt)
+	}
+	skipBLE := shouldSkipIdleBLEAutoScan(sinceLastBLEScan)
+	candidates := filterNativeAutoConnectCandidatesForBLECooldown(
+		nativeAutoConnectCandidates(profiles, previousProfile),
+		skipBLE,
+	)
+	bleScanRecorded := false
 
-	for _, profile := range nativeAutoConnectCandidates(profiles, previousProfile) {
+	for _, profile := range candidates {
 		if ctx.Err() != nil {
 			m.configureProfileLocked(previousProfile, previousEndpoint)
 			return false, nil
@@ -88,10 +118,17 @@ func (m *Manager) AutoConnectNativeProfilesContext(ctx context.Context, profiles
 				return true, info
 			}
 		case types.DeviceTransportBLE:
+			if !bleScanRecorded {
+				m.lastAutoBLEScanAt = time.Now()
+				bleScanRecorded = true
+			}
 			if success, info := m.connectBLEWithContextLocked(ctx); success {
 				return true, info
 			}
 		}
+	}
+	if skipBLE {
+		m.logDebug("automatic BLE discovery is cooling down; HID candidates remained eligible")
 	}
 
 	m.configureProfileLocked(previousProfile, previousEndpoint)
