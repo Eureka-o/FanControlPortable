@@ -252,6 +252,25 @@ func TestReadTelemetryFreshIsFalseForLocalFallback(t *testing.T) {
 	}
 }
 
+func TestReadNeverModeSkipsGpuFallback(t *testing.T) {
+	oldExec := execHelperCommand
+	defer func() { execHelperCommand = oldExec }()
+	execHelperCommand = func(_ time.Duration, name string, _ ...string) ([]byte, error) {
+		if name == "nvidia-smi" {
+			t.Fatal("never mode invoked GPU fallback")
+		}
+		return nil, errors.New("unavailable")
+	}
+
+	reader := NewReader(&fakeBridgeTemperatureProvider{responses: []types.BridgeTemperatureData{{Success: false, Error: "offline"}}}, testLogger{})
+	selection := types.GetDefaultTemperatureSelection()
+	selection.GpuReadMode = types.GPUReadModeNever
+	got := reader.Read(selection)
+	if got.GPUTemp != 0 || got.GPUReadState != types.GPUReadStateNotPolled {
+		t.Fatalf("GPU telemetry = %+v", got)
+	}
+}
+
 func TestTelemetryFreshIsNotSerialized(t *testing.T) {
 	encoded, err := json.Marshal(types.TemperatureData{TelemetryFresh: true})
 	if err != nil {

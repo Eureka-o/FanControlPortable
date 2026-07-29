@@ -751,6 +751,13 @@ export namespace types {
 	    activeFanCurveProfileId: string;
 	    gearLight: boolean;
 	    powerOnStart: boolean;
+	    powerSpoofEnabled: boolean;
+	    powerSpoofPercent: number;
+	    powerSpoofOffsetWatts: number;
+	    cpuPowerSpoofPercent: number;
+	    cpuPowerSpoofOffsetWatts: number;
+	    gpuPowerSpoofPercent: number;
+	    gpuPowerSpoofOffsetWatts: number;
 	    windowsAutoStart: boolean;
 	    themeMode: string;
 	    windowBlur: string;
@@ -809,6 +816,13 @@ export namespace types {
 	        this.activeFanCurveProfileId = source["activeFanCurveProfileId"];
 	        this.gearLight = source["gearLight"];
 	        this.powerOnStart = source["powerOnStart"];
+	        this.powerSpoofEnabled = source["powerSpoofEnabled"];
+	        this.powerSpoofPercent = source["powerSpoofPercent"];
+	        this.powerSpoofOffsetWatts = source["powerSpoofOffsetWatts"];
+	        this.cpuPowerSpoofPercent = source["cpuPowerSpoofPercent"];
+	        this.cpuPowerSpoofOffsetWatts = source["cpuPowerSpoofOffsetWatts"];
+	        this.gpuPowerSpoofPercent = source["gpuPowerSpoofPercent"];
+	        this.gpuPowerSpoofOffsetWatts = source["gpuPowerSpoofOffsetWatts"];
 	        this.windowsAutoStart = source["windowsAutoStart"];
 	        this.themeMode = source["themeMode"];
 	        this.windowBlur = source["windowBlur"];
