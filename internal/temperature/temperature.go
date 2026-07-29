@@ -65,7 +65,10 @@ func (r *Reader) Read(selection types.TemperatureSelection) (temp types.Temperat
 	// 优先使用桥接程序读取温度
 	bridgeTemp := r.bridgeManager.GetTemperature(selection)
 	copyBridgeTemperatureMetadata(&temp, bridgeTemp, selection)
-	gpuNotPolled := temp.GPUReadState == types.GPUReadStateNotPolled
+	gpuNotPolled := selection.GpuReadMode == types.GPUReadModeNever || temp.GPUReadState == types.GPUReadStateNotPolled
+	if gpuNotPolled {
+		temp.GPUReadState = types.GPUReadStateNotPolled
+	}
 	if bridgeTemp.Success {
 		if bridgeTemp.CpuTemp == 0 && bridgeTemp.GpuTemp == 0 {
 			temp.BridgeOk = false

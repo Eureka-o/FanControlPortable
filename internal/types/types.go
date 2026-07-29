@@ -1,9 +1,12 @@
 // Package types 定义了 BS2PRO 控制器应用中使用的所有共享类型
 package types
 
-import "maps"
+import (
+	"maps"
+	"math"
 
-import "github.com/TIANLI0/THRM/internal/deviceproto"
+	"github.com/TIANLI0/THRM/internal/deviceproto"
+)
 
 // FanCurvePoint 风扇曲线点
 type FanCurvePoint struct {
@@ -38,6 +41,7 @@ const (
 	TelemetryStateUnavailable           = "unavailable"
 	GPUReadModeAuto                     = "auto"
 	GPUReadModeAlways                   = "always"
+	GPUReadModeNever                    = "never"
 	LearningBiasBalanced                = "balanced"
 	LearningBiasCooling                 = "cooling"
 	LearningBiasQuiet                   = "quiet"
@@ -49,6 +53,10 @@ const (
 	FanSpeedUnitRPM                     = "rpm"
 	DefaultFanDeviceIP                  = "192.168.137.2"
 	WiFiSmartStartStopStandbyMinPercent = 1
+	PowerSpoofPercentMin                = 0
+	PowerSpoofPercentMax                = 1000
+	PowerSpoofOffsetMin                 = -10000
+	PowerSpoofOffsetMax                 = 10000
 )
 
 func NormalizeDeviceTransport(transport string) string {
@@ -169,6 +177,8 @@ func NormalizeGPUReadMode(mode string) string {
 	switch mode {
 	case GPUReadModeAlways:
 		return GPUReadModeAlways
+	case GPUReadModeNever:
+		return GPUReadModeNever
 	default:
 		return GPUReadModeAuto
 	}
@@ -180,6 +190,40 @@ func NormalizeSensorSelection(selection string) string {
 		return TempSensorAuto
 	}
 	return selection
+}
+
+// NormalizePowerSpoofConfig keeps display-only power spoofing bounded and finite.
+func NormalizePowerSpoofConfig(cfg *AppConfig) {
+	if cfg == nil {
+		return
+	}
+	cfg.PowerSpoofPercent, cfg.PowerSpoofOffsetWatts = normalizePowerSpoofPair(cfg.PowerSpoofPercent, cfg.PowerSpoofOffsetWatts)
+	cfg.CPUPowerSpoofPercent, cfg.CPUPowerSpoofOffsetWatts = normalizePowerSpoofPair(cfg.CPUPowerSpoofPercent, cfg.CPUPowerSpoofOffsetWatts)
+	cfg.GPUPowerSpoofPercent, cfg.GPUPowerSpoofOffsetWatts = normalizePowerSpoofPair(cfg.GPUPowerSpoofPercent, cfg.GPUPowerSpoofOffsetWatts)
+}
+
+func normalizePowerSpoofPair(percent, offset float64) (float64, float64) {
+	if math.IsNaN(percent) || math.IsInf(percent, 0) {
+		percent = 100
+	}
+	percent = math.Max(PowerSpoofPercentMin, math.Min(PowerSpoofPercentMax, percent))
+	if math.IsNaN(offset) || math.IsInf(offset, 0) {
+		offset = 0
+	}
+	offset = math.Max(PowerSpoofOffsetMin, math.Min(PowerSpoofOffsetMax, offset))
+	return percent, offset
+}
+
+// SpoofDisplayedPower changes presentation only; callers keep real telemetry untouched.
+func SpoofDisplayedPower(value, percent, offset float64) float64 {
+	if value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+		return value
+	}
+	result := value*percent/100 + offset
+	if math.IsNaN(result) || math.IsInf(result, 0) {
+		return value
+	}
+	return math.Max(0, result)
 }
 
 // NormalizeDeviceSelection 归一化设备选择，空值回退为 auto。
@@ -231,6 +275,9 @@ func NormalizeTemperatureSelection(selection TemperatureSelection) TemperatureSe
 	}
 	selection.GpuReadMode = NormalizeGPUReadMode(selection.GpuReadMode)
 	selection.GpuLowPowerProtection = selection.GpuReadMode != GPUReadModeAlways
+	if selection.GpuReadMode == GPUReadModeNever && selection.TempSource == TempSourceGPU {
+		selection.TempSource = TempSourceCPU
+	}
 	return selection
 }
 
@@ -553,19 +600,26 @@ type AppConfig struct {
 	ActiveFanCurveProfileID           string                                 `json:"activeFanCurveProfileId"` // 当前激活曲线方案ID
 	GearLight                         bool                                   `json:"gearLight"`               // 挡位灯
 	PowerOnStart                      bool                                   `json:"powerOnStart"`            // 通电自启动
-	WindowsAutoStart                  bool                                   `json:"windowsAutoStart"`        // Windows开机自启动
-	ThemeMode                         string                                 `json:"themeMode"`               // 主题模式: system/light/dark/thrm
-	WindowBlur                        string                                 `json:"windowBlur"`              // 窗口材质: acrylic/mica/tabbed/off
-	SmartStartStop                    string                                 `json:"smartStartStop"`          // 智能启停
-	Brightness                        int                                    `json:"brightness"`              // 亮度
-	TempUpdateRate                    int                                    `json:"tempUpdateRate"`          // 温度更新频率(秒)
-	TempSampleCount                   int                                    `json:"tempSampleCount"`         // 温度采样次数(用于平均)
-	TempSource                        string                                 `json:"tempSource"`              // 控温温度来源: max/cpu/gpu
-	GpuDevice                         string                                 `json:"gpuDevice"`               // GPU 设备选择: auto 或设备 key
-	CpuSensor                         string                                 `json:"cpuSensor"`               // CPU 传感器选择: auto 或传感器 key
-	GpuSensor                         string                                 `json:"gpuSensor"`               // GPU 传感器选择: auto 或传感器 key
-	CpuPowerSensor                    string                                 `json:"cpuPowerSensor"`          // CPU 功耗传感器选择: auto 或传感器 key
-	GpuPowerSensor                    string                                 `json:"gpuPowerSensor"`          // GPU 功耗传感器选择: auto 或传感器 key
+	PowerSpoofEnabled                 bool                                   `json:"powerSpoofEnabled"`       // 仅前端显示功耗欺骗
+	PowerSpoofPercent                 float64                                `json:"powerSpoofPercent"`       // 旧版显示功耗倍率百分比
+	PowerSpoofOffsetWatts             float64                                `json:"powerSpoofOffsetWatts"`   // 旧版显示功耗固定偏移(W)
+	CPUPowerSpoofPercent              float64                                `json:"cpuPowerSpoofPercent"`
+	CPUPowerSpoofOffsetWatts          float64                                `json:"cpuPowerSpoofOffsetWatts"`
+	GPUPowerSpoofPercent              float64                                `json:"gpuPowerSpoofPercent"`
+	GPUPowerSpoofOffsetWatts          float64                                `json:"gpuPowerSpoofOffsetWatts"`
+	WindowsAutoStart                  bool                                   `json:"windowsAutoStart"` // Windows开机自启动
+	ThemeMode                         string                                 `json:"themeMode"`        // 主题模式: system/light/dark/thrm
+	WindowBlur                        string                                 `json:"windowBlur"`       // 窗口材质: acrylic/mica/tabbed/off
+	SmartStartStop                    string                                 `json:"smartStartStop"`   // 智能启停
+	Brightness                        int                                    `json:"brightness"`       // 亮度
+	TempUpdateRate                    int                                    `json:"tempUpdateRate"`   // 温度更新频率(秒)
+	TempSampleCount                   int                                    `json:"tempSampleCount"`  // 温度采样次数(用于平均)
+	TempSource                        string                                 `json:"tempSource"`       // 控温温度来源: max/cpu/gpu
+	GpuDevice                         string                                 `json:"gpuDevice"`        // GPU 设备选择: auto 或设备 key
+	CpuSensor                         string                                 `json:"cpuSensor"`        // CPU 传感器选择: auto 或传感器 key
+	GpuSensor                         string                                 `json:"gpuSensor"`        // GPU 传感器选择: auto 或传感器 key
+	CpuPowerSensor                    string                                 `json:"cpuPowerSensor"`   // CPU 功耗传感器选择: auto 或传感器 key
+	GpuPowerSensor                    string                                 `json:"gpuPowerSensor"`   // GPU 功耗传感器选择: auto 或传感器 key
 	GpuReadMode                       string                                 `json:"gpuReadMode"`
 	GpuLowPowerProtection             bool                                   `json:"gpuLowPowerProtection"`
 	ConfigPath                        string                                 `json:"configPath"`              // 配置文件路径
@@ -1039,35 +1093,42 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		FanCurveProfiles: []FanCurveProfile{
 			{ID: "default", Name: "默认", Curve: defaultCurve},
 		},
-		ActiveFanCurveProfileID: "default",
-		GearLight:               true,
-		PowerOnStart:            false,
-		WindowsAutoStart:        false,
-		ThemeMode:               ThemeModeSystem,
-		WindowBlur:              WindowBlurAcrylic,
-		SmartStartStop:          "off",
-		Brightness:              100,
-		TempUpdateRate:          2,
-		TempSampleCount:         1,
-		TempSource:              defaultTempSelection.TempSource,
-		GpuDevice:               defaultTempSelection.GpuDevice,
-		CpuSensor:               defaultTempSelection.CpuSensor,
-		GpuSensor:               defaultTempSelection.GpuSensor,
-		CpuPowerSensor:          defaultTempSelection.CpuPowerSensor,
-		GpuPowerSensor:          defaultTempSelection.GpuPowerSensor,
-		GpuReadMode:             defaultTempSelection.GpuReadMode,
-		GpuLowPowerProtection:   defaultTempSelection.GpuLowPowerProtection,
-		ConfigPath:              "",
-		ManualGear:              "标准",
-		ManualLevel:             "中",
-		DebugMode:               false,
-		GuiMonitoring:           true,
-		CustomSpeedEnabled:      false,
-		CustomSpeedRPM:          45,
-		IgnoreDeviceOnReconnect: true, // 默认开启，防止断连后误判用户手动切换
-		SmartControl:            GetDefaultSmartControlConfig(defaultCurve),
-		LightStrip:              GetDefaultLightStripConfig(),
-		LegionFnQ:               GetDefaultLegionFnQConfig(),
-		LegionFnQSupport:        LegionFnQSupportCache{},
+		ActiveFanCurveProfileID:  "default",
+		GearLight:                true,
+		PowerOnStart:             false,
+		PowerSpoofEnabled:        false,
+		PowerSpoofPercent:        100,
+		PowerSpoofOffsetWatts:    0,
+		CPUPowerSpoofPercent:     100,
+		CPUPowerSpoofOffsetWatts: 0,
+		GPUPowerSpoofPercent:     100,
+		GPUPowerSpoofOffsetWatts: 0,
+		WindowsAutoStart:         false,
+		ThemeMode:                ThemeModeSystem,
+		WindowBlur:               WindowBlurAcrylic,
+		SmartStartStop:           "off",
+		Brightness:               100,
+		TempUpdateRate:           2,
+		TempSampleCount:          1,
+		TempSource:               defaultTempSelection.TempSource,
+		GpuDevice:                defaultTempSelection.GpuDevice,
+		CpuSensor:                defaultTempSelection.CpuSensor,
+		GpuSensor:                defaultTempSelection.GpuSensor,
+		CpuPowerSensor:           defaultTempSelection.CpuPowerSensor,
+		GpuPowerSensor:           defaultTempSelection.GpuPowerSensor,
+		GpuReadMode:              defaultTempSelection.GpuReadMode,
+		GpuLowPowerProtection:    defaultTempSelection.GpuLowPowerProtection,
+		ConfigPath:               "",
+		ManualGear:               "标准",
+		ManualLevel:              "中",
+		DebugMode:                false,
+		GuiMonitoring:            true,
+		CustomSpeedEnabled:       false,
+		CustomSpeedRPM:           45,
+		IgnoreDeviceOnReconnect:  true, // 默认开启，防止断连后误判用户手动切换
+		SmartControl:             GetDefaultSmartControlConfig(defaultCurve),
+		LightStrip:               GetDefaultLightStripConfig(),
+		LegionFnQ:                GetDefaultLegionFnQConfig(),
+		LegionFnQSupport:         LegionFnQSupportCache{},
 	}
 }

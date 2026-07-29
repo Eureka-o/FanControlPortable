@@ -453,6 +453,32 @@ func applyMissingTemperatureDefaults(cfg *types.AppConfig, rawConfig map[string]
 	cfg.GpuPowerSensor = types.NormalizeSensorSelection(cfg.GpuPowerSensor)
 	cfg.GpuReadMode = types.NormalizeGPUReadMode(cfg.GpuReadMode)
 	cfg.GpuLowPowerProtection = cfg.GpuReadMode != types.GPUReadModeAlways
+	if cfg.GpuReadMode == types.GPUReadModeNever && cfg.TempSource == types.TempSourceGPU {
+		cfg.TempSource = types.TempSourceCPU
+	}
+	defaultsConfig := types.GetDefaultConfig(false)
+	if _, ok := rawConfig["powerSpoofEnabled"]; !ok {
+		cfg.PowerSpoofEnabled = defaultsConfig.PowerSpoofEnabled
+	}
+	if _, ok := rawConfig["powerSpoofPercent"]; !ok {
+		cfg.PowerSpoofPercent = defaultsConfig.PowerSpoofPercent
+	}
+	if _, ok := rawConfig["powerSpoofOffsetWatts"]; !ok {
+		cfg.PowerSpoofOffsetWatts = defaultsConfig.PowerSpoofOffsetWatts
+	}
+	if _, ok := rawConfig["cpuPowerSpoofPercent"]; !ok {
+		cfg.CPUPowerSpoofPercent = cfg.PowerSpoofPercent
+	}
+	if _, ok := rawConfig["cpuPowerSpoofOffsetWatts"]; !ok {
+		cfg.CPUPowerSpoofOffsetWatts = cfg.PowerSpoofOffsetWatts
+	}
+	if _, ok := rawConfig["gpuPowerSpoofPercent"]; !ok {
+		cfg.GPUPowerSpoofPercent = cfg.PowerSpoofPercent
+	}
+	if _, ok := rawConfig["gpuPowerSpoofOffsetWatts"]; !ok {
+		cfg.GPUPowerSpoofOffsetWatts = cfg.PowerSpoofOffsetWatts
+	}
+	types.NormalizePowerSpoofConfig(cfg)
 }
 
 func applyMissingDeviceDefaults(cfg *types.AppConfig, rawConfig map[string]json.RawMessage) {

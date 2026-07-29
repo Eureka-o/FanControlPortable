@@ -16,6 +16,7 @@ import FanCurve from './components/FanCurve';
 import { useAppBootstrap } from './hooks/useAppBootstrap';
 import { apiService } from './services/api';
 import { useAppStore } from './store/app-store';
+import { applyPowerSpoofToTemperature } from './lib/power-spoof';
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -63,6 +64,10 @@ export default function Home() {
     () => view.config || new types.AppConfig(),
     [view.config],
   );
+  const displayTemperature = useMemo(
+    () => applyPowerSpoofToTemperature(view.temperature, safeConfig),
+    [safeConfig, view.temperature],
+  );
 
   const exportDiagnostics = useCallback(async () => {
     if (diagnosticsExporting) return;
@@ -94,7 +99,7 @@ export default function Home() {
         onTabChange={setActiveTab}
         isConnected={view.isConnected}
         fanData={view.fanData}
-        temperature={view.temperature}
+        temperature={displayTemperature}
         runtimeDeviceProfile={view.runtimeDeviceProfile}
         config={safeConfig}
         autoControl={safeConfig.autoControl}
@@ -111,7 +116,7 @@ export default function Home() {
             deviceModel={view.deviceModel}
             deviceSettings={view.deviceSettings}
             fanData={view.fanData}
-            temperature={view.temperature}
+            temperature={displayTemperature}
             runtimeDeviceProfile={view.runtimeDeviceProfile}
             config={safeConfig}
             coreServiceError={view.coreServiceError}
@@ -130,7 +135,7 @@ export default function Home() {
             onConfigChange={setConfig}
             isConnected={view.isConnected}
             fanData={view.fanData}
-            temperature={view.temperature}
+            temperature={displayTemperature}
             runtimeDeviceProfile={view.runtimeDeviceProfile}
             runtimeDeviceCapabilities={view.runtimeDeviceCapabilities}
             deviceModel={view.deviceModel}
@@ -144,7 +149,7 @@ export default function Home() {
             onConfigChange={setConfig}
             isConnected={view.isConnected}
             fanData={view.fanData}
-            temperature={view.temperature}
+            temperature={displayTemperature}
             runtimeDeviceProfile={view.runtimeDeviceProfile}
             runtimeDeviceCapabilities={view.runtimeDeviceCapabilities}
             onDeviceContextRefresh={refreshDeviceContext}

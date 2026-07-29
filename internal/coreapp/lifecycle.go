@@ -320,14 +320,20 @@ func (a *CoreApp) initSystemTray() {
 				}
 				curveOptions = append(curveOptions, tray.CurveOption{ID: p.ID, Name: name})
 			}
+			cpuPowerWatts := a.currentTemp.CPUPowerWatts
+			gpuPowerWatts := a.currentTemp.GPUPowerWatts
+			if cfg.PowerSpoofEnabled {
+				cpuPowerWatts = types.SpoofDisplayedPower(cpuPowerWatts, cfg.CPUPowerSpoofPercent, cfg.CPUPowerSpoofOffsetWatts)
+				gpuPowerWatts = types.SpoofDisplayedPower(gpuPowerWatts, cfg.GPUPowerSpoofPercent, cfg.GPUPowerSpoofOffsetWatts)
+			}
 
 			return tray.Status{
 				Connected:            a.isConnected,
 				DeviceName:           deviceName,
 				CPUTemp:              a.currentTemp.CPUTemp,
 				GPUTemp:              a.currentTemp.GPUTemp,
-				CPUPowerWatts:        a.currentTemp.CPUPowerWatts,
-				GPUPowerWatts:        a.currentTemp.GPUPowerWatts,
+				CPUPowerWatts:        cpuPowerWatts,
+				GPUPowerWatts:        gpuPowerWatts,
 				GPUReadState:         a.currentTemp.GPUReadState,
 				CurrentRPM:           currentRPM,
 				SpeedUnit:            speedUnit,

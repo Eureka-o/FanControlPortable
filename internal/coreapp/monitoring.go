@@ -318,7 +318,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					}
 				}
 			}
-			advancedTelemetryUsable := !staleBridgeTelemetry && hasUsableSmartControlTelemetry(temp)
+			advancedTelemetryUsable := !cfg.PowerSpoofEnabled && !staleBridgeTelemetry && hasUsableSmartControlTelemetry(temp)
 			if !advancedTelemetryUsable && lastSmartTelemetryUsable {
 				resetSmartControlSampling()
 			}

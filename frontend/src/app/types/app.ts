@@ -109,7 +109,7 @@ export interface AppConfig {
   gpuSensor?: string;
   cpuPowerSensor?: string;
   gpuPowerSensor?: string;
-  gpuReadMode?: 'auto' | 'always';
+  gpuReadMode?: 'auto' | 'always' | 'never';
   gpuLowPowerProtection?: boolean;
   configPath: string;          // 配置文件路径
   manualGear: string;          // 手动挡位设置

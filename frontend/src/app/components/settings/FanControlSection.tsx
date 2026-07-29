@@ -3,12 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
+  ArrowRight,
   BarChart3,
   CheckCircle2,
+  Eye,
   Flame,
   Pause,
   Play,
+  RotateCcw,
   Settings,
+  Settings2,
   TriangleAlert,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -24,7 +28,18 @@ import {
 } from '../../lib/fan-speed';
 import { useLocale } from '../../lib/i18n';
 import { apiService } from '../../services/api';
-import { Button, Dialog, DialogContent, DialogTitle, Select, ToggleSwitch } from '../ui';
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  NumberInput,
+  Select,
+  ToggleSwitch,
+} from '../ui';
 import { Section, SettingRow } from './SettingLayout';
 import TemperatureBaselineSection, { normalizeTemperatureSource } from './TemperatureBaselineSection';
 
@@ -75,6 +90,12 @@ export default function FanControlSection({
   const { locale } = useLocale();
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
   const [showCustomSpeedWarning, setShowCustomSpeedWarning] = useState(false);
+  const [showPowerSpoofDialog, setShowPowerSpoofDialog] = useState(false);
+  const [powerSpoofEnabledDraft, setPowerSpoofEnabledDraft] = useState(false);
+  const [cpuPowerSpoofPercentDraft, setCpuPowerSpoofPercentDraft] = useState(100);
+  const [cpuPowerSpoofOffsetDraft, setCpuPowerSpoofOffsetDraft] = useState(0);
+  const [gpuPowerSpoofPercentDraft, setGpuPowerSpoofPercentDraft] = useState(100);
+  const [gpuPowerSpoofOffsetDraft, setGpuPowerSpoofOffsetDraft] = useState(0);
   const overviewRuntimeProfile = isConnected ? runtimeDeviceProfile : null;
   const overviewSpeedUnit = getFanSpeedUnit(fanData as any, config as any, overviewRuntimeProfile as any);
   const overviewSpeedLabel = fanSpeedUnitLabel(overviewSpeedUnit);
@@ -229,18 +250,19 @@ export default function FanControlSection({
   }, [reportSettingsError, runWithLoading, saveConfigPatch]);
 
   const handleGpuReadModeChange = useCallback(async (mode: string) => {
-    const normalizedMode = mode === 'always' ? 'always' : 'auto';
+    const normalizedMode = mode === 'always' || mode === 'never' ? mode : 'auto';
     await runWithLoading('gpuReadMode', async () => {
       try {
         await saveConfigPatch({
           gpuReadMode: normalizedMode,
           gpuLowPowerProtection: normalizedMode !== 'always',
+          ...(normalizedMode === 'never' && config.tempSource === 'gpu' ? { tempSource: 'cpu' } : {}),
         });
       } catch (error) {
         reportSettingsError(error);
       }
     });
-  }, [reportSettingsError, runWithLoading, saveConfigPatch]);
+  }, [config.tempSource, reportSettingsError, runWithLoading, saveConfigPatch]);
 
   const handleTransientSpikeFilterChange = useCallback(async (enabled: boolean) => {
     await runWithLoading('transientSpikeFilter', async () => {
@@ -256,6 +278,46 @@ export default function FanControlSection({
       }
     });
   }, [config.smartControl, reportSettingsError, runWithLoading, saveConfigPatch]);
+
+  const openPowerSpoofDialog = useCallback(() => {
+    setPowerSpoofEnabledDraft((config as any).powerSpoofEnabled === true);
+    setCpuPowerSpoofPercentDraft(Number((config as any).cpuPowerSpoofPercent ?? 100));
+    setCpuPowerSpoofOffsetDraft(Number((config as any).cpuPowerSpoofOffsetWatts ?? 0));
+    setGpuPowerSpoofPercentDraft(Number((config as any).gpuPowerSpoofPercent ?? 100));
+    setGpuPowerSpoofOffsetDraft(Number((config as any).gpuPowerSpoofOffsetWatts ?? 0));
+    setShowPowerSpoofDialog(true);
+  }, [config]);
+
+  const handlePowerSpoofReset = useCallback((kind: 'cpu' | 'gpu') => {
+    if (kind === 'cpu') {
+      setCpuPowerSpoofPercentDraft(100);
+      setCpuPowerSpoofOffsetDraft(0);
+    } else {
+      setGpuPowerSpoofPercentDraft(100);
+      setGpuPowerSpoofOffsetDraft(0);
+    }
+    toast.success(t(`controlPanel.fan.powerSpoof${kind === 'cpu' ? 'Cpu' : 'Gpu'}ResetDone`));
+  }, [t]);
+
+  const handlePowerSpoofApply = useCallback(async () => {
+    await runWithLoading('powerSpoofApply', async () => {
+      try {
+        await saveConfigPatch({
+          powerSpoofEnabled: powerSpoofEnabledDraft,
+          cpuPowerSpoofPercent: cpuPowerSpoofPercentDraft,
+          cpuPowerSpoofOffsetWatts: cpuPowerSpoofOffsetDraft,
+          gpuPowerSpoofPercent: gpuPowerSpoofPercentDraft,
+          gpuPowerSpoofOffsetWatts: gpuPowerSpoofOffsetDraft,
+        });
+        setShowPowerSpoofDialog(false);
+        toast.success(t('controlPanel.fan.powerSpoofApplied'));
+      } catch (error) {
+        reportSettingsError(error);
+      }
+    });
+  }, [cpuPowerSpoofOffsetDraft, cpuPowerSpoofPercentDraft, gpuPowerSpoofOffsetDraft, gpuPowerSpoofPercentDraft, powerSpoofEnabledDraft, reportSettingsError, runWithLoading, saveConfigPatch, t]);
+
+  const powerSpoofPreview = (percent: number, offset: number) => Math.max(0, 100 * percent / 100 + offset);
 
   useEffect(() => {
     setCustomSpeedInput(String(clampFanSpeedToRange((config as any).customSpeedRPM, overviewSpeedRange, defaultCustomSpeed) ?? defaultCustomSpeed));
@@ -316,6 +378,22 @@ export default function FanControlSection({
           onTempSensorChange={handleTempSensorChange}
           onPowerSensorChange={handlePowerSensorChange}
         />
+
+        <SettingRow
+          icon={<Eye className={clsx('h-4 w-4', (config as any).powerSpoofEnabled ? 'text-amber-500' : 'text-muted-foreground')} />}
+          title={t('controlPanel.fan.powerSpoofTitle')}
+          description={t('controlPanel.fan.powerSpoofDescription')}
+        >
+          <button
+            type="button"
+            onClick={openPowerSpoofDialog}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title={t('controlPanel.fan.powerSpoofOpenSettings')}
+            aria-label={t('controlPanel.fan.powerSpoofOpenSettings')}
+          >
+            <Settings2 className="h-4 w-4" />
+          </button>
+        </SettingRow>
 
         <SettingRow
           icon={<TriangleAlert className={clsx('h-4 w-4', (config.smartControl as any)?.filterTransientSpike !== false ? 'text-blue-500' : 'text-muted-foreground')} />}
@@ -387,6 +465,95 @@ export default function FanControlSection({
           </div>
         )}
       </Section>
+
+      <Dialog open={showPowerSpoofDialog} onOpenChange={setShowPowerSpoofDialog}>
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{t('controlPanel.fan.powerSpoofDialogTitle')}</DialogTitle>
+            <DialogDescription>{t('controlPanel.fan.powerSpoofDialogDescription')}</DialogDescription>
+          </DialogHeader>
+
+          <div className="flex items-center justify-between gap-4 border-y border-border/70 py-3">
+            <div>
+              <div className="text-sm font-medium text-foreground">{t('controlPanel.fan.powerSpoofSwitchTitle')}</div>
+              <div className="mt-0.5 text-xs text-muted-foreground">{t('controlPanel.fan.powerSpoofSwitchDescription')}</div>
+            </div>
+            <ToggleSwitch
+              enabled={powerSpoofEnabledDraft}
+              onChange={setPowerSpoofEnabledDraft}
+              size="sm"
+              color="orange"
+              srLabel={t('controlPanel.fan.powerSpoofAria')}
+            />
+          </div>
+
+          <div className="rounded-lg border border-amber-400/35 bg-amber-500/10 px-3.5 py-3 text-sm text-amber-800 dark:text-amber-200">
+            <div className="flex items-start gap-2.5">
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{t('controlPanel.fan.powerSpoofWarning')}</span>
+            </div>
+          </div>
+
+          <fieldset disabled={!powerSpoofEnabledDraft} className="grid gap-4 transition-opacity disabled:opacity-50 md:grid-cols-2">
+            <div className="space-y-3 border-b border-border/70 pb-4 md:border-b-0 md:border-r md:pb-0 md:pr-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold text-foreground">{t('controlPanel.fan.powerSpoofCpuTitle')}</div>
+                <button type="button" onClick={() => handlePowerSpoofReset('cpu')} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  {t('controlPanel.fan.powerSpoofReset')}
+                </button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-1">
+                <NumberInput value={cpuPowerSpoofPercentDraft} min={0} max={1000} step={1} suffix="%" label={t('controlPanel.fan.powerSpoofPercent')} onChange={setCpuPowerSpoofPercentDraft} />
+                <NumberInput value={cpuPowerSpoofOffsetDraft} min={-10000} max={10000} step={0.1} suffix="W" label={t('controlPanel.fan.powerSpoofOffset')} onChange={setCpuPowerSpoofOffsetDraft} />
+              </div>
+              <div className="space-y-2 bg-muted/35 p-3">
+                <div className="flex items-center justify-between gap-3 text-center">
+                  <div className="flex-1"><div className="text-xs text-muted-foreground">{t('controlPanel.fan.powerSpoofRealPower')}</div><div className="mt-1 text-lg font-semibold tabular-nums">100 W</div></div>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div className="flex-1"><div className="text-xs text-muted-foreground">{t('controlPanel.fan.powerSpoofDisplayPower')}</div><div className="mt-1 text-lg font-semibold tabular-nums text-amber-600 dark:text-amber-300">{Number(powerSpoofPreview(cpuPowerSpoofPercentDraft, cpuPowerSpoofOffsetDraft).toFixed(1))} W</div></div>
+                </div>
+                <div className="break-words bg-background/70 px-2 py-1.5 text-center text-xs tabular-nums text-muted-foreground">
+                  {t('controlPanel.fan.powerSpoofFormula', { percent: Number(cpuPowerSpoofPercentDraft.toFixed(1)), operator: cpuPowerSpoofOffsetDraft >= 0 ? '+' : '-', offset: Number(Math.abs(cpuPowerSpoofOffsetDraft).toFixed(1)) })}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3 md:pl-1">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold text-foreground">{t('controlPanel.fan.powerSpoofGpuTitle')}</div>
+                <button type="button" onClick={() => handlePowerSpoofReset('gpu')} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  {t('controlPanel.fan.powerSpoofReset')}
+                </button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-1">
+                <NumberInput value={gpuPowerSpoofPercentDraft} min={0} max={1000} step={1} suffix="%" label={t('controlPanel.fan.powerSpoofPercent')} onChange={setGpuPowerSpoofPercentDraft} />
+                <NumberInput value={gpuPowerSpoofOffsetDraft} min={-10000} max={10000} step={0.1} suffix="W" label={t('controlPanel.fan.powerSpoofOffset')} onChange={setGpuPowerSpoofOffsetDraft} />
+              </div>
+              <div className="space-y-2 bg-muted/35 p-3">
+                <div className="flex items-center justify-between gap-3 text-center">
+                  <div className="flex-1"><div className="text-xs text-muted-foreground">{t('controlPanel.fan.powerSpoofRealPower')}</div><div className="mt-1 text-lg font-semibold tabular-nums">100 W</div></div>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div className="flex-1"><div className="text-xs text-muted-foreground">{t('controlPanel.fan.powerSpoofDisplayPower')}</div><div className="mt-1 text-lg font-semibold tabular-nums text-amber-600 dark:text-amber-300">{Number(powerSpoofPreview(gpuPowerSpoofPercentDraft, gpuPowerSpoofOffsetDraft).toFixed(1))} W</div></div>
+                </div>
+                <div className="break-words bg-background/70 px-2 py-1.5 text-center text-xs tabular-nums text-muted-foreground">
+                  {t('controlPanel.fan.powerSpoofFormula', { percent: Number(gpuPowerSpoofPercentDraft.toFixed(1)), operator: gpuPowerSpoofOffsetDraft >= 0 ? '+' : '-', offset: Number(Math.abs(gpuPowerSpoofOffsetDraft).toFixed(1)) })}
+                </div>
+              </div>
+            </div>
+          </fieldset>
+
+          <DialogFooter className="gap-2">
+            <Button variant="secondary" onClick={() => setShowPowerSpoofDialog(false)}>
+              {t('common.actions.cancel')}
+            </Button>
+            <Button variant="primary" loading={loadingStates.powerSpoofApply} onClick={() => void handlePowerSpoofApply()}>
+              {t('common.actions.apply')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showCustomSpeedWarning} onOpenChange={setShowCustomSpeedWarning}>
         <DialogContent hideClose className="max-w-sm">

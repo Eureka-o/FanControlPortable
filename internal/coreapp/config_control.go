@@ -125,6 +125,10 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	}
 	cfg.GpuReadMode = types.NormalizeGPUReadMode(cfg.GpuReadMode)
 	cfg.GpuLowPowerProtection = cfg.GpuReadMode != types.GPUReadModeAlways
+	if cfg.GpuReadMode == types.GPUReadModeNever && cfg.TempSource == types.TempSourceGPU {
+		cfg.TempSource = types.TempSourceCPU
+	}
+	types.NormalizePowerSpoofConfig(&cfg)
 	prepareDeviceFanCurveStateForUpdate(&cfg, oldCfg)
 	curveprofiles.NormalizeConfigForUnit(&cfg, unit)
 	if idx := curveprofiles.FindIndex(cfg.FanCurveProfiles, cfg.ActiveFanCurveProfileID); idx >= 0 {

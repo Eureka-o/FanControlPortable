@@ -1228,6 +1228,11 @@ namespace FanControl.TempBridge
             {
                 return true;
             }
+            if (string.Equals(selection.GpuReadMode, "never", StringComparison.OrdinalIgnoreCase))
+            {
+                gpuReadState = GpuReadStateNotPolled;
+                return false;
+            }
 
             if (string.Equals(selection.GpuReadMode, "always", StringComparison.OrdinalIgnoreCase) || !selection.GpuLowPowerProtection)
             {
@@ -1801,6 +1806,11 @@ namespace FanControl.TempBridge
             }
             selection.GpuReadMode = NormalizeGpuReadMode(selection.GpuReadMode);
             selection.GpuLowPowerProtection = !string.Equals(selection.GpuReadMode, "always", StringComparison.OrdinalIgnoreCase);
+            if (string.Equals(selection.GpuReadMode, "never", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(selection.TempSource, "gpu", StringComparison.OrdinalIgnoreCase))
+            {
+                selection.TempSource = "cpu";
+            }
             return selection;
         }
 
@@ -1822,6 +1832,10 @@ namespace FanControl.TempBridge
             if (string.Equals(mode, "always", StringComparison.OrdinalIgnoreCase))
             {
                 return "always";
+            }
+            if (string.Equals(mode, "never", StringComparison.OrdinalIgnoreCase))
+            {
+                return "never";
             }
             return "auto";
         }

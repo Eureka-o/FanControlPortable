@@ -43,6 +43,24 @@ func TestWriteConfigFileAtomicallyReplacesCompleteFile(t *testing.T) {
 	}
 }
 
+func TestApplyMissingTemperatureDefaultsMigratesLegacyPowerSpoofPair(t *testing.T) {
+	rawJSON := []byte(`{"powerSpoofEnabled":true,"powerSpoofPercent":135,"powerSpoofOffsetWatts":-4}`)
+	var cfg types.AppConfig
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(rawJSON, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(rawJSON, &raw); err != nil {
+		t.Fatal(err)
+	}
+
+	applyMissingTemperatureDefaults(&cfg, raw)
+	if cfg.CPUPowerSpoofPercent != 135 || cfg.CPUPowerSpoofOffsetWatts != -4 ||
+		cfg.GPUPowerSpoofPercent != 135 || cfg.GPUPowerSpoofOffsetWatts != -4 {
+		t.Fatalf("legacy spoof pair was not migrated: %+v", cfg)
+	}
+}
+
 func TestUpdateKeepsCurrentConfigWhenPersistenceFails(t *testing.T) {
 	blockedPath := filepath.Join(t.TempDir(), "blocked")
 	if err := os.WriteFile(blockedPath, []byte("not a directory"), 0644); err != nil {

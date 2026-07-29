@@ -29,6 +29,7 @@ const TEMP_SOURCE_OPTIONS = [
 const GPU_READ_MODE_OPTIONS = [
   { value: 'auto', labelKey: 'controlPanel.options.gpuReadMode.auto' },
   { value: 'always', labelKey: 'controlPanel.options.gpuReadMode.always' },
+  { value: 'never', labelKey: 'controlPanel.options.gpuReadMode.never' },
 ];
 
 const formatPowerSensorValue = (value: number) => (
@@ -67,9 +68,11 @@ export default function TemperatureBaselineSection({
   const { locale } = useLocale();
 
   const currentTempSource = normalizeTemperatureSource((((config as any).tempSource as string) || 'max'));
-  const currentGpuReadMode = (((config as any).gpuReadMode as string) || (((config as any).gpuLowPowerProtection === false) ? 'always' : 'auto')) as 'auto' | 'always';
+  const configuredGpuReadMode = ((config as any).gpuReadMode as string) || (((config as any).gpuLowPowerProtection === false) ? 'always' : 'auto');
+  const currentGpuReadMode = (configuredGpuReadMode === 'always' || configuredGpuReadMode === 'never' ? configuredGpuReadMode : 'auto') as 'auto' | 'always' | 'never';
+  const gpuReadDisabled = currentGpuReadMode === 'never';
   const gpuReadState = (((temperature as any)?.gpuReadState as string) || 'unknown');
-  const gpuNotPolled = gpuReadState === 'notPolled';
+  const gpuNotPolled = gpuReadDisabled || gpuReadState === 'notPolled';
   const gpuLowPowerProtectionEnabled = currentGpuReadMode !== 'always';
 
   const cpuSensors = useMemo(() => (Array.isArray(temperature?.cpuSensors) ? temperature.cpuSensors : []), [temperature?.cpuSensors]);
@@ -122,8 +125,8 @@ export default function TemperatureBaselineSection({
   const selectedGpuPowerSensor = (((config as any).gpuPowerSensor as string) || 'auto');
 
   const tempSourceOptions = useMemo(
-    () => TEMP_SOURCE_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey) })),
-    [locale, t],
+    () => TEMP_SOURCE_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey), disabled: gpuReadDisabled && item.value === 'gpu' })),
+    [gpuReadDisabled, locale, t],
   );
   const gpuReadModeOptions = useMemo(
     () => GPU_READ_MODE_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey) })),
