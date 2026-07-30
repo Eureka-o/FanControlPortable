@@ -195,7 +195,7 @@ html[data-theme="shinchan"] .glacier-sidebar::after {
   writing-mode: vertical-rl;
 }
 
-html[data-theme="shinchan"] .glacier-sidebar [role="img"] {
+html[data-theme="shinchan"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] {
   border-width: 1px !important;
   border-color: color-mix(in srgb, var(--primary) 38%, white) !important;
   border-radius: 1.25rem !important;
@@ -211,7 +211,7 @@ html[data-theme="shinchan"] .glacier-sidebar [role="img"] {
   transform: rotate(-1deg);
 }
 
-html[data-theme="shinchan"] .glacier-sidebar [role="img"] svg,
+html[data-theme="shinchan"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] svg,
 html[data-theme="shinchan"] .glacier-sidebar button svg {
   stroke-width: 2.45;
 }
@@ -823,7 +823,7 @@ html[data-theme="shinchan"] .glacier-shell .glacier-metric-card::after {
   display: none !important;
 }
 
-html[data-theme="shinchan"] .glacier-sidebar [role="img"] {
+html[data-theme="shinchan"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] {
   background:
     radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.84), transparent 1.1rem),
     linear-gradient(145deg, rgba(255, 254, 250, 0.99), rgba(231, 247, 251, 0.92)) !important;
@@ -1643,7 +1643,7 @@ html[data-theme="shinchan"] .glacier-sidebar::after {
   display: none !important;
 }
 
-html[data-theme="shinchan"] .glacier-sidebar [role="img"] {
+html[data-theme="shinchan"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] {
   background:
     radial-gradient(circle at 32% 22%, rgba(255, 255, 255, 0.82), transparent 1.05rem),
     linear-gradient(145deg, rgba(255, 246, 222, 0.98), rgba(255, 217, 139, 0.36)) !important;
@@ -1815,7 +1815,7 @@ html[data-theme="shinchan"] .glacier-sidebar > * {
   z-index: 2 !important;
 }
 
-html[data-theme="shinchan"] .glacier-sidebar [role="img"] {
+html[data-theme="shinchan"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] {
   background:
     radial-gradient(circle at 32% 22%, rgba(255, 255, 255, 0.82), transparent 1.05rem),
     linear-gradient(145deg, rgba(255, 246, 222, 0.8), rgba(255, 217, 139, 0.32)) !important;
@@ -1887,7 +1887,6 @@ html[data-theme="shinchan"] .glacier-shell [data-theme-card="curve-editor"] > .r
   -webkit-backdrop-filter: var(--theme-card-backdrop-filter) !important;
   backdrop-filter: var(--theme-card-backdrop-filter) !important;
 }
-
 /* Final curve-editor fix for advanced themes: the outer hook is only a layout anchor. */
 html[data-theme="shinchan"] .glacier-shell [data-theme-card="curve-editor"] {
   display: block !important;
@@ -2579,7 +2578,7 @@ html[data-theme="shinchan"] .glacier-sidebar::after {
   transform: rotate(-90deg) translateX(-0.2rem);
 }
 
-html[data-theme="shinchan"] .glacier-sidebar [role="img"] {
+html[data-theme="shinchan"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] {
   background:
     radial-gradient(circle at 28% 20%, rgba(255, 255, 255, 0.86), transparent 1.1rem),
     linear-gradient(145deg, rgba(255, 248, 231, 0.98), rgba(255, 211, 77, 0.28) 54%, rgba(239, 75, 42, 0.18)) !important;
@@ -2950,7 +2949,7 @@ html[data-theme="shinchan"] .glacier-sidebar > * {
   z-index: 2 !important;
 }
 
-html[data-theme="shinchan"] .glacier-sidebar [role="img"] {
+html[data-theme="shinchan"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] {
   background:
     radial-gradient(circle at 32% 22%, rgba(255, 255, 255, 0.82), transparent 1.05rem),
     linear-gradient(145deg, rgba(255, 246, 222, 0.8), rgba(255, 217, 139, 0.32)) !important;
@@ -3185,4 +3184,22 @@ html[data-theme="shinchan"] .glacier-shell [data-theme-card="curve-editor"] > .r
   box-shadow: var(--theme-card-shadow) !important;
   -webkit-backdrop-filter: var(--theme-card-backdrop-filter) !important;
   backdrop-filter: var(--theme-card-backdrop-filter) !important;
+}
+
+/* Keep the illustration on the window curtain instead of the content panel. */
+html[data-theme="shinchan"] .glacier-shell::before {
+  content: "" !important;
+  display: block !important;
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 0 !important;
+  pointer-events: none !important;
+  background: var(--shinchan-curtain-image) center / cover no-repeat !important;
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+html[data-theme="shinchan"] .glacier-content-panel::before {
+  content: none !important;
+  display: none !important;
 }

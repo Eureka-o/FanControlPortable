@@ -189,7 +189,7 @@ html[data-theme="maodie"] .glacier-sidebar::after {
   text-orientation: upright;
 }
 
-html[data-theme="maodie"] .glacier-sidebar [role="img"] {
+html[data-theme="maodie"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] {
   border-width: 2px !important;
   border-color: color-mix(in srgb, var(--primary) 52%, white) !important;
   border-radius: 1.05rem !important;
@@ -204,7 +204,7 @@ html[data-theme="maodie"] .glacier-sidebar [role="img"] {
   transform: rotate(-2deg);
 }
 
-html[data-theme="maodie"] .glacier-sidebar [role="img"] svg,
+html[data-theme="maodie"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] svg,
 html[data-theme="maodie"] .glacier-sidebar button svg {
   stroke-width: 2.45;
 }

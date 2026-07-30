@@ -235,7 +235,7 @@ html[data-theme="advanced"] .glacier-sidebar::after {
   writing-mode: vertical-rl;
 }
 
-html[data-theme="advanced"] .glacier-sidebar [role="img"] {
+html[data-theme="advanced"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] {
   border-width: 1px !important;
   border-color: color-mix(in srgb, var(--primary) 38%, white) !important;
   border-radius: 1.25rem !important;
@@ -251,7 +251,7 @@ html[data-theme="advanced"] .glacier-sidebar [role="img"] {
   transform: rotate(-1deg);
 }
 
-html[data-theme="advanced"] .glacier-sidebar [role="img"] svg,
+html[data-theme="advanced"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] svg,
 html[data-theme="advanced"] .glacier-sidebar button svg {
   stroke-width: 2.45;
 }
@@ -863,7 +863,7 @@ html[data-theme="advanced"] .glacier-shell .glacier-metric-card::after {
   display: none !important;
 }
 
-html[data-theme="advanced"] .glacier-sidebar [role="img"] {
+html[data-theme="advanced"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] {
   background:
     radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.84), transparent 1.1rem),
     linear-gradient(145deg, rgba(255, 254, 250, 0.99), rgba(231, 247, 251, 0.92)) !important;
