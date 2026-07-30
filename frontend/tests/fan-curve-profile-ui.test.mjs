@@ -47,7 +47,9 @@ test('keeps profile rename and transfer actions compact and aligned', () => {
 });
 
 test('guards profile switches when the current curve has unsaved changes', () => {
-  assert.match(source, /if \(hasUnsavedChanges\) \{\s*setPendingProfileId\(id\);\s*setProfileSwitchDialogOpen\(true\);\s*return;/);
+  assert.match(source, /requestCurveProfileSwitch\(editorSession, id, activeProfileId\)/);
+  assert.match(source, /resolveCurveEditorSwitch\(editorSession, action, saveSucceeded\)/);
+  assert.match(source, /if \(!isConnected \|\| !hasUnsavedChanges\) \{\s*completePendingTabChange\(\);/);
   assert.match(source, /confirmProfileSwitch\('save'\)/);
   assert.match(source, /confirmProfileSwitch\('discard'\)/);
 });
@@ -111,7 +113,7 @@ test('uses normal curve navigation and keeps history ownership outside page moun
   assert.match(storeSource, /if \(!force && \(state\.temperatureHistoryInitialized \|\| state\.temperatureHistoryLoading\)\)/);
   assert.match(storeSource, /apiService\.onTemperatureHistoryUpdate/);
   assert.match(storeSource, /void get\(\)\.loadTemperatureHistory\(\)/);
-  assert.match(styles, /\[data-theme-card="curve-history"\] \[data-theme-ui="switch-thumb"\][^}]+transition: none;/s);
+  assert.match(styles, /\[data-theme-card="curve-history"\]\s+\[data-theme-ui="switch-thumb"\][^}]+transition: none;/s);
 });
 
 test('splits power history into an aligned conditional chart with a shared full-point tooltip', () => {

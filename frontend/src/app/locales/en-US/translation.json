@@ -41,6 +41,10 @@
       "devices": "Devices",
       "about": "About"
     },
+    "sidebar": {
+      "expand": "Expand",
+      "collapse": "Collapse"
+    },
     "status": {
       "connected": "Connected",
       "offline": "Offline",

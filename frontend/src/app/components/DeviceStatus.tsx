@@ -902,7 +902,7 @@ export default function DeviceStatus({
         </div>
         <div className="glacier-hero-content relative z-10 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-              <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl bg-primary/10 text-primary">
+              <div data-theme-ui="hero-brand-mark" className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl bg-primary/10 text-primary">
                 <Fan className="h-8 w-8" />
               </div>
             <div>

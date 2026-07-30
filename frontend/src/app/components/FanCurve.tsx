@@ -33,6 +33,15 @@ import { HISTORY_SERIES_ORDER, useHistoryDisplayPreferences } from '../hooks/use
 import { useLocale } from '../lib/i18n';
 import { getFanSpeedUnit, getFanSpeedRange, getFanSpeedTicks, fanSpeedUnitLabel } from '../lib/fan-speed';
 import { type HistorySeriesKey, type TemperatureHistoryPoint } from '../lib/temperature-history';
+import {
+  cancelCurveEditorSwitch,
+  createCurveEditorSession,
+  markCurveEditorDirty,
+  markCurveEditorSaved,
+  requestCurveProfileSwitch,
+  requestCurveTabSwitch,
+  resolveCurveEditorSwitch,
+} from '../lib/curve-editor-session';
 import { useAppStore, type CurveFocusTarget } from '../store/app-store';
 import { types } from '../../../wailsjs/go/models';
 import { ClipboardSetText } from '../../../wailsjs/runtime/runtime';
@@ -555,12 +564,13 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const [manageProfilesDialogOpen, setManageProfilesDialogOpen] = useState(false);
   const [profileSwitchDialogOpen, setProfileSwitchDialogOpen] = useState(false);
   const [deleteProfileDialogOpen, setDeleteProfileDialogOpen] = useState(false);
-  const [pendingProfileId, setPendingProfileId] = useState('');
   const [pendingDeleteProfileId, setPendingDeleteProfileId] = useState('');
   const [newProfileNameInput, setNewProfileNameInput] = useState('');
   const [importCode, setImportCode] = useState('');
   const [isImportDragging, setIsImportDragging] = useState(false);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [editorSession, setEditorSession] = useState(createCurveEditorSession);
+  const hasUnsavedChanges = editorSession.dirty;
+  const pendingProfileId = editorSession.pendingProfileId;
   const pendingTab = useAppStore((state) => state.pendingTab);
   const timelineEvents = useAppStore((state) => state.timelineEvents);
   const setCurveDraftDirty = useAppStore((state) => state.setCurveDraftDirty);
@@ -681,7 +691,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       if (current) {
         setProfileNameInput(current.name || '');
         setLocalCurve(normalizeFanCurve(current.curve, speedRange.min, speedRange.max, defaultCurve));
-        setHasUnsavedChanges(false);
+        setEditorSession((session) => markCurveEditorSaved(session, true));
       }
     } catch {
       /* noop */
@@ -756,25 +766,24 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
 
   useEffect(() => {
     if (pendingTab) {
-      if (!isConnected) {
+      if (!isConnected || !hasUnsavedChanges) {
         completePendingTabChange();
         return;
       }
-      setPendingProfileId('');
+      setEditorSession((session) => requestCurveTabSwitch(session).session);
       setProfileSwitchDialogOpen(true);
     }
-  }, [completePendingTabChange, isConnected, pendingTab]);
+  }, [completePendingTabChange, hasUnsavedChanges, isConnected, pendingTab]);
 
   useEffect(() => {
     if (isConnected) return;
-    setHasUnsavedChanges(false);
+    setEditorSession(createCurveEditorSession());
     setIsInteracting(false);
     setCreateProfileDialogOpen(false);
     setManageProfilesDialogOpen(false);
     setProfileSwitchDialogOpen(false);
     setDeleteProfileDialogOpen(false);
     setGearEditOpen(false);
-    setPendingProfileId('');
     setPendingDeleteProfileId('');
   }, [isConnected]);
 
@@ -1351,7 +1360,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     });
 
     if (didChange) {
-      setHasUnsavedChanges(true);
+      setEditorSession(markCurveEditorDirty);
     }
   }, [speedRange]);
 
@@ -1435,7 +1444,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       await loadCurveProfiles();
       await syncConfigFromBackend();
       setLocalCurve(curveToSave);
-      setHasUnsavedChanges(false);
+      setEditorSession((session) => markCurveEditorSaved(session, true));
       return true;
     } catch (e) {
       toast.error(t('fanCurve.toast.saveCurveFailed', { error: getErrorMessage(e) }));
@@ -1491,31 +1500,35 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   }, [loadCurveProfiles, syncConfigFromBackend, t]);
 
   const switchProfile = useCallback(async (id: string) => {
-    if (!id || id === activeProfileId) return;
-    if (hasUnsavedChanges) {
-      setPendingProfileId(id);
+    const decision = requestCurveProfileSwitch(editorSession, id, activeProfileId);
+    setEditorSession(decision.session);
+    if (decision.requiresConfirmation) {
       setProfileSwitchDialogOpen(true);
       return;
     }
-    await applyProfileSwitch(id);
-  }, [activeProfileId, applyProfileSwitch, hasUnsavedChanges]);
+    if (decision.nextProfileId) {
+      await applyProfileSwitch(decision.nextProfileId);
+    }
+  }, [activeProfileId, applyProfileSwitch, editorSession]);
 
   const confirmProfileSwitch = useCallback(async (action: 'save' | 'discard') => {
     if (!pendingProfileId && !pendingTab) return;
+    let saveSucceeded = true;
     if (action === 'save') {
-      const saved = await persistCurrentCurve();
-      if (!saved) return;
+      saveSucceeded = await persistCurrentCurve();
     }
-    if (pendingTab) {
-      setProfileSwitchDialogOpen(false);
+    const decision = resolveCurveEditorSwitch(editorSession, action, saveSucceeded);
+    if (action === 'save' && !saveSucceeded) return;
+    setEditorSession(decision.session);
+    setProfileSwitchDialogOpen(false);
+    if (decision.completeTab) {
       completePendingTabChange();
       return;
     }
-    const nextProfileId = pendingProfileId;
-    setProfileSwitchDialogOpen(false);
-    setPendingProfileId('');
-    await applyProfileSwitch(nextProfileId);
-  }, [applyProfileSwitch, completePendingTabChange, pendingProfileId, pendingTab, persistCurrentCurve]);
+    if (decision.nextProfileId) {
+      await applyProfileSwitch(decision.nextProfileId);
+    }
+  }, [applyProfileSwitch, completePendingTabChange, editorSession, pendingProfileId, pendingTab, persistCurrentCurve]);
 
   const saveCurrentProfileName = useCallback(async () => {
     const fallbackName = activeProfile?.name || t('fanCurve.profiles.currentCurveName');
@@ -1644,7 +1657,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
 
   const resetCurve = useCallback(() => {
     setLocalCurve(normalizeFanCurve(defaultCurve, speedRange.min, speedRange.max, defaultCurve));
-    setHasUnsavedChanges(true);
+    setEditorSession(markCurveEditorDirty);
   }, [defaultCurve, speedRange.max, speedRange.min]);
 
   /* ── Auto control / smart control handlers ── */
@@ -2964,7 +2977,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
           onOpenChange={(open) => {
             setProfileSwitchDialogOpen(open);
             if (!open) {
-              setPendingProfileId('');
+              setEditorSession(cancelCurveEditorSwitch);
               cancelPendingTabChange();
             }
           }}
@@ -2980,7 +2993,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                 variant="outline"
                 onClick={() => {
                   setProfileSwitchDialogOpen(false);
-                  setPendingProfileId('');
+                  setEditorSession(cancelCurveEditorSwitch);
                   cancelPendingTabChange();
                 }}
                 disabled={isSaving || profileOpLoading}

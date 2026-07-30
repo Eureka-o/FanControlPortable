@@ -11,17 +11,15 @@ const store = readFileSync(new URL('../src/app/store/app-store.ts', import.meta.
 
 test('clears device identity immediately when the backend reports a disconnect', () => {
   const handler = store.slice(store.indexOf('apiService.onDeviceDisconnected'), store.indexOf('apiService.onDeviceSettingsUpdate'));
-  assert.match(handler, /isConnected: false/);
-  assert.match(handler, /runtimeDeviceProfile: null/);
-  assert.match(handler, /fanData: null/);
+  assert.match(handler, /deviceSnapshotFromStatus\(null\)/);
   assert.doesNotMatch(handler, /setTimeout/);
-  assert.match(store, /const connected = status\?\.connected === true/);
+  assert.match(store, /deviceSnapshotFromStatus\(status\)/);
 });
 
 test('keeps the existing configured device display while runtime state is disconnected', () => {
   assert.match(status, /const configuredDeviceProfile = useMemo/);
   assert.match(status, /const activeDeviceProfile = runtimeDeviceProfile \|\| configuredDeviceProfile/);
-  assert.match(shell, /\|\| \(config as any\)\.deviceTransport/);
+  assert.match(shell, /\|\|\s*\(config as any\)\.deviceTransport/);
   assert.match(shell, /<WifiOff className="h-3\.5 w-3\.5"/);
   assert.doesNotMatch(shell, /\{isConnected && \([\s\S]*?appShell\.status\.smartControl/);
 });

@@ -21,11 +21,12 @@ test('lazily mounts settings sections once behind an accessible segmented contro
   assert.doesNotMatch(source, /\shidden=\{activeSettingsTab !==/);
 });
 
-test('gives settings tabs the same active depth and hover language as the sidebar', () => {
+test('keeps settings tab depth without adding a second dock active painter', () => {
   assert.match(source, /data-theme-ui="settings-tab"/);
   assert.match(source, /text-primary/);
   assert.match(source, /text-sidebar-foreground\/62 hover:bg-sidebar-accent hover:text-sidebar-foreground/);
-  assert.match(styles, /\[data-theme-ui="sidebar-item"\]\[aria-selected="true"\],\s*\.glacier-shell \[data-theme-ui="settings-tab"\]\[aria-selected="true"\]/);
+  assert.match(styles, /\.glacier-shell \[data-theme-ui="settings-tab"\]\[aria-selected="true"\]/);
+  assert.doesNotMatch(styles, /\[data-theme-ui="sidebar-item"\]\[aria-selected="true"\],\s*\.glacier-shell \[data-theme-ui="settings-tab"\]\[aria-selected="true"\]/);
   assert.match(styles, /\[data-theme-ui="settings-tab"\]:not\(\[aria-selected="true"\]\):hover/);
 });
 
