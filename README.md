@@ -37,8 +37,8 @@ FanControl 现在以内置设备档案的方式支持多种设备。不同设备
 
 ## 下载哪个文件
 
-- `FanControl-2.6.1-amd64-installer.exe`：2.6.1 安装包，升级时会保留已有配置。
-- `FanControl-2.6.1-portable.zip`：2.6.1 便携包，解压到固定文件夹后运行 `FanControl.exe`。
+- `FanControl-2.7.0-amd64-installer.exe`：2.7.0 安装包，升级时会保留已有配置。
+- `FanControl-2.7.0-portable.zip`：2.7.0 便携包，解压到固定文件夹后运行 `FanControl.exe`。
 
 首次启动时如果 Windows 弹出权限确认，请选择允许。软件需要管理员权限读取硬件温度，并可能安装或调用温度读取所需的辅助组件。
 
@@ -65,11 +65,11 @@ FanControl 现在以内置设备档案的方式支持多种设备。不同设备
 
 ## 最新版本
 
-当前正式版本：`2.6.1`
+当前正式版本：`2.7.0`
 
-- 新增 CPU/GPU 独立功耗显示欺骗，覆盖当前读数、传感器、历史曲线和托盘菜单。
-- GPU 读取模式新增“不读取”，可避免不必要的独显唤醒，并在需要时自动回退到 CPU 控温。
-- 新增 `Hatsune Miku / Digital Stage` 高级主题。
+- 新增可展开 Dock、完整品牌字标和统一的页面切换动效。
+- 统一深浅色与自定义主题的幕布、玻璃 Dock 和工作区卡片表现。
+- 改进设备状态同步、配置提交、曲线编辑和更新操作的可靠性。
 
 完整更新记录请查看 [GitHub Releases](https://github.com/Eureka-o/FanControlPortable/releases) 或 `docs/release-notes/`。
 
