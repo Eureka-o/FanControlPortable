@@ -5,6 +5,6 @@
   "base": "light",
   "layer": "advanced",
   "author": "FanControl",
-  "version": "1.3.3",
+  "version": "1.3.5",
   "description": "A digital-stage Miku theme with a local rounded Xiaolai UI font, translucent surfaces, and quiet interaction feedback."
 }

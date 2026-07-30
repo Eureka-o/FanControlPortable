@@ -315,7 +315,7 @@ html[data-theme="basic"] .glacier-sidebar::after {
 }
 
 /* 应用自带左上角标记。只改质感，不替换应用图标本身。 */
-html[data-theme="basic"] .glacier-sidebar [role="img"] {
+html[data-theme="basic"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] {
   border-color: color-mix(in srgb, var(--sidebar-primary) 30%, var(--sidebar-border));
   background:
     radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.75), transparent 1.2rem),

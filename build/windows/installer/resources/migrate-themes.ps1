@@ -129,6 +129,22 @@ function Copy-ThemeDirectory {
     Rename-Item -LiteralPath $tempDestination -NewName $name -Force -ErrorAction Stop
 }
 
+function Merge-ThemeDirectory {
+    param(
+        [string]$SourceDir,
+        [string]$DestinationDir
+    )
+
+    New-Item -ItemType Directory -Path $DestinationDir -Force | Out-Null
+    $sourceRoot = (Get-Item -LiteralPath $SourceDir).FullName.TrimEnd('\', '/')
+    Get-ChildItem -LiteralPath $SourceDir -Recurse -File -ErrorAction Stop | ForEach-Object {
+        $relativePath = $_.FullName.Substring($sourceRoot.Length).TrimStart('\', '/')
+        $destinationPath = Join-Path $DestinationDir $relativePath
+        New-Item -ItemType Directory -Path (Split-Path -Parent $destinationPath) -Force | Out-Null
+        Copy-Item -LiteralPath $_.FullName -Destination $destinationPath -Force -ErrorAction Stop
+    }
+}
+
 function Sync-BundledThemes {
     param(
         [string]$InstallDir,
@@ -150,6 +166,16 @@ function Sync-BundledThemes {
 
         $destination = Join-Path $InstallDir $bundled.Id
         if (Test-Path -LiteralPath $destination) {
+            $installed = Get-ThemeCandidate $destination $InstallDir
+            if ($null -eq $installed -or (Compare-ThemeVersion $bundled.Version $installed.Version) -le 0) {
+                return
+            }
+
+            try {
+                Merge-ThemeDirectory $bundled.Dir $destination
+            } catch {
+                return
+            }
             return
         }
 

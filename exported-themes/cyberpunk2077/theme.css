@@ -247,7 +247,7 @@ html[data-theme="cyberpunk2077"] .glacier-sidebar::after {
   pointer-events: none;
 }
 
-html[data-theme="cyberpunk2077"] .glacier-sidebar [role="img"] {
+html[data-theme="cyberpunk2077"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] {
   border-width: 1px !important;
   border-color: color-mix(in srgb, var(--cyberpunk-yellow) 42%, var(--border)) !important;
   border-radius: 0.5rem !important;
@@ -261,7 +261,7 @@ html[data-theme="cyberpunk2077"] .glacier-sidebar [role="img"] {
     inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
 }
 
-html[data-theme="cyberpunk2077"] .glacier-sidebar [role="img"] svg,
+html[data-theme="cyberpunk2077"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] svg,
 html[data-theme="cyberpunk2077"] .glacier-sidebar button svg {
   stroke-width: 2.35;
 }

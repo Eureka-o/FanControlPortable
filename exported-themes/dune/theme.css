@@ -303,7 +303,7 @@ html[data-theme="dune"] .glacier-sidebar > * {
   z-index: 1;
 }
 
-html[data-theme="dune"] .glacier-sidebar [data-theme-ui="brand-mark"] {
+html[data-theme="dune"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] {
   border-radius: 0.9rem !important;
   border-color: rgba(230, 176, 92, 0.34) !important;
   background:
@@ -1399,4 +1399,40 @@ html[data-theme="dune"] .glacier-shell [data-theme-card="curve-manual-gears"] .r
 
 html[data-theme="dune"] .glacier-shell [data-theme-card="curve-manual-gears"] .relative.mb-3.px-2 > .relative.flex {
   z-index: 1;
+}
+
+/* One continuous window curtain; chrome and content no longer paint separate backdrops. */
+html[data-theme="dune"] .glacier-shell::before,
+html[data-theme="dune"] .glacier-shell::after {
+  content: "" !important;
+  display: block !important;
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 0 !important;
+  pointer-events: none !important;
+}
+
+html[data-theme="dune"] .glacier-shell::before {
+  background:
+    linear-gradient(90deg, rgba(2, 1, 1, 0.86), rgba(2, 1, 1, 0.24) 40%, rgba(2, 1, 1, 0.72)),
+    linear-gradient(180deg, rgba(2, 1, 1, 0.62), rgba(2, 1, 1, 0.2) 42%, rgba(2, 1, 1, 0.78)),
+    radial-gradient(ellipse at 58% 44%, rgba(2, 1, 1, 0.12) 0%, rgba(2, 1, 1, 0.06) 38%, transparent 66%),
+    var(--dune-poster-image) center / cover no-repeat,
+    linear-gradient(135deg, #040302 0%, #100a06 50%, #030201 100%) !important;
+  opacity: var(--dune-page-opacity) !important;
+  filter: var(--dune-background-filter) !important;
+  transform: scale(1.006);
+}
+
+html[data-theme="dune"] .glacier-shell::after {
+  background:
+    radial-gradient(ellipse at 76% 16%, rgba(218, 158, 74, 0.1), transparent 18rem),
+    linear-gradient(180deg, transparent 0%, rgba(4, 2, 1, 0.1) 72%, rgba(4, 2, 1, 0.44) 100%) !important;
+  opacity: 0.48;
+}
+
+html[data-theme="dune"] .glacier-content-panel::before,
+html[data-theme="dune"] .glacier-content-panel::after {
+  content: none !important;
+  display: none !important;
 }

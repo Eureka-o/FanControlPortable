@@ -26,6 +26,9 @@ try {
     Write-TestTheme $bundleDir "dune" "2.0.0" "bundled-dune"
     Write-TestTheme $bundleDir "thrm" "1.0.0" "bundled-thrm"
     Write-TestTheme $installDir "dune" "1.0.0" "user-edited-dune"
+    Set-Content -LiteralPath (Join-Path $installDir "dune\user-extra.txt") -Value "keep-me" -NoNewline -Encoding UTF8
+    Write-TestTheme $installDir "current-theme" "3.0.0" "newer-installed"
+    Write-TestTheme $bundleDir "current-theme" "2.0.0" "older-bundled"
     Write-TestTheme $installDir "my-theme" "9.0.0" "user-theme"
     New-Item -ItemType Directory -Path $userDir -Force | Out-Null
 
@@ -40,8 +43,14 @@ try {
         $env:USERPROFILE = $previousUserProfile
     }
 
-    if ((Get-Content -Raw -LiteralPath (Join-Path $installDir "dune\theme.css")) -ne "user-edited-dune") {
-        throw "existing official theme was overwritten"
+    if ((Get-Content -Raw -LiteralPath (Join-Path $installDir "dune\theme.css")) -ne "bundled-dune") {
+        throw "older official theme was not upgraded"
+    }
+    if ((Get-Content -Raw -LiteralPath (Join-Path $installDir "dune\user-extra.txt")) -ne "keep-me") {
+        throw "user-added official theme file was not preserved"
+    }
+    if ((Get-Content -Raw -LiteralPath (Join-Path $installDir "current-theme\theme.css")) -ne "newer-installed") {
+        throw "newer installed theme was downgraded"
     }
     if ((Get-Content -Raw -LiteralPath (Join-Path $installDir "my-theme\theme.css")) -ne "user-theme") {
         throw "user theme was overwritten"
