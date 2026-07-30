@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/TIANLI0/THRM/internal/bridge"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -166,6 +167,61 @@ func TestReadUsesRecentBridgeTemperatureOnTransientFailure(t *testing.T) {
 	}
 	if second.CPUTemp != 61 || second.GPUTemp != 54 || second.CPUPowerWatts != 22.5 || second.GPUPowerWatts != 31.25 {
 		t.Fatalf("second read = %+v, want last valid bridge values", second)
+	}
+}
+
+func TestReadSkipsFallbackWhileBridgeStarts(t *testing.T) {
+	oldExec := execHelperCommand
+	defer func() { execHelperCommand = oldExec }()
+	execHelperCommand = func(time.Duration, string, ...string) ([]byte, error) {
+		t.Fatal("bridge starting invoked external fallback")
+		return nil, nil
+	}
+
+	provider := &fakeBridgeTemperatureProvider{responses: []types.BridgeTemperatureData{{
+		Success: false,
+		Error:   bridge.StartingMessage,
+	}}}
+	got := NewReader(provider, testLogger{}).Read(types.GetDefaultTemperatureSelection())
+	if got.BridgeMsg != bridge.StartingMessage || got.BridgeOk {
+		t.Fatalf("starting bridge result = %+v", got)
+	}
+}
+
+func TestExternalFallbackUsesFreshCache(t *testing.T) {
+	oldExec := execHelperCommand
+	oldNow := readTimeNow
+	defer func() {
+		execHelperCommand = oldExec
+		readTimeNow = oldNow
+	}()
+
+	now := time.Unix(1_717_000_000, 0)
+	readTimeNow = func() time.Time { return now }
+	calls := 0
+	execHelperCommand = func(_ time.Duration, name string, _ ...string) ([]byte, error) {
+		if name == "nvidia-smi" {
+			calls++
+			return []byte("70\n"), nil
+		}
+		return nil, errors.New("unexpected command")
+	}
+
+	reader := NewReader(nil, testLogger{})
+	reader.cachedGPUVendor = "nvidia"
+	reader.cachedVendorAt = now
+	if got := reader.readThrottledFallback(false, false); got.gpuTemp != 70 {
+		t.Fatalf("first fallback = %+v", got)
+	}
+	_ = reader.readThrottledFallback(false, false)
+	if calls != 1 {
+		t.Fatalf("fresh fallback cache made %d calls; want 1", calls)
+	}
+
+	now = now.Add(fallbackFreshInterval + time.Second)
+	_ = reader.readThrottledFallback(false, false)
+	if calls != 2 {
+		t.Fatalf("expired fallback cache made %d calls; want 2", calls)
 	}
 }
 

@@ -19,7 +19,7 @@ func TestDefaultLogDirPrefersInstallDirWhenWritable(t *testing.T) {
 	}
 }
 
-func TestDebugLogWritesOnlyWhileDebugModeEnabled(t *testing.T) {
+func TestDebugLogWritesOnlyDebugLevelWhileEnabled(t *testing.T) {
 	installDir := t.TempDir()
 	log, err := NewCustomLogger(false, installDir)
 	if err != nil {
@@ -40,8 +40,11 @@ func TestDebugLogWritesOnlyWhileDebugModeEnabled(t *testing.T) {
 	if strings.Contains(content, "normal-only") {
 		t.Fatal("debug log duplicated info written while debug mode was disabled")
 	}
-	if !strings.Contains(content, "debug-context") || !strings.Contains(content, "debug-detail") {
-		t.Fatalf("debug log missing enabled context: %s", content)
+	if strings.Contains(content, "debug-context") {
+		t.Fatal("debug log duplicated info written while debug mode was enabled")
+	}
+	if !strings.Contains(content, "debug-detail") {
+		t.Fatalf("debug log missing debug entry: %s", content)
 	}
 }
 

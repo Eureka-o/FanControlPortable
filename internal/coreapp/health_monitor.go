@@ -4,6 +4,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -32,6 +33,7 @@ func (a *CoreApp) startHealthMonitoring() {
 					continue
 				}
 
+				a.emitHeartbeat()
 				a.performHealthCheck()
 			case <-a.cleanupChan:
 				a.logInfo("健康监控系统已停止")
@@ -44,6 +46,12 @@ func (a *CoreApp) startHealthMonitoring() {
 		a.safeGo("cleanOldLogs", func() {
 			a.logger.CleanOldLogs()
 		})
+	}
+}
+
+func (a *CoreApp) emitHeartbeat() {
+	if a.ipcServer != nil && a.ipcServer.HasClients() {
+		a.ipcServer.BroadcastEvent(ipc.EventHeartbeat, time.Now().UnixMilli())
 	}
 }
 
@@ -76,9 +84,7 @@ func (a *CoreApp) ensureTemperatureMonitoringHealthy() {
 
 // checkDeviceHealth 检查设备健康状态
 func (a *CoreApp) checkDeviceHealth() {
-	a.mutex.RLock()
-	connected := a.isConnected
-	a.mutex.RUnlock()
+	connected := a.deviceRuntimeSnapshot().Connected
 
 	if !connected {
 		now := time.Now()

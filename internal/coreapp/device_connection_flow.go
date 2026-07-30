@@ -17,6 +17,29 @@ func newDeviceConnectionFlow(app *CoreApp) deviceConnectionFlow {
 	return deviceConnectionFlow{app: app}
 }
 
+func (f deviceConnectionFlow) setRuntimeConnected() {
+	f.app.mutex.Lock()
+	f.app.isConnected = true
+	f.app.deviceSettings = nil
+	f.app.mutex.Unlock()
+}
+
+func (f deviceConnectionFlow) setRuntimeReady(settings *types.DeviceSettings) {
+	f.app.mutex.Lock()
+	f.app.isConnected = true
+	f.app.deviceSettings = settings
+	f.app.mutex.Unlock()
+}
+
+func (f deviceConnectionFlow) setRuntimeDisconnected() bool {
+	f.app.mutex.Lock()
+	wasConnected := f.app.isConnected
+	f.app.isConnected = false
+	f.app.deviceSettings = nil
+	f.app.mutex.Unlock()
+	return wasConnected
+}
+
 func (f deviceConnectionFlow) connectBestScannedDevice() bool {
 	cfg := f.app.configManager.Get()
 	selectionCfg := cfg
@@ -220,10 +243,7 @@ func (f deviceConnectionFlow) disconnectForSwitch() {
 		return
 	}
 	f.app.deviceManager.DisconnectSilently()
-	f.app.mutex.Lock()
-	f.app.isConnected = false
-	f.app.deviceSettings = nil
-	f.app.mutex.Unlock()
+	f.setRuntimeDisconnected()
 	if f.app.ipcServer != nil {
 		f.app.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
 	}

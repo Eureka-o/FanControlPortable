@@ -41,6 +41,7 @@ func (a *App) Startup(ctx context.Context) {
 	); err != nil {
 		guiLogger.Warnf("clean stale update files failed: %v", err)
 	}
+	a.startIPCWatchdog()
 
 	if err := a.ensureIPCConnected(); err != nil {
 		guiLogger.Error("核心服务不可用，GUI 将进入受限状态")

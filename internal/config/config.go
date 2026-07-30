@@ -1138,6 +1138,25 @@ func (m *Manager) Update(config types.AppConfig) error {
 	return nil
 }
 
+// MutateAndSave atomically applies a narrow configuration change and persists it.
+func (m *Manager) MutateAndSave(mutate func(*types.AppConfig)) (types.AppConfig, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if mutate == nil {
+		return cloneAppConfig(m.config), nil
+	}
+	previous := m.config
+	next := cloneAppConfig(m.config)
+	mutate(&next)
+	m.config = cloneAppConfig(next)
+	if err := m.saveLocked(); err != nil {
+		m.config = previous
+		return cloneAppConfig(m.config), err
+	}
+	m.bumpRevisionLocked()
+	return cloneAppConfig(m.config), nil
+}
+
 // MutateIfRevision atomically applies a narrow in-memory change when the
 // caller still holds the current snapshot. Persistence remains explicit via Save.
 func (m *Manager) MutateIfRevision(expected uint64, mutate func(*types.AppConfig)) (types.AppConfig, uint64, bool) {
@@ -1151,6 +1170,25 @@ func (m *Manager) MutateIfRevision(expected uint64, mutate func(*types.AppConfig
 	m.config = cloneAppConfig(next)
 	m.bumpRevisionLocked()
 	return cloneAppConfig(m.config), m.revision, true
+}
+
+// MutateIfRevisionAndSave persists a narrow change only when the snapshot is current.
+func (m *Manager) MutateIfRevisionAndSave(expected uint64, mutate func(*types.AppConfig)) (types.AppConfig, uint64, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if mutate == nil || m.revision != expected {
+		return cloneAppConfig(m.config), m.revision, false, nil
+	}
+	previous := m.config
+	next := cloneAppConfig(m.config)
+	mutate(&next)
+	m.config = cloneAppConfig(next)
+	if err := m.saveLocked(); err != nil {
+		m.config = previous
+		return cloneAppConfig(m.config), m.revision, false, err
+	}
+	m.bumpRevisionLocked()
+	return cloneAppConfig(m.config), m.revision, true, nil
 }
 
 func (m *Manager) bumpRevisionLocked() {

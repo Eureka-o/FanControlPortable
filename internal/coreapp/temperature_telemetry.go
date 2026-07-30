@@ -3,6 +3,7 @@ package coreapp
 import (
 	"strings"
 
+	"github.com/TIANLI0/THRM/internal/bridge"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -19,6 +20,9 @@ func trackBridgeTemperatureStaleness(temp types.TemperatureData, lastUpdate int6
 
 func shouldRestartTemperatureBridge(temp types.TemperatureData) bool {
 	if temp.BridgeOk {
+		return false
+	}
+	if bridge.IsStarting(temp.BridgeMsg) {
 		return false
 	}
 
@@ -56,19 +60,19 @@ func shouldRestartTemperatureBridge(temp types.TemperatureData) bool {
 
 func compactTemperatureEventPayload(current, previous types.TemperatureData) types.TemperatureData {
 	compact := current
-	if temperatureSensorsSameIdentity(current.CpuSensors, previous.CpuSensors) {
+	if temperatureSensorsEqual(current.CpuSensors, previous.CpuSensors) {
 		compact.CpuSensors = nil
 	}
-	if temperatureSensorsSameIdentity(current.GpuSensors, previous.GpuSensors) {
+	if temperatureSensorsEqual(current.GpuSensors, previous.GpuSensors) {
 		compact.GpuSensors = nil
 	}
-	if powerSensorsSameIdentity(current.CpuPowerSensors, previous.CpuPowerSensors) {
+	if powerSensorsEqual(current.CpuPowerSensors, previous.CpuPowerSensors) {
 		compact.CpuPowerSensors = nil
 	}
-	if powerSensorsSameIdentity(current.GpuPowerSensors, previous.GpuPowerSensors) {
+	if powerSensorsEqual(current.GpuPowerSensors, previous.GpuPowerSensors) {
 		compact.GpuPowerSensors = nil
 	}
-	if gpuDevicesSameIdentity(current.GpuDevices, previous.GpuDevices) {
+	if gpuDevicesEqual(current.GpuDevices, previous.GpuDevices) {
 		compact.GpuDevices = nil
 	}
 	return compact
@@ -99,7 +103,7 @@ func mergeTemperatureHardwareMetadata(previous, incoming types.TemperatureData) 
 	return incoming
 }
 
-func temperatureSensorsSameIdentity(current, previous []types.TemperatureSensor) bool {
+func temperatureSensorsEqual(current, previous []types.TemperatureSensor) bool {
 	if (current == nil) != (previous == nil) {
 		return false
 	}
@@ -107,14 +111,14 @@ func temperatureSensorsSameIdentity(current, previous []types.TemperatureSensor)
 		return false
 	}
 	for i := range current {
-		if current[i].Key != previous[i].Key || current[i].Name != previous[i].Name {
+		if current[i].Key != previous[i].Key || current[i].Name != previous[i].Name || current[i].Value != previous[i].Value {
 			return false
 		}
 	}
 	return true
 }
 
-func powerSensorsSameIdentity(current, previous []types.PowerSensor) bool {
+func powerSensorsEqual(current, previous []types.PowerSensor) bool {
 	if (current == nil) != (previous == nil) {
 		return false
 	}
@@ -122,14 +126,14 @@ func powerSensorsSameIdentity(current, previous []types.PowerSensor) bool {
 		return false
 	}
 	for i := range current {
-		if current[i].Key != previous[i].Key || current[i].Name != previous[i].Name {
+		if current[i].Key != previous[i].Key || current[i].Name != previous[i].Name || current[i].Value != previous[i].Value {
 			return false
 		}
 	}
 	return true
 }
 
-func gpuDevicesSameIdentity(current, previous []types.TemperatureGPUDevice) bool {
+func gpuDevicesEqual(current, previous []types.TemperatureGPUDevice) bool {
 	if (current == nil) != (previous == nil) {
 		return false
 	}
@@ -140,8 +144,8 @@ func gpuDevicesSameIdentity(current, previous []types.TemperatureGPUDevice) bool
 		if current[i].Key != previous[i].Key ||
 			current[i].Name != previous[i].Name ||
 			current[i].Vendor != previous[i].Vendor ||
-			!temperatureSensorsSameIdentity(current[i].Sensors, previous[i].Sensors) ||
-			!powerSensorsSameIdentity(current[i].PowerSensors, previous[i].PowerSensors) {
+			!temperatureSensorsEqual(current[i].Sensors, previous[i].Sensors) ||
+			!powerSensorsEqual(current[i].PowerSensors, previous[i].PowerSensors) {
 			return false
 		}
 	}

@@ -87,13 +87,11 @@ func (a *CoreApp) GetFanCurveProfiles() types.FanCurveProfilesPayload {
 		changed = true
 	}
 	if changed {
-		a.configManager.Set(cfg)
-		if err := a.configManager.Save(); err != nil {
+		if err := a.configManager.Update(cfg); err != nil {
 			a.logError("保存温控曲线方案默认配置失败: %v", err)
+		} else if a.ipcServer != nil {
+			a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 		}
-	}
-	if changed && a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 	}
 	return a.fanCurveProfilesPayloadFromConfig(cfg)
 }

@@ -77,8 +77,7 @@ func (a *CoreApp) Start() error {
 		a.logInfo("已同步Windows自启动状态: %v", actualAutoStart)
 	}
 	if configChanged {
-		a.configManager.Set(cfg)
-		if err := a.configManager.Save(); err != nil {
+		if err := a.configManager.Update(cfg); err != nil {
 			a.logError("保存启动归一化配置失败: %v", err)
 		}
 	}
@@ -152,13 +151,11 @@ func (a *CoreApp) Start() error {
 		a.logInfo("Bluetooth LE interface arrival notifications registered")
 	}
 
-	// 启动健康监控
-	if cfg.GuiMonitoring {
-		a.logInfo("启动健康监控")
-		a.safeGo("startHealthMonitoring", func() {
-			a.startHealthMonitoring()
-		})
-	}
+	// 健康循环还负责断线重连、挂起恢复和监控自愈，不能跟随 GUI 监控关闭。
+	a.logInfo("启动健康监控")
+	a.safeGo("startHealthMonitoring", func() {
+		a.startHealthMonitoring()
+	})
 
 	a.logInfo("=== FanControl Core 启动完成 ===")
 

@@ -390,17 +390,17 @@ func (a *CoreApp) SaveNoiseDiagnosticResult(result types.NoiseDiagnosticResult) 
 	result.Unit = unit
 	for attempt := 0; attempt < 2; attempt++ {
 		_, revision := a.configManager.GetWithRevision()
-		updated, _, applied := a.configManager.MutateIfRevision(revision, func(current *types.AppConfig) {
+		updated, _, applied, err := a.configManager.MutateIfRevisionAndSave(revision, func(current *types.AppConfig) {
 			if current.NoiseDiagnosticsByDevice == nil {
 				current.NoiseDiagnosticsByDevice = map[string]types.NoiseDiagnosticResult{}
 			}
 			current.NoiseDiagnosticsByDevice[result.DeviceKey] = result
 		})
+		if err != nil {
+			return err
+		}
 		if !applied {
 			continue
-		}
-		if err := a.configManager.Save(); err != nil {
-			return err
 		}
 		if a.ipcServer != nil {
 			a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, updated)
@@ -443,7 +443,7 @@ func (a *CoreApp) SaveAxisNoiseProfile(profile types.AxisNoiseProfile) (types.Ax
 
 	for attempt := 0; attempt < 2; attempt++ {
 		_, revision := a.configManager.GetWithRevision()
-		updated, _, applied := a.configManager.MutateIfRevision(revision, func(current *types.AppConfig) {
+		updated, _, applied, err := a.configManager.MutateIfRevisionAndSave(revision, func(current *types.AppConfig) {
 			if deleteRequested {
 				delete(current.AxisNoiseProfilesByDevice, deviceKey)
 				return
@@ -453,11 +453,11 @@ func (a *CoreApp) SaveAxisNoiseProfile(profile types.AxisNoiseProfile) (types.Ax
 			}
 			current.AxisNoiseProfilesByDevice[deviceKey] = profile
 		})
+		if err != nil {
+			return types.AxisNoiseProfile{}, err
+		}
 		if !applied {
 			continue
-		}
-		if err := a.configManager.Save(); err != nil {
-			return types.AxisNoiseProfile{}, err
 		}
 		a.forceNextAutoTarget.Store(true)
 		if a.ipcServer != nil {
