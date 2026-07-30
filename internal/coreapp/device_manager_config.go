@@ -41,13 +41,7 @@ func (a *CoreApp) reconcileDeviceManagerProfile(cfg types.AppConfig) bool {
 
 	a.configureDeviceManager(cfg)
 
-	a.mutex.Lock()
-	wasCoreConnected := a.isConnected
-	if managerConnected || wasCoreConnected {
-		a.isConnected = false
-		a.deviceSettings = nil
-	}
-	a.mutex.Unlock()
+	wasCoreConnected := newDeviceConnectionFlow(a).setRuntimeDisconnected()
 	return managerConnected || wasCoreConnected
 }
 

@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/TIANLI0/THRM/internal/bridge"
 	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/TIANLI0/THRM/internal/smartcontrol"
 	"github.com/TIANLI0/THRM/internal/temperature"
@@ -78,6 +79,10 @@ func (a *CoreApp) recoverTemperatureBridge(reason string) {
 	a.safeRun("temperature-bridge-recover@"+reason, func() {
 		a.bridgeManager.Stop()
 		if err := a.bridgeManager.EnsureRunning(); err != nil {
+			if bridge.IsStarting(err.Error()) {
+				a.logInfo("温度桥接已开始后台自愈重启: %s", reason)
+				return
+			}
 			a.logError("温度桥接自愈重启失败[%s]: %v", reason, err)
 			return
 		}
@@ -300,9 +305,16 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				smartCfg, smartChanged = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, speedUnit)
 				smartCfgRevision = cfgRevision
 				if smartChanged {
-					updatedCfg, updatedRevision, applied := a.configManager.MutateIfRevision(cfgRevision, func(current *types.AppConfig) {
+					updatedCfg, updatedRevision, applied, persistErr := a.configManager.MutateIfRevisionAndSave(cfgRevision, func(current *types.AppConfig) {
 						current.SmartControl = smartCfg
 					})
+					if persistErr != nil {
+						a.logError("保存智能控温配置失败: %v", persistErr)
+						cfg, cfgRevision = a.configManager.GetWithRevision()
+						smartCfgRevision = cfgRevision - 1
+						timer.Reset(updateInterval)
+						continue
+					}
 					if !applied {
 						cfg, cfgRevision = a.configManager.GetWithRevision()
 						smartCfgRevision = cfgRevision - 1
@@ -313,9 +325,6 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					cfgRevision = updatedRevision
 					smartCfg = cfg.SmartControl
 					smartCfgRevision = updatedRevision
-					if err := a.configManager.Save(); err != nil {
-						a.logError("保存智能控温配置失败: %v", err)
-					}
 				}
 			}
 			advancedTelemetryUsable := !cfg.PowerSpoofEnabled && !staleBridgeTelemetry && hasUsableSmartControlTelemetry(temp)
@@ -325,7 +334,10 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			lastSmartTelemetryUsable = advancedTelemetryUsable
 
 			inputReady := automaticControlInputReady(temp)
-			applySafetyFallback, safetyFallbackRecovered := safetyFallback.observe(cfg.AutoControl, inputReady)
+			applySafetyFallback, safetyFallbackRecovered := false, false
+			if !cfg.AutoControl || !bridge.IsStarting(temp.BridgeMsg) {
+				applySafetyFallback, safetyFallbackRecovered = safetyFallback.observe(cfg.AutoControl, inputReady)
+			}
 			if safetyFallbackRecovered {
 				a.forceNextAutoTarget.Store(true)
 				a.logInfo("温度遥测已恢复，退出安全转速并恢复正常自动控制")

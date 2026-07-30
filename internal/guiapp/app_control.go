@@ -27,6 +27,7 @@ func (a *App) HideWindow() {
 // QuitApp 完全退出应用
 func (a *App) QuitApp() {
 	guiLogger.Info("GUI 请求退出")
+	a.shuttingDown.Store(true)
 
 	if a.ipcClient != nil {
 		a.ipcClient.Close()
@@ -40,6 +41,7 @@ func (a *App) QuitApp() {
 // QuitAll 完全退出应用（包括核心服务）
 func (a *App) QuitAll() {
 	guiLogger.Info("GUI 请求完全退出（包括核心服务）")
+	a.shuttingDown.Store(true)
 
 	a.sendRequest(ipc.ReqQuitApp, nil)
 

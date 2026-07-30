@@ -79,11 +79,9 @@ func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
 		a.logInfo("检测到设备切换到挡位工作模式，自动关闭智能变频")
 		cfg.AutoControl = false
 
-		a.configManager.Set(cfg)
-		a.configManager.Save()
-
-		// 广播配置更新
-		if a.ipcServer != nil {
+		if err := a.configManager.Update(cfg); err != nil {
+			a.logError("保存设备手动模式配置失败: %v", err)
+		} else if a.ipcServer != nil {
 			a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 		}
 	} else if deviceSwitchedToManual &&
@@ -110,10 +108,7 @@ func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
 // onDeviceDisconnect 设备断开回调
 func (a *CoreApp) onDeviceDisconnect() {
 	a.cancelNoiseDiagnosticLease("设备断开")
-	a.mutex.Lock()
-	wasConnected := a.isConnected
-	a.isConnected = false
-	a.mutex.Unlock()
+	wasConnected := newDeviceConnectionFlow(a).setRuntimeDisconnected()
 
 	if wasConnected {
 		a.logInfo("设备连接已断开，将在健康检查时尝试自动重连")
@@ -360,10 +355,7 @@ func (a *CoreApp) completeReconnectAttempt(ctx context.Context, generation uint6
 			if result.disconnect != nil {
 				result.disconnect()
 			}
-			a.mutex.Lock()
-			a.isConnected = false
-			a.deviceSettings = nil
-			a.mutex.Unlock()
+			newDeviceConnectionFlow(a).setRuntimeDisconnected()
 		}
 	}()
 	return current, connected
@@ -531,10 +523,7 @@ func (a *CoreApp) onSystemSuspend() {
 	))
 	a.cancelReconnect()
 	a.autoReconnectSuppressed.Store(true)
-	a.mutex.Lock()
-	a.isConnected = false
-	a.deviceSettings = nil
-	a.mutex.Unlock()
+	newDeviceConnectionFlow(a).setRuntimeDisconnected()
 	a.stopTemperatureMonitoring()
 
 	done := make(chan struct{})
@@ -721,10 +710,7 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 	a.safeRun("resume-device-disconnect", func() {
 		a.deviceManager.DisconnectForRecovery()
 	})
-	a.mutex.Lock()
-	a.isConnected = false
-	a.deviceSettings = nil
-	a.mutex.Unlock()
+	newDeviceConnectionFlow(a).setRuntimeDisconnected()
 
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
@@ -795,9 +781,7 @@ func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string,
 	a.deviceManager.UnblockWrites()
 	a.syncConnectedBuiltInDeviceProfile(deviceInfo)
 
-	a.mutex.Lock()
-	a.isConnected = true
-	a.mutex.Unlock()
+	newDeviceConnectionFlow(a).setRuntimeConnected()
 	atomic.StoreInt64(&a.lastHealthReconnectUnix, 0)
 	a.hasSuccessfulConnection.Store(true)
 	a.lastConnectionWasNative.Store(types.IsNativeDeviceTransport(a.deviceManager.GetDeviceType()))
@@ -812,18 +796,18 @@ func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string,
 	if settingsErr != nil {
 		a.logError("读取设备设置失败: %v", settingsErr)
 	}
-	if deviceInfo != nil && a.ipcServer != nil {
+	snapshot := a.deviceRuntimeSnapshot()
+	if deviceInfo != nil && snapshot.Connected && a.ipcServer != nil {
 		eventPayload := map[string]any{}
 		for key, value := range deviceInfo {
 			eventPayload[key] = value
 		}
-		runtimeProfile := a.deviceManager.ActiveProfile()
-		eventPayload["deviceName"] = connectedDeviceDisplayName(runtimeProfile, eventPayloadString(eventPayload, "model"), settings, "")
-		eventPayload["deviceProfile"] = runtimeProfile
-		eventPayload["deviceCapabilities"] = runtimeProfile.Capabilities
-		eventPayload["currentData"] = a.deviceManager.GetCurrentFanData()
-		if settings != nil {
-			eventPayload["deviceSettings"] = settings
+		eventPayload["deviceName"] = connectedDeviceDisplayName(snapshot.Profile, eventPayloadString(eventPayload, "model"), snapshot.Settings, "")
+		eventPayload["deviceProfile"] = snapshot.Profile
+		eventPayload["deviceCapabilities"] = snapshot.Capabilities
+		eventPayload["currentData"] = snapshot.CurrentData
+		if snapshot.Settings != nil {
+			eventPayload["deviceSettings"] = snapshot.Settings
 		}
 		a.ipcServer.BroadcastEvent(ipc.EventDeviceConnected, eventPayload)
 	}
@@ -844,10 +828,7 @@ func (a *CoreApp) DisconnectDevice() {
 	a.suppressReconnect()
 	a.lastConnectionWasNative.Store(false)
 
-	a.mutex.Lock()
-	a.isConnected = false
-	a.deviceSettings = nil
-	a.mutex.Unlock()
+	newDeviceConnectionFlow(a).setRuntimeDisconnected()
 
 	a.deviceManager.DisconnectSilently()
 
@@ -910,46 +891,38 @@ func (a *CoreApp) reapplyConfigAfterReconnect() {
 // GetDeviceStatus 获取设备状态
 func (a *CoreApp) GetDeviceStatus() map[string]any {
 	a.mutex.RLock()
-	connected := a.isConnected
-	manager := a.deviceManager
-	settings := a.deviceSettings
 	currentTemp := a.currentTemp
 	monitoring := a.monitoringTemp.Load()
 	a.mutex.RUnlock()
-	connected = connected && manager != nil && manager.IsConnected()
 
-	runtime := a.deviceRuntimeStatus()
-	if !connected {
+	snapshot := a.deviceRuntimeSnapshot()
+	if !snapshot.Connected {
 		return map[string]any{
 			"connected":   false,
 			"monitoring":  monitoring,
 			"currentData": nil,
 			"temperature": currentTemp,
-			"runtime":     runtime,
+			"runtime":     snapshot.Runtime,
 		}
 	}
 
-	productID := manager.GetProductID()
 	productIDHex := ""
-	if productID != 0 {
-		productIDHex = fmt.Sprintf("0x%04X", productID)
+	if snapshot.ProductID != 0 {
+		productIDHex = fmt.Sprintf("0x%04X", snapshot.ProductID)
 	}
-
-	model := manager.GetModelName()
-	profile := manager.ActiveProfile()
 
 	return map[string]any{
 		"connected":          true,
 		"monitoring":         monitoring,
-		"currentData":        manager.GetCurrentFanData(),
+		"currentData":        snapshot.CurrentData,
 		"temperature":        currentTemp,
 		"productId":          productIDHex,
-		"model":              model,
-		"deviceName":         connectedDeviceDisplayName(profile, model, settings, ""),
-		"deviceProfile":      profile,
-		"deviceCapabilities": profile.Capabilities,
-		"deviceSettings":     settings,
-		"runtime":            runtime,
+		"model":              snapshot.Model,
+		"deviceName":         connectedDeviceDisplayName(snapshot.Profile, snapshot.Model, snapshot.Settings, ""),
+		"deviceProfile":      snapshot.Profile,
+		"deviceCapabilities": snapshot.Capabilities,
+		"deviceSettings":     snapshot.Settings,
+		"runtime":            snapshot.Runtime,
 	}
 }
 
@@ -959,9 +932,7 @@ func (a *CoreApp) RefreshDeviceSettings() (*types.DeviceSettings, error) {
 		return nil, err
 	}
 
-	a.mutex.Lock()
-	a.deviceSettings = &settings
-	a.mutex.Unlock()
+	newDeviceConnectionFlow(a).setRuntimeReady(&settings)
 
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventDeviceSettingsUpdate, settings)

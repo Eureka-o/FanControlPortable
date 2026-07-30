@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/TIANLI0/THRM/internal/bridge"
 	"github.com/TIANLI0/THRM/internal/types"
 	"github.com/shirou/gopsutil/v4/sensors"
 )
@@ -42,6 +43,7 @@ type Reader struct {
 	lastGoodBridgeTemp      types.TemperatureData
 	lastGoodBridgeSelection types.TemperatureSelection
 	lastGoodBridgeAt        time.Time
+	fallback                fallbackState
 }
 
 // NewReader 创建新的温度读取器
@@ -75,9 +77,10 @@ func (r *Reader) Read(selection types.TemperatureSelection) (temp types.Temperat
 			temp.BridgeMsg = "桥接程序返回空温度（CPU/GPU 均为 0），已尝试备用读取；可重新初始化温度监控或检查 PawnIO/其它硬件监控工具。"
 			r.logger.Warn("桥接程序返回空温度数据，使用备用方法")
 
-			temp.CPUTemp = r.readCPUTemperature()
+			fallback := r.readFallback(gpuNotPolled)
+			temp.CPUTemp = fallback.cpuTemp
+			temp.GPUTemp = fallback.gpuTemp
 			if !gpuNotPolled {
-				temp.GPUTemp = r.readGPUTemperature()
 				if temp.GPUTemp > 0 && temp.GPUReadState == "" {
 					temp.GPUReadState = types.GPUReadStateActive
 				}
@@ -104,6 +107,11 @@ func (r *Reader) Read(selection types.TemperatureSelection) (temp types.Temperat
 		cached.TelemetryFresh = false
 		return cached
 	}
+	if bridge.IsStarting(bridgeTemp.Error) {
+		temp.BridgeOk = false
+		temp.BridgeMsg = bridgeTemp.Error
+		return temp
+	}
 
 	temp.BridgeOk = false
 	temp.BridgeMsg = bridgeTemp.Error
@@ -111,13 +119,10 @@ func (r *Reader) Read(selection types.TemperatureSelection) (temp types.Temperat
 		temp.BridgeMsg = "CPU/GPU 温度读取失败，可重新初始化温度监控；若 CPU 仍为空，请安装/更新 PawnIO 或关闭其它硬件监控工具。"
 	}
 
-	// 读取CPU温度
-	temp.CPUTemp = r.readCPUTemperature()
-
-	// 读取GPU温度
+	fallback := r.readFallback(gpuNotPolled)
+	temp.CPUTemp = fallback.cpuTemp
+	temp.GPUTemp = fallback.gpuTemp
 	if !gpuNotPolled {
-		// GPU fallback may wake a sleeping discrete GPU; keep it behind the bridge state.
-		temp.GPUTemp = r.readGPUTemperature()
 		if temp.GPUTemp > 0 && temp.GPUReadState == "" {
 			temp.GPUReadState = types.GPUReadStateActive
 		}
@@ -229,8 +234,7 @@ func resolveControlTemp(cpuTemp, gpuTemp int, source string) int {
 	}
 }
 
-// readCPUTemperature 读取CPU温度
-func (r *Reader) readCPUTemperature() int {
+func (r *Reader) readSensorCPUTemperature() int {
 	sensorTemps, err := sensors.SensorsTemperatures()
 	if err == nil {
 		for _, sensor := range sensorTemps {
@@ -242,9 +246,7 @@ func (r *Reader) readCPUTemperature() int {
 			}
 		}
 	}
-
-	// 如果传感器方式失败，尝试通过WMI (Windows)
-	return r.readWindowsCPUTemp()
+	return 0
 }
 
 // readGPUTemperature 读取GPU温度

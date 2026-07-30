@@ -3,6 +3,7 @@ package bridge
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/TIANLI0/THRM/internal/appmeta"
@@ -35,6 +37,12 @@ type Manager struct {
 	lastError string
 	mutex     sync.Mutex
 	logger    types.Logger
+
+	startMu    sync.Mutex
+	starting   atomic.Bool
+	startDone  chan struct{}
+	lastTemp   types.BridgeTemperatureData
+	lastTempAt int64
 }
 
 const (
@@ -54,6 +62,14 @@ const (
 	BridgeStateStopped    = "stopped"
 	BridgeStateFailed     = "failed"
 )
+
+var ErrStarting = errors.New("桥接程序正在启动中")
+
+const StartingMessage = "桥接程序正在启动中"
+
+func IsStarting(message string) bool {
+	return strings.Contains(message, StartingMessage)
+}
 
 func NewManager(logger types.Logger) *Manager {
 	return &Manager{
@@ -76,30 +92,111 @@ func (m *Manager) setState(state string, err error) {
 }
 
 func (m *Manager) EnsureRunning() error {
+	if m.healthy() {
+		return nil
+	}
+	m.beginStartAsync()
+	return ErrStarting
+}
+
+func (m *Manager) EnsureRunningWait(timeout time.Duration) error {
+	if m.healthy() {
+		return nil
+	}
+
+	done := m.beginStartAsync()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
+		return fmt.Errorf("等待桥接程序启动超时 (timeout=%s)", timeout)
+	}
+
+	if m.healthy() {
+		return nil
+	}
+	m.mutex.Lock()
+	lastError := m.lastError
+	m.mutex.Unlock()
+	if lastError != "" {
+		return fmt.Errorf("启动桥接程序失败: %s", lastError)
+	}
+	return fmt.Errorf("启动桥接程序失败")
+}
+
+func (m *Manager) healthy() bool {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	if m.stdin != nil && m.lineCh != nil {
-		if isProcessRunning(m.cmd) {
-			m.setState(BridgeStateRunning, nil)
-			return nil
-		}
-
-		err := fmt.Errorf("bridge process exited unexpectedly")
-		m.logger.Error("检测到桥接进程已意外退出，准备重新启动")
-		m.setState(BridgeStateDegraded, err)
-		m.teardownProcessUnsafe(false)
+	if m.stdin == nil || m.lineCh == nil {
+		return false
+	}
+	if isProcessRunning(m.cmd) {
+		m.setState(BridgeStateRunning, nil)
+		return true
 	}
 
-	return m.startStdio()
+	err := fmt.Errorf("bridge process exited unexpectedly")
+	m.logger.Error("检测到桥接进程已意外退出，准备重新启动")
+	m.setState(BridgeStateDegraded, err)
+	m.teardownProcessUnsafe(false)
+	return false
+}
+
+func (m *Manager) beginStartAsync() <-chan struct{} {
+	m.startMu.Lock()
+	if m.starting.Load() {
+		done := m.startDone
+		m.startMu.Unlock()
+		return done
+	}
+
+	done := make(chan struct{})
+	m.startDone = done
+	m.starting.Store(true)
+	m.mutex.Lock()
+	m.setState(BridgeStateStarting, nil)
+	m.mutex.Unlock()
+	m.startMu.Unlock()
+
+	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				m.mutex.Lock()
+				m.setState(BridgeStateFailed, fmt.Errorf("启动桥接程序时发生 panic: %v", recovered))
+				m.mutex.Unlock()
+			}
+			m.startMu.Lock()
+			m.starting.Store(false)
+			close(done)
+			m.startMu.Unlock()
+		}()
+
+		if err := m.startStdio(); err != nil {
+			m.logger.Error("桥接程序后台启动失败: %v", err)
+		}
+	}()
+
+	return done
+}
+
+func (m *Manager) IsStarting() bool {
+	return m.starting.Load()
 }
 
 func (m *Manager) startStdio() error {
-	m.setState(BridgeStateStarting, nil)
+	setFailed := func(err error) {
+		m.mutex.Lock()
+		if m.state != BridgeStateStopping && m.state != BridgeStateStopped {
+			m.setState(BridgeStateFailed, err)
+		}
+		m.mutex.Unlock()
+	}
 
 	exeDir, err := filepath.Abs(filepath.Dir(os.Args[0]))
 	if err != nil {
-		m.setState(BridgeStateFailed, err)
+		setFailed(err)
 		return fmt.Errorf("获取程序目录失败: %v", err)
 	}
 
@@ -107,7 +204,7 @@ func (m *Manager) startStdio() error {
 	bridgePath := appmeta.FirstExistingPath(possiblePaths)
 	if bridgePath == "" {
 		err := fmt.Errorf("%s 不存在，已尝试以下路径: %v", appmeta.BridgeExecutableName, possiblePaths)
-		m.setState(BridgeStateFailed, err)
+		setFailed(err)
 		return err
 	}
 
@@ -118,25 +215,25 @@ func (m *Manager) startStdio() error {
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		m.setState(BridgeStateFailed, err)
+		setFailed(err)
 		return fmt.Errorf("创建 stdin 管道失败: %v", err)
 	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		m.setState(BridgeStateFailed, err)
+		setFailed(err)
 		return fmt.Errorf("创建 stdout 管道失败: %v", err)
 	}
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		m.setState(BridgeStateFailed, err)
+		setFailed(err)
 		return fmt.Errorf("创建 stderr 管道失败: %v", err)
 	}
 
 	startAt := time.Now()
 	if err := cmd.Start(); err != nil {
-		m.setState(BridgeStateFailed, err)
+		setFailed(err)
 		return fmt.Errorf("启动桥接程序失败: %v", err)
 	}
 
@@ -150,10 +247,19 @@ func (m *Manager) startStdio() error {
 		// 异步回收进程，避免句柄/僵尸进程泄漏；Wait 会同时关闭残留管道。
 		go func() { _ = cmd.Wait() }()
 		go drainLines(lineCh)
-		m.setState(BridgeStateFailed, err)
+		setFailed(err)
 		return err
 	}
 
+	m.mutex.Lock()
+	if m.state == BridgeStateStopping || m.state == BridgeStateStopped {
+		m.mutex.Unlock()
+		_ = stdin.Close()
+		_ = cmd.Process.Kill()
+		go func() { _ = cmd.Wait() }()
+		go drainLines(lineCh)
+		return fmt.Errorf("桥接程序已请求停止")
+	}
 	m.cmd = cmd
 	m.stdin = stdin
 	m.stdout = stdout
@@ -162,6 +268,7 @@ func (m *Manager) startStdio() error {
 	m.transport = "stdio"
 	m.ownsCmd = true
 	m.setState(BridgeStateRunning, nil)
+	m.mutex.Unlock()
 	m.logger.Info("桥接程序启动成功（耗时 %s），通信方式: stdio", time.Since(startAt).Round(time.Millisecond))
 	return nil
 }
@@ -412,6 +519,8 @@ func (m *Manager) closeConnUnsafe() {
 }
 
 func (m *Manager) Stop() {
+	m.startMu.Lock()
+	defer m.startMu.Unlock()
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	m.stopUnsafe()
@@ -469,6 +578,12 @@ func (m *Manager) GetTemperature(selection types.TemperatureSelection) types.Bri
 	}
 
 	if err := m.EnsureRunning(); err != nil {
+		if errors.Is(err, ErrStarting) {
+			return types.BridgeTemperatureData{
+				Success: false,
+				Error:   StartingMessage,
+			}
+		}
 		return types.BridgeTemperatureData{
 			Success: false,
 			Error:   fmt.Sprintf("启动桥接程序失败: %v", err),
@@ -505,7 +620,18 @@ func (m *Manager) GetTemperature(selection types.TemperatureSelection) types.Bri
 		}
 	}
 
-	return *response.Data
+	return m.recordLastTemp(*response.Data)
+}
+
+func (m *Manager) recordLastTemp(data types.BridgeTemperatureData) types.BridgeTemperatureData {
+	if !data.Success {
+		return data
+	}
+	m.mutex.Lock()
+	m.lastTemp = data
+	m.lastTempAt = time.Now().UnixMilli()
+	m.mutex.Unlock()
+	return data
 }
 
 func (m *Manager) GetStatus() map[string]any {
@@ -515,7 +641,12 @@ func (m *Manager) GetStatus() map[string]any {
 	pipeName := m.pipeName
 	transport := m.transport
 	lastError := m.lastError
+	lastTemp := m.lastTemp
+	lastTempAt := m.lastTempAt
 	m.mutex.Unlock()
+	if m.starting.Load() {
+		state = BridgeStateStarting
+	}
 
 	exeDir, err := filepath.Abs(filepath.Dir(os.Args[0]))
 	if err != nil {
@@ -541,31 +672,25 @@ func (m *Manager) GetStatus() map[string]any {
 		}
 	}
 
-	testResult := m.GetTemperature(types.GetDefaultTemperatureSelection())
-
-	m.mutex.Lock()
-	state = m.state
-	ownsCmd = m.ownsCmd
-	pipeName = m.pipeName
-	transport = m.transport
-	lastError = m.lastError
-	m.mutex.Unlock()
-
-	return map[string]any{
+	status := map[string]any{
 		"exists":      true,
 		"path":        bridgePath,
-		"working":     testResult.Success,
+		"working":     state == BridgeStateRunning || state == BridgeStateAttached,
 		"state":       state,
 		"ownsProcess": ownsCmd,
 		"pipeName":    pipeName,
 		"transport":   transport,
 		"lastError":   lastError,
-		"testData":    testResult,
 	}
+	if lastTempAt > 0 {
+		status["testData"] = lastTemp
+		status["testDataAt"] = lastTempAt
+	}
+	return status
 }
 
 func (m *Manager) RestartPawnIO() (types.BridgeTemperatureData, error) {
-	if err := m.EnsureRunning(); err != nil {
+	if err := m.EnsureRunningWait(bridgeStartupTimeout); err != nil {
 		return types.BridgeTemperatureData{
 			Success: false,
 			Error:   fmt.Sprintf("启动桥接程序失败: %v", err),

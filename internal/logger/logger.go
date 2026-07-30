@@ -98,7 +98,7 @@ func NewCustomLogger(debugMode bool, installDir string) (*CustomLogger, error) {
 		fileEncoder,
 		zapcore.AddSync(debugLogRotate),
 		zap.LevelEnablerFunc(func(lvl zapcore.Level) bool {
-			return debugEnabled.Load() && lvl >= zapcore.DebugLevel
+			return debugEnabled.Load() && lvl < zapcore.InfoLevel
 		}),
 	)
 

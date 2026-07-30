@@ -182,6 +182,7 @@ type Server struct {
 	handler       RequestHandler
 	logger        types.Logger
 	running       atomic.Bool
+	writeTimeout  time.Duration
 	throttleMutex sync.Mutex
 	lastEventEmit map[string]time.Time
 }
@@ -189,11 +190,20 @@ type Server struct {
 type clientState struct {
 	conn      net.Conn
 	writeCh   chan []byte
+	respCh    chan []byte
+	sem       chan struct{}
 	closeOnce sync.Once
 	closed    chan struct{}
 }
 
-const clientWriteQueueSize = 64
+const (
+	clientWriteQueueSize           = 64
+	clientResponseQueueSize        = 64
+	maxConcurrentRequestsPerClient = 16
+	criticalEventEnqueueTimeout    = 500 * time.Millisecond
+)
+
+var ErrRequestTimeout = errors.New("等待 IPC 响应超时")
 
 // RequestHandler 请求处理函数类型
 type RequestHandler func(req Request) Response
@@ -208,6 +218,7 @@ func NewServer(handler RequestHandler, logger types.Logger) *Server {
 		clients:       make(map[net.Conn]*clientState),
 		handler:       handler,
 		logger:        logger,
+		writeTimeout:  10 * time.Second,
 		lastEventEmit: make(map[string]time.Time),
 	}
 }
@@ -258,6 +269,8 @@ func (s *Server) acceptConnections() {
 		state := &clientState{
 			conn:    conn,
 			writeCh: make(chan []byte, clientWriteQueueSize),
+			respCh:  make(chan []byte, clientResponseQueueSize),
+			sem:     make(chan struct{}, maxConcurrentRequestsPerClient),
 			closed:  make(chan struct{}),
 		}
 
@@ -275,19 +288,44 @@ func (s *Server) acceptConnections() {
 func (s *Server) clientWriter(state *clientState) {
 	for {
 		select {
+		case data := <-state.respCh:
+			if !s.writeToClient(state, data) {
+				return
+			}
+			continue
+		case <-state.closed:
+			return
+		default:
+		}
+
+		select {
+		case data := <-state.respCh:
+			if !s.writeToClient(state, data) {
+				return
+			}
 		case data, ok := <-state.writeCh:
 			if !ok {
 				return
 			}
-			if _, err := state.conn.Write(data); err != nil {
-				s.logDebug("发送数据失败: %v", err)
-				s.closeClient(state)
+			if !s.writeToClient(state, data) {
 				return
 			}
 		case <-state.closed:
 			return
 		}
 	}
+}
+
+func (s *Server) writeToClient(state *clientState, data []byte) bool {
+	if err := state.conn.SetWriteDeadline(time.Now().Add(s.writeTimeout)); err != nil {
+		s.logDebug("设置 IPC 写超时失败: %v", err)
+	}
+	if _, err := state.conn.Write(data); err != nil {
+		s.logDebug("发送数据失败: %v", err)
+		s.closeClient(state)
+		return false
+	}
+	return true
 }
 
 func (s *Server) closeClient(state *clientState) {
@@ -301,7 +339,7 @@ func (s *Server) closeClient(state *clientState) {
 }
 
 func (s *Server) handleRequest(state *clientState, req Request) {
-	resp := s.handler(req)
+	resp := s.invokeHandler(req)
 	if resp.ProtocolVersion == "" {
 		resp.ProtocolVersion = currentProtocolVersion
 	}
@@ -319,10 +357,24 @@ func (s *Server) handleRequest(state *clientState, req Request) {
 		return
 	}
 	select {
-	case state.writeCh <- append(respBytes, '\n'):
+	case state.respCh <- append(respBytes, '\n'):
 	case <-state.closed:
 		s.logDebug("IPC 客户端已断开，响应已丢弃: request=%s", req.RequestID)
 	}
+}
+
+func (s *Server) invokeHandler(req Request) (resp Response) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			s.logError("处理 IPC 请求[%s] type=%s 时发生 panic: %v", req.RequestID, req.Type, recovered)
+			resp = Response{
+				Success:   false,
+				ErrorCode: "internal_panic",
+				Error:     fmt.Sprintf("核心服务内部错误: %v", recovered),
+			}
+		}
+	}()
+	return s.handler(req)
 }
 
 // handleClient 处理客户端连接
@@ -357,13 +409,15 @@ func (s *Server) handleClient(conn net.Conn, state *clientState) {
 			req.Timestamp = time.Now().UnixMilli()
 		}
 		s.logDebug("IPC 请求[%s]: %s", req.RequestID, req.Type)
-		// Target settling is long-running; keep this reader free so cancellation
-		// can close the diagnostic lease on the same connection.
-		if req.Type == ReqSetNoiseDiagnosticTarget {
-			go s.handleRequest(state, req)
-			continue
+		select {
+		case state.sem <- struct{}{}:
+		case <-state.closed:
+			return
 		}
-		s.handleRequest(state, req)
+		go func(req Request) {
+			defer func() { <-state.sem }()
+			s.handleRequest(state, req)
+		}(req)
 	}
 }
 
@@ -371,6 +425,11 @@ var highFrequencyEventTypes = map[string]time.Duration{
 	EventFanDataUpdate:            250 * time.Millisecond,
 	EventTemperatureUpdate:        250 * time.Millisecond,
 	EventTemperatureHistoryUpdate: 1000 * time.Millisecond,
+}
+
+func isHighFrequencyEvent(eventType string) bool {
+	_, ok := highFrequencyEventTypes[eventType]
+	return ok
 }
 
 func (s *Server) shouldDropEvent(eventType string) bool {
@@ -423,14 +482,33 @@ func (s *Server) BroadcastEvent(eventType string, data any) {
 	payload := append(eventBytes, '\n')
 
 	s.mutex.RLock()
+	clients := make([]*clientState, 0, len(s.clients))
 	for _, state := range s.clients {
-		select {
-		case state.writeCh <- payload:
-		default:
-			s.logDebug("客户端写队列已满，丢弃事件: %s", eventType)
-		}
+		clients = append(clients, state)
 	}
 	s.mutex.RUnlock()
+
+	for _, state := range clients {
+		if isHighFrequencyEvent(eventType) {
+			select {
+			case state.writeCh <- payload:
+			case <-state.closed:
+			default:
+				s.logDebug("客户端写队列已满，丢弃高频事件: %s", eventType)
+			}
+			continue
+		}
+
+		timer := time.NewTimer(criticalEventEnqueueTimeout)
+		select {
+		case state.writeCh <- payload:
+			timer.Stop()
+		case <-state.closed:
+			timer.Stop()
+		case <-timer.C:
+			s.logDebug("客户端写队列持续拥塞，丢弃关键事件: %s", eventType)
+		}
+	}
 }
 
 // Stop 停止服务器
@@ -718,12 +796,21 @@ func (c *Client) SendRequestWithTimeoutGeneration(reqType RequestType, data any,
 	c.pendingMutex.Unlock()
 
 	c.mutex.Lock()
+	if err := conn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
+		c.logDebug("设置 IPC 写超时失败: %v", err)
+	}
 	_, err = conn.Write(append(reqBytes, '\n'))
 	c.mutex.Unlock()
 	if err != nil {
 		c.pendingMutex.Lock()
 		delete(c.pending, requestID)
 		c.pendingMutex.Unlock()
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			timeoutErr := fmt.Errorf("%w: request=%s 发送超时", ErrRequestTimeout, reqType)
+			c.disconnectCurrent(conn, generation, timeoutErr)
+			return nil, generation, timeoutErr
+		}
 		c.disconnectCurrent(conn, generation, fmt.Errorf("发送请求失败: %w", err))
 		return nil, generation, fmt.Errorf("发送请求失败: %v", err)
 	}
@@ -737,7 +824,7 @@ func (c *Client) SendRequestWithTimeoutGeneration(reqType RequestType, data any,
 		c.pendingMutex.Lock()
 		delete(c.pending, requestID)
 		c.pendingMutex.Unlock()
-		return nil, generation, fmt.Errorf("等待响应超时")
+		return nil, generation, fmt.Errorf("%w: request=%s, timeout=%s", ErrRequestTimeout, reqType, timeout)
 	}
 }
 

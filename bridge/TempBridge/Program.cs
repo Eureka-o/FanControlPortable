@@ -263,10 +263,16 @@ namespace FanControl.TempBridge
             Console.InputEncoding = Utf8NoBom;
             Console.OutputEncoding = Utf8NoBom;
             bool msrSelfTest = HasArg(args, "--self-test-msr");
+            bool powerSelectionSelfTest = HasArg(args, "--self-test-power-selection");
             bool diagnosticMode = ShouldRunDiagnosticMode(args);
             bool pipeMode = ShouldRunPipeMode(args);
             try
             {
+                if (powerSelectionSelfTest)
+                {
+                    RunPowerSensorSelectionSelfTest();
+                    return;
+                }
                 if (msrSelfTest)
                 {
                     RunIntelMsrSelfTest();
@@ -298,6 +304,12 @@ namespace FanControl.TempBridge
             }
             catch (Exception ex)
             {
+                if (powerSelectionSelfTest)
+                {
+                    Console.Error.WriteLine(ex.Message);
+                    Environment.ExitCode = 1;
+                    return;
+                }
                 if (diagnosticMode)
                 {
                     Console.Error.WriteLine("FanControl TempBridge startup failed");
@@ -1181,6 +1193,36 @@ namespace FanControl.TempBridge
             Console.WriteLine("MSR self-test OK");
         }
 
+        static void RunPowerSensorSelectionSelfTest()
+        {
+            var sensors = new System.Collections.Generic.List<PowerSensor>
+            {
+                new PowerSensor { Key = "cpu/limit", Name = "CPU Package Power Limit", Value = 142 },
+                new PowerSensor { Key = "cpu/package-core", Name = "Package Core", Value = 21.5 },
+                new PowerSensor { Key = "cpu/package", Name = "CPU Package", Value = 47.3 },
+            };
+            var preferred = new[] { "CPU Package", "Package Power", "CPU PPT", "PPT", "Package" };
+
+            double automatic = SelectPowerWatts(sensors, "auto", preferred, false);
+            if (automatic != 47.3)
+                throw new InvalidOperationException($"automatic power selection chose {automatic} W instead of the live package sensor");
+
+            double manual = SelectPowerWatts(sensors, "cpu/limit", preferred, false);
+            if (manual != 142)
+                throw new InvalidOperationException("manual power sensor selection must remain authoritative");
+
+            var unrelated = new System.Collections.Generic.List<PowerSensor>
+            {
+                new PowerSensor { Key = "cpu/soc", Name = "SoC Rail", Value = 16.8 },
+            };
+            if (SelectPowerWatts(unrelated, "auto", preferred, false) != 0)
+                throw new InvalidOperationException("CPU auto selection must not use an unrelated power rail");
+            if (SelectPowerWatts(unrelated, "auto", new[] { "GPU Power" }, true) != 16.8)
+                throw new InvalidOperationException("GPU auto selection must retain its compatibility fallback");
+
+            Console.WriteLine("Power sensor selection self-test OK");
+        }
+
         static void ReinitializeHardwareMonitor()
         {
             lock (lockObject)
@@ -1887,7 +1929,7 @@ namespace FanControl.TempBridge
                                 cpuModel = hardware.Name ?? string.Empty;
                                 CollectTemperatureSensors(hardware, "cpu", hardware.Name ?? string.Empty, string.Empty, cpuSensors);
                                 CollectPowerSensors(hardware, "cpu", hardware.Name ?? string.Empty, string.Empty, cpuPowerSensors);
-                                cpuPowerWatts = SelectPowerWatts(cpuPowerSensors, selection.CpuPowerSensor, new[] { "Package", "CPU Package", "Total", "Core" });
+                                cpuPowerWatts = SelectPowerWatts(cpuPowerSensors, selection.CpuPowerSensor, new[] { "CPU Package", "Package Power", "CPU PPT", "PPT", "Package" }, false);
                             }
                         }
                         else if (shouldPollGpu &&
@@ -1907,7 +1949,7 @@ namespace FanControl.TempBridge
                                 HardwareType = hardware.HardwareType,
                                 Sensors = sensors,
                                 PowerSensors = powerSensors,
-                                PowerWatts = SelectPowerWatts(powerSensors, selection.GpuPowerSensor, new[] { "GPU Power", "Total", "Package", "Board", "Chip" }),
+                                PowerWatts = SelectPowerWatts(powerSensors, selection.GpuPowerSensor, new[] { "GPU Power", "Total", "Package", "Board", "Chip" }, true),
                             });
                             gpuIndex++;
                         }
@@ -1977,7 +2019,7 @@ namespace FanControl.TempBridge
                 }
             }
 
-            cpuPowerWatts = SelectPowerWatts(cpuPowerSensors, selection.CpuPowerSensor, new[] { "Package", "CPU Package", "Total", "Core" });
+            cpuPowerWatts = SelectPowerWatts(cpuPowerSensors, selection.CpuPowerSensor, new[] { "CPU Package", "Package Power", "CPU PPT", "PPT", "Package" }, false);
 
             var selectedGpu = SelectGpuCandidate(gpuCandidates, selection.GpuDevice, selection.GpuSensor, selection.GpuPowerSensor);
             ReconcileHardwareProfileWithSensorsOnce(gpuCandidates);
@@ -2344,7 +2386,7 @@ namespace FanControl.TempBridge
                 return sensors[0].Value;
             }
 
-        static double SelectPowerWatts(System.Collections.Generic.IReadOnlyList<PowerSensor> sensors, string selectedKey, string[] preferredSensorNames)
+        static double SelectPowerWatts(System.Collections.Generic.IReadOnlyList<PowerSensor> sensors, string selectedKey, string[] preferredSensorNames, bool allowFallbackToFirst)
         {
             if (sensors == null || sensors.Count == 0)
             {
@@ -2366,22 +2408,29 @@ namespace FanControl.TempBridge
             {
                 foreach (var sensor in sensors)
                 {
-                    if (sensor.Value > 0 && sensor.Name.IndexOf(preferred, StringComparison.OrdinalIgnoreCase) >= 0)
+                    if (sensor.Value > 0 &&
+                        sensor.Name.IndexOf("Limit", StringComparison.OrdinalIgnoreCase) < 0 &&
+                        sensor.Name.IndexOf(preferred, StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         return Math.Round(sensor.Value, 1);
                     }
                 }
             }
 
+            if (!allowFallbackToFirst)
+            {
+                return 0;
+            }
+
             foreach (var sensor in sensors)
             {
-                if (sensor.Value > 0)
+                if (sensor.Value > 0 && sensor.Name.IndexOf("Limit", StringComparison.OrdinalIgnoreCase) < 0)
                 {
                     return Math.Round(sensor.Value, 1);
                 }
             }
 
-            return Math.Round(sensors[0].Value, 1);
+            return 0;
         }
 
         static void CollectPowerSensors(IHardware hardware, string devicePrefix, string keyPath, string displayPath, System.Collections.Generic.List<PowerSensor> sensors)

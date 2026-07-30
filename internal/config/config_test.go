@@ -89,6 +89,55 @@ func TestUpdateKeepsCurrentConfigWhenPersistenceFails(t *testing.T) {
 	}
 }
 
+func TestMutateAndSaveKeepsCurrentConfigWhenPersistenceFails(t *testing.T) {
+	blockedPath := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(blockedPath, []byte("not a directory"), 0644); err != nil {
+		t.Fatalf("create blocked path: %v", err)
+	}
+	t.Setenv("USERPROFILE", blockedPath)
+	t.Setenv("HOME", blockedPath)
+
+	manager := NewManager(blockedPath, nil)
+	initial := types.GetDefaultConfig(false)
+	manager.Set(initial)
+	before, beforeRevision := manager.GetWithRevision()
+
+	if _, err := manager.MutateAndSave(func(current *types.AppConfig) {
+		current.DebugMode = !before.DebugMode
+	}); err == nil {
+		t.Fatal("MutateAndSave() error = nil, want persistence failure")
+	}
+
+	after, afterRevision := manager.GetWithRevision()
+	if after.DebugMode != before.DebugMode {
+		t.Fatalf("DebugMode changed after failed mutation: got %v, want %v", after.DebugMode, before.DebugMode)
+	}
+	if afterRevision != beforeRevision {
+		t.Fatalf("revision changed after failed mutation: got %d, want %d", afterRevision, beforeRevision)
+	}
+}
+
+func TestMutateIfRevisionAndSaveRejectsStaleRevision(t *testing.T) {
+	manager := NewManager(t.TempDir(), nil)
+	manager.Set(types.GetDefaultConfig(false))
+	_, staleRevision := manager.GetWithRevision()
+	manager.Set(types.AppConfig{DebugMode: true})
+	before, beforeRevision := manager.GetWithRevision()
+
+	updated, revision, applied, err := manager.MutateIfRevisionAndSave(staleRevision, func(current *types.AppConfig) {
+		current.DebugMode = false
+	})
+	if err != nil {
+		t.Fatalf("MutateIfRevisionAndSave() error = %v", err)
+	}
+	if applied {
+		t.Fatal("MutateIfRevisionAndSave() applied stale mutation")
+	}
+	if revision != beforeRevision || updated.DebugMode != before.DebugMode {
+		t.Fatalf("stale mutation changed snapshot: revision=%d config=%+v", revision, updated)
+	}
+}
+
 func TestValidateFanCurveForUnitAllowsReferenceRPMCurve(t *testing.T) {
 	if err := ValidateFanCurveForUnit(types.GetDefaultRPMFanCurve(), types.FanSpeedUnitRPM); err != nil {
 		t.Fatalf("ValidateFanCurveForUnit(RPM default) returned error: %v", err)

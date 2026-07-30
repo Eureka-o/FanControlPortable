@@ -248,8 +248,32 @@ func TestCompactTemperatureEventPayload(t *testing.T) {
 	valueOnlyChanged := current
 	valueOnlyChanged.CpuSensors = []types.TemperatureSensor{{Key: "cpu-package", Name: "CPU Package", Value: 73}}
 	compactValueOnlyChanged := compactTemperatureEventPayload(valueOnlyChanged, previous)
-	if compactValueOnlyChanged.CpuSensors != nil {
-		t.Fatal("compactTemperatureEventPayload() should strip value-only sensor changes")
+	if len(compactValueOnlyChanged.CpuSensors) != 1 || compactValueOnlyChanged.CpuSensors[0].Value != 73 {
+		t.Fatal("compactTemperatureEventPayload() should keep value-only temperature sensor changes")
+	}
+
+	powerValueOnlyChanged := current
+	powerValueOnlyChanged.CpuPowerSensors = []types.PowerSensor{{Key: "cpu-package-power", Name: "CPU Package", Value: 47.5}}
+	compactPowerValueOnlyChanged := compactTemperatureEventPayload(powerValueOnlyChanged, previous)
+	if len(compactPowerValueOnlyChanged.CpuPowerSensors) != 1 || compactPowerValueOnlyChanged.CpuPowerSensors[0].Value != 47.5 {
+		t.Fatal("compactTemperatureEventPayload() should keep value-only power sensor changes")
+	}
+
+	gpuDeviceValueOnlyChanged := current
+	gpuDeviceValueOnlyChanged.GpuDevices = []types.TemperatureGPUDevice{{
+		Key:    "gpu0",
+		Name:   "GPU 0",
+		Vendor: "nvidia",
+		Sensors: []types.TemperatureSensor{{
+			Key:   "gpu-core",
+			Name:  "GPU Core",
+			Value: 68,
+		}},
+		PowerSensors: sharedGPUDevices[0].PowerSensors,
+	}}
+	compactGPUDeviceValueOnlyChanged := compactTemperatureEventPayload(gpuDeviceValueOnlyChanged, previous)
+	if len(compactGPUDeviceValueOnlyChanged.GpuDevices) != 1 || compactGPUDeviceValueOnlyChanged.GpuDevices[0].Sensors[0].Value != 68 {
+		t.Fatal("compactTemperatureEventPayload() should keep nested GPU sensor value changes")
 	}
 
 	explicitEmptyPrevious := types.TemperatureData{CpuSensors: nil}

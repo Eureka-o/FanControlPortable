@@ -272,26 +272,8 @@ func (m *Manager) RefreshWiFiState() bool {
 	if m.GetDeviceType() != types.DeviceTransportWiFi || !m.shouldUseWiFi() {
 		return true
 	}
-
-	m.mutex.Lock()
-	if !m.isConnected {
-		m.mutex.Unlock()
-		return false
-	}
-	fanData, err := m.readWiFiStateLocked()
-	if err != nil {
-		m.mutex.Unlock()
-		m.logError("刷新 WiFi 控制器状态失败: %v", err)
-		return false
-	}
-	m.currentFanData.Store(fanData)
-	callback := m.onFanDataUpdate
-	m.mutex.Unlock()
-
-	if callback != nil {
-		callback(fanData)
-	}
-	return true
+	healthy, _ := (compatibilityRuntime{}).refresh(m)
+	return healthy
 }
 
 func (m *Manager) disconnectWiFiLocked() bool {

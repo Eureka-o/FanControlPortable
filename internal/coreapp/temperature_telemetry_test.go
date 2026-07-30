@@ -3,6 +3,7 @@ package coreapp
 import (
 	"testing"
 
+	"github.com/TIANLI0/THRM/internal/bridge"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -12,6 +13,11 @@ func TestShouldRestartTemperatureBridgeClassifiesPermanentMSRFailure(t *testing.
 		temp types.TemperatureData
 		want bool
 	}{
+		{
+			name: "bridge starting",
+			temp: types.TemperatureData{BridgeMsg: bridge.StartingMessage},
+			want: false,
+		},
 		{
 			name: "permanent msr failure",
 			temp: types.TemperatureData{BridgeMsg: "[MSR-UNAVAILABLE] PawnIO installed but raw reads are invalid"},

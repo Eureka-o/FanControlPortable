@@ -25,6 +25,17 @@ func (a *CoreApp) persistConfigUpdate(cfg types.AppConfig) error {
 	return nil
 }
 
+func (a *CoreApp) persistConfigMutation(mutate func(*types.AppConfig)) (types.AppConfig, error) {
+	cfg, err := a.configManager.MutateAndSave(mutate)
+	if err != nil {
+		return cfg, err
+	}
+	if a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
+	}
+	return cfg, nil
+}
+
 func runtimeDebugInfo() map[string]any {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
@@ -245,11 +256,6 @@ func (a *CoreApp) SetAutoControl(enabled bool) error {
 	}
 
 	cfg.AutoControl = enabled
-
-	if enabled {
-		a.userSetAutoControl = true
-		a.forceNextAutoTarget.Store(true)
-	}
 	applyManualAfterDisable := !enabled && a.isConnected
 	if applyManualAfterDisable {
 		a.mutex.Unlock()
@@ -261,15 +267,21 @@ func (a *CoreApp) SetAutoControl(enabled bool) error {
 		cfg.AutoControl = enabled
 	}
 
-	a.configManager.Set(cfg)
-	err := a.configManager.Save()
+	err := a.configManager.Update(cfg)
 	a.mutex.Unlock()
 
+	if err != nil {
+		return err
+	}
+	if enabled {
+		a.userSetAutoControl = true
+		a.forceNextAutoTarget.Store(true)
+	}
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 	}
 
-	return err
+	return nil
 }
 
 // applyCurrentGearSetting 应用当前挡位设置
@@ -381,10 +393,12 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 	}
 
 	a.mutex.Lock()
-	a.configManager.Set(cfg)
-	err := a.configManager.Save()
+	err := a.configManager.Update(cfg)
 	a.mutex.Unlock()
 
+	if err != nil {
+		return err
+	}
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 	}
@@ -396,7 +410,7 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 		})
 	}
 
-	return err
+	return nil
 }
 
 // SetGearLight 设置挡位灯
@@ -408,9 +422,9 @@ func (a *CoreApp) SetGearLight(enabled bool) bool {
 		return false
 	}
 
-	cfg := a.configManager.Get()
-	cfg.GearLight = enabled
-	if err := a.persistConfigUpdate(cfg); err != nil {
+	if _, err := a.persistConfigMutation(func(current *types.AppConfig) {
+		current.GearLight = enabled
+	}); err != nil {
 		a.logError("保存挡位灯配置失败: %v", err)
 		return false
 	}
@@ -426,9 +440,9 @@ func (a *CoreApp) SetPowerOnStart(enabled bool) bool {
 		return false
 	}
 
-	cfg := a.configManager.Get()
-	cfg.PowerOnStart = enabled
-	if err := a.persistConfigUpdate(cfg); err != nil {
+	if _, err := a.persistConfigMutation(func(current *types.AppConfig) {
+		current.PowerOnStart = enabled
+	}); err != nil {
 		a.logError("保存通电自启动配置失败: %v", err)
 		return false
 	}
@@ -450,7 +464,9 @@ func (a *CoreApp) SetSmartStartStop(mode string) bool {
 		return false
 	}
 	cfg.SmartStartStop = mode
-	if err := a.persistConfigUpdate(cfg); err != nil {
+	if _, err := a.persistConfigMutation(func(current *types.AppConfig) {
+		current.SmartStartStop = mode
+	}); err != nil {
 		a.logError("保存智能启停配置失败: %v", err)
 		return false
 	}
@@ -467,9 +483,9 @@ func (a *CoreApp) SetWiFiSmartStartStopStandbySpeed(percent int) bool {
 		return false
 	}
 
-	cfg := a.configManager.Get()
-	cfg.WiFiSmartStartStopStandbySpeed = percent
-	if err := a.persistConfigUpdate(cfg); err != nil {
+	if _, err := a.persistConfigMutation(func(current *types.AppConfig) {
+		current.WiFiSmartStartStopStandbySpeed = percent
+	}); err != nil {
 		a.logError("保存 WiFi 待机转速配置失败: %v", err)
 		return false
 	}
@@ -485,9 +501,9 @@ func (a *CoreApp) SetBrightness(percentage int) bool {
 		return false
 	}
 
-	cfg := a.configManager.Get()
-	cfg.Brightness = percentage
-	if err := a.persistConfigUpdate(cfg); err != nil {
+	if _, err := a.persistConfigMutation(func(current *types.AppConfig) {
+		current.Brightness = percentage
+	}); err != nil {
 		a.logError("保存亮度配置失败: %v", err)
 		return false
 	}
@@ -501,14 +517,17 @@ func (a *CoreApp) SetLightStrip(lightCfg types.LightStripConfig) error {
 	}
 	lightCfg, _ = normalizeLightStripConfig(lightCfg)
 
+	a.mutex.Lock()
 	cfg := a.configManager.Get()
 	cfg.LightStrip = lightCfg
-	a.configManager.Set(cfg)
-	if err := a.configManager.Save(); err != nil {
-		return err
-	}
+	saveErr := a.configManager.Update(cfg)
+	connected := a.isConnected
+	a.mutex.Unlock()
 
-	if a.isConnected {
+	if saveErr != nil {
+		return saveErr
+	}
+	if connected {
 		if err := a.deviceManager.SetLightStrip(lightCfg); err != nil {
 			return err
 		}
@@ -530,8 +549,7 @@ func (a *CoreApp) applyConfiguredLightStrip() error {
 
 	if changed {
 		cfg.LightStrip = lightCfg
-		a.configManager.Set(cfg)
-		if err := a.configManager.Save(); err != nil {
+		if err := a.configManager.Update(cfg); err != nil {
 			a.logError("保存灯带默认配置失败: %v", err)
 		}
 	}
@@ -568,9 +586,10 @@ func (a *CoreApp) SetWindowsAutoStart(enable bool) error {
 	if err := a.autostartManager.SetWindowsAutoStart(enable); err != nil {
 		return err
 	}
-	cfg := a.configManager.Get()
-	cfg.WindowsAutoStart = enable
-	return a.persistConfigUpdate(cfg)
+	_, err := a.persistConfigMutation(func(current *types.AppConfig) {
+		current.WindowsAutoStart = enable
+	})
+	return err
 }
 
 // GetDebugInfo 获取调试信息
@@ -603,8 +622,11 @@ func (a *CoreApp) SetDebugMode(enabled bool) error {
 	cfg := a.configManager.Get()
 	cfg.DebugMode = enabled
 	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, enabled, a.activeDeviceSpeedUnit(&cfg))
-	a.debugMode = enabled
+	if err := a.configManager.Update(cfg); err != nil {
+		return err
+	}
 
+	a.debugMode = enabled
 	if a.logger != nil {
 		a.logger.SetDebugMode(enabled)
 		if enabled {
@@ -612,11 +634,6 @@ func (a *CoreApp) SetDebugMode(enabled bool) error {
 		} else {
 			a.logger.Info("调试模式已关闭，调试级别日志将被忽略")
 		}
-	}
-
-	a.configManager.Set(cfg)
-	if err := a.configManager.Save(); err != nil {
-		return err
 	}
 
 	if a.ipcServer != nil {

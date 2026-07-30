@@ -3,6 +3,7 @@ package guiapp
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 
 	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/TIANLI0/THRM/internal/theme"
@@ -18,6 +19,7 @@ type App struct {
 	ipcReconnectMutex sync.Mutex
 	updateMutex       sync.Mutex
 	updateControl     *updateDownloadControl
+	shuttingDown      atomic.Bool
 
 	// 缓存的状态
 	isConnected bool
