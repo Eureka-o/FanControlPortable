@@ -7,12 +7,17 @@ const manualCheckSource = source.slice(
   source.indexOf('const handleCheckUpdate'),
   source.indexOf('const handleDownloadInstall'),
 );
-test('keeps the update action visible and delegates progress to the global update task', () => {
-  assert.doesNotMatch(source, /\{hasNewVersion && installerUrl && \(/);
+test('keeps download and check actions visible and delegates progress globally', () => {
+  const actions = source.slice(source.indexOf('<div data-about-actions'), source.indexOf('{releaseError'));
+
+  assert.match(actions, /void handleDownloadInstall\(\)/);
+  assert.match(actions, /aboutPanel\.version\.downloadAndInstall/);
+  assert.match(actions, /void handleCheckUpdate\(\)/);
+  assert.match(actions, /aboutPanel\.version\.checkUpdate/);
+  assert.doesNotMatch(actions, /\{hasNewVersion \? \(/);
   assert.doesNotMatch(source, /\{updateStage !== 'idle'[\s\S]*?createPortal\(/);
   assert.match(source, /useUpdateStore/);
   assert.match(source, /startUpdate/);
-  assert.match(source, /void handleDownloadInstall\(\)/);
 });
 
 test('removes automatic update checking and keeps both manual outcomes', () => {
@@ -34,7 +39,8 @@ test('uses a compact segmented action group and no auto-check helper text', () =
   assert.match(source, /rounded-r-none/);
 });
 
-test('keeps all about-page actions on one row in the desktop two-column layout', () => {
+test('lets the update action wrap intact when the expanded dock narrows the page', () => {
   assert.match(source, /max-w-\[980px\]/);
-  assert.match(source, /data-about-actions className="[^"]*lg:flex-nowrap/);
+  assert.doesNotMatch(source, /data-about-actions className="[^"]*lg:flex-nowrap/);
+  assert.match(source, /data-update-actions className="[^"]*shrink-0/);
 });

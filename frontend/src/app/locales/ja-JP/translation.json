@@ -41,6 +41,10 @@
       "devices": "デバイス",
       "about": "概要"
     },
+    "sidebar": {
+      "expand": "展開",
+      "collapse": "折りたたむ"
+    },
     "status": {
       "connected": "接続済み",
       "offline": "未接続",

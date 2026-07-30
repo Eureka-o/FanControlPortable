@@ -599,6 +599,10 @@ class ApiService {
   onCoreServiceOK(callback: () => void): () => void {
     return EventsOn('core-service-ok', callback);
   }
+
+  onCoreResynced(callback: () => void): () => void {
+    return EventsOn('core-resynced', callback);
+  }
 }
 
 export const apiService = new ApiService();

@@ -364,8 +364,8 @@ export default function AboutPanel() {
                   </button>
                 </div>
 
-                <div data-about-actions className="mt-4 flex flex-wrap items-center gap-2 lg:flex-nowrap">
-                  <div data-update-actions className="inline-flex overflow-hidden rounded-lg border border-primary bg-primary shadow-sm">
+                <div data-about-actions className="mt-4 flex flex-wrap items-center gap-2">
+                  <div data-update-actions className="inline-flex shrink-0 overflow-hidden rounded-lg border border-primary bg-primary shadow-sm">
                     <Button
                       variant="primary"
                       size="sm"
