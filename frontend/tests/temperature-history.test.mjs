@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { detectAbruptHistoryPoints, normalizeHistoryPoints } from '../src/app/lib/temperature-history.ts';
+import {
+  CORE_HISTORY_LIMIT,
+  HISTORY_SAMPLE_INTERVAL_MS,
+  detectAbruptHistoryPoints,
+  normalizeHistoryPoints,
+} from '../src/app/lib/temperature-history.ts';
 
 test('detects the strongest local jumps without treating smooth ramps as jumps', () => {
   const points = [10, 11, 12, 30, 13, 14, 25, 25, 25].map((value, index) => ({
@@ -18,16 +23,16 @@ test('detects the strongest local jumps without treating smooth ramps as jumps',
   ]);
 });
 
-test('keeps a full hour when core samples arrive faster than every five seconds', () => {
+test('keeps the full rolling hour at the five-second core cadence', () => {
   const start = 1_800_000_000_000;
-  const points = Array.from({ length: 901 }, (_, index) => ({
-    timestamp: start + index * 4_000,
+  const points = Array.from({ length: CORE_HISTORY_LIMIT + 1 }, (_, index) => ({
+    timestamp: start + index * HISTORY_SAMPLE_INTERVAL_MS,
     cpuTemp: 60,
     gpuTemp: 0,
     fanRpm: 1500,
   }));
 
   const normalized = normalizeHistoryPoints(points);
-  assert.equal(normalized.length, points.length);
-  assert.equal(normalized.at(-1).timestamp - normalized[0].timestamp, 60 * 60 * 1000);
+  assert.equal(normalized.length, CORE_HISTORY_LIMIT);
+  assert.equal(normalized.at(-1).timestamp - normalized[0].timestamp, 60 * 60 * 1000 - HISTORY_SAMPLE_INTERVAL_MS);
 });

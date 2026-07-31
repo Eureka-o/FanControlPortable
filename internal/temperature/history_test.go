@@ -26,6 +26,9 @@ func TestHistoryRecorderDefaultsEnabled(t *testing.T) {
 	if !recorder.IsEnabled() {
 		t.Fatal("expected history recorder to default enabled")
 	}
+	if got := time.Duration(DefaultHistoryCapacity) * DefaultHistorySampleInterval; got != time.Hour {
+		t.Fatalf("default history span = %s, want 1h", got)
+	}
 }
 
 func TestHistoryRecorderAddNormalizesSecondTimestamp(t *testing.T) {
@@ -100,6 +103,39 @@ func TestHistoryRecorderPersistsBinarySnapshot(t *testing.T) {
 	}
 	if snapshot.Points[1].CPUPowerWatts != 28.75 || snapshot.Points[1].GPUPowerWatts != 43.5 {
 		t.Fatalf("expected power watts to reload, got cpu %.2f gpu %.2f", snapshot.Points[1].CPUPowerWatts, snapshot.Points[1].GPUPowerWatts)
+	}
+}
+
+func TestHistoryRecorderResamplesLegacyIntervalAfterReload(t *testing.T) {
+	t.Parallel()
+
+	filePath := filepath.Join(t.TempDir(), "history.bin")
+	legacy := NewHistoryRecorder(filePath, 20, time.Second, nil)
+	enableRecorderForTest(t, legacy)
+	baseSeconds := int64(1_717_000_000)
+	for i := int64(0); i < 20; i++ {
+		_, _ = legacy.Add(types.TemperatureData{CPUTemp: 60, UpdateTime: baseSeconds + i}, nil)
+	}
+	if err := legacy.Flush(); err != nil {
+		t.Fatalf("flush legacy history: %v", err)
+	}
+
+	reloaded := NewHistoryRecorder(filePath, 4, 5*time.Second, nil)
+	snapshot := reloaded.Snapshot()
+	if got := snapshot.SampleIntervalSeconds; got != 5 {
+		t.Fatalf("sample interval after reload = %ds, want 5s", got)
+	}
+	if len(snapshot.Points) != 4 {
+		t.Fatalf("resampled points = %d, want 4", len(snapshot.Points))
+	}
+	if got := snapshot.Points[len(snapshot.Points)-1].Timestamp - snapshot.Points[0].Timestamp; got != 19*time.Second.Milliseconds() {
+		t.Fatalf("resampled history span = %dms, want 19s", got)
+	}
+	if _, recorded := reloaded.Add(types.TemperatureData{CPUTemp: 61, UpdateTime: baseSeconds + 21}, nil); recorded {
+		t.Fatal("expected sample inside configured 5s window to be skipped")
+	}
+	if _, recorded := reloaded.Add(types.TemperatureData{CPUTemp: 62, UpdateTime: baseSeconds + 24}, nil); !recorded {
+		t.Fatal("expected sample at configured 5s boundary to be recorded")
 	}
 }
 

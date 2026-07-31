@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	DefaultHistoryCapacity              = 3600
-	DefaultHistorySampleInterval        = 1 * time.Second
+	DefaultHistoryCapacity              = 720
+	DefaultHistorySampleInterval        = 5 * time.Second
 	DefaultHistoryRelativePath          = "telemetry/fancontrol-history.bin"
 	LegacyHistoryRelativePath           = "telemetry/fancontrolportable2-history.bin"
 	historyBinaryMagic                  = "THST"
@@ -61,7 +61,7 @@ func NewHistoryRecorder(filePath string, capacity int, sampleInterval time.Durat
 		sampleInterval: sampleInterval,
 		enabled:        true,
 		lastFlushAt:    time.Now(),
-		// 惰性分配：起始 len=0，随实际数据增长至 capacity，避免启动即占满 173KB。
+		// 惰性分配：起始 len=0，随实际数据增长至 capacity，避免启动即占满约 35KB。
 		points: make([]types.TemperatureHistoryPoint, 0, capacity),
 	}
 	recorder.load()
@@ -300,16 +300,35 @@ func (r *HistoryRecorder) loadBinaryData(data []byte) error {
 			GPUPowerWatts: normalizePowerWatts(gpuPowerWatts),
 		})
 	}
+	storedSampleInterval := time.Duration(sampleIntervalSeconds) * time.Second
+	if storedSampleInterval > 0 && storedSampleInterval < r.sampleInterval {
+		points = downsampleLoadedHistoryPoints(points, r.sampleInterval)
+	}
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
 	r.enabled = flags&historyEnabledFlag != 0
-	if sampleIntervalSeconds > 0 {
-		r.sampleInterval = time.Duration(sampleIntervalSeconds) * time.Second
-	}
 	r.applyLoadedPointsLocked(points)
 	return nil
+}
+
+func downsampleLoadedHistoryPoints(points []types.TemperatureHistoryPoint, interval time.Duration) []types.TemperatureHistoryPoint {
+	if len(points) < 2 || interval <= 0 {
+		return points
+	}
+	minimumDelta := interval.Milliseconds()
+	latest := points[len(points)-1]
+	sampled := points[:0]
+	for _, point := range points {
+		if len(sampled) == 0 || point.Timestamp-sampled[len(sampled)-1].Timestamp >= minimumDelta {
+			sampled = append(sampled, point)
+		}
+	}
+	if sampled[len(sampled)-1].Timestamp != latest.Timestamp {
+		sampled[len(sampled)-1] = latest
+	}
+	return sampled
 }
 
 func (r *HistoryRecorder) applyLoadedPointsLocked(points []types.TemperatureHistoryPoint) {
