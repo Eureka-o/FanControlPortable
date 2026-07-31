@@ -103,6 +103,34 @@ func TestHistoryRecorderPersistsBinarySnapshot(t *testing.T) {
 	}
 }
 
+func TestHistoryRecorderBatchesWritesUntilFlush(t *testing.T) {
+	t.Parallel()
+
+	filePath := filepath.Join(t.TempDir(), "history.bin")
+	recorder := NewHistoryRecorder(filePath, dirtyFlushThreshold+1, time.Second, nil)
+	enableRecorderForTest(t, recorder)
+
+	baseSeconds := int64(1_717_000_000)
+	for i := 0; i < dirtyFlushThreshold-1; i++ {
+		if _, recorded := recorder.Add(types.TemperatureData{
+			CPUTemp:    60,
+			UpdateTime: baseSeconds + int64(i),
+		}, nil); !recorded {
+			t.Fatalf("history point %d was not recorded", i)
+		}
+	}
+
+	if got := len(NewHistoryRecorder(filePath, dirtyFlushThreshold+1, time.Second, nil).Snapshot().Points); got != 0 {
+		t.Fatalf("batched history reached disk before flush: %d points", got)
+	}
+	if err := recorder.Flush(); err != nil {
+		t.Fatalf("flush batched history: %v", err)
+	}
+	if got := len(NewHistoryRecorder(filePath, dirtyFlushThreshold+1, time.Second, nil).Snapshot().Points); got != dirtyFlushThreshold-1 {
+		t.Fatalf("flushed history points = %d, want %d", got, dirtyFlushThreshold-1)
+	}
+}
+
 func TestHistoryRecorderLoadsV1BinarySnapshot(t *testing.T) {
 	t.Parallel()
 

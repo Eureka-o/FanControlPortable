@@ -51,6 +51,7 @@ type CoreApp struct {
 	stopping                      atomic.Bool
 	currentTemp                   types.TemperatureData
 	deviceSettings                *types.DeviceSettings
+	lastSuccessfulDeviceReadAt    time.Time
 	lastDeviceMode                string
 	userSetAutoControl            bool
 	isAutoStartLaunch             bool
@@ -77,6 +78,9 @@ type CoreApp struct {
 	lastResumeRecoveryUnix        int64
 	lastHealthReconnectUnix       int64
 	healthConsecutiveFailureCount int32
+	connectionFlights             *connectionFlightRecorder
+	smartControlDecisionMu        sync.RWMutex
+	smartControlDecision          smartControlDecisionSnapshot
 
 	powerNotifyStop func()
 	hidNotifyStop   func()
@@ -187,6 +191,7 @@ func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 		cleanupChan:        make(chan bool, 1),
 		quitChan:           make(chan bool, 1),
 		guiMonitorEnabled:  true,
+		connectionFlights:  newConnectionFlightRecorder(defaultConnectionFlightCapacity, nil),
 		manualGearLevelMemory: map[string]string{
 			"静音": "中",
 			"标准": "中",

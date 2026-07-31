@@ -1016,7 +1016,7 @@ func (m *Manager) saveLocked() error {
 		m.logError("保存配置到便携目录失败: %v", err)
 	} else {
 		m.config.ConfigPath = installConfigPath
-		m.logInfo("配置保存到便携目录成功: %s", installConfigPath)
+		m.logDebug("配置保存到便携目录成功: %s", installConfigPath)
 		return nil
 	}
 
@@ -1031,7 +1031,7 @@ func (m *Manager) saveLocked() error {
 	}
 
 	m.config.ConfigPath = defaultConfigPath
-	m.logInfo("配置保存到用户目录成功: %s", defaultConfigPath)
+	m.logDebug("配置保存到用户目录成功: %s", defaultConfigPath)
 	return nil
 }
 

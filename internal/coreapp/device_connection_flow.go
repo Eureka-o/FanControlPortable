@@ -3,6 +3,7 @@ package coreapp
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/TIANLI0/THRM/internal/deviceprofiles"
 	"github.com/TIANLI0/THRM/internal/ipc"
@@ -22,6 +23,7 @@ func (f deviceConnectionFlow) setRuntimeConnected() {
 	f.app.isConnected = true
 	f.app.deviceSettings = nil
 	f.app.mutex.Unlock()
+	f.app.connectionFlights.record(connectionFlightEvent{Stage: connectionFlightStageConnected})
 }
 
 func (f deviceConnectionFlow) setRuntimeReady(settings *types.DeviceSettings) {
@@ -29,18 +31,25 @@ func (f deviceConnectionFlow) setRuntimeReady(settings *types.DeviceSettings) {
 	f.app.isConnected = true
 	f.app.deviceSettings = settings
 	f.app.mutex.Unlock()
+	f.app.connectionFlights.record(connectionFlightEvent{Stage: connectionFlightStageReady})
 }
 
-func (f deviceConnectionFlow) setRuntimeDisconnected() bool {
+func (f deviceConnectionFlow) setRuntimeDisconnected(reason string) bool {
 	f.app.mutex.Lock()
 	wasConnected := f.app.isConnected
 	f.app.isConnected = false
 	f.app.deviceSettings = nil
+	f.app.lastSuccessfulDeviceReadAt = time.Time{}
 	f.app.mutex.Unlock()
+	f.app.connectionFlights.record(connectionFlightEvent{Stage: connectionFlightStageDisconnected, Reason: reason})
 	return wasConnected
 }
 
 func (f deviceConnectionFlow) connectBestScannedDevice() bool {
+	f.app.connectionFlights.record(connectionFlightEvent{
+		Stage:  connectionFlightStageDiscovering,
+		Reason: "auto-scan",
+	})
 	cfg := f.app.configManager.Get()
 	selectionCfg := cfg
 	types.NormalizeDeviceProfileConfig(&cfg)
@@ -113,6 +122,12 @@ func (f deviceConnectionFlow) connectScannedCandidate(device types.DeviceCandida
 func (f deviceConnectionFlow) connectCandidate(req types.DeviceConnectRequest) bool {
 	f.app.connectionPhase.Store(deviceConnectionPhaseConnecting)
 	transport := candidateTransport(req.Transport)
+	f.app.connectionFlights.record(connectionFlightEvent{
+		Stage:     connectionFlightStageConnecting,
+		Reason:    "candidate",
+		Transport: transport,
+		ProfileID: strings.TrimSpace(req.ProfileID),
+	})
 	switch transport {
 	case types.DeviceTransportWiFi, types.DeviceTransportSerial:
 		return f.connectCompatibilityCandidate(transport, req.ProfileID, req.Endpoint)
@@ -165,17 +180,26 @@ func (f deviceConnectionFlow) connectNativeCandidate(transport, profileID, endpo
 }
 
 func (f deviceConnectionFlow) connectNativeProfile(profile types.DeviceProfile) bool {
+	started := time.Now()
 	success, deviceInfo := f.app.deviceManager.ConnectNativeProfile(profile)
 	if success {
 		f.app.finishSuccessfulDeviceConnection(deviceInfo, "ConnectNativeDevice")
 		return true
 	}
+	f.app.connectionFlights.record(connectionFlightEvent{
+		Stage:      connectionFlightStageError,
+		Reason:     "native-connect-failed",
+		Transport:  types.NormalizeDeviceTransport(profile.Transport),
+		ProfileID:  profile.ID,
+		DurationMs: time.Since(started).Milliseconds(),
+	})
 	f.broadcastError("未发现指定的原生设备")
 	return false
 }
 
 func (f deviceConnectionFlow) connectCompatibilityCandidate(transport, profileID, endpoint string) bool {
 	f.app.autoReconnectSuppressed.Store(false)
+	started := time.Now()
 
 	oldCfg := f.app.configManager.Get()
 	types.NormalizeDeviceProfileConfig(&oldCfg)
@@ -221,12 +245,26 @@ func (f deviceConnectionFlow) connectCompatibilityCandidate(transport, profileID
 	success, deviceInfo := f.app.deviceManager.Connect()
 	if !success {
 		f.app.configureDeviceManager(oldCfg)
+		f.app.connectionFlights.record(connectionFlightEvent{
+			Stage:      connectionFlightStageError,
+			Reason:     "compatibility-connect-failed",
+			Transport:  transport,
+			ProfileID:  profile.ID,
+			DurationMs: time.Since(started).Milliseconds(),
+		})
 		f.broadcastError("连接失败")
 		return false
 	}
 
 	if err := f.app.configManager.Update(nextCfg); err != nil {
 		f.app.logError("保存设备连接配置失败: %v", err)
+		f.app.connectionFlights.record(connectionFlightEvent{
+			Stage:      connectionFlightStageError,
+			Reason:     "connection-config-save-failed",
+			Transport:  transport,
+			ProfileID:  profile.ID,
+			DurationMs: time.Since(started).Milliseconds(),
+		})
 		f.broadcastError(err.Error())
 		return false
 	}
@@ -243,7 +281,7 @@ func (f deviceConnectionFlow) disconnectForSwitch() {
 		return
 	}
 	f.app.deviceManager.DisconnectSilently()
-	f.setRuntimeDisconnected()
+	f.setRuntimeDisconnected("device-switch")
 	if f.app.ipcServer != nil {
 		f.app.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
 	}

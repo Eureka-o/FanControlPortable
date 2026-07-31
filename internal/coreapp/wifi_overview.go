@@ -11,6 +11,7 @@ const (
 	wifiOverviewForegroundRefreshInterval  = 2 * time.Second
 	wifiOverviewAutoControlRefreshInterval = 5 * time.Second
 	wifiOverviewBackgroundRefreshInterval  = 15 * time.Second
+	wifiHealthFreshnessWindow              = wifiOverviewBackgroundRefreshInterval
 )
 
 func wifiOverviewRefreshInterval(hasClients, autoControl bool) time.Duration {
@@ -31,6 +32,10 @@ func shouldRefreshWiFiOverviewState(deviceType string, now, lastRefresh time.Tim
 		interval = wifiOverviewForegroundRefreshInterval
 	}
 	return lastRefresh.IsZero() || now.Sub(lastRefresh) >= interval
+}
+
+func shouldRefreshWiFiHealthState(now, lastSuccessfulRead time.Time) bool {
+	return lastSuccessfulRead.IsZero() || now.Sub(lastSuccessfulRead) > wifiHealthFreshnessWindow
 }
 
 func (a *CoreApp) refreshWiFiOverviewState(refreshRunning *atomic.Bool) {

@@ -177,7 +177,27 @@ func (a *CoreApp) ExportDiagnostics() (types.DiagnosticsBundle, error) {
 	if err := addJSON("device-profiles-summary.json", buildDiagnosticsDeviceProfileSummary(cfg)); err != nil {
 		return types.DiagnosticsBundle{}, err
 	}
-	if err := addJSON("runtime-snapshot.json", a.diagnosticsRuntimeSnapshot()); err != nil {
+	runtimeSnapshot := a.diagnosticsRuntimeSnapshot()
+	runtimeProfile := a.diagnosticsRuntimeDeviceProfile(cfg)
+	if err := addJSON("runtime-snapshot.json", runtimeSnapshot); err != nil {
+		return types.DiagnosticsBundle{}, err
+	}
+	connectionPhase := a.connectionPhase.Load()
+	runtimeStatus := resolveDeviceRuntimeStatus(deviceRuntimeStatusInput{
+		Connected:     runtimeSnapshot.IsConnected,
+		Discovering:   connectionPhase == deviceConnectionPhaseDiscovering || runtimeSnapshot.ReconnectInProgress,
+		Connecting:    connectionPhase == deviceConnectionPhaseConnecting,
+		Suspended:     runtimeSnapshot.SystemSuspended,
+		SettingsReady: runtimeSnapshot.DeviceSettings != nil && runtimeSnapshot.DeviceSettings.Available,
+		Capabilities:  runtimeProfile.Capabilities,
+	})
+	if err := addJSON("connection-flight.json", a.connectionFlightSnapshot(runtimeStatus)); err != nil {
+		return types.DiagnosticsBundle{}, err
+	}
+	if err := addJSON("smart-control-decision.json", a.getSmartControlDecision()); err != nil {
+		return types.DiagnosticsBundle{}, err
+	}
+	if err := addJSON("runtime-device-profile.json", buildDiagnosticsDeviceProfileSummaryEntry(runtimeProfile, cfg)); err != nil {
 		return types.DiagnosticsBundle{}, err
 	}
 	if a.deviceManager != nil {
@@ -288,29 +308,41 @@ func buildDiagnosticsConfigSummary(cfg types.AppConfig) diagnosticsConfigSummary
 }
 
 func buildDiagnosticsDeviceProfileSummary(cfg types.AppConfig) []diagnosticsDeviceProfileSummary {
-	activeByTransport := cloneStringMap(cfg.ActiveDeviceProfileIDsByTransport)
 	out := make([]diagnosticsDeviceProfileSummary, 0, len(cfg.DeviceProfiles))
 	for _, profile := range cfg.DeviceProfiles {
-		profile = types.NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp)
-		out = append(out, diagnosticsDeviceProfileSummary{
-			ID:              profile.ID,
-			DisplayName:     profile.DisplayName,
-			Vendor:          profile.Vendor,
-			Model:           profile.Model,
-			BuiltIn:         profile.BuiltIn,
-			Transport:       profile.Transport,
-			SpeedUnit:       profile.SpeedUnit,
-			SpeedRange:      profile.SpeedRange,
-			Connection:      profile.Connection,
-			Capabilities:    profile.Capabilities,
-			CommandCount:    len(profile.Commands),
-			ParserCount:     len(profile.ResponseParsers),
-			SpeedMapCount:   len(profile.SpeedMap),
-			Active:          profile.ID == cfg.ActiveDeviceProfileID,
-			ActiveTransport: activeByTransport[types.NormalizeDeviceTransport(profile.Transport)] == profile.ID,
-		})
+		out = append(out, buildDiagnosticsDeviceProfileSummaryEntry(profile, cfg))
 	}
 	return out
+}
+
+func buildDiagnosticsDeviceProfileSummaryEntry(profile types.DeviceProfile, cfg types.AppConfig) diagnosticsDeviceProfileSummary {
+	profile = types.NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp)
+	return diagnosticsDeviceProfileSummary{
+		ID:              profile.ID,
+		DisplayName:     profile.DisplayName,
+		Vendor:          profile.Vendor,
+		Model:           profile.Model,
+		BuiltIn:         profile.BuiltIn,
+		Transport:       profile.Transport,
+		SpeedUnit:       profile.SpeedUnit,
+		SpeedRange:      profile.SpeedRange,
+		Connection:      profile.Connection,
+		Capabilities:    profile.Capabilities,
+		CommandCount:    len(profile.Commands),
+		ParserCount:     len(profile.ResponseParsers),
+		SpeedMapCount:   len(profile.SpeedMap),
+		Active:          profile.ID == cfg.ActiveDeviceProfileID,
+		ActiveTransport: cfg.ActiveDeviceProfileIDsByTransport[types.NormalizeDeviceTransport(profile.Transport)] == profile.ID,
+	}
+}
+
+func (a *CoreApp) diagnosticsRuntimeDeviceProfile(cfg types.AppConfig) types.DeviceProfile {
+	if a.deviceManager != nil {
+		if profile := a.deviceManager.ActiveProfile(); profile.ID != "" {
+			return profile
+		}
+	}
+	return types.ActiveDeviceProfile(&cfg)
 }
 
 func (a *CoreApp) diagnosticsRuntimeSnapshot() diagnosticsRuntimeSnapshot {

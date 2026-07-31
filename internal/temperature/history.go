@@ -25,8 +25,8 @@ const (
 	historyBinaryVersion         uint16 = historyBinaryVersionV2
 	historyEnabledFlag           uint8  = 1
 
-	dirtyFlushThreshold = 6
-	dirtyFlushInterval  = 30 * time.Second
+	dirtyFlushThreshold = 60
+	dirtyFlushInterval  = 60 * time.Second
 )
 
 type HistoryRecorder struct {
@@ -60,6 +60,7 @@ func NewHistoryRecorder(filePath string, capacity int, sampleInterval time.Durat
 		capacity:       capacity,
 		sampleInterval: sampleInterval,
 		enabled:        true,
+		lastFlushAt:    time.Now(),
 		// 惰性分配：起始 len=0，随实际数据增长至 capacity，避免启动即占满 173KB。
 		points: make([]types.TemperatureHistoryPoint, 0, capacity),
 	}

@@ -387,7 +387,7 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 	a.mutex.Unlock()
 
 	if enabled && wasConnected {
-		if !a.deviceManager.SetTargetSpeed(configSpeedToTargetUnit(rpm, unit), unit) {
+		if !a.setTargetSpeed(configSpeedToTargetUnit(rpm, unit), unit) {
 			return fmt.Errorf("当前设备拒绝自定义速度下发，请确认设备仍已连接并支持 %s 控制", types.FanSpeedDisplaySuffix(unit))
 		}
 	}

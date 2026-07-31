@@ -26,6 +26,7 @@ type RisePredictionResult struct {
 	Target           int
 	Boost            int
 	RampUpMultiplier float64
+	PowerAssisted    bool
 }
 
 const (
@@ -56,6 +57,7 @@ func EvaluateTemperatureRisePrediction(target int, samples []RisePredictionSampl
 	}
 	if powerIsRisingQuickly(recent[len(recent)-2:]) {
 		result.RampUpMultiplier = predictionPowerRampMultiplier
+		result.PowerAssisted = true
 	}
 	if tempRise, confirmed := sustainedTemperatureRise(recent); confirmed {
 		powerScore := normalizedControlPowerScore(recent)
