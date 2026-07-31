@@ -2,6 +2,7 @@ package coreapp
 
 import (
 	"testing"
+	"time"
 
 	"github.com/TIANLI0/THRM/internal/types"
 )
@@ -59,7 +60,7 @@ func TestResolveDeviceRuntimeTransitionSequence(t *testing.T) {
 }
 
 func TestDeviceConnectionFlowOwnsRuntimeMirrorTransitions(t *testing.T) {
-	app := &CoreApp{}
+	app := &CoreApp{connectionFlights: newConnectionFlightRecorder(8, nil)}
 	flow := newDeviceConnectionFlow(app)
 	settings := &types.DeviceSettings{Available: true, Source: types.DeviceTransportSerial}
 
@@ -72,12 +73,31 @@ func TestDeviceConnectionFlowOwnsRuntimeMirrorTransitions(t *testing.T) {
 	if !app.isConnected || app.deviceSettings != settings {
 		t.Fatalf("ready transition = connected %v, settings %#v", app.isConnected, app.deviceSettings)
 	}
+	app.lastSuccessfulDeviceReadAt = time.Now()
 
-	if wasConnected := flow.setRuntimeDisconnected(); !wasConnected {
+	if wasConnected := flow.setRuntimeDisconnected("test"); !wasConnected {
 		t.Fatal("disconnect transition did not report the previous connected state")
 	}
 	if app.isConnected || app.deviceSettings != nil {
 		t.Fatalf("disconnected transition = connected %v, settings %#v", app.isConnected, app.deviceSettings)
+	}
+	if !app.lastSuccessfulDeviceReadAt.IsZero() {
+		t.Fatalf("disconnect retained stale successful-read time: %v", app.lastSuccessfulDeviceReadAt)
+	}
+
+	flight := app.connectionFlights.snapshot(connectionFlightSnapshotInput{})
+	wantStages := []string{
+		connectionFlightStageConnected,
+		connectionFlightStageReady,
+		connectionFlightStageDisconnected,
+	}
+	if len(flight.Events) != len(wantStages) {
+		t.Fatalf("flight events = %#v, want stages %#v", flight.Events, wantStages)
+	}
+	for i, stage := range wantStages {
+		if flight.Events[i].Stage != stage {
+			t.Fatalf("flight event %d stage = %q, want %q", i, flight.Events[i].Stage, stage)
+		}
 	}
 }
 
@@ -95,6 +115,23 @@ func TestDeviceRuntimeSnapshotRejectsStaleCoreConnection(t *testing.T) {
 	}
 	if snapshot.Runtime.State != deviceRuntimeStateDisconnected {
 		t.Fatalf("runtime state = %q, want disconnected", snapshot.Runtime.State)
+	}
+}
+
+func TestGetDeviceStatusIncludesConnectionFlightSnapshotWhenDisconnected(t *testing.T) {
+	app := &CoreApp{connectionFlights: newConnectionFlightRecorder(4, nil)}
+	app.connectionFlights.record(connectionFlightEvent{
+		Stage:  connectionFlightStageDisconnected,
+		Reason: "device-disconnect",
+	})
+
+	status := app.GetDeviceStatus()
+	flight, ok := status["connectionFlight"].(connectionFlightSnapshot)
+	if !ok {
+		t.Fatalf("connectionFlight = %#v, want connectionFlightSnapshot", status["connectionFlight"])
+	}
+	if flight.State != deviceRuntimeStateDisconnected || len(flight.Events) != 1 {
+		t.Fatalf("unexpected connection flight snapshot: %#v", flight)
 	}
 }
 

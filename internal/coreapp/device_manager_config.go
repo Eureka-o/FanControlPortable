@@ -41,7 +41,7 @@ func (a *CoreApp) reconcileDeviceManagerProfile(cfg types.AppConfig) bool {
 
 	a.configureDeviceManager(cfg)
 
-	wasCoreConnected := newDeviceConnectionFlow(a).setRuntimeDisconnected()
+	wasCoreConnected := newDeviceConnectionFlow(a).setRuntimeDisconnected("profile-changed")
 	return managerConnected || wasCoreConnected
 }
 

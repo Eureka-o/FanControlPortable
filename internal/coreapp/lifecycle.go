@@ -216,6 +216,11 @@ func (a *CoreApp) Stop() {
 			a.logError("等待温度监控停止超时，继续退出")
 		}
 	}
+	if a.tempHistory != nil {
+		if err := a.tempHistory.Flush(); err != nil {
+			a.logError("退出时保存温度历史失败: %v", err)
+		}
+	}
 	if a.hotkeyManager != nil {
 		a.hotkeyManager.Stop()
 	}

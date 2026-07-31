@@ -23,6 +23,9 @@ func TestEvaluateTemperatureRisePredictionUsesPowerRiseForLimitedRampAssist(t *t
 	if result.RampUpMultiplier <= 1 || result.RampUpMultiplier > 1.5 {
 		t.Fatalf("power-only ramp multiplier = %v, want (1, 1.5]", result.RampUpMultiplier)
 	}
+	if !result.PowerAssisted {
+		t.Fatal("power-only prediction should report power-assisted ramping")
+	}
 }
 
 func TestEvaluateTemperatureRisePredictionBoostsOnlyConfirmedSustainedRise(t *testing.T) {
@@ -134,5 +137,8 @@ func TestEvaluateTemperatureRisePredictionStillBoostsSustainedRiseWithoutPower(t
 	}, cfg, types.FanSpeedUnitPercent)
 	if result.Target <= 400 || result.Boost <= 0 || result.RampUpMultiplier != predictionConfirmedRampMultiplier {
 		t.Fatalf("sustained no-power prediction = %#v, want confirmed boost", result)
+	}
+	if result.PowerAssisted {
+		t.Fatal("temperature-only boost should not report power assistance")
 	}
 }

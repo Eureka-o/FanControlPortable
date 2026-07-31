@@ -80,3 +80,24 @@ func TestWiFiOverviewRefreshInterval(t *testing.T) {
 		})
 	}
 }
+
+func TestShouldRefreshWiFiHealthState(t *testing.T) {
+	now := time.Unix(100, 0)
+	tests := []struct {
+		name     string
+		lastRead time.Time
+		want     bool
+	}{
+		{name: "missing successful read", want: true},
+		{name: "recent overview read", lastRead: now.Add(-wifiHealthFreshnessWindow), want: false},
+		{name: "stale overview read", lastRead: now.Add(-wifiHealthFreshnessWindow - time.Millisecond), want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldRefreshWiFiHealthState(now, tt.lastRead); got != tt.want {
+				t.Fatalf("shouldRefreshWiFiHealthState() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

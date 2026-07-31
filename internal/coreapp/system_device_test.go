@@ -137,6 +137,32 @@ func TestReconnectDelayCanBeCanceled(t *testing.T) {
 	}
 }
 
+func TestReconnectLoopRecordsReasonAttemptAndFailure(t *testing.T) {
+	app := &CoreApp{
+		deviceManager:     device.NewManager(nil),
+		connectionFlights: newConnectionFlightRecorder(8, nil),
+	}
+	app.reconnectGeneration = 1
+
+	app.runReconnectLoop(context.Background(), "health-check", []time.Duration{0}, 1, func(context.Context) reconnectAttemptResult {
+		return reconnectAttemptResult{}
+	})
+
+	events := app.connectionFlights.snapshot(connectionFlightSnapshotInput{}).Events
+	if len(events) != 3 {
+		t.Fatalf("reconnect events = %#v, want start, attempt, failure", events)
+	}
+	if events[0].Stage != connectionFlightStageReconnecting || events[0].Reason != "health-check" {
+		t.Fatalf("unexpected reconnect start event: %#v", events[0])
+	}
+	if events[1].Stage != connectionFlightStageConnecting || events[1].Attempt != 1 {
+		t.Fatalf("unexpected reconnect attempt event: %#v", events[1])
+	}
+	if events[2].Stage != connectionFlightStageError || events[2].Reason != "reconnect-failed" || events[2].Attempt != 1 {
+		t.Fatalf("unexpected reconnect failure event: %#v", events[2])
+	}
+}
+
 func TestReconnectRequestCoalescesAndWakesWaitingGeneration(t *testing.T) {
 	app := &CoreApp{}
 	app.requestReconnect("first", []time.Duration{time.Hour})
@@ -388,6 +414,21 @@ func TestGetDeviceStatusRequiresManagerConnection(t *testing.T) {
 	}
 	if _, ok := status["deviceCapabilities"]; ok {
 		t.Fatalf("disconnected status should not expose configured capabilities: %#v", status)
+	}
+}
+
+func TestGetDeviceStatusIncludesLatestSmartControlDecision(t *testing.T) {
+	app := newDeviceProfileTestApp(t, types.GetDefaultConfig(false))
+	app.setSmartControlDecision(smartControlDecisionSnapshot{FinalTarget: 320, GateReason: "first"})
+	app.setSmartControlDecision(smartControlDecisionSnapshot{FinalTarget: 480, GateReason: "minimum-change"})
+
+	status := app.GetDeviceStatus()
+	decision, ok := status["smartControlDecision"].(smartControlDecisionSnapshot)
+	if !ok {
+		t.Fatalf("smartControlDecision type = %T, want smartControlDecisionSnapshot", status["smartControlDecision"])
+	}
+	if decision.FinalTarget != 480 || decision.GateReason != "minimum-change" {
+		t.Fatalf("smartControlDecision = %#v, want latest snapshot", decision)
 	}
 }
 

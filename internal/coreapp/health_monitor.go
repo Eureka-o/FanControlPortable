@@ -84,7 +84,8 @@ func (a *CoreApp) ensureTemperatureMonitoringHealthy() {
 
 // checkDeviceHealth 检查设备健康状态
 func (a *CoreApp) checkDeviceHealth() {
-	connected := a.deviceRuntimeSnapshot().Connected
+	snapshot := a.deviceRuntimeSnapshot()
+	connected := snapshot.Connected
 
 	if !connected {
 		now := time.Now()
@@ -101,7 +102,7 @@ func (a *CoreApp) checkDeviceHealth() {
 	healthOK := true
 	switch a.deviceManager.GetDeviceType() {
 	case types.DeviceTransportWiFi:
-		if !a.deviceManager.RefreshWiFiState() {
+		if shouldRefreshWiFiHealthState(time.Now(), snapshot.LastSuccessfulReadAt) && !a.deviceManager.RefreshWiFiState() {
 			a.logDebug("健康检查: WiFi 控制器状态刷新失败")
 			healthOK = false
 		}

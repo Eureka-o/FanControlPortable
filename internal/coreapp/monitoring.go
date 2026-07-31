@@ -49,6 +49,8 @@ func temperatureSafetyFallbackTarget(curve []types.FanCurvePoint, unit string, f
 
 const staleBridgeUpdateThreshold = 3
 
+const smartControlLearningSaveInterval = 2 * time.Minute
+
 // idleTemperatureMonitorInterval 是后台空闲（无 GUI 连接且未开启智能控温）时的温度采样间隔下限。
 // 此时温度读取仅用于托盘提示与历史记录，放慢采样可降低桥接传感器扫描带来的后台 CPU 占用。
 const idleTemperatureMonitorInterval = 5 * time.Second
@@ -346,6 +348,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				a.forceNextAutoTarget.Store(true)
 			}
 			controlReady := a.deviceControlReady()
+			safetyFallbackDecisionRecorded := false
 			if applySafetyFallback && controlReady {
 				if a.noiseDiagnosticLeaseActive() {
 					a.cancelNoiseDiagnosticLease("温度遥测安全回退")
@@ -353,7 +356,24 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				speedUnit = a.activeDeviceSpeedUnit(&cfg)
 				target := temperatureSafetyFallbackTarget(cfg.FanCurve, speedUnit, fanData)
 				if target > 0 {
-					if a.deviceManager.SetTargetSpeed(target, speedUnit) {
+					writeSucceeded := a.setTargetSpeed(target, speedUnit)
+					gateReason := "write-failed"
+					if writeSucceeded {
+						gateReason = "temperature-safety-fallback"
+					}
+					a.setSmartControlDecision(smartControlDecisionSnapshot{
+						Active:         true,
+						ControlSource:  types.NormalizeTempSource(temp.ControlSource),
+						SpeedUnit:      speedUnit,
+						SafetyFallback: true,
+						FinalTarget:    target,
+						WriteAttempted: true,
+						WriteSucceeded: writeSucceeded,
+						GateReason:     gateReason,
+						Confidence:     "safety",
+					})
+					safetyFallbackDecisionRecorded = true
+					if writeSucceeded {
 						safetyFallback.markApplied()
 						lastTargetRPM = target
 						a.logError("连续 %d 次未获得可信温度，已切换到安全转速: %d%s", safetyFallback.invalidSamples, displaySpeedForLog(target, speedUnit), types.FanSpeedDisplaySuffix(speedUnit))
@@ -454,6 +474,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				if targetRPM > 0 {
 					targetRPM = min(max(targetRPM, curveMinRPM), curveMaxRPM)
 				}
+				learnedTargetRPM := targetRPM
 
 				actualSpeed := 0
 				actualSpeedValid := false
@@ -476,6 +497,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					}
 				}
 				predictionActive := prediction.RampUpMultiplier > 1 || prediction.Boost > 0
+				targetBeforeRamp := targetRPM
 
 				if prevTargetRPM >= 0 {
 					rampUpLimit := smartCfg.RampUpLimit
@@ -487,6 +509,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 						targetRPM = min(max(targetRPM, curveMinRPM), curveMaxRPM)
 					}
 				}
+				rampAdjustment := targetRPM - targetBeforeRamp
 
 				rawAxisNoiseTarget := targetRPM
 				axisNoiseAdjusted := false
@@ -501,6 +524,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				if targetLimited {
 					a.logInfo("智能控温目标受飞智当前供电/挡位上限限制: %dRPM -> %dRPM", requestedTargetRPM, targetRPM)
 				}
+				hardwareAdjustment := targetRPM - requestedTargetRPM
 				observedRPM := targetRPM
 				if actualSpeedValid {
 					observedRPM = actualSpeed
@@ -509,17 +533,61 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				if targetRPM > 0 {
 					forceSend = a.forceNextAutoTarget.Swap(false)
 				}
-				if targetRPM > 0 && !a.noiseDiagnosticLeaseActive() && (forceSend || shouldSendTargetSpeed(targetRPM, prevTargetRPM, smartCfg.MinRPMChange, fanData, speedUnit)) {
-					if a.deviceManager.SetTargetSpeed(targetRPM, speedUnit) {
+				noiseLeaseActive := a.noiseDiagnosticLeaseActive()
+				shouldWrite := targetRPM > 0 && !noiseLeaseActive && (forceSend || shouldSendTargetSpeed(targetRPM, prevTargetRPM, smartCfg.MinRPMChange, fanData, speedUnit))
+				writeSucceeded := false
+				gateReason := "minimum-change"
+				switch {
+				case targetRPM <= 0:
+					gateReason = "no-target"
+				case noiseLeaseActive:
+					gateReason = "noise-diagnostic-active"
+				case forceSend:
+					gateReason = "forced"
+				case shouldWrite:
+					gateReason = "target-change"
+				}
+				if shouldWrite {
+					writeSucceeded = a.setTargetSpeed(targetRPM, speedUnit)
+					if writeSucceeded {
 						lastTargetRPM = targetRPM
 						if a.deviceManager.GetDeviceType() == types.DeviceTransportWiFi {
 							lastWiFiOverviewRefresh = now
 						}
 					} else {
 						lastTargetRPM = -1
+						gateReason = "write-failed"
 						a.logError("智能控温速度下发失败，将在下个周期重试: %d%s", displaySpeedForLog(targetRPM, speedUnit), types.FanSpeedDisplaySuffix(speedUnit))
 					}
 				}
+
+				confidence := "basic"
+				if advancedSampleUsable {
+					confidence = "medium"
+					if actualSpeedValid {
+						confidence = "high"
+					}
+				}
+				a.setSmartControlDecision(smartControlDecisionSnapshot{
+					Active:               true,
+					ControlTemp:          controlTemp,
+					ControlSource:        types.NormalizeTempSource(temp.ControlSource),
+					SpeedUnit:            speedUnit,
+					BaseTarget:           baseRPM,
+					LearnedTarget:        learnedTargetRPM,
+					LearningOffset:       learnedTargetRPM - baseRPM,
+					PowerAvailable:       effectivePower.CPUValid || effectivePower.GPUValid,
+					PowerAssisted:        prediction.PowerAssisted,
+					TemperatureRiseBoost: targetBeforeRamp - learnedTargetRPM,
+					RampAdjustment:       rampAdjustment,
+					NoiseAdjustment:      requestedTargetRPM - rawAxisNoiseTarget,
+					HardwareAdjustment:   hardwareAdjustment,
+					FinalTarget:          targetRPM,
+					WriteAttempted:       shouldWrite,
+					WriteSucceeded:       writeSucceeded,
+					GateReason:           gateReason,
+					Confidence:           confidence,
+				})
 
 				if smartCfg.Learning && advancedSampleUsable && !predictionActive && !targetLimited && !axisNoiseAdjusted && !a.noiseDiagnosticLeaseActive() {
 					steady := steadyObserver.ObserveWithEffectivePowerAt(now, controlTemp, observedRPM, effectivePower, controlCurve, smartCfg)
@@ -549,7 +617,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 						}
 					}
 
-					if learningDirty && time.Since(lastLearningSave) >= 25*time.Second {
+					if learningDirty && time.Since(lastLearningSave) >= smartControlLearningSaveInterval {
 						if err := a.configManager.Save(); err != nil {
 							a.logError("保存学习偏移失败: %v", err)
 						} else {
@@ -569,7 +637,15 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				}
 			}
 
-			if !cfg.AutoControl || !inputReady || !controlReady {
+			gateReason := smartControlGateReason(cfg.AutoControl, inputReady, controlReady)
+			if gateReason != "" {
+				if !safetyFallbackDecisionRecorded {
+					a.setSmartControlDecision(smartControlDecisionSnapshot{
+						ControlTemp:   temp.ControlTemp,
+						ControlSource: types.NormalizeTempSource(temp.ControlSource),
+						GateReason:    gateReason,
+					})
+				}
 				if lastAutoControl {
 					resetSmartControlSampling()
 				}

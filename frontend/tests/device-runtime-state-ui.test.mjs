@@ -23,3 +23,8 @@ test('keeps connection recovery guidance and actions in the existing device stat
   assert.match(source, /disabled=\{diagnosticsExporting\}/);
   assert.match(source, /onClick=\{onExportDiagnostics\}/);
 });
+
+test('keeps the backend connection flight recorder out of the status page', () => {
+  assert.doesNotMatch(source, /connectionFlight/);
+  assert.doesNotMatch(source, /data-device-runtime="connection-flight"/);
+});

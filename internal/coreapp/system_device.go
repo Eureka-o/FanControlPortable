@@ -65,7 +65,13 @@ func isManualDeviceWorkMode(mode string) bool {
 
 // onFanDataUpdate 风扇数据更新回调
 func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
+	if fanData != nil {
+		a.connectionFlights.markSuccessfulRead()
+	}
 	a.mutex.Lock()
+	if fanData != nil {
+		a.lastSuccessfulDeviceReadAt = time.Now()
+	}
 	cfg := a.configManager.Get()
 	deviceSwitchedToManual := didDeviceSwitchToManualMode(a.lastDeviceMode, fanData.WorkMode)
 
@@ -108,7 +114,7 @@ func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
 // onDeviceDisconnect 设备断开回调
 func (a *CoreApp) onDeviceDisconnect() {
 	a.cancelNoiseDiagnosticLease("设备断开")
-	wasConnected := newDeviceConnectionFlow(a).setRuntimeDisconnected()
+	wasConnected := newDeviceConnectionFlow(a).setRuntimeDisconnected("device-disconnect")
 
 	if wasConnected {
 		a.logInfo("设备连接已断开，将在健康检查时尝试自动重连")
@@ -254,6 +260,10 @@ func (a *CoreApp) runReconnectLoopWithWake(
 	attempt func(context.Context) reconnectAttemptResult,
 ) {
 	a.logInfo("启动设备重连流程: %s", reason)
+	a.connectionFlights.record(connectionFlightEvent{
+		Stage:  connectionFlightStageReconnecting,
+		Reason: reason,
+	})
 
 	for i, delay := range retryDelays {
 		if ctx.Err() != nil {
@@ -311,6 +321,12 @@ func (a *CoreApp) runReconnectLoopWithWake(
 		}
 
 		a.logInfo("尝试第 %d 次重连设备...", i+1)
+		a.connectionFlights.record(connectionFlightEvent{
+			Stage:   connectionFlightStageConnecting,
+			Reason:  reason,
+			Attempt: i + 1,
+		})
+		attemptStarted := time.Now()
 		result := attempt(ctx)
 		current, connected := a.completeReconnectAttempt(ctx, generation, result, "reconnect@"+reason)
 		if !current {
@@ -328,6 +344,12 @@ func (a *CoreApp) runReconnectLoopWithWake(
 
 			return
 		}
+		a.connectionFlights.record(connectionFlightEvent{
+			Stage:      connectionFlightStageError,
+			Reason:     "reconnect-failed",
+			Attempt:    i + 1,
+			DurationMs: time.Since(attemptStarted).Milliseconds(),
+		})
 		a.logError("第 %d 次重连失败", i+1)
 	}
 
@@ -355,7 +377,7 @@ func (a *CoreApp) completeReconnectAttempt(ctx context.Context, generation uint6
 			if result.disconnect != nil {
 				result.disconnect()
 			}
-			newDeviceConnectionFlow(a).setRuntimeDisconnected()
+			newDeviceConnectionFlow(a).setRuntimeDisconnected("stale-reconnect")
 		}
 	}()
 	return current, connected
@@ -508,6 +530,10 @@ func (a *CoreApp) onSystemSuspend() {
 		return
 	}
 	generation := a.suspendGeneration.Add(1)
+	a.connectionFlights.record(connectionFlightEvent{
+		Stage:  connectionFlightStageSuspended,
+		Reason: "system-suspend",
+	})
 	a.deviceManager.BlockWrites()
 	start := time.Now()
 	a.logInfo("收到系统挂起通知：提前停止监控并断开设备/桥接，避免唤醒后失效句柄导致崩溃")
@@ -523,7 +549,7 @@ func (a *CoreApp) onSystemSuspend() {
 	))
 	a.cancelReconnect()
 	a.autoReconnectSuppressed.Store(true)
-	newDeviceConnectionFlow(a).setRuntimeDisconnected()
+	newDeviceConnectionFlow(a).setRuntimeDisconnected("system-suspend")
 	a.stopTemperatureMonitoring()
 
 	done := make(chan struct{})
@@ -710,7 +736,7 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 	a.safeRun("resume-device-disconnect", func() {
 		a.deviceManager.DisconnectForRecovery()
 	})
-	newDeviceConnectionFlow(a).setRuntimeDisconnected()
+	newDeviceConnectionFlow(a).setRuntimeDisconnected("system-resume")
 
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
@@ -828,7 +854,7 @@ func (a *CoreApp) DisconnectDevice() {
 	a.suppressReconnect()
 	a.lastConnectionWasNative.Store(false)
 
-	newDeviceConnectionFlow(a).setRuntimeDisconnected()
+	newDeviceConnectionFlow(a).setRuntimeDisconnected("manual")
 
 	a.deviceManager.DisconnectSilently()
 
@@ -849,7 +875,7 @@ func (a *CoreApp) reapplyConfigAfterReconnect() {
 		unit := a.activeDeviceSpeedUnit(&cfg)
 		speed := types.ClampSpeedForUnit(cfg.CustomSpeedRPM, unit)
 		a.logInfo("重新应用自定义速度: %d%s", speed, types.FanSpeedDisplaySuffix(unit))
-		if !a.deviceManager.SetTargetSpeed(configSpeedToTargetUnit(speed, unit), unit) {
+		if !a.setTargetSpeed(configSpeedToTargetUnit(speed, unit), unit) {
 			a.logError("重新应用自定义转速失败")
 		}
 	} else {
@@ -896,13 +922,17 @@ func (a *CoreApp) GetDeviceStatus() map[string]any {
 	a.mutex.RUnlock()
 
 	snapshot := a.deviceRuntimeSnapshot()
+	connectionFlight := a.connectionFlightSnapshot(snapshot.Runtime)
+	smartControlDecision := a.getSmartControlDecision()
 	if !snapshot.Connected {
 		return map[string]any{
-			"connected":   false,
-			"monitoring":  monitoring,
-			"currentData": nil,
-			"temperature": currentTemp,
-			"runtime":     snapshot.Runtime,
+			"connected":            false,
+			"monitoring":           monitoring,
+			"currentData":          nil,
+			"temperature":          currentTemp,
+			"runtime":              snapshot.Runtime,
+			"connectionFlight":     connectionFlight,
+			"smartControlDecision": smartControlDecision,
 		}
 	}
 
@@ -912,17 +942,19 @@ func (a *CoreApp) GetDeviceStatus() map[string]any {
 	}
 
 	return map[string]any{
-		"connected":          true,
-		"monitoring":         monitoring,
-		"currentData":        snapshot.CurrentData,
-		"temperature":        currentTemp,
-		"productId":          productIDHex,
-		"model":              snapshot.Model,
-		"deviceName":         connectedDeviceDisplayName(snapshot.Profile, snapshot.Model, snapshot.Settings, ""),
-		"deviceProfile":      snapshot.Profile,
-		"deviceCapabilities": snapshot.Capabilities,
-		"deviceSettings":     snapshot.Settings,
-		"runtime":            snapshot.Runtime,
+		"connected":            true,
+		"monitoring":           monitoring,
+		"currentData":          snapshot.CurrentData,
+		"temperature":          currentTemp,
+		"productId":            productIDHex,
+		"model":                snapshot.Model,
+		"deviceName":           connectedDeviceDisplayName(snapshot.Profile, snapshot.Model, snapshot.Settings, ""),
+		"deviceProfile":        snapshot.Profile,
+		"deviceCapabilities":   snapshot.Capabilities,
+		"deviceSettings":       snapshot.Settings,
+		"runtime":              snapshot.Runtime,
+		"connectionFlight":     connectionFlight,
+		"smartControlDecision": smartControlDecision,
 	}
 }
 

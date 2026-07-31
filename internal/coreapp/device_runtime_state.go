@@ -1,6 +1,10 @@
 package coreapp
 
-import "github.com/TIANLI0/THRM/internal/types"
+import (
+	"time"
+
+	"github.com/TIANLI0/THRM/internal/types"
+)
 
 const (
 	deviceRuntimeStateDisconnected = "disconnected"
@@ -32,14 +36,15 @@ type deviceRuntimeStatusInput struct {
 }
 
 type deviceRuntimeSnapshotData struct {
-	Connected    bool
-	Runtime      deviceRuntimeStatus
-	Settings     *types.DeviceSettings
-	CurrentData  *types.FanData
-	Profile      types.DeviceProfile
-	Capabilities types.DeviceCapabilities
-	ProductID    uint16
-	Model        string
+	Connected            bool
+	Runtime              deviceRuntimeStatus
+	Settings             *types.DeviceSettings
+	CurrentData          *types.FanData
+	Profile              types.DeviceProfile
+	Capabilities         types.DeviceCapabilities
+	ProductID            uint16
+	Model                string
+	LastSuccessfulReadAt time.Time
 }
 
 func resolveDeviceRuntimeStatus(input deviceRuntimeStatusInput) deviceRuntimeStatus {
@@ -68,11 +73,21 @@ func (a *CoreApp) deviceRuntimeStatus() deviceRuntimeStatus {
 	return a.deviceRuntimeSnapshot().Runtime
 }
 
+func (a *CoreApp) connectionFlightSnapshot(runtime deviceRuntimeStatus) connectionFlightSnapshot {
+	return a.connectionFlights.snapshot(connectionFlightSnapshotInput{
+		State:               runtime.State,
+		CanControl:          runtime.CanControl,
+		ReconnectInProgress: a.reconnectInProgress.Load(),
+		Suspended:           a.systemSuspended.Load(),
+	})
+}
+
 func (a *CoreApp) deviceRuntimeSnapshot() deviceRuntimeSnapshotData {
 	a.mutex.RLock()
 	coreConnected := a.isConnected
 	manager := a.deviceManager
 	settings := a.deviceSettings
+	lastSuccessfulReadAt := a.lastSuccessfulDeviceReadAt
 	a.mutex.RUnlock()
 
 	connected := coreConnected && manager != nil && manager.IsConnected()
@@ -82,7 +97,12 @@ func (a *CoreApp) deviceRuntimeSnapshot() deviceRuntimeSnapshotData {
 		profile = types.ActiveDeviceProfile(&cfg)
 	}
 	capabilities := profile.Capabilities
-	snapshot := deviceRuntimeSnapshotData{Connected: connected, Profile: profile, Capabilities: capabilities}
+	snapshot := deviceRuntimeSnapshotData{
+		Connected:            connected,
+		Profile:              profile,
+		Capabilities:         capabilities,
+		LastSuccessfulReadAt: lastSuccessfulReadAt,
+	}
 	if connected {
 		snapshot.Settings = settings
 		snapshot.CurrentData = manager.GetCurrentFanData()

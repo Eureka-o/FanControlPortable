@@ -214,7 +214,7 @@ func (a *CoreApp) SetNoiseDiagnosticTarget(sessionID string, value int) (types.N
 	if noiseDiagnosticConnectionChanged(a.deviceManager.IsConnected(), a.deviceManager.ConnectionGeneration(), connectionGeneration) {
 		return types.NoiseDiagnosticTargetResult{}, fmt.Errorf("诊断设备连接已变化")
 	}
-	if !a.deviceManager.SetTargetSpeed(deviceValue, unit) {
+	if !a.setTargetSpeed(deviceValue, unit) {
 		return types.NoiseDiagnosticTargetResult{}, fmt.Errorf("目标转速下发失败")
 	}
 	if noiseDiagnosticConnectionChanged(a.deviceManager.IsConnected(), a.deviceManager.ConnectionGeneration(), connectionGeneration) {
@@ -311,7 +311,7 @@ func (a *CoreApp) restoreNoiseDiagnosticState(lease *noiseDiagnosticLease) error
 	unit := a.activeDeviceSpeedUnit(&cfg)
 	if cfg.CustomSpeedEnabled {
 		speed := types.ClampSpeedForUnit(cfg.CustomSpeedRPM, unit)
-		if speed <= 0 || !a.deviceManager.SetTargetSpeed(configSpeedToTargetUnit(speed, unit), unit) {
+		if speed <= 0 || !a.setTargetSpeed(configSpeedToTargetUnit(speed, unit), unit) {
 			return fmt.Errorf("恢复自定义转速失败")
 		}
 		return nil
