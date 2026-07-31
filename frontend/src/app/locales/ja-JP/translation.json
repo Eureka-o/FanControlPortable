@@ -846,6 +846,10 @@
         "min": "最小",
         "average": "平均"
       },
+      "timelineEvents": {
+        "title": "イベント時刻記録",
+        "description": "履歴グラフに表示するイベント時刻マーカーを選択します。"
+      },
       "moveUp": "上へ",
       "moveDown": "下へ",
       "resetDisplaySettings": "初期設定に戻す"
@@ -879,6 +883,9 @@
       "description": "プロファイルコードまたは .fcurve ファイルを使用します",
       "exportTitle": "エクスポート",
       "exportHint": "コードをコピーして共有するか、ファイルとして保存できます。未保存のカーブは先に保存されます。",
+      "selectProfiles": "プロファイルを選択",
+      "selectedCount": "{{count}} 件選択",
+      "selectAtLeastOne": "プロファイルを1つ以上選択してください",
       "copyCode": "コードをコピー",
       "exportFile": "ファイルに保存",
       "importTitle": "適用",

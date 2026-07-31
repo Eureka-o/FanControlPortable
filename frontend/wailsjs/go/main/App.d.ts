@@ -41,9 +41,9 @@ export function ExportDeviceProfilesToFile():Promise<string>;
 
 export function ExportDiagnosticsToFile():Promise<string>;
 
-export function ExportFanCurveProfiles():Promise<string>;
+export function ExportFanCurveProfiles(arg1:Array<string>):Promise<string>;
 
-export function ExportFanCurveProfilesToFile():Promise<string>;
+export function ExportFanCurveProfilesToFile(arg1:Array<string>):Promise<string>;
 
 export function GetAppVersion():Promise<string>;
 

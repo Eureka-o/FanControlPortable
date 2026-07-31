@@ -148,7 +148,13 @@ func (a *CoreApp) handleConfigIPCRequest(req ipc.Request) (ipc.Response, bool) {
 		return a.successResponse(true), true
 
 	case ipc.ReqExportFanCurveProfiles:
-		code, err := a.ExportFanCurveProfiles()
+		var params ipc.ExportFanCurveProfilesParams
+		if len(req.Data) > 0 {
+			if err := json.Unmarshal(req.Data, &params); err != nil {
+				return a.errorResponse("failed to parse export parameters: " + err.Error()), true
+			}
+		}
+		code, err := a.ExportFanCurveProfiles(params.ProfileIDs)
 		if err != nil {
 			return a.errorResponse(err.Error()), true
 		}

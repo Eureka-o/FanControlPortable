@@ -22,6 +22,7 @@ import {
   GripVertical,
   ArrowUp,
   ArrowDown,
+  ChevronDown,
   AudioLines,
   Ear,
 } from 'lucide-react';
@@ -29,10 +30,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Input } from '@/components/ui/input';
 import { apiService } from '../services/api';
 import { useTemperatureHistory } from '../hooks/useTemperatureHistory';
-import { HISTORY_SERIES_ORDER, useHistoryDisplayPreferences } from '../hooks/useHistoryDisplayPreferences';
+import { HISTORY_SERIES_ORDER, HISTORY_TIMELINE_EVENT_ORDER, useHistoryDisplayPreferences } from '../hooks/useHistoryDisplayPreferences';
 import { useLocale } from '../lib/i18n';
 import { getFanSpeedUnit, getFanSpeedRange, getFanSpeedTicks, fanSpeedUnitLabel } from '../lib/fan-speed';
-import { type HistorySeriesKey, type TemperatureHistoryPoint } from '../lib/temperature-history';
+import { detectAbruptHistoryPoints, type HistorySeriesKey, type TemperatureHistoryPoint } from '../lib/temperature-history';
 import {
   cancelCurveEditorSwitch,
   createCurveEditorSession,
@@ -79,6 +80,12 @@ import {
 
 const FAN_CURVE_MIN_TEMP = 20;
 const FAN_CURVE_MAX_TEMP = 110;
+const TIMELINE_EVENT_COLORS: Record<(typeof HISTORY_TIMELINE_EVENT_ORDER)[number], string> = {
+  disconnect: '#ef4444',
+  reconnect: '#10b981',
+  resume: '#8b5cf6',
+  profile: '#0ea5e9',
+};
 const FAN_CURVE_TEMP_STEP = 5;
 const DEFAULT_CURVE_LENGTH = ((FAN_CURVE_MAX_TEMP - FAN_CURVE_MIN_TEMP) / FAN_CURVE_TEMP_STEP) + 1;
 const FAN_CURVE_TEMPERATURE_TICKS = Array.from({ length: DEFAULT_CURVE_LENGTH }, (_, i) => FAN_CURVE_MIN_TEMP + i * FAN_CURVE_TEMP_STEP);
@@ -174,102 +181,6 @@ type HistoryChartPoint = {
   gpuPowerWatts?: number;
   totalPowerWatts?: number;
 };
-
-const HISTORY_SMOOTHING_FIELDS = [
-  'cpuTemp',
-  'gpuTemp',
-  'fanRpm',
-  'cpuPowerWatts',
-  'gpuPowerWatts',
-  'totalPowerWatts',
-] as const;
-
-type HistorySmoothingField = (typeof HISTORY_SMOOTHING_FIELDS)[number];
-
-function getHistorySmoothingWindow(sampleCount: number) {
-  if (sampleCount < 180) return 1;
-  if (sampleCount < 360) return 3;
-  if (sampleCount < 540) return 5;
-  return 7;
-}
-
-function roundHistoryChartValue(field: HistorySmoothingField, value: number) {
-  return field === 'fanRpm' ? Math.round(value) : Math.round(value * 10) / 10;
-}
-
-function smoothHistoryChartData(points: HistoryChartPoint[]) {
-  const windowSize = getHistorySmoothingWindow(points.length);
-  if (windowSize === 1) {
-    return points;
-  }
-
-  const radius = Math.floor(windowSize / 2);
-  const rawExtrema = {} as Record<HistorySmoothingField, { min: number; max: number }>;
-  for (const field of HISTORY_SMOOTHING_FIELDS) {
-    let min = Number.POSITIVE_INFINITY;
-    let max = Number.NEGATIVE_INFINITY;
-    for (const point of points) {
-      const value = Number(point[field]);
-      if (!Number.isFinite(value) || value <= 0) continue;
-      min = Math.min(min, value);
-      max = Math.max(max, value);
-    }
-    rawExtrema[field] = { min, max };
-  }
-
-  return points.map((point, index) => {
-    const smoothedPoint = { ...point };
-
-    for (const field of HISTORY_SMOOTHING_FIELDS) {
-      const sourceValue = Number(point[field]);
-      if (!Number.isFinite(sourceValue) || sourceValue <= 0) {
-        smoothedPoint[field] = undefined;
-        continue;
-      }
-      const leftValue = Number(points[index - 1]?.[field]);
-      const rightValue = Number(points[index + 1]?.[field]);
-      const hasLocalExtremumNeighbors = Number.isFinite(leftValue)
-        && leftValue > 0
-        && Number.isFinite(rightValue)
-        && rightValue > 0;
-      const isLocalExtremum = hasLocalExtremumNeighbors && (
-        (sourceValue >= leftValue && sourceValue >= rightValue)
-        || (sourceValue <= leftValue && sourceValue <= rightValue)
-      );
-      if (sourceValue === rawExtrema[field].min || sourceValue === rawExtrema[field].max || isLocalExtremum) {
-        smoothedPoint[field] = sourceValue;
-        continue;
-      }
-
-      let sum = sourceValue;
-      let count = 1;
-
-      // Stop at the first gap on either side so a disconnected device does not
-      // bleed values across the missing-data boundary.
-      for (let distance = 1; distance <= radius; distance += 1) {
-        const leftIndex = index - distance;
-        if (leftIndex < 0) break;
-        const leftValue = Number(points[leftIndex][field]);
-        if (!Number.isFinite(leftValue) || leftValue <= 0) break;
-        sum += leftValue;
-        count += 1;
-      }
-
-      for (let distance = 1; distance <= radius; distance += 1) {
-        const rightIndex = index + distance;
-        if (rightIndex >= points.length) break;
-        const rightValue = Number(points[rightIndex][field]);
-        if (!Number.isFinite(rightValue) || rightValue <= 0) break;
-        sum += rightValue;
-        count += 1;
-      }
-
-      smoothedPoint[field] = roundHistoryChartValue(field, sum / count);
-    }
-
-    return smoothedPoint;
-  });
-}
 
 const CPU_TEMP_STROKE = 'var(--chart-cpu-temperature)';
 const GPU_TEMP_STROKE = 'var(--chart-gpu-temperature)';
@@ -562,6 +473,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const [profileOpLoading, setProfileOpLoading] = useState(false);
   const [createProfileDialogOpen, setCreateProfileDialogOpen] = useState(false);
   const [manageProfilesDialogOpen, setManageProfilesDialogOpen] = useState(false);
+  const [exportProfilePickerOpen, setExportProfilePickerOpen] = useState(false);
+  const [selectedExportProfileIds, setSelectedExportProfileIds] = useState<string[]>([]);
   const [profileSwitchDialogOpen, setProfileSwitchDialogOpen] = useState(false);
   const [deleteProfileDialogOpen, setDeleteProfileDialogOpen] = useState(false);
   const [pendingDeleteProfileId, setPendingDeleteProfileId] = useState('');
@@ -600,6 +513,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     resetPreferences: resetHistoryDisplayPreferences,
     showStatistics: historyShowStatistics,
     setShowStatistics: setHistoryShowStatistics,
+    showTimelineEvents: historyShowTimelineEvents,
+    setShowTimelineEvents: setHistoryShowTimelineEvents,
+    timelineEventVisibility: historyTimelineEventVisibility,
+    toggleTimelineEventVisible,
   } = useHistoryDisplayPreferences();
   const chartRef = useRef<HTMLDivElement>(null);
   const profileFileInputRef = useRef<HTMLInputElement>(null);
@@ -988,10 +905,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     const selected = historyChartData.filter((point) => point.timestamp >= from && point.timestamp <= to);
     return selected.length >= 2 ? selected : historyChartData;
   }, [historyChartData, historyZoomDomain]);
-  const smoothedHistoryChartData = useMemo(
-    () => smoothHistoryChartData(zoomedHistoryChartData),
-    [zoomedHistoryChartData],
-  );
   const historySeriesMeta = useMemo(() => {
     const meta: Record<HistorySeriesKey, { key: HistorySeriesKey; label: string; color: string; dataKey: 'cpuTemp' | 'gpuTemp' | 'fanRpm' | 'cpuPowerWatts' | 'gpuPowerWatts' | 'totalPowerWatts'; axisId: 'temp' | 'fan' | 'power' }> = {
       cpu: { key: 'cpu', label: t('fanCurve.history.series.cpu'), color: CPU_TEMP_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.cpu, axisId: HISTORY_SERIES_AXIS.cpu },
@@ -1054,8 +967,31 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       powerSeries: seriesWithData.filter((series) => series.axisId === 'power'),
     };
   }, [historySeriesMeta, historySeriesVisibility, zoomedHistoryChartData]);
+  const historyAbruptPoints = useMemo(() => {
+    const result: Partial<Record<HistorySeriesKey, Array<{ timestamp: number; value: number }>>> = {};
+    for (const series of [...historyStatistics.thermalSeries, ...historyStatistics.powerSeries]) {
+      const minimumDelta = series.axisId === 'temp'
+        ? 3
+        : series.axisId === 'power'
+          ? 8
+          : speedUnit === 'rpm' ? 200 : 5;
+      const statistics = historyStatistics.values[series.key];
+      const extremaTimestamps = new Set([
+        ...(statistics?.minTimestamps || []),
+        ...(statistics?.maxTimestamps || []),
+      ]);
+      result[series.key] = detectAbruptHistoryPoints(
+        zoomedHistoryChartData.map((point) => ({
+          timestamp: point.timestamp,
+          value: Number(point[series.dataKey] ?? 0),
+        })),
+        minimumDelta,
+      ).filter((point) => !extremaTimestamps.has(point.timestamp));
+    }
+    return result;
+  }, [historyStatistics, speedUnit, zoomedHistoryChartData]);
   const historyRightTimestamp = zoomedHistoryChartData[zoomedHistoryChartData.length - 1]?.timestamp ?? 0;
-  const renderHistoryStatistics = useCallback((series: (typeof historySeriesMeta)[number] | undefined, yAxisId: 'temp' | 'fan' | 'power') => {
+  const renderHistoryStatistics = useCallback((series: (typeof historySeriesMeta)[number] | undefined, yAxisId: 'temp' | 'fan' | 'power', compact = false) => {
     if (!historyShowStatistics || !series) {
       return null;
     }
@@ -1074,6 +1010,21 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     return entries.flatMap(({ key, value, timestamps, color, opacity }) => {
       const leftmostTimestamp = timestamps[0] ?? 0;
       const emphasizedTimestamps = timestamps.length <= 3 ? timestamps : timestamps.slice(0, 1);
+      if (compact) {
+        if (key === 'average') return [];
+        return emphasizedTimestamps.slice(0, 1).map((timestamp) => (
+          <ReferenceDot
+            key={`${series.key}-${key}-point-${timestamp}`}
+            x={timestamp}
+            y={value}
+            yAxisId={yAxisId}
+            r={4.5}
+            fill={color}
+            stroke={series.color}
+            strokeWidth={2}
+          />
+        ));
+      }
       return [
         <ReferenceLine
           key={`${series.key}-${key}`}
@@ -1164,9 +1115,13 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const visibleTimelineEvents = useMemo(() => {
     const firstTimestamp = zoomedHistoryChartData[0]?.timestamp ?? 0;
     const lastTimestamp = zoomedHistoryChartData[zoomedHistoryChartData.length - 1]?.timestamp ?? firstTimestamp;
-    if (!firstTimestamp) return [];
-    return timelineEvents.filter((event) => event.timestamp >= firstTimestamp && event.timestamp <= lastTimestamp).slice(-12);
-  }, [timelineEvents, zoomedHistoryChartData]);
+    if (!historyShowTimelineEvents || !firstTimestamp) return [];
+    return timelineEvents.filter((event) => (
+      historyTimelineEventVisibility[event.type]
+      && event.timestamp >= firstTimestamp
+      && event.timestamp <= lastTimestamp
+    )).slice(-12);
+  }, [historyShowTimelineEvents, historyTimelineEventVisibility, timelineEvents, zoomedHistoryChartData]);
   const historyTimeDomain = useMemo<[number, number]>(() => {
     const firstTimestamp = zoomedHistoryChartData[0]?.timestamp ?? 0;
     const lastSampleTimestamp = zoomedHistoryChartData[zoomedHistoryChartData.length - 1]?.timestamp ?? firstTimestamp;
@@ -1577,6 +1532,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
         setCurveProfiles((profiles) => profiles.filter((profile) => profile.id !== pendingDeleteProfileId));
       }
       await syncConfigFromBackend();
+      setSelectedExportProfileIds((ids) => ids.filter((id) => id !== pendingDeleteProfileId));
       setDeleteProfileDialogOpen(false);
       setPendingDeleteProfileId('');
       toast.success(t('fanCurve.toast.profileDeleted'));
@@ -1589,6 +1545,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
 
   const exportProfiles = useCallback(async (destination: 'clipboard' | 'file') => {
     try {
+      if (selectedExportProfileIds.length === 0) {
+        toast.error(t('fanCurve.importExport.selectAtLeastOne'));
+        return;
+      }
       if (hasUnsavedChanges) {
         const ok = await persistCurrentCurve();
         if (!ok) {
@@ -1596,12 +1556,12 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
         }
       }
       if (destination === 'file') {
-        const savedPath = await apiService.exportFanCurveProfilesToFile();
+        const savedPath = await apiService.exportFanCurveProfilesToFile(selectedExportProfileIds);
         if (!savedPath) return;
         toast.success(t('fanCurve.toast.exportFileCreated'));
         return;
       }
-      const code = await apiService.exportFanCurveProfiles();
+      const code = await apiService.exportFanCurveProfiles(selectedExportProfileIds);
       if (navigator?.clipboard?.writeText) {
         await navigator.clipboard.writeText(code);
       } else {
@@ -1611,7 +1571,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     } catch (e) {
       toast.error(t('fanCurve.toast.exportFailed', { error: getErrorMessage(e) }));
     }
-  }, [hasUnsavedChanges, persistCurrentCurve, t]);
+  }, [hasUnsavedChanges, persistCurrentCurve, selectedExportProfileIds, t]);
 
   const loadProfileImportFile = useCallback(async (file?: File) => {
     if (!file) return;
@@ -1983,7 +1943,11 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                   variant="outline"
                   size="sm"
                   className="shrink-0 rounded-lg"
-                  onClick={() => setManageProfilesDialogOpen(true)}
+                  onClick={() => {
+                    setSelectedExportProfileIds(activeProfileId ? [activeProfileId] : []);
+                    setExportProfilePickerOpen(false);
+                    setManageProfilesDialogOpen(true);
+                  }}
                   disabled={profileOpLoading || curveProfiles.length === 0}
                   icon={<Settings2 className="h-3.5 w-3.5" />}
                 >
@@ -2447,7 +2411,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                     <div data-history-chart="thermal-fan" className="h-72 cursor-crosshair select-none">
                       <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 960, height: 288 }}>
                         <ComposedChart
-                          data={smoothedHistoryChartData}
+                          data={zoomedHistoryChartData}
                           syncId="historyTrend"
                           margin={{ top: 12, right: 16, left: 4, bottom: 8 }}
                           onMouseDown={handleHistoryZoomMouseDown}
@@ -2503,13 +2467,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                           />
                           <RechartsTooltip content={renderHistoryTooltip} />
                           {timelineEventLayout.map(({ event, row, anchorEnd }, index) => {
-                            const markerColor = event.type === 'disconnect'
-                              ? '#ef4444'
-                              : event.type === 'reconnect'
-                                ? '#10b981'
-                                : event.type === 'resume'
-                                  ? '#8b5cf6'
-                                  : '#0ea5e9';
+                            const markerColor = TIMELINE_EVENT_COLORS[event.type];
                             return (
                               <ReferenceLine
                                 key={`${event.timestamp}-${event.type}-${index}`}
@@ -2570,7 +2528,26 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                               />
                               );
                           })}
-                          {renderHistoryStatistics(thermalSingleSeries, thermalSingleSeries?.axisId === 'fan' ? 'fan' : 'temp')}
+                          {historyStatistics.thermalSeries.map((series) => {
+                            const yAxisId = series.axisId === 'fan' ? 'fan' : 'temp';
+                            return (
+                              <React.Fragment key={`${series.key}-markers`}>
+                                {(historyAbruptPoints[series.key] || []).map((point) => (
+                                  <ReferenceDot
+                                    key={`${series.key}-abrupt-${point.timestamp}`}
+                                    x={point.timestamp}
+                                    y={point.value}
+                                    yAxisId={yAxisId}
+                                    r={3.5}
+                                    fill={series.color}
+                                    stroke="var(--card)"
+                                    strokeWidth={1.5}
+                                  />
+                                ))}
+                                {renderHistoryStatistics(series, yAxisId, historyStatistics.thermalSeries.length > 1)}
+                              </React.Fragment>
+                            );
+                          })}
                           {historyZoomSelectionBounds && (
                             <>
                               <ReferenceArea
@@ -2597,7 +2574,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                         <div className="h-48 cursor-crosshair select-none">
                           <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 960, height: 192 }}>
                               <ComposedChart
-                                data={smoothedHistoryChartData}
+                                data={zoomedHistoryChartData}
                                 syncId="historyTrend"
                                 margin={{ top: 12, right: 16, left: 4, bottom: 8 }}
                                 onMouseDown={handleHistoryZoomMouseDown}
@@ -2680,7 +2657,23 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                                     />
                                   );
                                 })}
-                                {renderHistoryStatistics(powerSingleSeries, 'power')}
+                                {historyStatistics.powerSeries.map((series) => (
+                                  <React.Fragment key={`${series.key}-markers`}>
+                                    {(historyAbruptPoints[series.key] || []).map((point) => (
+                                      <ReferenceDot
+                                        key={`${series.key}-abrupt-${point.timestamp}`}
+                                        x={point.timestamp}
+                                        y={point.value}
+                                        yAxisId="power"
+                                        r={3.5}
+                                        fill={series.color}
+                                        stroke="var(--card)"
+                                        strokeWidth={1.5}
+                                      />
+                                    ))}
+                                    {renderHistoryStatistics(series, 'power', historyStatistics.powerSeries.length > 1)}
+                                  </React.Fragment>
+                                ))}
                                 {historyZoomSelectionBounds && (
                                   <>
                                     <ReferenceArea
@@ -2818,6 +2811,36 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                           </div>
                         ))}
                       </div>
+                      <div data-history-timeline-settings className="space-y-2 border-t border-border/70 pt-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium text-foreground">{t('fanCurve.history.timelineEvents.title')}</div>
+                            <div className="text-[11px] text-muted-foreground">{t('fanCurve.history.timelineEvents.description')}</div>
+                          </div>
+                          <ToggleSwitch
+                            enabled={historyShowTimelineEvents}
+                            onChange={() => setHistoryShowTimelineEvents(!historyShowTimelineEvents)}
+                            size="sm"
+                            color="blue"
+                            srLabel={t('fanCurve.history.timelineEvents.title')}
+                          />
+                        </div>
+                        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                          {HISTORY_TIMELINE_EVENT_ORDER.map((eventType) => (
+                            <div key={eventType} className="flex items-center gap-2 rounded-lg bg-background/35 px-2.5 py-1.5">
+                              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: TIMELINE_EVENT_COLORS[eventType] }} />
+                              <span className="min-w-0 flex-1 truncate text-xs text-foreground">{t(`fanCurve.history.events.${eventType}`)}</span>
+                              <ToggleSwitch
+                                enabled={historyTimelineEventVisibility[eventType]}
+                                onChange={() => toggleTimelineEventVisible(eventType)}
+                                size="sm"
+                                color="blue"
+                                srLabel={t(`fanCurve.history.events.${eventType}`)}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <DialogFooter>
@@ -2902,11 +2925,54 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                       <span className="text-xs font-medium text-muted-foreground">{t('fanCurve.importExport.exportTitle')}</span>
                       <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t('fanCurve.importExport.exportHint')}</p>
                     </div>
+                    <div className="space-y-2">
+                      <Button
+                        type="button"
+                        data-profile-export-picker-trigger
+                        variant="outline"
+                        size="sm"
+                        className="flex w-full items-center justify-between gap-2 text-left"
+                        onClick={() => setExportProfilePickerOpen((open) => !open)}
+                        aria-expanded={exportProfilePickerOpen}
+                        aria-controls="curve-profile-export-picker"
+                      >
+                        <span className="min-w-0 truncate">
+                          {t('fanCurve.importExport.selectProfiles')} ({t('fanCurve.importExport.selectedCount', { count: selectedExportProfileIds.length })})
+                        </span>
+                        <ChevronDown className={clsx('h-4 w-4 shrink-0 transition-transform', exportProfilePickerOpen && 'rotate-180')} />
+                      </Button>
+                      {exportProfilePickerOpen && (
+                        <div id="curve-profile-export-picker" data-profile-export-picker className="max-h-44 overflow-y-auto rounded-lg border border-border/70 bg-background/70 p-1.5">
+                          <div className="space-y-1">
+                            {curveProfiles.map((profile) => {
+                              const checked = selectedExportProfileIds.includes(profile.id);
+                              return (
+                                <label
+                                  key={profile.id}
+                                  className={clsx(
+                                    'flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition-colors',
+                                    checked ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                                  )}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => setSelectedExportProfileIds((ids) => checked ? ids.filter((id) => id !== profile.id) : [...ids, profile.id])}
+                                    className="h-4 w-4 shrink-0 accent-primary"
+                                  />
+                                  <span className="min-w-0 truncate">{profile.name}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                     <div data-profile-export-actions className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <Button className="w-full" variant="secondary" size="sm" onClick={() => void exportProfiles('clipboard')} icon={<Clipboard className="h-3.5 w-3.5" />}>
+                      <Button className="w-full" variant="secondary" size="sm" onClick={() => void exportProfiles('clipboard')} disabled={selectedExportProfileIds.length === 0} icon={<Clipboard className="h-3.5 w-3.5" />}>
                         {t('fanCurve.importExport.copyCode')}
                       </Button>
-                      <Button className="w-full" variant="outline" size="sm" onClick={() => void exportProfiles('file')} icon={<Upload className="h-3.5 w-3.5" />}>
+                      <Button className="w-full" variant="outline" size="sm" onClick={() => void exportProfiles('file')} disabled={selectedExportProfileIds.length === 0} icon={<Upload className="h-3.5 w-3.5" />}>
                         {t('fanCurve.importExport.exportFile')}
                       </Button>
                     </div>

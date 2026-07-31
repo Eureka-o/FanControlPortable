@@ -74,16 +74,13 @@ test('keeps independent home chart visibility and supports total power in the th
   assert.match(statusSource, /const TOTAL_POWER_STROKE = 'var\(--chart-primary\)'/);
 });
 
-test('smooths long history for chart rendering without replacing raw statistics', () => {
-  assert.match(curveSource, /function smoothHistoryChartData\(points: HistoryChartPoint\[\]\)/);
-  assert.match(curveSource, /sampleCount < 180\) return 1/);
-  assert.match(curveSource, /sampleCount < 360\) return 3/);
-  assert.match(curveSource, /sampleCount < 540\) return 5/);
-  assert.match(curveSource, /return 7/);
-  assert.match(curveSource, /const smoothedHistoryChartData = useMemo\(/);
-  assert.equal((curveSource.match(/data=\{smoothedHistoryChartData\}/g) || []).length, 2);
+test('keeps raw history values and relies on monotone rendering for light smoothing', () => {
+  assert.doesNotMatch(curveSource, /smoothHistoryChartData/);
+  assert.equal((curveSource.match(/data=\{zoomedHistoryChartData\}/g) || []).length, 2);
+  assert.equal((curveSource.match(/type="monotone"/g) || []).length >= 4, true);
   assert.match(curveSource, /for \(const point of zoomedHistoryChartData\)/);
-  assert.match(curveSource, /Stop at the first gap on either side/);
-  assert.match(curveSource, /const rawExtrema = \{\} as Record<HistorySmoothingField/);
-  assert.match(curveSource, /sourceValue === rawExtrema\[field\]\.min \|\| sourceValue === rawExtrema\[field\]\.max/);
+  assert.match(curveSource, /detectAbruptHistoryPoints/);
+  assert.match(curveSource, /historyAbruptPoints/);
+  assert.match(curveSource, /historyStatistics\.thermalSeries\.map/);
+  assert.match(curveSource, /historyStatistics\.powerSeries\.map/);
 });

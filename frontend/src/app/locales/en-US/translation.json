@@ -846,6 +846,10 @@
         "min": "Min",
         "average": "Avg"
       },
+      "timelineEvents": {
+        "title": "Event timeline",
+        "description": "Choose which event timestamps appear on the history chart."
+      },
       "moveUp": "Move up",
       "moveDown": "Move down",
       "resetDisplaySettings": "Reset default"
@@ -879,6 +883,9 @@
       "description": "Use a profile code or .fcurve file",
       "exportTitle": "Export",
       "exportHint": "Copy a profile code for quick sharing or save a file for backup. Unsaved curve changes are saved first.",
+      "selectProfiles": "Select profiles",
+      "selectedCount": "{{count}} selected",
+      "selectAtLeastOne": "Select at least one profile",
       "copyCode": "Copy profile code",
       "exportFile": "Export file",
       "importTitle": "Import",

@@ -63,7 +63,13 @@ test('confirms deletion and keeps creating a profile from the current curve', ()
 
 test('exports by clipboard or file and imports pasted, selected, or dropped content', () => {
   assert.match(source, /navigator\.clipboard\.writeText\(code\)/);
-  assert.match(source, /apiService\.exportFanCurveProfilesToFile\(\)/);
+  assert.match(source, /apiService\.exportFanCurveProfilesToFile\(selectedExportProfileIds\)/);
+  assert.match(source, /apiService\.exportFanCurveProfiles\(selectedExportProfileIds\)/);
+  assert.match(source, /data-profile-export-picker-trigger/);
+  assert.match(source, /data-profile-export-picker/);
+  assert.match(source, /type="checkbox"/);
+  assert.match(source, /setSelectedExportProfileIds\(activeProfileId \? \[activeProfileId\] : \[\]\)/);
+  assert.doesNotMatch(source, /fanCurve\.importExport\.current/);
   assert.doesNotMatch(source, /new Blob\(\[code\]/);
   assert.doesNotMatch(source, /anchor\.download/);
   assert.match(source, /type="file"/);
@@ -128,7 +134,7 @@ test('splits power history into an aligned conditional chart with a shared full-
 test('lets the history detail page select one time range for both trend charts', () => {
   assert.match(source, /const \[historyZoomDomain, setHistoryZoomDomain\] = useState/);
   assert.match(source, /const \[historyZoomSelect, setHistoryZoomSelect\] = useState/);
-  assert.equal([...source.matchAll(/data=\{smoothedHistoryChartData\}/g)].length, 2);
+  assert.equal([...source.matchAll(/data=\{zoomedHistoryChartData\}/g)].length, 2);
   assert.equal([...source.matchAll(/syncId="historyTrend"/g)].length, 2);
   assert.equal([...source.matchAll(/onMouseDown=\{handleHistoryZoomMouseDown\}/g)].length, 2);
   assert.equal([...source.matchAll(/onMouseMove=\{handleHistoryZoomMouseMove\}/g)].length, 2);
