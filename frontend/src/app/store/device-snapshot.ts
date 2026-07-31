@@ -9,6 +9,7 @@ export interface DeviceStatusPayload {
   deviceCapabilities?: types.DeviceCapabilities | null;
   temperature?: types.TemperatureData | null;
   productId?: string;
+  deviceName?: string;
   model?: string;
   error?: string;
   runtime?: { state?: string };
@@ -23,7 +24,7 @@ export function deviceSnapshotFromStatus(
     isConnected: connected,
     deviceRuntimeState: status?.runtime?.state || (connected ? connectedFallbackState : 'disconnected'),
     deviceProductId: connected ? status?.productId || null : null,
-    deviceModel: connected ? status?.model || null : null,
+    deviceModel: connected ? status?.deviceName || status?.model || null : null,
     deviceSettings: connected ? status?.deviceSettings || null : null,
     runtimeDeviceProfile: connected ? status?.deviceProfile || null : null,
     runtimeDeviceCapabilities: connected

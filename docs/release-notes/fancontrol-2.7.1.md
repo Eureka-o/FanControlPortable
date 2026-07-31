@@ -10,6 +10,9 @@
 - 优化历史曲线绘制，保留轻量视觉平滑，同时确保曲线经过原始极值和跳变数据。
   Refined history rendering with light visual smoothing while preserving original extrema and abrupt changes.
 
+- 修复部分采样节奏下历史曲线只能显示约 40 分钟的问题，最近一小时的数据现在会完整保留并展示。
+  Fixed history charts showing only about 40 minutes at some sampling rates; the latest full hour is now retained and displayed.
+
 ## 曲线方案导入与导出
 
 ### Curve Profile Import and Export
@@ -36,6 +39,9 @@
 ## 界面与主题兼容性
 
 ### Interface and Theme Compatibility
+
+- 主页设备名称统一显示品牌与设备型号；Slim压风散热器Pro 保持简洁型号名称，不额外添加品牌。
+  Home device names now combine the brand and model, while Slim压风散热器Pro keeps its concise model name without an added brand.
 
 - 移除关闭毛玻璃效果后工作区残留的区域分割线。
   Removed the remaining workspace divider when window blur is disabled.
