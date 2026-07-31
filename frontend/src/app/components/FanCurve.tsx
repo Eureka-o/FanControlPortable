@@ -986,6 +986,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
           value: Number(point[series.dataKey] ?? 0),
         })),
         minimumDelta,
+        1,
       ).filter((point) => !extremaTimestamps.has(point.timestamp));
     }
     return result;
@@ -1009,7 +1010,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     ] as const;
     return entries.flatMap(({ key, value, timestamps, color, opacity }) => {
       const leftmostTimestamp = timestamps[0] ?? 0;
-      const emphasizedTimestamps = timestamps.length <= 3 ? timestamps : timestamps.slice(0, 1);
+      const emphasizedTimestamps = timestamps.slice(0, 1);
       if (compact) {
         if (key === 'average') return [];
         return emphasizedTimestamps.slice(0, 1).map((timestamp) => (
@@ -1063,7 +1064,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
             x={timestamp}
             y={value}
             yAxisId={yAxisId}
-            r={5}
+            r={4.5}
             fill={color}
             stroke="var(--card)"
             strokeWidth={2}
@@ -2520,7 +2521,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                                 dataKey={series.dataKey}
                                 name={series.dataKey}
                                 stroke={series.color}
-                                strokeWidth={series.key === 'fan' ? 2 : 2.3}
+                                strokeWidth={series.key === 'fan' ? 1.8 : 2}
                                 dot={false}
                                 activeDot={false}
                                 isAnimationActive={false}
@@ -2538,10 +2539,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                                     x={point.timestamp}
                                     y={point.value}
                                     yAxisId={yAxisId}
-                                    r={3.5}
-                                    fill={series.color}
-                                    stroke="var(--card)"
-                                    strokeWidth={1.5}
+                                    r={2.75}
+                                    fill="var(--card)"
+                                    stroke={series.color}
+                                    strokeWidth={1.4}
                                   />
                                 ))}
                                 {renderHistoryStatistics(series, yAxisId, historyStatistics.thermalSeries.length > 1)}
@@ -2649,7 +2650,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                                       dataKey={series.dataKey}
                                       name={series.dataKey}
                                       stroke={series.color}
-                                      strokeWidth={2.3}
+                                      strokeWidth={2}
                                       dot={false}
                                       activeDot={false}
                                       isAnimationActive={false}
@@ -2665,10 +2666,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                                         x={point.timestamp}
                                         y={point.value}
                                         yAxisId="power"
-                                        r={3.5}
-                                        fill={series.color}
-                                        stroke="var(--card)"
-                                        strokeWidth={1.5}
+                                        r={2.75}
+                                        fill="var(--card)"
+                                        stroke={series.color}
+                                        strokeWidth={1.4}
                                       />
                                     ))}
                                     {renderHistoryStatistics(series, 'power', historyStatistics.powerSeries.length > 1)}

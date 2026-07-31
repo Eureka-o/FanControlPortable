@@ -41,7 +41,7 @@ test('supports total power and single-series statistics without hard-coded stat 
   assert.match(curveSource, /minTimestamps: number\[\]/);
   assert.match(curveSource, /maxTimestamps: number\[\]/);
   assert.match(curveSource, /const leftmostTimestamp = timestamps\[0\] \?\? 0/);
-  assert.match(curveSource, /timestamps\.length <= 3 \? timestamps : timestamps\.slice\(0, 1\)/);
+  assert.match(curveSource, /const emphasizedTimestamps = timestamps\.slice\(0, 1\)/);
   assert.match(curveSource, /\{ x: leftmostTimestamp, y: value \}/);
   assert.match(curveSource, /\{ x: historyRightTimestamp, y: value \}/);
   assert.match(curveSource, /textAnchor="end"/);
@@ -80,6 +80,7 @@ test('keeps raw history values and relies on monotone rendering for light smooth
   assert.equal((curveSource.match(/type="monotone"/g) || []).length >= 4, true);
   assert.match(curveSource, /for \(const point of zoomedHistoryChartData\)/);
   assert.match(curveSource, /detectAbruptHistoryPoints/);
+  assert.match(curveSource, /minimumDelta,\s*1,/);
   assert.match(curveSource, /historyAbruptPoints/);
   assert.match(curveSource, /historyStatistics\.thermalSeries\.map/);
   assert.match(curveSource, /historyStatistics\.powerSeries\.map/);
