@@ -343,6 +343,38 @@ func Export(activeID string, profiles []types.FanCurveProfile) (string, error) {
 	return exportPrefix + base64.RawURLEncoding.EncodeToString(buf.Bytes()), nil
 }
 
+func ExportSelected(activeID string, profiles []types.FanCurveProfile, selectedIDs []string) (string, error) {
+	if selectedIDs == nil {
+		return Export(activeID, profiles)
+	}
+	if len(selectedIDs) == 0 {
+		return "", fmt.Errorf("at least one curve profile must be selected")
+	}
+
+	selectedSet := make(map[string]struct{}, len(selectedIDs))
+	for _, id := range selectedIDs {
+		selectedSet[id] = struct{}{}
+	}
+	selected := make([]types.FanCurveProfile, 0, len(selectedSet))
+	selectedActiveID := ""
+	for _, profile := range profiles {
+		if _, ok := selectedSet[profile.ID]; !ok {
+			continue
+		}
+		selected = append(selected, profile)
+		if profile.ID == activeID {
+			selectedActiveID = activeID
+		}
+	}
+	if len(selected) == 0 {
+		return "", fmt.Errorf("no selected curve profiles exist")
+	}
+	if selectedActiveID == "" {
+		selectedActiveID = selected[0].ID
+	}
+	return Export(selectedActiveID, selected)
+}
+
 func Import(code string) ([]types.FanCurveProfile, string, error) {
 	trimmed := strings.TrimSpace(code)
 	if trimmed == "" {

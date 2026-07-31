@@ -72,3 +72,45 @@ func TestAppendImportedProfilesPreservesExistingAndCreatesNewIDs(t *testing.T) {
 		t.Fatalf("activeID = %q, want %q", activeID, got[2].ID)
 	}
 }
+
+func TestExportSelectedFiltersProfilesAndChoosesIncludedActiveProfile(t *testing.T) {
+	profiles := []types.FanCurveProfile{
+		{ID: "quiet", Name: "Quiet", Curve: types.GetDefaultFanCurve()},
+		{ID: "balanced", Name: "Balanced", Curve: types.GetDefaultFanCurve()},
+		{ID: "gaming", Name: "Gaming", Curve: types.GetDefaultFanCurve()},
+	}
+
+	code, err := ExportSelected("balanced", profiles, []string{"gaming", "quiet", "gaming"})
+	if err != nil {
+		t.Fatalf("ExportSelected() error = %v", err)
+	}
+	got, activeID, err := Import(code)
+	if err != nil {
+		t.Fatalf("Import() error = %v", err)
+	}
+	if len(got) != 2 || got[0].ID != "quiet" || got[1].ID != "gaming" {
+		t.Fatalf("exported profiles = %+v, want quiet then gaming", got)
+	}
+	if activeID != "quiet" {
+		t.Fatalf("activeID = %q, want first selected profile quiet", activeID)
+	}
+
+	code, err = ExportSelected("gaming", profiles, []string{"gaming", "quiet"})
+	if err != nil {
+		t.Fatalf("ExportSelected(active included) error = %v", err)
+	}
+	_, activeID, err = Import(code)
+	if err != nil {
+		t.Fatalf("Import(active included) error = %v", err)
+	}
+	if activeID != "gaming" {
+		t.Fatalf("activeID = %q, want gaming", activeID)
+	}
+}
+
+func TestExportSelectedRejectsExplicitEmptySelection(t *testing.T) {
+	profiles := []types.FanCurveProfile{{ID: "quiet", Name: "Quiet", Curve: types.GetDefaultFanCurve()}}
+	if _, err := ExportSelected("quiet", profiles, []string{}); err == nil {
+		t.Fatal("ExportSelected() error = nil, want empty-selection error")
+	}
+}

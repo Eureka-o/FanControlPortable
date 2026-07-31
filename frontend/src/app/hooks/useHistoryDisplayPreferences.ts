@@ -2,16 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { HistorySeriesKey } from '../lib/temperature-history';
+import type { TimelineEventType } from '../store/app-store-logic.mts';
 
 export const HISTORY_SERIES_ORDER: HistorySeriesKey[] = ['cpu', 'gpu', 'fan', 'cpuPower', 'gpuPower', 'totalPower'];
+export const HISTORY_TIMELINE_EVENT_ORDER: TimelineEventType[] = ['disconnect', 'reconnect', 'resume', 'profile'];
 
 export type HistorySeriesVisibility = Record<HistorySeriesKey, boolean>;
+export type HistoryTimelineEventVisibility = Record<TimelineEventType, boolean>;
 
 export interface HistoryDisplayPreferences {
   visible: HistorySeriesVisibility;
   homeVisible: HistorySeriesVisibility;
   order: HistorySeriesKey[];
   showStatistics: boolean;
+  showTimelineEvents: boolean;
+  timelineEventVisible: HistoryTimelineEventVisibility;
 }
 
 const STORAGE_KEY = 'fancontrol.historyDisplayPreferences.v1';
@@ -24,6 +29,13 @@ const DEFAULT_VISIBILITY: HistorySeriesVisibility = {
   cpuPower: true,
   gpuPower: true,
   totalPower: false,
+};
+
+const DEFAULT_TIMELINE_EVENT_VISIBILITY: HistoryTimelineEventVisibility = {
+  disconnect: true,
+  reconnect: true,
+  resume: true,
+  profile: true,
 };
 
 const isHistorySeriesKey = (value: unknown): value is HistorySeriesKey => (
@@ -62,11 +74,22 @@ export function normalizeHistoryDisplayPreferences(input?: Partial<HistoryDispla
     }
   }
 
+  const timelineEventVisible = { ...DEFAULT_TIMELINE_EVENT_VISIBILITY };
+  if (input?.timelineEventVisible && typeof input.timelineEventVisible === 'object') {
+    for (const key of HISTORY_TIMELINE_EVENT_ORDER) {
+      if (typeof input.timelineEventVisible[key] === 'boolean') {
+        timelineEventVisible[key] = input.timelineEventVisible[key];
+      }
+    }
+  }
+
   return {
     visible,
     homeVisible,
     order: uniqueOrder,
     showStatistics: typeof input?.showStatistics === 'boolean' ? input.showStatistics : true,
+    showTimelineEvents: typeof input?.showTimelineEvents === 'boolean' ? input.showTimelineEvents : true,
+    timelineEventVisible,
   };
 }
 
@@ -167,6 +190,20 @@ export function useHistoryDisplayPreferences() {
     updatePreferences((current) => ({ ...current, showStatistics }));
   }, [updatePreferences]);
 
+  const setShowTimelineEvents = useCallback((showTimelineEvents: boolean) => {
+    updatePreferences((current) => ({ ...current, showTimelineEvents }));
+  }, [updatePreferences]);
+
+  const toggleTimelineEventVisible = useCallback((eventType: TimelineEventType) => {
+    updatePreferences((current) => ({
+      ...current,
+      timelineEventVisible: {
+        ...current.timelineEventVisible,
+        [eventType]: !current.timelineEventVisible[eventType],
+      },
+    }));
+  }, [updatePreferences]);
+
   const moveSeries = useCallback((series: HistorySeriesKey, direction: -1 | 1) => {
     updatePreferences((current) => {
       const order = [...current.order];
@@ -214,5 +251,9 @@ export function useHistoryDisplayPreferences() {
     resetPreferences,
     showStatistics: preferences.showStatistics,
     setShowStatistics,
-  }), [moveSeries, preferences, reorderSeries, resetPreferences, setHomeSeriesVisible, setSeriesVisible, setShowStatistics, toggleHomeSeriesVisible, toggleSeriesVisible]);
+    showTimelineEvents: preferences.showTimelineEvents,
+    setShowTimelineEvents,
+    timelineEventVisibility: preferences.timelineEventVisible,
+    toggleTimelineEventVisible,
+  }), [moveSeries, preferences, reorderSeries, resetPreferences, setHomeSeriesVisible, setSeriesVisible, setShowStatistics, setShowTimelineEvents, toggleHomeSeriesVisible, toggleSeriesVisible, toggleTimelineEventVisible]);
 }

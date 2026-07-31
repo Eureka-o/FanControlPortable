@@ -346,12 +346,12 @@ class ApiService {
     return await (window as any).go?.main?.App?.DeleteFanCurveProfile(profileID);
   }
 
-  async exportFanCurveProfiles(): Promise<string> {
-    return await (window as any).go?.main?.App?.ExportFanCurveProfiles();
+  async exportFanCurveProfiles(profileIDs: string[]): Promise<string> {
+    return await (window as any).go?.main?.App?.ExportFanCurveProfiles(profileIDs);
   }
 
-  async exportFanCurveProfilesToFile(): Promise<string> {
-    return await (window as any).go?.main?.App?.ExportFanCurveProfilesToFile?.();
+  async exportFanCurveProfilesToFile(profileIDs: string[]): Promise<string> {
+    return await (window as any).go?.main?.App?.ExportFanCurveProfilesToFile?.(profileIDs);
   }
 
   async importFanCurveProfiles(code: string): Promise<void> {

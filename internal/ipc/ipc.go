@@ -1038,6 +1038,10 @@ type DeleteFanCurveProfileParams struct {
 	ID string `json:"id"`
 }
 
+type ExportFanCurveProfilesParams struct {
+	ProfileIDs []string `json:"profileIds"`
+}
+
 // ImportFanCurveProfilesParams 导入曲线方案参数
 type ImportFanCurveProfilesParams struct {
 	Code string `json:"code"`

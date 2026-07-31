@@ -113,8 +113,8 @@ func (a *App) DeleteFanCurveProfile(profileID string) error {
 }
 
 // ExportFanCurveProfiles 导出曲线方案
-func (a *App) ExportFanCurveProfiles() (string, error) {
-	resp, err := a.sendRequest(ipc.ReqExportFanCurveProfiles, nil)
+func (a *App) ExportFanCurveProfiles(profileIDs []string) (string, error) {
+	resp, err := a.sendRequest(ipc.ReqExportFanCurveProfiles, ipc.ExportFanCurveProfilesParams{ProfileIDs: profileIDs})
 	if err != nil {
 		return "", err
 	}
@@ -127,8 +127,8 @@ func (a *App) ExportFanCurveProfiles() (string, error) {
 }
 
 // ExportFanCurveProfilesToFile 通过原生另存为窗口导出曲线方案。
-func (a *App) ExportFanCurveProfilesToFile() (string, error) {
-	code, err := a.ExportFanCurveProfiles()
+func (a *App) ExportFanCurveProfilesToFile(profileIDs []string) (string, error) {
+	code, err := a.ExportFanCurveProfiles(profileIDs)
 	if err != nil {
 		return "", err
 	}

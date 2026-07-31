@@ -74,12 +74,12 @@ export function ExportDiagnosticsToFile() {
   return window['go']['main']['App']['ExportDiagnosticsToFile']();
 }
 
-export function ExportFanCurveProfiles() {
-  return window['go']['main']['App']['ExportFanCurveProfiles']();
+export function ExportFanCurveProfiles(arg1) {
+  return window['go']['main']['App']['ExportFanCurveProfiles'](arg1);
 }
 
-export function ExportFanCurveProfilesToFile() {
-  return window['go']['main']['App']['ExportFanCurveProfilesToFile']();
+export function ExportFanCurveProfilesToFile(arg1) {
+  return window['go']['main']['App']['ExportFanCurveProfilesToFile'](arg1);
 }
 
 export function GetAppVersion() {

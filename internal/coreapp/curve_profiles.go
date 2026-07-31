@@ -240,7 +240,7 @@ func (a *CoreApp) DeleteFanCurveProfile(profileID string) error {
 	return a.applyCurveProfilesConfig(cfg)
 }
 
-func (a *CoreApp) ExportFanCurveProfiles() (string, error) {
+func (a *CoreApp) ExportFanCurveProfiles(profileIDs []string) (string, error) {
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
 
@@ -253,7 +253,7 @@ func (a *CoreApp) ExportFanCurveProfiles() (string, error) {
 		cfg.FanCurveProfiles[idx].Curve = curveprofiles.CloneCurve(cfg.FanCurve)
 	}
 
-	return curveprofiles.Export(cfg.ActiveFanCurveProfileID, cfg.FanCurveProfiles)
+	return curveprofiles.ExportSelected(cfg.ActiveFanCurveProfileID, cfg.FanCurveProfiles, profileIDs)
 }
 
 func (a *CoreApp) ImportFanCurveProfiles(code string) error {

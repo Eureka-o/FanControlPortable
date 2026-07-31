@@ -846,6 +846,10 @@
         "min": "最小",
         "average": "平均"
       },
+      "timelineEvents": {
+        "title": "事件时间记录",
+        "description": "选择历史图中要显示的事件时间标记。"
+      },
       "moveUp": "上移",
       "moveDown": "下移",
       "resetDisplaySettings": "恢复默认"
@@ -879,6 +883,9 @@
       "description": "支持方案码和 .fcurve 文件",
       "exportTitle": "导出",
       "exportHint": "复制方案码可快速分享，也可以保存为文件备份。未保存的当前曲线会先保存。",
+      "selectProfiles": "选择方案",
+      "selectedCount": "已选 {{count}} 项",
+      "selectAtLeastOne": "请至少选择一个方案",
       "copyCode": "复制方案码",
       "exportFile": "导出文件",
       "importTitle": "导入",

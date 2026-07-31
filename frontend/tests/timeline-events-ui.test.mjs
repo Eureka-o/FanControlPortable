@@ -28,4 +28,9 @@ test('renders real connection, resume, and profile events without heartbeat infe
   assert.match(curve, /const historyTimeDomain = useMemo/);
   assert.match(curve, /row \* 12/);
   assert.match(curve, /anchorEnd/);
+  assert.match(curve, /data-history-timeline-settings/);
+  assert.match(curve, /historyShowTimelineEvents/);
+  assert.match(curve, /historyTimelineEventVisibility\[event\.type\]/);
+  assert.match(curve, /HISTORY_TIMELINE_EVENT_ORDER\.map/);
+  assert.ok(curve.indexOf('data-history-timeline-settings') > curve.indexOf("fanCurve.history.homeDisplayTitle"));
 });
