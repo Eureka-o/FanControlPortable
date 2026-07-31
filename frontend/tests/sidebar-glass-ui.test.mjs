@@ -30,6 +30,10 @@ const xiaobaDeluxeTheme = readFileSync(
   new URL("../../themes/xiaoba-deluxe/theme.css", import.meta.url),
   "utf8",
 );
+const cyberpunkTheme = readFileSync(
+  new URL("../../themes/cyberpunk2077/theme.css", import.meta.url),
+  "utf8",
+);
 
 test("keeps the built-in dock as one continuous surface", () => {
   assert.match(
@@ -81,6 +85,18 @@ test("keeps built-in glass quieter and cards aligned with the dock palette", () 
   assert.match(css, /--window-glass-panel-bg:\s*rgba\(10, 13, 18, 0\.68\)/);
   assert.match(css, /--window-glass-card-bg:\s*rgba\(16, 21, 28, 0\.78\)/);
   assert.match(css, /--window-glass-card-strong-bg:\s*rgba\(18, 24, 32, 0\.84\)/);
+});
+
+test("keeps the built-in workspace continuous when window blur is off", () => {
+  const contentPanelRule = css.match(
+    /\.glacier-native-backdrop \.glacier-content-panel\s*\{[\s\S]*?\n\}/,
+  )?.[0];
+  assert.ok(contentPanelRule);
+  assert.match(contentPanelRule, /background:\s*transparent/);
+  assert.match(contentPanelRule, /border:\s*0/);
+  assert.match(contentPanelRule, /border-radius:\s*0/);
+  assert.match(contentPanelRule, /box-shadow:\s*none/);
+  assert.doesNotMatch(contentPanelRule, /border-(?:top|left):/);
 });
 
 test("expands one themed dock without transient pointer focus frames", () => {
@@ -311,4 +327,23 @@ test("keeps illustration curtains on the full window shell", () => {
       /\.glacier-content-panel::before[\s\S]*?content:\s*none\s*!important/,
     );
   }
+});
+
+test("keeps the cyberpunk compact dock hover inside the icon slot", () => {
+  assert.ok(
+    cyberpunkTheme.lastIndexOf("Keep compact dock feedback") >
+      cyberpunkTheme.lastIndexOf('.glacier-shell button,'),
+  );
+  assert.match(
+    cyberpunkTheme,
+    /data-dock-expanded="false"\][\s\S]*?button\[data-theme-ui="sidebar-item"\][\s\S]*?background:\s*transparent\s*!important[\s\S]*?clip-path:\s*none\s*!important/,
+  );
+  assert.match(
+    cyberpunkTheme,
+    /button\[data-theme-ui="sidebar-item"\]:not\(\[aria-selected="true"\]\):hover\s*>\s*i:first-of-type[\s\S]*?border:[\s\S]*?var\(--cyberpunk-cyan\)[\s\S]*?background:/,
+  );
+  assert.match(
+    cyberpunkTheme,
+    /data-dock-expanded="false"\]::after[\s\S]*?bottom:\s*11\.75rem\s*!important[\s\S]*?width:\s*7\.25rem/,
+  );
 });

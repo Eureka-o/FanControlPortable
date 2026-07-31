@@ -101,6 +101,7 @@ html[data-theme="cyberpunk2077"] .glacier-shell > section {
   background-color: var(--background) !important;
 }
 
+
 /* Curve editor corner guard: this page uses an outer hook plus an inner chart card. */
 html[data-theme="cyberpunk2077"] .glacier-shell [data-theme-card="curve-editor"] {
   border-radius: var(--theme-card-radius, 1.4rem) !important;
@@ -680,4 +681,33 @@ html[data-theme="cyberpunk2077"] .glacier-shell > section {
 html[data-theme="cyberpunk2077"] .glacier-shell,
 html[data-theme="cyberpunk2077"] .glacier-shell > section {
   background-color: var(--background) !important;
+}
+
+/* Keep compact dock feedback inside the 42px icon slot. */
+html[data-theme="cyberpunk2077"] body .glacier-shell .glacier-sidebar[data-dock-expanded="false"] button[data-theme-ui="sidebar-item"] {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  clip-path: none !important;
+  transform: none !important;
+}
+
+html[data-theme="cyberpunk2077"] body .glacier-shell .glacier-sidebar[data-dock-expanded="false"] button[data-theme-ui="sidebar-item"]::before {
+  opacity: 0 !important;
+}
+
+html[data-theme="cyberpunk2077"] body .glacier-shell .glacier-sidebar[data-dock-expanded="false"] button[data-theme-ui="sidebar-item"]:not([aria-selected="true"]):hover > i:first-of-type {
+  border: 1px solid color-mix(in srgb, var(--cyberpunk-cyan) 44%, transparent);
+  background: linear-gradient(135deg, rgba(0, 215, 255, 0.1), rgba(232, 221, 50, 0.045)) !important;
+  box-shadow:
+    0 0 0 1px rgba(0, 215, 255, 0.12),
+    0 10px 18px -18px rgba(0, 215, 255, 0.6);
+  clip-path: polygon(0 0, calc(100% - 0.34rem) 0, 100% 0.34rem, 100% 100%, 0.34rem 100%, 0 calc(100% - 0.34rem));
+}
+
+html[data-theme="cyberpunk2077"] .glacier-sidebar[data-dock-expanded="false"]::after {
+  bottom: 11.75rem !important;
+  width: 7.25rem;
+  height: 2rem;
+  opacity: 0.8;
 }
