@@ -44,7 +44,7 @@ export const detectAbruptHistoryPoints = (points: HistoryValuePoint[], minimumDe
     .map(({ timestamp, value }) => ({ timestamp, value }));
 };
 
-export const CORE_HISTORY_LIMIT = 720;
+export const CORE_HISTORY_LIMIT = 3600;
 export const SESSION_HISTORY_LIMIT = 60;
 export const CORE_HISTORY_RETENTION_MS = 60 * 60 * 1000;
 export const SESSION_HISTORY_RETENTION_MS = 5 * 60 * 1000;

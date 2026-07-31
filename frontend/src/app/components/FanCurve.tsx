@@ -785,7 +785,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   }, [config.fanCurve, currentLearningBias, localCurve, smartControl.learnedOffsets, speedUnit]);
 
   const detailHistoryPoints = useMemo(
-    () => historyChartsReady ? temperatureHistory.slice(-720) : [],
+    () => historyChartsReady ? temperatureHistory : [],
     [historyChartsReady, temperatureHistory],
   );
 

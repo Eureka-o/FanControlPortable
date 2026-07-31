@@ -7,14 +7,35 @@ import (
 )
 
 func connectedDeviceDisplayName(profile types.DeviceProfile, model string, settings *types.DeviceSettings, fallback string) string {
+	deviceModel := strings.TrimSpace(profile.Model)
+	if deviceModel == "" {
+		deviceModel = strings.TrimSpace(model)
+	}
+	if deviceModel == "" && settings != nil {
+		deviceModel = strings.TrimSpace(settings.Model)
+	}
+
+	vendor := strings.TrimSpace(profile.Vendor)
+	if profile.ID == types.DefaultWiFiPercentProfileID {
+		vendor = ""
+	}
+	if vendor != "" && deviceModel != "" {
+		lowerVendor := strings.ToLower(vendor)
+		if strings.Contains(strings.ToLower(deviceModel), lowerVendor) {
+			return deviceModel
+		}
+		if displayName := strings.TrimSpace(profile.DisplayName); displayName != "" {
+			if strings.EqualFold(displayName, vendor+deviceModel) {
+				return displayName
+			}
+		}
+		return vendor + " " + deviceModel
+	}
+
 	candidates := []string{
+		deviceModel,
 		profile.DisplayName,
 		profile.Capabilities.DisplayName,
-		profile.Model,
-		model,
-	}
-	if settings != nil {
-		candidates = append(candidates, settings.Model)
 	}
 	candidates = append(candidates, profile.ID, fallback)
 

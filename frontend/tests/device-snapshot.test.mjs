@@ -8,6 +8,7 @@ test('merges correlated fields from a connected status', () => {
   const snapshot = deviceSnapshotFromStatus({
     connected: true,
     productId: '0x1234',
+    deviceName: 'Acme Serial fan',
     model: 'Serial fan',
     deviceSettings: { available: true },
     deviceProfile: profile,
@@ -16,6 +17,7 @@ test('merges correlated fields from a connected status', () => {
 
   assert.equal(snapshot.isConnected, true);
   assert.equal(snapshot.deviceRuntimeState, 'ready');
+  assert.equal(snapshot.deviceModel, 'Acme Serial fan');
   assert.equal(snapshot.runtimeDeviceProfile, profile);
   assert.equal(snapshot.runtimeDeviceCapabilities, profile.capabilities);
   assert.deepEqual(snapshot.fanData, { currentRpm: 42 });

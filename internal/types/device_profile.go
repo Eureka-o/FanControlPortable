@@ -292,7 +292,6 @@ func DefaultWiFiPercentProfile(endpoint string) DeviceProfile {
 	return DeviceProfile{
 		ID:          DefaultWiFiPercentProfileID,
 		DisplayName: appmeta.DeviceModelName,
-		Vendor:      "FanControl",
 		Model:       appmeta.DeviceModelName,
 		BuiltIn:     true,
 		Transport:   caps.Transport,
