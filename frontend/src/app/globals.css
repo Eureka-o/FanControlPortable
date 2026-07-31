@@ -1090,25 +1090,10 @@ html[data-window-blur="on"]:not([data-theme])
 
 .glacier-native-backdrop .glacier-content-panel {
   margin-top: 2.5rem;
-  background: var(--mica-content-surface);
-  border-top: 1px solid var(--mica-content-border);
-  border-left: 1px solid var(--mica-content-border);
-  border-top-left-radius: 1rem;
-  box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.04) inset;
-}
-
-html[data-window-blur="on"]:not([data-theme])
-  .glacier-native-backdrop
-  .glacier-content-panel {
   background: transparent;
-  border-top-color: transparent;
-  border-left-color: transparent;
-  border-top-left-radius: 0;
+  border: 0;
+  border-radius: 0;
   box-shadow: none;
-}
-
-.dark .glacier-native-backdrop .glacier-content-panel {
-  box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.06) inset;
 }
 
 html[data-window-blur="on"]:not([data-theme]) {
