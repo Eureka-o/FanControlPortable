@@ -434,20 +434,19 @@ jobs:
           $notesFullPath = Join-Path $PWD $notesRelativePath
           $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 
+          $normalizedVersion = $env:RELEASE_TAG -replace '^[vV]', ''
+          $curatedNotesPath = "docs/release-notes/fancontrol-$normalizedVersion.md"
+          if (-not [string]::IsNullOrWhiteSpace($normalizedVersion) -and (Test-Path $curatedNotesPath)) {
+            Copy-Item $curatedNotesPath $notesFullPath -Force
+            "notes_path=$notesRelativePath" >> $env:GITHUB_OUTPUT
+            return
+          }
+
           function Write-FallbackReleaseNotes {
             param(
               [Parameter(Mandatory = $true)]
               [string]$Reason
             )
-
-            $normalizedVersion = $env:RELEASE_TAG -replace '^[vV]', ''
-            $curatedNotesPath = "docs/release-notes/fancontrol-$normalizedVersion.md"
-            if (-not [string]::IsNullOrWhiteSpace($normalizedVersion) -and (Test-Path $curatedNotesPath)) {
-              Copy-Item $curatedNotesPath $notesFullPath -Force
-              Write-Warning "$Reason Using curated release notes: $curatedNotesPath"
-              "notes_path=$notesRelativePath" >> $env:GITHUB_OUTPUT
-              return
-            }
 
             $commitSummary = ''
             if (Test-Path 'build/release-context/user-visible-commits.txt') {
