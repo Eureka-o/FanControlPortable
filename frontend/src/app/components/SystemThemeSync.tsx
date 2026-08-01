@@ -7,11 +7,13 @@ import {
   createBuiltinThemeSnapshot,
   createCustomThemeSnapshot,
   CUSTOM_STYLE_ID,
+  LEGACY_CUSTOM_STYLE_ID,
   isBuiltinMode,
   normalizeCustomThemeLayer,
   parseThemeBootstrapSnapshot,
   serializeThemeBootstrapSnapshot,
   THEME_BOOTSTRAP_STORAGE_KEY,
+  LEGACY_THEME_BOOTSTRAP_STORAGE_KEY,
   type CustomThemeBase,
   type CustomThemeLayer,
   type ThemeBootstrapSnapshot,
@@ -24,7 +26,16 @@ function readThemeBootstrapSnapshot(): ThemeBootstrapSnapshot | null {
     return null;
   }
 
-  const snapshot = parseThemeBootstrapSnapshot(window.localStorage.getItem(THEME_BOOTSTRAP_STORAGE_KEY));
+  const preferred = parseThemeBootstrapSnapshot(window.localStorage.getItem(THEME_BOOTSTRAP_STORAGE_KEY));
+  const snapshot = preferred
+    ?? parseThemeBootstrapSnapshot(window.localStorage.getItem(LEGACY_THEME_BOOTSTRAP_STORAGE_KEY));
+  if (!preferred && snapshot) {
+    try {
+      window.localStorage.setItem(THEME_BOOTSTRAP_STORAGE_KEY, serializeThemeBootstrapSnapshot(snapshot));
+    } catch {
+      // The legacy cache remains a valid fallback when storage is unavailable.
+    }
+  }
   // cssTruncated=true 说明上次写入时被截断，缓存不完整，必须重取。
   if (snapshot && !isBuiltinMode(snapshot.mode) && snapshot.cssTruncated) {
     return null;
@@ -81,19 +92,22 @@ function applyWithoutThemeTransition(apply: () => void) {
 }
 
 function ensureCustomThemeStyle(css: string) {
-  let styleEl = document.getElementById(CUSTOM_STYLE_ID) as HTMLStyleElement | null;
+  let styleEl = (document.getElementById(CUSTOM_STYLE_ID)
+    ?? document.getElementById(LEGACY_CUSTOM_STYLE_ID)) as HTMLStyleElement | null;
   if (!styleEl) {
     styleEl = document.createElement('style');
-    styleEl.id = CUSTOM_STYLE_ID;
     document.head.appendChild(styleEl);
   }
+  styleEl.id = CUSTOM_STYLE_ID;
   styleEl.textContent = css;
 }
 
 // 清除已注入的自定义主题（移除 <style> 与 <html data-theme>）。
 function clearCustomTheme() {
-  const el = document.getElementById(CUSTOM_STYLE_ID);
-  if (el) el.remove();
+  for (const styleId of [CUSTOM_STYLE_ID, LEGACY_CUSTOM_STYLE_ID]) {
+    const el = document.getElementById(styleId);
+    if (el) el.remove();
+  }
   delete document.documentElement.dataset.theme;
   delete document.documentElement.dataset.themeLayer;
 }

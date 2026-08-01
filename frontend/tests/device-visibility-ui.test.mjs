@@ -11,9 +11,9 @@ const store = readFileSync(new URL('../src/app/store/app-store.ts', import.meta.
 
 test('clears device identity immediately when the backend reports a disconnect', () => {
   const handler = store.slice(store.indexOf('apiService.onDeviceDisconnected'), store.indexOf('apiService.onDeviceSettingsUpdate'));
-  assert.match(handler, /deviceSnapshotFromStatus\(null\)/);
+  assert.match(handler, /applyDeviceSnapshotEvent\(state, \{ type: 'disconnected' \}\)/);
   assert.doesNotMatch(handler, /setTimeout/);
-  assert.match(store, /deviceSnapshotFromStatus\(status\)/);
+  assert.match(store, /applyDeviceSnapshotEvent\(state, \{ type: 'status', status \}\)/);
 });
 
 test('keeps the existing configured device display while runtime state is disconnected', () => {

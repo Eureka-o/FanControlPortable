@@ -62,7 +62,6 @@ if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
 if not exist "!BUILD_BIN!" mkdir "!BUILD_BIN!"
 
 echo Cleaning stale root executables...
-if exist "THRM.exe" del /q "THRM.exe"
 if exist "core.exe" del /q "core.exe"
 
 echo Cleaning stale bridge output...
@@ -118,8 +117,6 @@ REM Keep build/bin focused on the current build. Old versioned executables are n
 REM and make the build output look much larger than the actual distributable payload.
 echo Cleaning stale release artifacts...
 for %%F in (
-    "!BUILD_BIN!\THRM-v*.exe"
-    "!BUILD_BIN!\THRM Core.exe"
     "!BUILD_BIN!\FanControlPortable.exe"
     "!BUILD_BIN!\FanControlPortable Core.exe"
     "!BUILD_BIN!\FanControlPortable TempBridge.exe"
@@ -132,7 +129,6 @@ for %%F in (
     "!BUILD_BIN!\BS2PRO-Controller.exe"
     "!BUILD_BIN!\BS2PRO-Core.exe"
     "!BUILD_BIN!\BS2PRO-Watchdog.exe"
-    "!BUILD_BIN!\THRM.exe"
     "!BUILD_BIN!\core.exe"
     "!BUILD_BIN!\*.exe~"
 ) do (

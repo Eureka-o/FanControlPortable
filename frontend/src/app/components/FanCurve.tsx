@@ -33,7 +33,7 @@ import { useTemperatureHistory } from '../hooks/useTemperatureHistory';
 import { HISTORY_SERIES_ORDER, HISTORY_TIMELINE_EVENT_ORDER, useHistoryDisplayPreferences } from '../hooks/useHistoryDisplayPreferences';
 import { useLocale } from '../lib/i18n';
 import { getFanSpeedUnit, getFanSpeedRange, getFanSpeedTicks, fanSpeedUnitLabel } from '../lib/fan-speed';
-import { detectAbruptHistoryPoints, type HistorySeriesKey, type TemperatureHistoryPoint } from '../lib/temperature-history';
+import { type HistorySeriesKey, type TemperatureHistoryPoint } from '../lib/temperature-history';
 import {
   cancelCurveEditorSwitch,
   createCurveEditorSession,
@@ -967,32 +967,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       powerSeries: seriesWithData.filter((series) => series.axisId === 'power'),
     };
   }, [historySeriesMeta, historySeriesVisibility, zoomedHistoryChartData]);
-  const historyAbruptPoints = useMemo(() => {
-    const result: Partial<Record<HistorySeriesKey, Array<{ timestamp: number; value: number }>>> = {};
-    for (const series of [...historyStatistics.thermalSeries, ...historyStatistics.powerSeries]) {
-      const minimumDelta = series.axisId === 'temp'
-        ? 3
-        : series.axisId === 'power'
-          ? 8
-          : speedUnit === 'rpm' ? 200 : 5;
-      const statistics = historyStatistics.values[series.key];
-      const extremaTimestamps = new Set([
-        ...(statistics?.minTimestamps || []),
-        ...(statistics?.maxTimestamps || []),
-      ]);
-      result[series.key] = detectAbruptHistoryPoints(
-        zoomedHistoryChartData.map((point) => ({
-          timestamp: point.timestamp,
-          value: Number(point[series.dataKey] ?? 0),
-        })),
-        minimumDelta,
-        1,
-      ).filter((point) => !extremaTimestamps.has(point.timestamp));
-    }
-    return result;
-  }, [historyStatistics, speedUnit, zoomedHistoryChartData]);
   const historyRightTimestamp = zoomedHistoryChartData[zoomedHistoryChartData.length - 1]?.timestamp ?? 0;
-  const renderHistoryStatistics = useCallback((series: (typeof historySeriesMeta)[number] | undefined, yAxisId: 'temp' | 'fan' | 'power', compact = false) => {
+  const renderHistoryStatistics = useCallback((series: (typeof historySeriesMeta)[number] | undefined, yAxisId: 'temp' | 'fan' | 'power', showExtrema = true) => {
     if (!historyShowStatistics || !series) {
       return null;
     }
@@ -1009,23 +985,11 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       { key: 'average', value: statistics.average, timestamps: [], color: 'var(--chart-stat-average)', opacity: 0.82 },
     ] as const;
     return entries.flatMap(({ key, value, timestamps, color, opacity }) => {
+      if ((key === 'max' || key === 'min') && !showExtrema) {
+        return [];
+      }
       const leftmostTimestamp = timestamps[0] ?? 0;
       const emphasizedTimestamps = timestamps.slice(0, 1);
-      if (compact) {
-        if (key === 'average') return [];
-        return emphasizedTimestamps.slice(0, 1).map((timestamp) => (
-          <ReferenceDot
-            key={`${series.key}-${key}-point-${timestamp}`}
-            x={timestamp}
-            y={value}
-            yAxisId={yAxisId}
-            r={4.5}
-            fill={color}
-            stroke={series.color}
-            strokeWidth={2}
-          />
-        ));
-      }
       return [
         <ReferenceLine
           key={`${series.key}-${key}`}
@@ -2533,19 +2497,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                             const yAxisId = series.axisId === 'fan' ? 'fan' : 'temp';
                             return (
                               <React.Fragment key={`${series.key}-markers`}>
-                                {(historyAbruptPoints[series.key] || []).map((point) => (
-                                  <ReferenceDot
-                                    key={`${series.key}-abrupt-${point.timestamp}`}
-                                    x={point.timestamp}
-                                    y={point.value}
-                                    yAxisId={yAxisId}
-                                    r={2.75}
-                                    fill="var(--card)"
-                                    stroke={series.color}
-                                    strokeWidth={1.4}
-                                  />
-                                ))}
-                                {renderHistoryStatistics(series, yAxisId, historyStatistics.thermalSeries.length > 1)}
+                                {renderHistoryStatistics(series, yAxisId, historyStatistics.thermalSeries.length === 1)}
                               </React.Fragment>
                             );
                           })}
@@ -2660,19 +2612,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                                 })}
                                 {historyStatistics.powerSeries.map((series) => (
                                   <React.Fragment key={`${series.key}-markers`}>
-                                    {(historyAbruptPoints[series.key] || []).map((point) => (
-                                      <ReferenceDot
-                                        key={`${series.key}-abrupt-${point.timestamp}`}
-                                        x={point.timestamp}
-                                        y={point.value}
-                                        yAxisId="power"
-                                        r={2.75}
-                                        fill="var(--card)"
-                                        stroke={series.color}
-                                        strokeWidth={1.4}
-                                      />
-                                    ))}
-                                    {renderHistoryStatistics(series, 'power', historyStatistics.powerSeries.length > 1)}
+                                    {renderHistoryStatistics(series, 'power', historyStatistics.powerSeries.length === 1)}
                                   </React.Fragment>
                                 ))}
                                 {historyZoomSelectionBounds && (

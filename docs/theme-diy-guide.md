@@ -13,7 +13,7 @@ FanControl 的主题不是一个独立插件进程，也不是一个网页。它
 1. GUI 启动时，后端扫描可执行文件旁边的 `themes/` 目录，并读取每个主题的 `theme.json`。
 2. 前端主题同步组件根据配置中的 `themeMode` 决定使用系统、浅色、深色或自定义主题。
 3. 选择自定义主题时，GUI 后端读取该主题的 `theme.css`。
-4. CSS 被放入页面的 `<style id="thrm-custom-theme-style">`，并给 `<html>` 加上 `data-theme` 属性。
+4. CSS 被放入页面的 `<style id="fancontrol-custom-theme-style">`，并给 `<html>` 加上 `data-theme` 属性。
 5. CSS 中的 `html[data-theme="主题ID"]` 选择器因此只影响当前主题。
 6. CSS 引用的本地图片、SVG 和字体通过 `/theme-assets/<主题ID>/<相对路径>` 提供。
 

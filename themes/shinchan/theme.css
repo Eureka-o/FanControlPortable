@@ -970,7 +970,7 @@ html[data-theme="shinchan"] .glacier-stat-tile:active {
 }
 
 @font-face {
-  font-family: "FanControl Advanced Glyph Patch";
+  font-family: "FanControl Zong Glyph";
   src: url("assets/fonts/advanced-glyph-patch-603b.woff") format("woff");
   font-weight: 400 800;
   font-style: normal;
@@ -993,7 +993,7 @@ html[data-theme="shinchan"] .glacier-stat-tile:active {
   font-weight: 400 800;
   font-style: normal;
   font-display: swap;
-  unicode-range: U+D7, U+2013-2014, U+2192, U+2500, U+2550, U+3075, U+307C, U+30FB, U+4E22, U+4E8B, U+4EE3, U+4F3C, U+4FA1, U+500B, U+500D, U+507D, U+51E1, U+51E6, U+526F, U+52FF, U+5468, U+5883, U+5C01, U+5E30, U+5F03, U+5F80, U+603B, U+6233, U+6298, U+62E0, U+6392, U+6483, U+649E, U+66B4, U+67FB, U+68C4, U+6B3A, U+6BDB, U+6C17, U+6D3B, U+6E1B, U+6EE1, U+73BB, U+7483, U+74B0, U+7591, U+76CA, U+76E3, U+771F, U+78B0, U+79D2, U+79EF, U+7A97, U+7B2C, U+7D76, U+7EDD, U+7F13, U+7F29, U+885D, U+8A08, U+8A55, U+8A71, U+8BA9, U+8D1D, U+8EF8, U+8EFD, U+8F74, U+8F7B, U+8FBA, U+8FDF, U+9010, U+906E, U+90BB, U+91CA, U+96A3, U+9732, U+983C, U+987B, U+989D, U+9A97, U+9EA6;
+  unicode-range: U+D7, U+2013-2014, U+2192, U+2500, U+2550, U+3075, U+307C, U+30FB, U+4E22, U+4E8B, U+4EE3, U+4F3C, U+4FA1, U+500B, U+500D, U+507D, U+51E1, U+51E6, U+526F, U+52FF, U+5468, U+5883, U+5C01, U+5E30, U+5F03, U+5F80, U+6233, U+6298, U+62E0, U+6392, U+6483, U+649E, U+66B4, U+67FB, U+68C4, U+6B3A, U+6BDB, U+6C17, U+6D3B, U+6E1B, U+6EE1, U+73BB, U+7483, U+74B0, U+7591, U+76CA, U+76E3, U+771F, U+78B0, U+79D2, U+79EF, U+7A97, U+7B2C, U+7D76, U+7EDD, U+7F13, U+7F29, U+885D, U+8A08, U+8A55, U+8A71, U+8BA9, U+8D1D, U+8EF8, U+8EFD, U+8F74, U+8F7B, U+8FBA, U+8FDF, U+9010, U+906E, U+90BB, U+91CA, U+96A3, U+9732, U+983C, U+987B, U+989D, U+9A97, U+9EA6;
 }
 
 /* Shin-chan repair: use a compact bundled rounded Chinese subset and restore card feedback. */
@@ -3020,6 +3020,7 @@ html[data-theme="shinchan"] .glacier-shell [data-theme-card="curve-editor"] > .r
 /* Final UI typography and settings polish: use a readable rounded UI font for main pages. */
 html[data-theme="shinchan"] {
   --shinchan-ui-font:
+    "FanControl Zong Glyph",
     "FanControl Advanced Glyph Patch",
     "Shinchan Chill Round UI",
     "Microsoft YaHei UI",
@@ -3028,6 +3029,7 @@ html[data-theme="shinchan"] {
     "Segoe UI",
     sans-serif;
   --shinchan-readable-font:
+    "FanControl Zong Glyph",
     "FanControl Advanced Glyph Patch",
     "Shinchan Chill Round UI",
     "Segoe UI Variable",
@@ -3036,6 +3038,7 @@ html[data-theme="shinchan"] {
     "Microsoft YaHei",
     sans-serif;
   --shinchan-title-font:
+    "FanControl Zong Glyph",
     "FanControl Advanced Glyph Patch",
     "Shinchan Chill Round UI",
     "Microsoft YaHei UI",
@@ -3043,6 +3046,7 @@ html[data-theme="shinchan"] {
     "Segoe UI",
     sans-serif;
   --shinchan-decor-font:
+    "FanControl Zong Glyph",
     "FanControl Advanced Glyph Patch",
     "Shinchan Chill Reunion",
     "Shin-chan Round",
