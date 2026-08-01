@@ -77,7 +77,7 @@ func (a *CoreApp) Start() error {
 		a.logInfo("已同步Windows自启动状态: %v", actualAutoStart)
 	}
 	if configChanged {
-		if err := a.configManager.Update(cfg); err != nil {
+		if err := a.commitConfigUpdate(cfg, nil); err != nil {
 			a.logError("保存启动归一化配置失败: %v", err)
 		}
 	}

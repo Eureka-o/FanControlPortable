@@ -22,7 +22,7 @@ func (a *CoreApp) deviceProfilesPayloadFromConfig(cfg types.AppConfig) types.Dev
 func (a *CoreApp) GetDeviceProfiles() types.DeviceProfilesPayload {
 	cfg := a.configManager.Get()
 	if types.NormalizeDeviceProfileConfig(&cfg) {
-		if err := a.configManager.Update(cfg); err != nil {
+		if err := a.commitConfigUpdate(cfg, nil); err != nil {
 			a.logError("failed to save normalized device profiles: %v", err)
 		}
 	}

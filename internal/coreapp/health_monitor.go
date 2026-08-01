@@ -68,7 +68,7 @@ func (a *CoreApp) performHealthCheck() {
 	a.checkDeviceHealth()
 
 	a.logDebug("健康检查完成 - 托盘:%v 设备连接:%v",
-		a.trayManager.IsInitialized(), a.isConnected)
+		a.trayManager.IsInitialized(), a.deviceRuntimeSnapshot().Connected)
 }
 
 func (a *CoreApp) ensureTemperatureMonitoringHealthy() {

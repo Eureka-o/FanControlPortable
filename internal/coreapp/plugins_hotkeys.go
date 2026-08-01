@@ -81,12 +81,12 @@ func (a *CoreApp) cacheLegionFnQSupportResult(supported bool) {
 		return
 	}
 
-	_, err := a.persistConfigMutation(func(current *types.AppConfig) {
+	_, err := a.commitConfigMutation(func(current *types.AppConfig) {
 		current.LegionFnQSupport = types.LegionFnQSupportCache{
 			Checked:   true,
 			Supported: supported,
 		}
-	})
+	}, nil)
 	if err != nil {
 		a.logError("保存 Lenovo Legion Fn+Q 支持缓存失败: %v", err)
 		return
@@ -102,12 +102,8 @@ func (a *CoreApp) disableLegionFnQConfigForUnsupportedHost() {
 		return
 	}
 
-	if err := a.configManager.Update(cfg); err != nil {
+	if err := a.commitConfigUpdate(cfg, nil); err != nil {
 		a.logError("保存 Lenovo Legion Fn+Q 配置失败: %v", err)
-		return
-	}
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 	}
 }
 
@@ -167,16 +163,6 @@ func (a *CoreApp) applyLegionFnQFanMapping(state fnqpowermode.PowerModeState) {
 	if !ok {
 		a.logDebug("Lenovo Legion Fn+Q takeover skipped: no mapping for mode=%s", state.Mode)
 		return
-	}
-
-	if cfg.AutoControl || cfg.CustomSpeedEnabled {
-		cfg.AutoControl = false
-		cfg.CustomSpeedEnabled = false
-		if err := a.configManager.Update(cfg); err != nil {
-			a.logError("failed to save Lenovo Legion Fn+Q takeover config: %v", err)
-		} else if a.ipcServer != nil {
-			a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
-		}
 	}
 
 	a.safeGo("applyLegionFnQFanMapping", func() {

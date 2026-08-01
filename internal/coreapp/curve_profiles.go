@@ -24,13 +24,7 @@ func (a *CoreApp) applyCurveProfilesConfig(cfg types.AppConfig) error {
 	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, unit)
 	syncSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey)
 	storeDeviceFanCurveStateForKeyAndUnit(&cfg, runtimeDeviceKey, cfg, unit)
-	if err := a.configManager.Update(cfg); err != nil {
-		return err
-	}
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
-	}
-	return nil
+	return a.commitConfigUpdate(cfg, nil)
 }
 
 func (a *CoreApp) applyConnectedRuntimeCurveState() (types.AppConfig, bool, error) {
@@ -66,7 +60,7 @@ func (a *CoreApp) applyConnectedRuntimeCurveState() (types.AppConfig, bool, erro
 	if !changed {
 		return cfg, false, nil
 	}
-	if err := a.configManager.Update(cfg); err != nil {
+	if err := a.commitConfigUpdate(cfg, nil); err != nil {
 		return cfg, false, err
 	}
 	return cfg, true, nil
@@ -87,10 +81,8 @@ func (a *CoreApp) GetFanCurveProfiles() types.FanCurveProfilesPayload {
 		changed = true
 	}
 	if changed {
-		if err := a.configManager.Update(cfg); err != nil {
+		if err := a.commitConfigUpdate(cfg, nil); err != nil {
 			a.logError("保存温控曲线方案默认配置失败: %v", err)
-		} else if a.ipcServer != nil {
-			a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 		}
 	}
 	return a.fanCurveProfilesPayloadFromConfig(cfg)

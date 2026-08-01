@@ -101,6 +101,28 @@ func TestDeviceConnectionFlowOwnsRuntimeMirrorTransitions(t *testing.T) {
 	}
 }
 
+func TestDeviceConnectionFlowPhaseScopeRestoresNestedPhase(t *testing.T) {
+	app := &CoreApp{}
+	flow := newDeviceConnectionFlow(app)
+
+	leaveDiscovery := flow.enterPhase(deviceConnectionPhaseDiscovering)
+	if got := app.connectionPhase.Load(); got != deviceConnectionPhaseDiscovering {
+		t.Fatalf("discovery phase = %d, want %d", got, deviceConnectionPhaseDiscovering)
+	}
+	leaveConnecting := flow.enterPhase(deviceConnectionPhaseConnecting)
+	if got := app.connectionPhase.Load(); got != deviceConnectionPhaseConnecting {
+		t.Fatalf("connecting phase = %d, want %d", got, deviceConnectionPhaseConnecting)
+	}
+	leaveConnecting()
+	if got := app.connectionPhase.Load(); got != deviceConnectionPhaseDiscovering {
+		t.Fatalf("nested phase restore = %d, want %d", got, deviceConnectionPhaseDiscovering)
+	}
+	leaveDiscovery()
+	if got := app.connectionPhase.Load(); got != deviceConnectionPhaseNone {
+		t.Fatalf("phase restore = %d, want %d", got, deviceConnectionPhaseNone)
+	}
+}
+
 func TestDeviceRuntimeSnapshotRejectsStaleCoreConnection(t *testing.T) {
 	app := newDeviceProfileTestApp(t, types.GetDefaultConfig(false))
 	app.isConnected = true
@@ -115,6 +137,22 @@ func TestDeviceRuntimeSnapshotRejectsStaleCoreConnection(t *testing.T) {
 	}
 	if snapshot.Runtime.State != deviceRuntimeStateDisconnected {
 		t.Fatalf("runtime state = %q, want disconnected", snapshot.Runtime.State)
+	}
+}
+
+func TestDiagnosticsRuntimeSnapshotUsesAuthoritativeDeviceSnapshot(t *testing.T) {
+	app := newDeviceProfileTestApp(t, types.GetDefaultConfig(false))
+	app.mutex.Lock()
+	app.isConnected = true
+	app.deviceSettings = &types.DeviceSettings{Available: true}
+	app.mutex.Unlock()
+
+	runtime := app.diagnosticsRuntimeSnapshot()
+	if runtime.IsConnected {
+		t.Fatal("diagnostics reported connected while the hardware manager was disconnected")
+	}
+	if runtime.DeviceSettings != nil {
+		t.Fatalf("diagnostics leaked stale device settings: %#v", runtime.DeviceSettings)
 	}
 }
 

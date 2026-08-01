@@ -15,25 +15,40 @@ import (
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
-func (a *CoreApp) persistConfigUpdate(cfg types.AppConfig) error {
-	if err := a.configManager.Update(cfg); err != nil {
-		return err
+func (a *CoreApp) finishConfigCommit(cfg types.AppConfig, afterCommit func(types.AppConfig)) {
+	if afterCommit != nil {
+		afterCommit(cfg)
 	}
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 	}
+}
+
+func (a *CoreApp) commitConfigUpdate(cfg types.AppConfig, afterCommit func(types.AppConfig)) error {
+	if err := a.configManager.Update(cfg); err != nil {
+		return err
+	}
+	cfg = a.configManager.Get()
+	a.finishConfigCommit(cfg, afterCommit)
 	return nil
 }
 
-func (a *CoreApp) persistConfigMutation(mutate func(*types.AppConfig)) (types.AppConfig, error) {
+func (a *CoreApp) commitConfigMutation(mutate func(*types.AppConfig), afterCommit func(types.AppConfig)) (types.AppConfig, error) {
 	cfg, err := a.configManager.MutateAndSave(mutate)
 	if err != nil {
 		return cfg, err
 	}
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
-	}
+	a.finishConfigCommit(cfg, afterCommit)
 	return cfg, nil
+}
+
+func (a *CoreApp) commitConfigMutationIfRevision(expected uint64, mutate func(*types.AppConfig), afterCommit func(types.AppConfig)) (types.AppConfig, uint64, bool, error) {
+	cfg, revision, applied, err := a.configManager.MutateIfRevisionAndSave(expected, mutate)
+	if err != nil || !applied {
+		return cfg, revision, applied, err
+	}
+	a.finishConfigCommit(cfg, afterCommit)
+	return cfg, revision, true, nil
 }
 
 func runtimeDebugInfo() map[string]any {
@@ -90,6 +105,12 @@ func (a *CoreApp) activeDeviceSupportsManualGears() bool {
 // UpdateConfig 更新配置
 func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	a.mutex.Lock()
+	locked := true
+	defer func() {
+		if locked {
+			a.mutex.Unlock()
+		}
+	}()
 
 	oldCfg := a.configManager.Get()
 	oldConnectionKey := deviceProfileConnectionKey(oldCfg)
@@ -160,33 +181,28 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	cfg.CustomSpeedRPM = types.ClampSpeedForUnit(cfg.CustomSpeedRPM, unit)
 
 	cfg.ConfigPath = oldCfg.ConfigPath
-	if err := a.configManager.Update(cfg); err != nil {
-		a.mutex.Unlock()
-		return err
-	}
 	configConnectionChanged := oldConnectionKey != deviceProfileConnectionKey(cfg)
-	a.syncManualGearLevelMemoryLocked(cfg)
-	a.applyHotkeyBindings(cfg)
-	a.applyPluginConfig(cfg)
-	a.mutex.Unlock()
+	return a.commitConfigUpdate(cfg, func(committed types.AppConfig) {
+		a.syncManualGearLevelMemoryLocked(committed)
+		a.applyHotkeyBindings(committed)
+		a.applyPluginConfig(committed)
+		a.mutex.Unlock()
+		locked = false
 
-	if configConnectionChanged || a.deviceManager == nil {
-		if configConnectionChanged {
-			a.cancelReconnect()
-		}
-		if disconnected := a.reconcileDeviceManagerProfile(cfg); disconnected {
+		if configConnectionChanged || a.deviceManager == nil {
 			if configConnectionChanged {
-				a.autoReconnectSuppressed.Store(true)
+				a.cancelReconnect()
 			}
-			if a.ipcServer != nil {
-				a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
+			if disconnected := a.reconcileDeviceManagerProfile(committed); disconnected {
+				if configConnectionChanged {
+					a.autoReconnectSuppressed.Store(true)
+				}
+				if a.ipcServer != nil {
+					a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
+				}
 			}
 		}
-	}
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
-	}
-	return nil
+	})
 }
 
 func (a *CoreApp) SetTemperatureHistoryEnabled(enabled bool) error {
@@ -217,13 +233,7 @@ func (a *CoreApp) SetFanCurve(curve []types.FanCurvePoint) error {
 	runtimeDeviceKey := a.activeDeviceCurveScopeKey(cfg)
 	storeSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey)
 	storeDeviceFanCurveStateForKeyAndUnit(&cfg, runtimeDeviceKey, cfg, unit)
-	if err := a.configManager.Update(cfg); err != nil {
-		return err
-	}
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
-	}
-	return nil
+	return a.commitConfigUpdate(cfg, nil)
 }
 
 // ResetLearnedOffsets 清空学习到的曲线偏移。
@@ -234,14 +244,9 @@ func (a *CoreApp) ResetLearnedOffsets() error {
 	cfg := a.configManager.Get()
 	cfg.SmartControl = smartcontrol.ResetLearnedState(cfg.SmartControl, cfg.FanCurve)
 	resetSmartControlOffsetsForDeviceKey(&cfg, a.activeDeviceCurveScopeKey(cfg))
-	if err := a.configManager.Update(cfg); err != nil {
-		return err
-	}
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
-	}
-	a.logInfo("已重置学习偏移")
-	return nil
+	return a.commitConfigUpdate(cfg, func(types.AppConfig) {
+		a.logInfo("已重置学习偏移")
+	})
 }
 
 // SetAutoControl 设置智能变频
@@ -267,21 +272,15 @@ func (a *CoreApp) SetAutoControl(enabled bool) error {
 		cfg.AutoControl = enabled
 	}
 
-	err := a.configManager.Update(cfg)
+	err := a.commitConfigUpdate(cfg, func(types.AppConfig) {
+		if enabled {
+			a.userSetAutoControl = true
+			a.forceNextAutoTarget.Store(true)
+		}
+	})
 	a.mutex.Unlock()
 
-	if err != nil {
-		return err
-	}
-	if enabled {
-		a.userSetAutoControl = true
-		a.forceNextAutoTarget.Store(true)
-	}
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
-	}
-
-	return nil
+	return err
 }
 
 // applyCurrentGearSetting 应用当前挡位设置
@@ -348,14 +347,11 @@ func (a *CoreApp) SetManualGear(gear, level string) bool {
 	unit = a.activeDeviceSpeedUnit(&cfg)
 	types.NormalizeManualGearRPMForUnit(&cfg, unit)
 
-	if err := a.configManager.Update(cfg); err != nil {
+	if err := a.commitConfigUpdate(cfg, func(types.AppConfig) {
+		a.rememberManualGearLevel(gear, level)
+	}); err != nil {
 		a.logError("保存手动挡位配置失败: %v", err)
 		return false
-	}
-	a.rememberManualGearLevel(gear, level)
-
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 	}
 
 	if !wasConnected {
@@ -393,14 +389,11 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 	}
 
 	a.mutex.Lock()
-	err := a.configManager.Update(cfg)
+	err := a.commitConfigUpdate(cfg, nil)
 	a.mutex.Unlock()
 
 	if err != nil {
 		return err
-	}
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 	}
 	if applyManualAfterDisable {
 		a.safeGo("applyCurrentGearSettingAfterCustomSpeed", func() {
@@ -422,9 +415,9 @@ func (a *CoreApp) SetGearLight(enabled bool) bool {
 		return false
 	}
 
-	if _, err := a.persistConfigMutation(func(current *types.AppConfig) {
+	if _, err := a.commitConfigMutation(func(current *types.AppConfig) {
 		current.GearLight = enabled
-	}); err != nil {
+	}, nil); err != nil {
 		a.logError("保存挡位灯配置失败: %v", err)
 		return false
 	}
@@ -440,9 +433,9 @@ func (a *CoreApp) SetPowerOnStart(enabled bool) bool {
 		return false
 	}
 
-	if _, err := a.persistConfigMutation(func(current *types.AppConfig) {
+	if _, err := a.commitConfigMutation(func(current *types.AppConfig) {
 		current.PowerOnStart = enabled
-	}); err != nil {
+	}, nil); err != nil {
 		a.logError("保存通电自启动配置失败: %v", err)
 		return false
 	}
@@ -464,9 +457,9 @@ func (a *CoreApp) SetSmartStartStop(mode string) bool {
 		return false
 	}
 	cfg.SmartStartStop = mode
-	if _, err := a.persistConfigMutation(func(current *types.AppConfig) {
+	if _, err := a.commitConfigMutation(func(current *types.AppConfig) {
 		current.SmartStartStop = mode
-	}); err != nil {
+	}, nil); err != nil {
 		a.logError("保存智能启停配置失败: %v", err)
 		return false
 	}
@@ -483,9 +476,9 @@ func (a *CoreApp) SetWiFiSmartStartStopStandbySpeed(percent int) bool {
 		return false
 	}
 
-	if _, err := a.persistConfigMutation(func(current *types.AppConfig) {
+	if _, err := a.commitConfigMutation(func(current *types.AppConfig) {
 		current.WiFiSmartStartStopStandbySpeed = percent
-	}); err != nil {
+	}, nil); err != nil {
 		a.logError("保存 WiFi 待机转速配置失败: %v", err)
 		return false
 	}
@@ -501,9 +494,9 @@ func (a *CoreApp) SetBrightness(percentage int) bool {
 		return false
 	}
 
-	if _, err := a.persistConfigMutation(func(current *types.AppConfig) {
+	if _, err := a.commitConfigMutation(func(current *types.AppConfig) {
 		current.Brightness = percentage
-	}); err != nil {
+	}, nil); err != nil {
 		a.logError("保存亮度配置失败: %v", err)
 		return false
 	}
@@ -520,24 +513,19 @@ func (a *CoreApp) SetLightStrip(lightCfg types.LightStripConfig) error {
 	a.mutex.Lock()
 	cfg := a.configManager.Get()
 	cfg.LightStrip = lightCfg
-	saveErr := a.configManager.Update(cfg)
 	connected := a.isConnected
+	var runtimeErr error
+	saveErr := a.commitConfigUpdate(cfg, func(types.AppConfig) {
+		if connected {
+			runtimeErr = a.deviceManager.SetLightStrip(lightCfg)
+		}
+	})
 	a.mutex.Unlock()
 
 	if saveErr != nil {
 		return saveErr
 	}
-	if connected {
-		if err := a.deviceManager.SetLightStrip(lightCfg); err != nil {
-			return err
-		}
-	}
-
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
-	}
-
-	return nil
+	return runtimeErr
 }
 
 func (a *CoreApp) applyConfiguredLightStrip() error {
@@ -549,7 +537,7 @@ func (a *CoreApp) applyConfiguredLightStrip() error {
 
 	if changed {
 		cfg.LightStrip = lightCfg
-		if err := a.configManager.Update(cfg); err != nil {
+		if err := a.commitConfigUpdate(cfg, nil); err != nil {
 			a.logError("保存灯带默认配置失败: %v", err)
 		}
 	}
@@ -586,19 +574,21 @@ func (a *CoreApp) SetWindowsAutoStart(enable bool) error {
 	if err := a.autostartManager.SetWindowsAutoStart(enable); err != nil {
 		return err
 	}
-	_, err := a.persistConfigMutation(func(current *types.AppConfig) {
+	_, err := a.commitConfigMutation(func(current *types.AppConfig) {
 		current.WindowsAutoStart = enable
-	})
+	}, nil)
 	return err
 }
 
 // GetDebugInfo 获取调试信息
 func (a *CoreApp) GetDebugInfo() map[string]any {
+	runtimeSnapshot := a.deviceRuntimeSnapshot()
 	info := map[string]any{
 		"debugMode":               a.debugMode,
 		"trayReady":               a.trayManager.IsReady(),
 		"trayInitialized":         a.trayManager.IsInitialized(),
-		"isConnected":             a.isConnected,
+		"isConnected":             runtimeSnapshot.Connected,
+		"runtimeState":            runtimeSnapshot.Runtime,
 		"autoReconnectSuppressed": a.autoReconnectSuppressed.Load(),
 		"legionFnQSupported":      a.legionFnQSupported.Load(),
 		"guiLastResponse":         time.Unix(atomic.LoadInt64(&a.guiLastResponse), 0).Format("2006-01-02 15:04:05"),
@@ -622,25 +612,17 @@ func (a *CoreApp) SetDebugMode(enabled bool) error {
 	cfg := a.configManager.Get()
 	cfg.DebugMode = enabled
 	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, enabled, a.activeDeviceSpeedUnit(&cfg))
-	if err := a.configManager.Update(cfg); err != nil {
-		return err
-	}
-
-	a.debugMode = enabled
-	if a.logger != nil {
-		a.logger.SetDebugMode(enabled)
-		if enabled {
-			a.logger.Info("调试模式已开启，后续日志将包含调试级别")
-		} else {
-			a.logger.Info("调试模式已关闭，调试级别日志将被忽略")
+	return a.commitConfigUpdate(cfg, func(types.AppConfig) {
+		a.debugMode = enabled
+		if a.logger != nil {
+			a.logger.SetDebugMode(enabled)
+			if enabled {
+				a.logger.Info("调试模式已开启，后续日志将包含调试级别")
+			} else {
+				a.logger.Info("调试模式已关闭，调试级别日志将被忽略")
+			}
 		}
-	}
-
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
-	}
-
-	return nil
+	})
 }
 
 func (a *CoreApp) SendDeviceDebugCommand(hexCommand string, waitMs int) (types.DeviceDebugCommandResult, error) {
@@ -658,27 +640,23 @@ func (a *CoreApp) SetAutoStartWithMethod(enable bool, method string) error {
 	if err := a.autostartManager.SetAutoStartWithMethod(enable, method); err != nil {
 		return err
 	}
-	a.syncWindowsAutoStartConfig(enable, true)
+	a.syncWindowsAutoStartConfig(enable)
 	return nil
 }
 
 func (a *CoreApp) CheckWindowsAutoStart() bool {
 	enabled := a.autostartManager.CheckWindowsAutoStart()
-	a.syncWindowsAutoStartConfig(enabled, true)
+	a.syncWindowsAutoStartConfig(enabled)
 	return enabled
 }
 
-func (a *CoreApp) syncWindowsAutoStartConfig(enabled bool, broadcast bool) {
+func (a *CoreApp) syncWindowsAutoStartConfig(enabled bool) {
 	cfg := a.configManager.Get()
 	if cfg.WindowsAutoStart == enabled {
 		return
 	}
 	cfg.WindowsAutoStart = enabled
-	if err := a.configManager.Update(cfg); err != nil {
+	if err := a.commitConfigUpdate(cfg, nil); err != nil {
 		a.logError("sync Windows auto-start config failed: %v", err)
-		return
-	}
-	if broadcast && a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 	}
 }
