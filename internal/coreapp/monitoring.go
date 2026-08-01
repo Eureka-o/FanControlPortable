@@ -9,7 +9,6 @@ import (
 	"github.com/TIANLI0/THRM/internal/bridge"
 	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/TIANLI0/THRM/internal/smartcontrol"
-	"github.com/TIANLI0/THRM/internal/temperature"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -152,10 +151,16 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	var safetyFallback temperatureSafetyFallback
 	learningDirty := false
 	defer func() {
-		if learningDirty {
-			if err := a.configManager.Save(); err != nil {
-				a.logError("退出监控时保存学习曲线失败: %v", err)
-			}
+		if !learningDirty {
+			return
+		}
+		_, _, applied, err := a.commitConfigMutationIfRevision(cfgRevision, func(current *types.AppConfig) {
+			current.SmartControl = cfg.SmartControl
+		}, nil)
+		if err != nil {
+			a.logError("退出监控时保存学习曲线失败: %v", err)
+		} else if !applied {
+			a.logDebug("退出监控时配置已变化，放弃未提交的学习曲线")
 		}
 	}()
 	lastLearningSave := time.Now()
@@ -198,6 +203,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			// revision 门控：与主 tick 保持一致，未变时复用已缓存的 cfg。
 			// selection 重建由主 tick 的独立检查统一处理，此处只更新 cfg。
 			if newRev := a.configManager.Revision(); newRev != cfgRevision {
+				learningDirty = false
 				cfg, cfgRevision = a.configManager.GetWithRevision()
 			}
 			hasClientsForOverview := a.ipcServer != nil && a.ipcServer.HasClients()
@@ -226,6 +232,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			// revision 未变时跳过全量 AppConfig 拷贝（含 DeviceProfiles/FanCurveProfilesByDevice 等大字段），
 			// 减少每 tick 产生的短命对象，降低 GC 压力。
 			if newRev := a.configManager.Revision(); newRev != cfgRevision {
+				learningDirty = false
 				cfg, cfgRevision = a.configManager.GetWithRevision()
 			}
 			// TemperatureSelection 与 cfg 同步，独立于 cfg 读取检查。
@@ -307,9 +314,9 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				smartCfg, smartChanged = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, speedUnit)
 				smartCfgRevision = cfgRevision
 				if smartChanged {
-					updatedCfg, updatedRevision, applied, persistErr := a.configManager.MutateIfRevisionAndSave(cfgRevision, func(current *types.AppConfig) {
+					updatedCfg, updatedRevision, applied, persistErr := a.commitConfigMutationIfRevision(cfgRevision, func(current *types.AppConfig) {
 						current.SmartControl = smartCfg
-					})
+					}, nil)
 					if persistErr != nil {
 						a.logError("保存智能控温配置失败: %v", persistErr)
 						cfg, cfgRevision = a.configManager.GetWithRevision()
@@ -456,25 +463,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					recentControlTemps = recentControlTemps[len(recentControlTemps)-24:]
 				}
 
-				curveMinRPM, curveMaxRPM := smartcontrol.GetCurveRPMBounds(controlCurve)
-
-				baseRPM := temperature.CalculateTargetRPM(controlTemp, controlCurve)
 				prevTargetRPM := lastTargetRPM
-
-				targetRPM := 0
-				if types.IsPercentSpeedUnit(speedUnit) {
-					targetRPM = smartcontrol.CalculatePercentTargetTicks(controlTemp, cfg.FanCurve, smartCfg)
-				} else {
-					targetRPM = smartcontrol.CalculateLegacyRPMTarget(controlTemp, cfg.FanCurve, smartCfg)
-				}
-				if targetRPM <= 0 {
-					targetRPM = baseRPM
-				}
-
-				if targetRPM > 0 {
-					targetRPM = min(max(targetRPM, curveMinRPM), curveMaxRPM)
-				}
-				learnedTargetRPM := targetRPM
 
 				actualSpeed := 0
 				actualSpeedValid := false
@@ -484,32 +473,38 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				}
 
 				effectivePower := smartcontrol.EffectivePower{}
-				prediction := smartcontrol.RisePredictionResult{Target: targetRPM, RampUpMultiplier: 1}
 				if advancedSampleUsable {
 					effectivePower = effectiveTemperaturePower(temp)
 					risePredictionSamples = append(risePredictionSamples, newSmartControlRisePredictionSample(now, temp, controlTemp, effectivePower, prevTargetRPM, actualSpeed, actualSpeedValid))
 					if len(risePredictionSamples) > 12 {
 						risePredictionSamples = risePredictionSamples[len(risePredictionSamples)-12:]
 					}
-					prediction = smartcontrol.EvaluateTemperatureRisePrediction(targetRPM, risePredictionSamples, smartCfg, speedUnit)
-					if prediction.Target > 0 {
-						targetRPM = min(max(prediction.Target, curveMinRPM), curveMaxRPM)
-					}
 				}
+				decision := evaluateSmartControlTarget(smartControlTargetInput{
+					ControlTemp:           controlTemp,
+					Curve:                 cfg.FanCurve,
+					Config:                smartCfg,
+					SpeedUnit:             speedUnit,
+					AdvancedTelemetry:     advancedSampleUsable,
+					RisePredictionSamples: risePredictionSamples,
+				})
+				curveMinRPM, curveMaxRPM := decision.CurveMin, decision.CurveMax
+				baseRPM := decision.BaseTarget
+				learnedTargetRPM := decision.LearnedTarget
+				targetRPM := decision.Target
+				prediction := decision.RisePrediction
 				predictionActive := prediction.RampUpMultiplier > 1 || prediction.Boost > 0
 				targetBeforeRamp := targetRPM
-
-				if prevTargetRPM >= 0 {
-					rampUpLimit := smartCfg.RampUpLimit
-					if rampUpLimit > 0 && prediction.RampUpMultiplier > 1 {
-						rampUpLimit = int(float64(rampUpLimit)*prediction.RampUpMultiplier + 0.5)
-					}
-					targetRPM = smartcontrol.ApplyRampLimit(targetRPM, prevTargetRPM, rampUpLimit, smartCfg.RampDownLimit)
-					if targetRPM > 0 {
-						targetRPM = min(max(targetRPM, curveMinRPM), curveMaxRPM)
-					}
-				}
-				rampAdjustment := targetRPM - targetBeforeRamp
+				ramp := applySmartControlRamp(smartControlRampInput{
+					Target:               targetRPM,
+					PreviousTarget:       prevTargetRPM,
+					CurveMin:             curveMinRPM,
+					CurveMax:             curveMaxRPM,
+					Config:               smartCfg,
+					PredictionMultiplier: prediction.RampUpMultiplier,
+				})
+				targetRPM = ramp.Target
+				rampAdjustment := ramp.Adjustment
 
 				rawAxisNoiseTarget := targetRPM
 				axisNoiseAdjusted := false
@@ -598,34 +593,34 @@ func (a *CoreApp) startTemperatureMonitoring() {
 						if changed {
 							nextSmartCfg := smartCfg
 							nextSmartCfg.LearnedOffsets = newOffsets
-							updatedCfg, updatedRevision, applied := a.configManager.MutateIfRevision(cfgRevision, func(current *types.AppConfig) {
-								current.SmartControl = nextSmartCfg
-								storeSmartControlOffsetsForDeviceKey(current, scopeKey)
-							})
-							if !applied {
-								cfg, cfgRevision = a.configManager.GetWithRevision()
-								smartCfgRevision = cfgRevision - 1
-								resetSmartControlSampling()
-								timer.Reset(updateInterval)
-								continue
-							}
-							cfg = updatedCfg
-							cfgRevision = updatedRevision
+							cfg.SmartControl = nextSmartCfg
+							storeSmartControlOffsetsForDeviceKey(&cfg, scopeKey)
 							smartCfg = cfg.SmartControl
-							smartCfgRevision = updatedRevision
+							smartCfgRevision = cfgRevision
 							learningDirty = true
 						}
 					}
 
 					if learningDirty && time.Since(lastLearningSave) >= smartControlLearningSaveInterval {
-						if err := a.configManager.Save(); err != nil {
+						updatedCfg, updatedRevision, applied, err := a.commitConfigMutationIfRevision(cfgRevision, func(current *types.AppConfig) {
+							current.SmartControl = cfg.SmartControl
+						}, nil)
+						if err != nil {
 							a.logError("保存学习偏移失败: %v", err)
+						} else if !applied {
+							cfg, cfgRevision = a.configManager.GetWithRevision()
+							smartCfgRevision = cfgRevision - 1
+							learningDirty = false
+							resetSmartControlSampling()
+							timer.Reset(updateInterval)
+							continue
 						} else {
+							cfg = updatedCfg
+							cfgRevision = updatedRevision
+							smartCfg = cfg.SmartControl
+							smartCfgRevision = updatedRevision
 							lastLearningSave = time.Now()
 							learningDirty = false
-							if a.ipcServer != nil {
-								a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
-							}
 						}
 					}
 				} else if !smartCfg.Learning || !advancedSampleUsable || predictionActive || targetLimited {

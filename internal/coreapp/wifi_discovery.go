@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/TIANLI0/THRM/internal/device"
-	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -90,13 +89,11 @@ func (a *CoreApp) recoverDynamicWiFiEndpoint(cfg *types.AppConfig) bool {
 		cfg.ActiveDeviceProfileIDsByTransport = map[string]string{}
 	}
 	cfg.ActiveDeviceProfileIDsByTransport[types.DeviceTransportWiFi] = profile.ID
-	if err := a.configManager.Update(*cfg); err != nil {
+	if err := a.commitConfigUpdate(*cfg, func(committed types.AppConfig) {
+		a.configureDeviceManager(committed)
+	}); err != nil {
 		a.logError("failed to save dynamic WiFi endpoint %s: %v", nextEndpoint, err)
 		return false
-	}
-	a.configureDeviceManager(*cfg)
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, *cfg)
 	}
 	a.logInfo("dynamic WiFi endpoint updated from %s to %s", oldEndpoint, nextEndpoint)
 	return true

@@ -346,22 +346,21 @@ func (a *CoreApp) diagnosticsRuntimeDeviceProfile(cfg types.AppConfig) types.Dev
 }
 
 func (a *CoreApp) diagnosticsRuntimeSnapshot() diagnosticsRuntimeSnapshot {
+	runtime := a.deviceRuntimeSnapshot()
 	a.mutex.RLock()
 	currentTemp := a.currentTemp
-	deviceSettings := a.deviceSettings
-	isConnected := a.isConnected
 	lastDeviceMode := a.lastDeviceMode
 	a.mutex.RUnlock()
 
 	return diagnosticsRuntimeSnapshot{
-		IsConnected:             isConnected,
+		IsConnected:             runtime.Connected,
 		MonitoringTemp:          a.monitoringTemp.Load(),
 		AutoReconnectSuppressed: a.autoReconnectSuppressed.Load(),
 		ReconnectInProgress:     a.reconnectInProgress.Load(),
 		SystemSuspended:         a.systemSuspended.Load(),
 		LastDeviceMode:          lastDeviceMode,
 		CurrentTemp:             currentTemp,
-		DeviceSettings:          deviceSettings,
+		DeviceSettings:          runtime.Settings,
 	}
 }
 

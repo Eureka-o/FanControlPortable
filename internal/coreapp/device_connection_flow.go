@@ -18,6 +18,14 @@ func newDeviceConnectionFlow(app *CoreApp) deviceConnectionFlow {
 	return deviceConnectionFlow{app: app}
 }
 
+func (f deviceConnectionFlow) enterPhase(phase int32) func() {
+	if f.app == nil {
+		return func() {}
+	}
+	previous := f.app.connectionPhase.Swap(phase)
+	return func() { f.app.connectionPhase.Store(previous) }
+}
+
 func (f deviceConnectionFlow) setRuntimeConnected() {
 	f.app.mutex.Lock()
 	f.app.isConnected = true
@@ -46,6 +54,8 @@ func (f deviceConnectionFlow) setRuntimeDisconnected(reason string) bool {
 }
 
 func (f deviceConnectionFlow) connectBestScannedDevice() bool {
+	leavePhase := f.enterPhase(deviceConnectionPhaseDiscovering)
+	defer leavePhase()
 	f.app.connectionFlights.record(connectionFlightEvent{
 		Stage:  connectionFlightStageDiscovering,
 		Reason: "auto-scan",
@@ -120,7 +130,8 @@ func (f deviceConnectionFlow) connectScannedCandidate(device types.DeviceCandida
 }
 
 func (f deviceConnectionFlow) connectCandidate(req types.DeviceConnectRequest) bool {
-	f.app.connectionPhase.Store(deviceConnectionPhaseConnecting)
+	leavePhase := f.enterPhase(deviceConnectionPhaseConnecting)
+	defer leavePhase()
 	transport := candidateTransport(req.Transport)
 	f.app.connectionFlights.record(connectionFlightEvent{
 		Stage:     connectionFlightStageConnecting,
@@ -140,6 +151,8 @@ func (f deviceConnectionFlow) connectCandidate(req types.DeviceConnectRequest) b
 }
 
 func (f deviceConnectionFlow) connectNativeDevice(profileID string) bool {
+	leavePhase := f.enterPhase(deviceConnectionPhaseConnecting)
+	defer leavePhase()
 	f.app.autoReconnectSuppressed.Store(false)
 	cfg := f.app.configManager.Get()
 	types.NormalizeDeviceProfileConfig(&cfg)
@@ -256,7 +269,7 @@ func (f deviceConnectionFlow) connectCompatibilityCandidate(transport, profileID
 		return false
 	}
 
-	if err := f.app.configManager.Update(nextCfg); err != nil {
+	if err := f.app.commitConfigUpdate(nextCfg, nil); err != nil {
 		f.app.logError("保存设备连接配置失败: %v", err)
 		f.app.connectionFlights.record(connectionFlightEvent{
 			Stage:      connectionFlightStageError,
@@ -267,9 +280,6 @@ func (f deviceConnectionFlow) connectCompatibilityCandidate(transport, profileID
 		})
 		f.broadcastError(err.Error())
 		return false
-	}
-	if f.app.ipcServer != nil {
-		f.app.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, nextCfg)
 	}
 	f.app.lastConnectionWasNative.Store(false)
 	f.app.finishSuccessfulDeviceConnection(deviceInfo, "ConnectDeviceCandidate")

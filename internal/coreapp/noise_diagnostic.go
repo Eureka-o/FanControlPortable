@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/TIANLI0/THRM/internal/smartcontrol"
 	"github.com/TIANLI0/THRM/internal/types"
 )
@@ -390,20 +389,17 @@ func (a *CoreApp) SaveNoiseDiagnosticResult(result types.NoiseDiagnosticResult) 
 	result.Unit = unit
 	for attempt := 0; attempt < 2; attempt++ {
 		_, revision := a.configManager.GetWithRevision()
-		updated, _, applied, err := a.configManager.MutateIfRevisionAndSave(revision, func(current *types.AppConfig) {
+		_, _, applied, err := a.commitConfigMutationIfRevision(revision, func(current *types.AppConfig) {
 			if current.NoiseDiagnosticsByDevice == nil {
 				current.NoiseDiagnosticsByDevice = map[string]types.NoiseDiagnosticResult{}
 			}
 			current.NoiseDiagnosticsByDevice[result.DeviceKey] = result
-		})
+		}, nil)
 		if err != nil {
 			return err
 		}
 		if !applied {
 			continue
-		}
-		if a.ipcServer != nil {
-			a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, updated)
 		}
 		return nil
 	}
@@ -443,7 +439,7 @@ func (a *CoreApp) SaveAxisNoiseProfile(profile types.AxisNoiseProfile) (types.Ax
 
 	for attempt := 0; attempt < 2; attempt++ {
 		_, revision := a.configManager.GetWithRevision()
-		updated, _, applied, err := a.configManager.MutateIfRevisionAndSave(revision, func(current *types.AppConfig) {
+		_, _, applied, err := a.commitConfigMutationIfRevision(revision, func(current *types.AppConfig) {
 			if deleteRequested {
 				delete(current.AxisNoiseProfilesByDevice, deviceKey)
 				return
@@ -452,16 +448,14 @@ func (a *CoreApp) SaveAxisNoiseProfile(profile types.AxisNoiseProfile) (types.Ax
 				current.AxisNoiseProfilesByDevice = map[string]types.AxisNoiseProfile{}
 			}
 			current.AxisNoiseProfilesByDevice[deviceKey] = profile
+		}, func(types.AppConfig) {
+			a.forceNextAutoTarget.Store(true)
 		})
 		if err != nil {
 			return types.AxisNoiseProfile{}, err
 		}
 		if !applied {
 			continue
-		}
-		a.forceNextAutoTarget.Store(true)
-		if a.ipcServer != nil {
-			a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, updated)
 		}
 		return profile, nil
 	}

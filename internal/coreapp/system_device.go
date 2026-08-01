@@ -85,10 +85,8 @@ func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
 		a.logInfo("检测到设备切换到挡位工作模式，自动关闭智能变频")
 		cfg.AutoControl = false
 
-		if err := a.configManager.Update(cfg); err != nil {
+		if err := a.commitConfigUpdate(cfg, nil); err != nil {
 			a.logError("保存设备手动模式配置失败: %v", err)
-		} else if a.ipcServer != nil {
-			a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 		}
 	} else if deviceSwitchedToManual &&
 		cfg.AutoControl &&
@@ -406,8 +404,8 @@ func waitForReconnectDelayWithWake(ctx context.Context, delay time.Duration, wak
 func (a *CoreApp) reconnectDevice(ctx context.Context) reconnectAttemptResult {
 	a.connectMutex.Lock()
 	defer a.connectMutex.Unlock()
-	a.connectionPhase.Store(deviceConnectionPhaseConnecting)
-	defer a.connectionPhase.Store(deviceConnectionPhaseNone)
+	leavePhase := newDeviceConnectionFlow(a).enterPhase(deviceConnectionPhaseConnecting)
+	defer leavePhase()
 
 	cfg := a.configManager.Get()
 	types.NormalizeDeviceProfileConfig(&cfg)
@@ -776,13 +774,13 @@ func (a *CoreApp) ConnectDevice() bool {
 }
 
 func (a *CoreApp) AutoScanDevices() map[string]any {
-	a.connectionPhase.Store(deviceConnectionPhaseDiscovering)
-	defer a.connectionPhase.Store(deviceConnectionPhaseNone)
+	leavePhase := newDeviceConnectionFlow(a).enterPhase(deviceConnectionPhaseDiscovering)
+	defer leavePhase()
 	cfg := a.configManager.Get()
 	types.NormalizeDeviceProfileConfig(&cfg)
 	devices := a.deviceManager.ScanNativeDevicesProfiles(cfg.DeviceProfiles)
 	result := map[string]any{
-		"connected": a.deviceManager.IsConnected(),
+		"connected": a.deviceRuntimeSnapshot().Connected,
 		"devices":   devices,
 		"matched":   len(devices) > 0,
 	}
@@ -798,8 +796,6 @@ func (a *CoreApp) ConnectNativeDevice(profileID string) bool {
 	a.cancelReconnect()
 	a.connectMutex.Lock()
 	defer a.connectMutex.Unlock()
-	a.connectionPhase.Store(deviceConnectionPhaseConnecting)
-	defer a.connectionPhase.Store(deviceConnectionPhaseNone)
 	return newDeviceConnectionFlow(a).connectNativeDevice(profileID)
 }
 
@@ -812,10 +808,8 @@ func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string,
 	a.hasSuccessfulConnection.Store(true)
 	a.lastConnectionWasNative.Store(types.IsNativeDeviceTransport(a.deviceManager.GetDeviceType()))
 
-	if cfg, changed, err := a.applyConnectedRuntimeCurveState(); err != nil {
+	if _, _, err := a.applyConnectedRuntimeCurveState(); err != nil {
 		a.logError("sync runtime device curve failed: %v", err)
-	} else if changed && a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 	}
 
 	settings, settingsErr := a.RefreshDeviceSettings()

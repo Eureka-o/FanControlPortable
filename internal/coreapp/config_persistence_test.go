@@ -24,7 +24,7 @@ func TestPersistConfigUpdateReturnsSaveError(t *testing.T) {
 
 	next := initial
 	next.GearLight = !initial.GearLight
-	if err := app.persistConfigUpdate(next); err == nil {
-		t.Fatal("persistConfigUpdate() error = nil, want persistence failure")
+	if err := app.commitConfigUpdate(next, nil); err == nil {
+		t.Fatal("commitConfigUpdate() error = nil, want persistence failure")
 	}
 }

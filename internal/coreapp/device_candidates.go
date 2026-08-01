@@ -18,9 +18,7 @@ func (a *CoreApp) scanDeviceCandidates(mode string, includeNative bool) types.De
 
 	cfg := a.configManager.Get()
 	types.NormalizeDeviceProfileConfig(&cfg)
-	a.mutex.RLock()
-	connected := a.isConnected && a.deviceManager.IsConnected()
-	a.mutex.RUnlock()
+	connected := a.deviceRuntimeSnapshot().Connected
 
 	result := types.DeviceScanResult{
 		Mode:          mode,
@@ -177,8 +175,6 @@ func (a *CoreApp) ConnectDeviceCandidate(req types.DeviceConnectRequest) bool {
 	a.cancelReconnect()
 	a.connectMutex.Lock()
 	defer a.connectMutex.Unlock()
-	a.connectionPhase.Store(deviceConnectionPhaseConnecting)
-	defer a.connectionPhase.Store(deviceConnectionPhaseNone)
 	return newDeviceConnectionFlow(a).connectCandidate(req)
 }
 
@@ -186,8 +182,6 @@ func (a *CoreApp) ConnectBestScannedDevice() bool {
 	a.cancelReconnect()
 	a.connectMutex.Lock()
 	defer a.connectMutex.Unlock()
-	a.connectionPhase.Store(deviceConnectionPhaseDiscovering)
-	defer a.connectionPhase.Store(deviceConnectionPhaseNone)
 	return newDeviceConnectionFlow(a).connectBestScannedDevice()
 }
 
