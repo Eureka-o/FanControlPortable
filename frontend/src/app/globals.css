@@ -584,6 +584,7 @@
   --window-glass-blur: blur(28px) saturate(145%);
 }
 
+.theme-fancontrol-only,
 .theme-thrm-only {
   display: none !important;
 }

@@ -59,6 +59,13 @@ test('supports total power and single-series statistics without hard-coded stat 
   assert.match(globalStyles, /--chart-area-opacity-end:/);
 });
 
+test('renders max and min markers only for a single visible series', () => {
+  assert.match(curveSource, /showExtrema/);
+  assert.match(curveSource, /historyStatistics\.thermalSeries\.length === 1/);
+  assert.match(curveSource, /historyStatistics\.powerSeries\.length === 1/);
+  assert.match(curveSource, /if \(\(key === 'max' \|\| key === 'min'\) && !showExtrema\)/);
+});
+
 test('keeps independent home chart visibility and supports total power in the thumbnail', () => {
   assert.match(preferencesSource, /homeVisible: HistorySeriesVisibility/);
   assert.match(preferencesSource, /const homeVisibilityInput = input\?\.homeVisible/);
@@ -79,9 +86,7 @@ test('keeps raw history values and relies on monotone rendering for light smooth
   assert.equal((curveSource.match(/data=\{zoomedHistoryChartData\}/g) || []).length, 2);
   assert.equal((curveSource.match(/type="monotone"/g) || []).length >= 4, true);
   assert.match(curveSource, /for \(const point of zoomedHistoryChartData\)/);
-  assert.match(curveSource, /detectAbruptHistoryPoints/);
-  assert.match(curveSource, /minimumDelta,\s*1,/);
-  assert.match(curveSource, /historyAbruptPoints/);
+  assert.doesNotMatch(curveSource, /detectAbruptHistoryPoints|historyAbruptPoints|-abrupt-/);
   assert.match(curveSource, /historyStatistics\.thermalSeries\.map/);
   assert.match(curveSource, /historyStatistics\.powerSeries\.map/);
 });

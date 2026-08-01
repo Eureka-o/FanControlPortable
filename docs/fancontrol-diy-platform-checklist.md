@@ -716,7 +716,7 @@ This checklist records the planned direction for turning FanControl into an exte
   - [x] Normal desktop `1280x900`.
   - [x] Narrow desktop/Wails-style `900x700`.
   - [x] Mock Wails APIs returned `QA Contrast Theme`; `SystemThemeSync` called `ListThemes` and `GetThemeCSS`.
-  - [x] `<html data-theme="qa-contrast">` was applied, `thrm-custom-theme-style` was injected, and computed root variables changed for `--background`, `--card`, `--primary`, and `--sidebar`.
+- [x] `<html data-theme="qa-contrast">` was applied, `fancontrol-custom-theme-style` was injected, and computed root variables changed for `--background`, `--card`, `--primary`, and `--sidebar`.
   - [x] The Devices page and Add Device dialog rendered without visible framework overlays, relevant console errors, horizontal overflow, or clipped button text.
   - [x] Screenshot evidence saved under `%TEMP%`: `fancontrol-theme-advanced-devices-desktop-main-ja.png`, `fancontrol-theme-advanced-devices-desktop-dialog-ja.png`, `fancontrol-theme-advanced-devices-narrow-main-ja.png`, and `fancontrol-theme-advanced-devices-narrow-dialog-ja.png`.
 - [x] Rendered Japanese desktop QA with the bundled reference-style `themes/thrm/theme.css`:

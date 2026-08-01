@@ -887,7 +887,7 @@ export default function DeviceStatus({
     <div data-page-reveal="cards" className="space-y-3">
       {/* ── Device header card ── */}
       <div data-theme-section="hero" data-theme-card="device-hero" className="glacier-hero-card relative overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm shadow-black/5">
-        <div className="theme-thrm-only glacier-hero-art pointer-events-none absolute inset-y-0 right-0 hidden overflow-hidden md:block" aria-hidden="true">
+        <div className="theme-fancontrol-only theme-thrm-only glacier-hero-art pointer-events-none absolute inset-y-0 right-0 hidden overflow-hidden md:block" aria-hidden="true">
           <img
             src="/theme/ice-operator-banner.png"
             alt=""
@@ -897,7 +897,7 @@ export default function DeviceStatus({
           <div className="absolute inset-0 bg-gradient-to-r from-card/80 via-card/25 to-transparent" />
           <div className="absolute inset-0 bg-gradient-to-b from-white/20 via-transparent to-card/30" />
         </div>
-        <div className="theme-thrm-only glacier-hero-art-label pointer-events-none absolute top-3 hidden text-[10px] font-semibold uppercase tracking-[0.32em] text-primary/45 md:block" aria-hidden="true">
+        <div className="theme-fancontrol-only theme-thrm-only glacier-hero-art-label pointer-events-none absolute top-3 hidden text-[10px] font-semibold uppercase tracking-[0.32em] text-primary/45 md:block" aria-hidden="true">
           AURORA AUX / GLACIER CORE
         </div>
         <div className="glacier-hero-content relative z-10 flex flex-wrap items-center justify-between gap-3">

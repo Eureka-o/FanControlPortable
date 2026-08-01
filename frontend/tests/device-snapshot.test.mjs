@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { deviceSnapshotFromStatus } from '../src/app/store/device-snapshot.ts';
+import { deviceSnapshotFromStatus, reduceDeviceSnapshot } from '../src/app/store/device-snapshot.ts';
 
 test('merges correlated fields from a connected status', () => {
   const profile = { id: 'serial-1', capabilities: { supportsSetSpeed: true } };
@@ -51,4 +51,29 @@ test('clears every correlated field for disconnects and core failures', () => {
       fanData: null,
     });
   }
+});
+
+test('patches settings and fan data only while connected', () => {
+  const connected = deviceSnapshotFromStatus({ connected: true, currentData: { currentRpm: 42 } });
+  const withSettings = reduceDeviceSnapshot(connected, { type: 'settings', settings: { available: true } });
+  assert.deepEqual(withSettings.deviceSettings, { available: true });
+
+  const withFanData = reduceDeviceSnapshot(withSettings, { type: 'fan-data', fanData: { currentRpm: 900 } });
+  assert.deepEqual(withFanData.fanData, { currentRpm: 900 });
+
+  const disconnected = reduceDeviceSnapshot(withFanData, { type: 'disconnected' });
+  const lateSettings = reduceDeviceSnapshot(disconnected, { type: 'settings', settings: { available: true } });
+  const lateFanData = reduceDeviceSnapshot(lateSettings, { type: 'fan-data', fanData: { currentRpm: 1200 } });
+  assert.equal(lateSettings, disconnected);
+  assert.equal(lateFanData, disconnected);
+});
+
+test('connected events use the capabilities fallback before refresh', () => {
+  const snapshot = reduceDeviceSnapshot(deviceSnapshotFromStatus(null), {
+    type: 'connected',
+    status: { deviceName: 'Acme fan' },
+  });
+  assert.equal(snapshot.isConnected, true);
+  assert.equal(snapshot.deviceRuntimeState, 'capabilities');
+  assert.equal(snapshot.deviceModel, 'Acme fan');
 });

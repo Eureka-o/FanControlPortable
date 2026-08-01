@@ -40,3 +40,13 @@ test('keeps cached custom theme metadata when theme discovery is temporarily una
   assert.match(applyCustomTheme, /const cachedSnapshot = readThemeBootstrapSnapshot\(\);/);
   assert.match(applyCustomTheme, /cachedSnapshot\?\.mode === id/);
 });
+
+test('migrates legacy THRM theme and locale storage names without breaking startup', () => {
+  assert.match(source, /fancontrol\.theme-bootstrap/);
+  assert.match(source, /thrm\.theme-bootstrap/);
+  assert.match(syncSource, /parseThemeBootstrapSnapshot\(window\.localStorage\.getItem\(LEGACY_THEME_BOOTSTRAP_STORAGE_KEY\)\)/);
+  assert.match(syncSource, /!preferred && snapshot/);
+  assert.match(syncSource, /setItem\(THEME_BOOTSTRAP_STORAGE_KEY/);
+  assert.match(readFileSync(new URL('../src/app/lib/i18n.tsx', import.meta.url), 'utf8'), /fancontrol\.locale/);
+  assert.match(readFileSync(new URL('../src/app/lib/i18n.tsx', import.meta.url), 'utf8'), /thrm\.locale/);
+});

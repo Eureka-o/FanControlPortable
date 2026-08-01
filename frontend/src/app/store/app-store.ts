@@ -8,7 +8,12 @@ import {
   type AppTab,
   type TimelineEvent,
 } from './app-store-logic.mts';
-import { deviceSnapshotFromStatus, type DeviceStatusPayload } from './device-snapshot';
+import {
+  reduceDeviceSnapshot,
+  type DeviceSnapshotEvent,
+  type DeviceSnapshotState,
+  type DeviceStatusPayload,
+} from './device-snapshot';
 import { types } from '../../../wailsjs/go/models';
 import { apiService } from '../services/api';
 import {
@@ -208,6 +213,21 @@ interface AppStore {
   startEventListeners: () => () => void;
 }
 
+const deviceSnapshotStateFromStore = (state: AppStore): DeviceSnapshotState => ({
+  isConnected: state.isConnected,
+  deviceRuntimeState: state.deviceRuntimeState,
+  deviceProductId: state.deviceProductId,
+  deviceModel: state.deviceModel,
+  deviceSettings: state.deviceSettings,
+  runtimeDeviceProfile: state.runtimeDeviceProfile,
+  runtimeDeviceCapabilities: state.runtimeDeviceCapabilities,
+  fanData: state.fanData,
+});
+
+const applyDeviceSnapshotEvent = (state: AppStore, event: DeviceSnapshotEvent): DeviceSnapshotState => (
+  reduceDeviceSnapshot(deviceSnapshotStateFromStore(state), event)
+);
+
 export const useAppStore = create<AppStore>((set, get) => ({
   isConnected: false,
   deviceRuntimeState: 'disconnected',
@@ -354,13 +374,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
       ]);
       const coreServiceError = deviceStatus.error ? getCoreServiceErrorMessage(deviceStatus.error) : null;
 
-      set({
+      set((state) => ({
         config: appConfig,
-        ...deviceSnapshotFromStatus(deviceStatus),
+        ...applyDeviceSnapshotEvent(state, { type: 'status', status: deviceStatus }),
         legionFnQSupported: debugInfo?.legionFnQSupported === true,
         coreServiceError,
         error: coreServiceError,
-      });
+      }));
 
       get().handleTemperaturePayload(deviceStatus.temperature || null);
     } catch (error) {
@@ -394,7 +414,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
       await get().refreshDeviceContext();
     } catch (error) {
       console.error('连接失败:', error);
-      set({ ...deviceSnapshotFromStatus(null), error: i18n.t('store.errors.connectDevice') });
+      set((state) => ({
+        ...applyDeviceSnapshotEvent(state, { type: 'disconnected' }),
+        error: i18n.t('store.errors.connectDevice'),
+      }));
     }
   },
 
@@ -403,7 +426,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       await apiService.disconnectDevice();
       set((state) => ({
-        ...deviceSnapshotFromStatus(null),
+        ...applyDeviceSnapshotEvent(state, { type: 'disconnected' }),
         timelineEvents: appendTimelineEvent(state.timelineEvents, { timestamp: Date.now(), type: 'disconnect' }),
       }));
     } catch (error) {
@@ -433,12 +456,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
         return status;
       }
 	      const coreServiceError = status?.error ? getCoreServiceErrorMessage(status.error) : null;
-      set({
-        config: appConfig ? types.AppConfig.createFrom(appConfig) : get().config,
-        ...deviceSnapshotFromStatus(status),
+      set((state) => ({
+        config: appConfig ? types.AppConfig.createFrom(appConfig) : state.config,
+        ...applyDeviceSnapshotEvent(state, { type: 'status', status }),
         coreServiceError,
         error: coreServiceError,
-      });
+      }));
       if (status?.temperature) {
         get().handleTemperaturePayload(status.temperature);
       }
@@ -461,11 +484,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
       apiService.onCoreServiceError((message) => {
         deviceContextRequestGate.invalidate();
         const coreServiceError = getCoreServiceErrorMessage(message);
-        set({
-          ...deviceSnapshotFromStatus(null),
+        set((state) => ({
+          ...applyDeviceSnapshotEvent(state, { type: 'core-error' }),
           coreServiceError,
           error: coreServiceError,
-        });
+        }));
       })
     );
 
@@ -499,7 +522,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           info.model,
         ].map((value) => (typeof value === 'string' ? value.trim() : '')).find(Boolean);
         set((state) => ({
-          ...deviceSnapshotFromStatus({ ...info, connected: true }, 'capabilities'),
+          ...applyDeviceSnapshotEvent(state, { type: 'connected', status: info }),
           coreServiceError: null,
           error: null,
           timelineEvents: appendTimelineEvent(state.timelineEvents, { timestamp: Date.now(), type: 'reconnect' }),
@@ -519,7 +542,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         deviceContextRequestGate.invalidate();
         console.log('设备已断开');
         set((state) => ({
-          ...deviceSnapshotFromStatus(null),
+          ...applyDeviceSnapshotEvent(state, { type: 'disconnected' }),
           timelineEvents: appendTimelineEvent(state.timelineEvents, { timestamp: Date.now(), type: 'disconnect' }),
         }));
       })
@@ -528,7 +551,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     unsubscribers.push(
       apiService.onDeviceSettingsUpdate((settings) => {
 		if (!get().isConnected) return;
-        set({ deviceSettings: settings || null });
+        set((state) => applyDeviceSnapshotEvent(state, { type: 'settings', settings }));
         void get().refreshDeviceContext();
       })
     );
@@ -545,7 +568,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         const current = get();
 		if (!current.isConnected) return;
         if (fanDataEquals(current.fanData, data)) return;
-        set({ fanData: data });
+        set((state) => applyDeviceSnapshotEvent(state, { type: 'fan-data', fanData: data }));
       })
     );
 

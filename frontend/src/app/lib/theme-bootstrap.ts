@@ -1,5 +1,7 @@
-export const CUSTOM_STYLE_ID = 'thrm-custom-theme-style';
-export const THEME_BOOTSTRAP_STORAGE_KEY = 'thrm.theme-bootstrap';
+export const CUSTOM_STYLE_ID = 'fancontrol-custom-theme-style';
+export const LEGACY_CUSTOM_STYLE_ID = 'thrm-custom-theme-style';
+export const THEME_BOOTSTRAP_STORAGE_KEY = 'fancontrol.theme-bootstrap';
+export const LEGACY_THEME_BOOTSTRAP_STORAGE_KEY = 'thrm.theme-bootstrap';
 
 // Bump this when custom theme CSS resource semantics change, so stale cached
 // CSS cannot point at assets unavailable to the current executable.
@@ -104,15 +106,17 @@ export function createCustomThemeSnapshot(mode: string, base: CustomThemeBase, c
 export function getThemeBootstrapScript(): string {
   return `
 (() => {
-  const STORAGE_KEY = ${JSON.stringify(THEME_BOOTSTRAP_STORAGE_KEY)};
-  const STYLE_ID = ${JSON.stringify(CUSTOM_STYLE_ID)};
+  const STYLE_IDS = [${JSON.stringify(CUSTOM_STYLE_ID)}, ${JSON.stringify(LEGACY_CUSTOM_STYLE_ID)}];
+  const STORAGE_KEYS = [${JSON.stringify(THEME_BOOTSTRAP_STORAGE_KEY)}, ${JSON.stringify(LEGACY_THEME_BOOTSTRAP_STORAGE_KEY)}];
   const BUILTIN_MODES = new Set(${JSON.stringify([...BUILTIN_THEME_MODES])});
   const root = document.documentElement;
   root.dataset.windowBlur = 'on';
 
   const applyBaseTheme = (isDark) => {
-    const styleEl = document.getElementById(STYLE_ID);
-    if (styleEl) styleEl.remove();
+    for (const styleId of STYLE_IDS) {
+      const styleEl = document.getElementById(styleId);
+      if (styleEl) styleEl.remove();
+    }
     delete root.dataset.theme;
     delete root.dataset.themeLayer;
     root.classList.toggle('dark', !!isDark);
@@ -135,11 +139,17 @@ export function getThemeBootstrapScript(): string {
   }
 
   let snapshot = null;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    snapshot = raw ? JSON.parse(raw) : null;
-  } catch {
-    snapshot = null;
+  for (const storageKey of STORAGE_KEYS) {
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      const candidate = raw ? JSON.parse(raw) : null;
+      if (candidate && candidate.version === ${JSON.stringify(THEME_BOOTSTRAP_VERSION)} && typeof candidate.mode === 'string' && candidate.mode) {
+        snapshot = candidate;
+        break;
+      }
+    } catch {
+      // Try the legacy key if the preferred cache is malformed.
+    }
   }
 
   const prefersDark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -167,10 +177,10 @@ export function getThemeBootstrapScript(): string {
 
   delete root.dataset.windowBlur;
   root.dataset.themeLayer = snapshot.layer === 'advanced' ? 'advanced' : 'basic';
-  let styleEl = document.getElementById(STYLE_ID);
+  let styleEl = document.getElementById(${JSON.stringify(CUSTOM_STYLE_ID)});
   if (!styleEl) {
     styleEl = document.createElement('style');
-    styleEl.id = STYLE_ID;
+    styleEl.id = ${JSON.stringify(CUSTOM_STYLE_ID)};
     document.head.appendChild(styleEl);
   }
   styleEl.textContent = css;

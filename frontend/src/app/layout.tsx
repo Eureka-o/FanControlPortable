@@ -25,7 +25,7 @@ export default function RootLayout({
         <link rel="stylesheet" href="/fonts/manrope.css" />
         <link rel="stylesheet" href="/fonts/geist-mono.css" />
         <script
-          id="thrm-theme-bootstrap"
+          id="fancontrol-theme-bootstrap"
           dangerouslySetInnerHTML={{ __html: themeBootstrapScript }}
         />
       </head>

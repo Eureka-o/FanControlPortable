@@ -388,7 +388,7 @@ html[data-theme="advanced"] .glacier-hero-art::after {
 }
 
 html[data-theme="advanced"] .glacier-hero-art-label,
-html[data-theme="advanced"] .glacier-hero-card > .theme-thrm-only.glacier-hero-art-label,
+html[data-theme="advanced"] .glacier-hero-card > .theme-fancontrol-only.glacier-hero-art-label,
 html[data-theme="advanced"] .glacier-hero-card [class*="glacier-hero-art-label"] {
   display: none !important;
   visibility: hidden !important;
@@ -606,12 +606,12 @@ html[data-theme="advanced"] .glacier-chart-canvas::before {
   }
 }
 
-html[data-theme="advanced"] .theme-thrm-only {
+html[data-theme="advanced"] .theme-fancontrol-only {
   display: block !important;
 }
 
 @media (max-width: 767px) {
-  html[data-theme="advanced"] .theme-thrm-only {
+html[data-theme="advanced"] .theme-fancontrol-only {
     display: none !important;
   }
 }

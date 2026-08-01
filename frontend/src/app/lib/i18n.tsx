@@ -11,7 +11,8 @@ export const SUPPORTED_LOCALES = ["zh-CN", "en-US", "ja-JP"] as const;
 export type AppLocale = (typeof SUPPORTED_LOCALES)[number];
 
 const DEFAULT_LOCALE: AppLocale = "zh-CN";
-const LOCALE_STORAGE_KEY = "thrm.locale";
+const LOCALE_STORAGE_KEY = "fancontrol.locale";
+const LEGACY_LOCALE_STORAGE_KEY = "thrm.locale";
 
 const resources: Resource = {
   "zh-CN": { translation: zhCN },
@@ -47,7 +48,8 @@ function readPreferredLocale(): AppLocale {
     return DEFAULT_LOCALE;
   }
 
-  const stored = window.localStorage.getItem(LOCALE_STORAGE_KEY);
+  const stored = window.localStorage.getItem(LOCALE_STORAGE_KEY)
+    ?? window.localStorage.getItem(LEGACY_LOCALE_STORAGE_KEY);
   if (stored) {
     return normalizeLocale(stored);
   }

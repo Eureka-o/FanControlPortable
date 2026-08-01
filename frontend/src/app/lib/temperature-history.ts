@@ -9,41 +9,6 @@ export interface TemperatureHistoryPoint {
 
 export type HistorySeriesKey = 'cpu' | 'gpu' | 'fan' | 'cpuPower' | 'gpuPower' | 'totalPower';
 
-export interface HistoryValuePoint {
-  timestamp: number;
-  value: number;
-}
-
-export const detectAbruptHistoryPoints = (points: HistoryValuePoint[], minimumDelta: number, limit = 6) => {
-  const candidates: Array<HistoryValuePoint & { score: number; index: number }> = [];
-  for (let index = 1; index < points.length - 1; index += 1) {
-    const previous = points[index - 1];
-    const current = points[index];
-    const next = points[index + 1];
-    if (previous.value <= 0 || current.value <= 0 || next.value <= 0) continue;
-
-    const baseline = (previous.value + next.value) / 2;
-    const score = Math.abs(current.value - baseline);
-    const threshold = Math.max(minimumDelta, Math.abs(baseline) * 0.1);
-    const outsideNeighborRange = current.value <= Math.min(previous.value, next.value)
-      || current.value >= Math.max(previous.value, next.value);
-    if (outsideNeighborRange && score >= threshold && Math.max(Math.abs(current.value - previous.value), Math.abs(current.value - next.value)) >= threshold) {
-      candidates.push({ ...current, score, index });
-    }
-  }
-
-  const selected: typeof candidates = [];
-  for (const candidate of candidates.sort((left, right) => right.score - left.score)) {
-    if (selected.some((point) => Math.abs(point.index - candidate.index) <= 1)) continue;
-    selected.push(candidate);
-    if (selected.length >= Math.max(0, limit)) break;
-  }
-
-  return selected
-    .sort((left, right) => left.timestamp - right.timestamp)
-    .map(({ timestamp, value }) => ({ timestamp, value }));
-};
-
 export const CORE_HISTORY_LIMIT = 720;
 export const SESSION_HISTORY_LIMIT = 60;
 export const CORE_HISTORY_RETENTION_MS = 60 * 60 * 1000;
