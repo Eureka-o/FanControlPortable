@@ -59,11 +59,11 @@ test('supports total power and single-series statistics without hard-coded stat 
   assert.match(globalStyles, /--chart-area-opacity-end:/);
 });
 
-test('renders max and min markers only for a single visible series', () => {
-  assert.match(curveSource, /showExtrema/);
+test('renders history statistics only for a single visible series', () => {
+  assert.match(curveSource, /showStatisticsForSingleSeries/);
   assert.match(curveSource, /historyStatistics\.thermalSeries\.length === 1/);
   assert.match(curveSource, /historyStatistics\.powerSeries\.length === 1/);
-  assert.match(curveSource, /if \(\(key === 'max' \|\| key === 'min'\) && !showExtrema\)/);
+  assert.match(curveSource, /if \(!historyShowStatistics \|\| !showStatisticsForSingleSeries \|\| !series\)/);
 });
 
 test('keeps independent home chart visibility and supports total power in the thumbnail', () => {

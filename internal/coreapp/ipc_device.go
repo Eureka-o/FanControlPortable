@@ -3,7 +3,7 @@ package coreapp
 import (
 	"encoding/json"
 
-	"github.com/TIANLI0/THRM/internal/ipc"
+	"github.com/Eureka-o/FanControlPortable/internal/ipc"
 )
 
 func (a *CoreApp) handleDeviceIPCRequest(req ipc.Request) (ipc.Response, bool) {

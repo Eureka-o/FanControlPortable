@@ -3,7 +3,7 @@ package types
 import (
 	"strings"
 
-	"github.com/TIANLI0/THRM/internal/appmeta"
+	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
 )
 
 const (
@@ -275,9 +275,9 @@ func LegacyRPMProfileForTransport(transport string) DeviceProfile {
 	return DeviceProfile{
 		ID:           LegacyRPMProfileID,
 		DisplayName:  caps.DisplayName,
-		Vendor:       "THRM",
+		Vendor:       "FanControl",
 		Model:        "HID/BLE RPM",
-		Notes:        "保留参考软件风格的 RPM 控制路径，作为旧配置和高级模板使用。",
+		Notes:        "保留兼容 RPM 控制路径，作为旧配置和高级模板使用。",
 		BuiltIn:      true,
 		Transport:    transport,
 		SpeedUnit:    caps.SpeedUnit,

@@ -9,7 +9,7 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/config"
+	"github.com/Eureka-o/FanControlPortable/internal/config"
 	"golang.org/x/sys/windows"
 )
 

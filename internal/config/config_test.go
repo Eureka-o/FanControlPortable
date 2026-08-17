@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 func findDeviceProfileForTest(profiles []types.DeviceProfile, id string) (types.DeviceProfile, bool) {
@@ -89,6 +89,27 @@ func TestUpdateKeepsCurrentConfigWhenPersistenceFails(t *testing.T) {
 	}
 }
 
+func TestUpdateSkipsPersistenceWhenConfigIsUnchanged(t *testing.T) {
+	blockedPath := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(blockedPath, []byte("not a directory"), 0644); err != nil {
+		t.Fatalf("create blocked path: %v", err)
+	}
+	t.Setenv("USERPROFILE", blockedPath)
+	t.Setenv("HOME", blockedPath)
+
+	manager := NewManager(blockedPath, nil)
+	manager.Set(types.GetDefaultConfig(false))
+	before, revision := manager.GetWithRevision()
+
+	if err := manager.Update(before); err != nil {
+		t.Fatalf("Update() unchanged config error = %v", err)
+	}
+	_, afterRevision := manager.GetWithRevision()
+	if afterRevision != revision {
+		t.Fatalf("unchanged Update() revision = %d, want %d", afterRevision, revision)
+	}
+}
+
 func TestMutateAndSaveKeepsCurrentConfigWhenPersistenceFails(t *testing.T) {
 	blockedPath := filepath.Join(t.TempDir(), "blocked")
 	if err := os.WriteFile(blockedPath, []byte("not a directory"), 0644); err != nil {
@@ -114,6 +135,30 @@ func TestMutateAndSaveKeepsCurrentConfigWhenPersistenceFails(t *testing.T) {
 	}
 	if afterRevision != beforeRevision {
 		t.Fatalf("revision changed after failed mutation: got %d, want %d", afterRevision, beforeRevision)
+	}
+}
+
+func TestMutateIfRevisionAndSaveSkipsPersistenceWhenUnchanged(t *testing.T) {
+	blockedPath := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(blockedPath, []byte("not a directory"), 0644); err != nil {
+		t.Fatalf("create blocked path: %v", err)
+	}
+	t.Setenv("USERPROFILE", blockedPath)
+	t.Setenv("HOME", blockedPath)
+
+	manager := NewManager(blockedPath, nil)
+	manager.Set(types.GetDefaultConfig(false))
+	_, revision := manager.GetWithRevision()
+
+	_, afterRevision, applied, err := manager.MutateIfRevisionAndSave(revision, func(*types.AppConfig) {})
+	if err != nil {
+		t.Fatalf("MutateIfRevisionAndSave() unchanged config error = %v", err)
+	}
+	if applied {
+		t.Fatal("unchanged mutation was marked applied")
+	}
+	if afterRevision != revision {
+		t.Fatalf("unchanged mutation revision = %d, want %d", afterRevision, revision)
 	}
 }
 

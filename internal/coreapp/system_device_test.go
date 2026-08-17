@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/device"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/device"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 func TestManualDisconnectInvalidatesBlockedReconnectSuccess(t *testing.T) {
@@ -383,6 +383,27 @@ func TestConfigureDeviceManagerKeepsCompatibilityDisabled(t *testing.T) {
 	}
 	if connected, info := app.deviceManager.Connect(); connected || info != nil {
 		t.Fatalf("disabled compatibility Connect() = %v, %#v, want false/nil", connected, info)
+	}
+}
+
+func TestConfigureDeviceManagerRejectsInvalidRuntimeProfile(t *testing.T) {
+	app := newDeviceProfileTestApp(t, types.GetDefaultConfig(false))
+	cfg := types.GetDefaultConfig(false)
+	cfg.DeviceProfiles = []types.DeviceProfile{{
+		ID:          "user.invalid",
+		DisplayName: "Invalid",
+		Transport:   "unknown",
+		SpeedUnit:   types.FanSpeedUnitPercent,
+		Capabilities: types.DeviceCapabilities{
+			SupportsSetSpeed: true,
+		},
+	}}
+	cfg.ActiveDeviceProfileID = "user.invalid"
+	cfg.DeviceTransport = "unknown"
+	app.configureDeviceManager(cfg)
+
+	if profile := app.deviceManager.ActiveProfile(); profile.ID != "" || profile.Transport != "" {
+		t.Fatalf("invalid profile configured runtime manager: %#v", profile)
 	}
 }
 

@@ -27,6 +27,11 @@ const (
 	LayerBasic    = "basic"
 	LayerAdvanced = "advanced"
 
+	ContractFanControlV1 = "fancontrol/v1"
+	ContractLegacy       = "legacy"
+	LegacyThemeID        = "thrm"
+	ClassicThemeID       = "fancontrol-classic"
+
 	AssetURLPrefix = "/theme-assets/"
 )
 
@@ -41,7 +46,8 @@ type Meta struct {
 	Version     string `json:"version,omitempty"`
 	Description string `json:"description,omitempty"`
 	Layer       string `json:"layer,omitempty"` // basic | advanced
-	Source      string `json:"source"`          // user | install | builtin
+	Contract    string `json:"contract,omitempty"`
+	Source      string `json:"source"` // user | install | builtin
 }
 
 // Manager keeps install-root themes authoritative.
@@ -462,6 +468,9 @@ func (m *Manager) List() []Meta {
 					continue
 				}
 				if meta, ok := m.readBuiltinMeta(entry.Name()); ok {
+					if meta.ID == LegacyThemeID {
+						continue
+					}
 					merged[meta.ID] = meta
 				}
 			}
@@ -470,11 +479,17 @@ func (m *Manager) List() []Meta {
 
 	for _, legacyDir := range m.legacyDirs {
 		for _, meta := range m.scanDir(legacyDir, SourceUser) {
+			if meta.ID == LegacyThemeID {
+				continue
+			}
 			merged[meta.ID] = meta
 		}
 	}
 
 	for _, meta := range m.scanDir(m.installDir, SourceInstall) {
+		if meta.ID == LegacyThemeID {
+			continue
+		}
 		merged[meta.ID] = meta
 	}
 
@@ -555,7 +570,17 @@ func parseMeta(data []byte, folderName string) (Meta, bool) {
 		meta.Layer = manifest.Interface
 	}
 	meta.Layer = normalizeLayer(meta.Layer)
+	if meta.Contract != ContractFanControlV1 {
+		meta.Contract = ContractLegacy
+	}
 	return meta, true
+}
+
+func themeLookupIDs(id string) []string {
+	if id == LegacyThemeID {
+		return []string{ClassicThemeID, LegacyThemeID}
+	}
+	return []string{id}
 }
 
 // ReadCSS reads theme.css. The install package wins over old user residue.
@@ -564,21 +589,23 @@ func (m *Manager) ReadCSS(id string) (string, error) {
 		return "", fmt.Errorf("invalid theme id: %q", id)
 	}
 
-	if m.installDir != "" {
-		if data, err := os.ReadFile(filepath.Join(m.installDir, id, styleName)); err == nil {
-			return m.rewriteCSSAssetURLs(string(data), id), nil
+	for _, lookupID := range themeLookupIDs(id) {
+		if m.installDir != "" {
+			if data, err := os.ReadFile(filepath.Join(m.installDir, lookupID, styleName)); err == nil {
+				return m.rewriteCSSAssetURLs(string(data), lookupID), nil
+			}
 		}
-	}
 
-	for _, legacyDir := range m.legacyDirs {
-		if data, err := os.ReadFile(filepath.Join(legacyDir, id, styleName)); err == nil {
-			return m.rewriteCSSAssetURLs(string(data), id), nil
+		for _, legacyDir := range m.legacyDirs {
+			if data, err := os.ReadFile(filepath.Join(legacyDir, lookupID, styleName)); err == nil {
+				return m.rewriteCSSAssetURLs(string(data), lookupID), nil
+			}
 		}
-	}
 
-	if m.builtin != nil {
-		if data, err := fs.ReadFile(m.builtin, id+"/"+styleName); err == nil {
-			return m.rewriteCSSAssetURLs(string(data), id), nil
+		if m.builtin != nil {
+			if data, err := fs.ReadFile(m.builtin, lookupID+"/"+styleName); err == nil {
+				return m.rewriteCSSAssetURLs(string(data), lookupID), nil
+			}
 		}
 	}
 
@@ -600,21 +627,23 @@ func (m *Manager) ReadAsset(id, assetPath string) (Asset, error) {
 		return Asset{}, fmt.Errorf("invalid theme asset path: %q", assetPath)
 	}
 
-	if asset, err := readDiskThemeAsset(m.installDir, id, assetPath); err == nil {
-		return asset, nil
-	}
-	for _, legacyDir := range m.legacyDirs {
-		if asset, err := readDiskThemeAsset(legacyDir, id, assetPath); err == nil {
+	for _, lookupID := range themeLookupIDs(id) {
+		if asset, err := readDiskThemeAsset(m.installDir, lookupID, assetPath); err == nil {
 			return asset, nil
 		}
-	}
-	if m.builtin != nil {
-		if data, err := fs.ReadFile(m.builtin, id+"/"+assetPath); err == nil {
-			modTime := time.Now()
-			if info, statErr := fs.Stat(m.builtin, id+"/"+assetPath); statErr == nil {
-				modTime = info.ModTime()
+		for _, legacyDir := range m.legacyDirs {
+			if asset, err := readDiskThemeAsset(legacyDir, lookupID, assetPath); err == nil {
+				return asset, nil
 			}
-			return Asset{Name: filepath.Base(assetPath), Data: data, ModTime: modTime}, nil
+		}
+		if m.builtin != nil {
+			if data, err := fs.ReadFile(m.builtin, lookupID+"/"+assetPath); err == nil {
+				modTime := time.Now()
+				if info, statErr := fs.Stat(m.builtin, lookupID+"/"+assetPath); statErr == nil {
+					modTime = info.ModTime()
+				}
+				return Asset{Name: filepath.Base(assetPath), Data: data, ModTime: modTime}, nil
+			}
 		}
 	}
 	return Asset{}, fmt.Errorf("theme asset %q not found", assetPath)
@@ -699,7 +728,6 @@ func themeAssetPathFromCSSRef(raw, id string) (string, bool) {
 	}
 	return cleanThemeAssetPath(raw)
 }
-
 
 func shouldRewriteAssetURL(raw string) bool {
 	raw = strings.TrimSpace(raw)

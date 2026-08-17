@@ -2498,7 +2498,9 @@ html[data-theme="miku-01"] .glacier-sidebar::before {
       color-mix(in srgb, var(--secondary) 42%, transparent)
     ) !important;
   box-shadow:
-    0 12px 26px -24px color-mix(in srgb, var(--primary) 22%, transparent),
+    0 0 0 1px color-mix(in srgb, white 26%, transparent),
+    0 16px 34px -18px color-mix(in srgb, var(--primary) 34%, rgba(63, 48, 43, 0.28)),
+    4px 0 18px -14px color-mix(in srgb, var(--primary) 26%, transparent),
     inset 0 1px 0 color-mix(in srgb, white 72%, transparent) !important;
   -webkit-backdrop-filter: blur(6px) saturate(108%) !important;
   backdrop-filter: blur(6px) saturate(108%) !important;
@@ -2562,4 +2564,11 @@ html[data-theme="miku-01"] .glacier-shell::before {
 html[data-theme="miku-01"] .glacier-content-panel::before {
   content: none !important;
   display: none !important;
+}
+
+html[data-theme="miku-01"] .glacier-shell :is(
+  [data-theme-ui="compatibility-divider"],
+  [data-theme-ui="setting-row"] > .border-border\/50
+) {
+  border-top: 0 !important;
 }

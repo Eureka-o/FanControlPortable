@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 	hotkeylib "golang.design/x/hotkey"
 )
 

@@ -327,6 +327,14 @@ test("keeps illustration curtains on the full window shell", () => {
       /\.glacier-content-panel::before[\s\S]*?content:\s*none\s*!important/,
     );
   }
+  assert.match(
+    mikuTheme,
+    /\.glacier-sidebar::before\s*\{[\s\S]*?0 16px 34px -18px[\s\S]*?4px 0 18px -14px/,
+  );
+  assert.match(
+    mikuTheme,
+    /data-theme-ui="compatibility-divider"[\s\S]*?border-top: 0 !important/,
+  );
 });
 
 test("keeps the cyberpunk compact dock hover inside the icon slot", () => {

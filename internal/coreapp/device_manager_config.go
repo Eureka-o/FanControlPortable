@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/deviceprofiles"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 func (a *CoreApp) configureDeviceManager(cfg types.AppConfig) {
@@ -16,7 +17,13 @@ func (a *CoreApp) configureDeviceManager(cfg types.AppConfig) {
 		a.deviceManager.ClearProfile()
 		return
 	}
-	a.deviceManager.ConfigureProfile(profile, cfg.FanControlDeviceIp)
+	prepared, err := deviceprofiles.PrepareRuntimeProfile(profile, cfg.FanControlDeviceIp)
+	if err != nil {
+		a.deviceManager.ClearProfile()
+		a.logError("设备档案校验失败，已跳过运行时配置: %v", err)
+		return
+	}
+	a.deviceManager.ConfigureProfile(prepared, cfg.FanControlDeviceIp)
 }
 
 func (a *CoreApp) reconcileDeviceManagerProfile(cfg types.AppConfig) bool {

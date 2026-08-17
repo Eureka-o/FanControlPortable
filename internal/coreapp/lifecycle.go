@@ -5,15 +5,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/autostart"
-	"github.com/TIANLI0/THRM/internal/config"
-	"github.com/TIANLI0/THRM/internal/curveprofiles"
-	"github.com/TIANLI0/THRM/internal/ipc"
-	"github.com/TIANLI0/THRM/internal/powernotify"
-	"github.com/TIANLI0/THRM/internal/smartcontrol"
-	"github.com/TIANLI0/THRM/internal/tray"
-	"github.com/TIANLI0/THRM/internal/types"
-	"github.com/TIANLI0/THRM/internal/version"
+	"github.com/Eureka-o/FanControlPortable/internal/autostart"
+	"github.com/Eureka-o/FanControlPortable/internal/config"
+	"github.com/Eureka-o/FanControlPortable/internal/curveprofiles"
+	"github.com/Eureka-o/FanControlPortable/internal/ipc"
+	"github.com/Eureka-o/FanControlPortable/internal/powernotify"
+	"github.com/Eureka-o/FanControlPortable/internal/smartcontrol"
+	"github.com/Eureka-o/FanControlPortable/internal/tray"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/version"
 )
 
 // Start 启动核心服务
@@ -69,6 +69,11 @@ func (a *CoreApp) Start() error {
 	}
 
 	// 将启动迁移和系统自启动状态合并为一次完整配置写入。
+	if upgraded, err := a.autostartManager.EnsureAutoStartTaskHealthy(); err != nil {
+		a.logError("升级自启动任务定义失败: %v", err)
+	} else if upgraded {
+		a.logInfo("已升级自启动任务定义")
+	}
 	a.logInfo("检查Windows自启动状态")
 	actualAutoStart := a.autostartManager.CheckWindowsAutoStart()
 	if actualAutoStart != cfg.WindowsAutoStart {

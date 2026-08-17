@@ -5,7 +5,7 @@ package fnqpowermode
 import (
 	"context"
 
-	"github.com/TIANLI0/THRM/internal/plugins"
+	"github.com/Eureka-o/FanControlPortable/internal/plugins"
 )
 
 type Plugin struct{}

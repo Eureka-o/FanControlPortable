@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/deviceprofileexec"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/deviceprofileexec"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 type managerFakeBLEClient struct {

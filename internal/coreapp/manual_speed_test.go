@@ -6,9 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/TIANLI0/THRM/internal/config"
-	"github.com/TIANLI0/THRM/internal/device"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/config"
+	"github.com/Eureka-o/FanControlPortable/internal/device"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 func newManualSpeedTestApp(t *testing.T, cfg types.AppConfig) *CoreApp {

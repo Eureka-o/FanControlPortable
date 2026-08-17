@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/deviceprofiles"
-	"github.com/TIANLI0/THRM/internal/ipc"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/deviceprofiles"
+	"github.com/Eureka-o/FanControlPortable/internal/ipc"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 type deviceConnectionFlow struct {
@@ -228,7 +228,11 @@ func (f deviceConnectionFlow) connectCompatibilityCandidate(transport, profileID
 		return false
 	}
 
-	profile := types.NormalizeDeviceProfile(nextCfg.DeviceProfiles[idx], nextCfg.FanControlDeviceIp)
+	profile, err := deviceprofiles.PrepareRuntimeProfile(nextCfg.DeviceProfiles[idx], nextCfg.FanControlDeviceIp)
+	if err != nil {
+		f.broadcastError("设备档案校验失败: " + err.Error())
+		return false
+	}
 	endpoint = strings.TrimSpace(endpoint)
 	if endpoint != "" {
 		switch transport {
@@ -327,12 +331,12 @@ func nativeConnectProfileByID(cfg types.AppConfig, profileID string) (types.Devi
 		if strings.TrimSpace(profile.ID) != profileID {
 			continue
 		}
-		profile = types.NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp)
-		return profile, types.IsNativeDeviceTransport(profile.Transport)
+		profile, err := deviceprofiles.PrepareRuntimeProfile(profile, cfg.FanControlDeviceIp)
+		return profile, err == nil && types.IsNativeDeviceTransport(profile.Transport)
 	}
 	if profile, ok := deviceprofiles.BuiltInProfileByID(profileID); ok {
-		profile = types.NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp)
-		return profile, types.IsNativeDeviceTransport(profile.Transport)
+		profile, err := deviceprofiles.PrepareRuntimeProfile(profile, cfg.FanControlDeviceIp)
+		return profile, err == nil && types.IsNativeDeviceTransport(profile.Transport)
 	}
 	return types.DeviceProfile{}, false
 }

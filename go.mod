@@ -1,4 +1,4 @@
-module github.com/TIANLI0/THRM
+module github.com/Eureka-o/FanControlPortable
 
 go 1.26.2
 

@@ -37,8 +37,8 @@ FanControl 现在以内置设备档案的方式支持多种设备。不同设备
 
 ## 下载哪个文件
 
-- `FanControl-2.7.2-amd64-installer.exe`：2.7.2 安装包，升级时会保留已有配置。
-- `FanControl-2.7.2-portable.zip`：2.7.2 便携包，解压到固定文件夹后运行 `FanControl.exe`。
+- `FanControl-2.8.0-amd64-installer.exe`：2.8.0 安装包，升级时会保留已有配置。
+- `FanControl-2.8.0-portable.zip`：2.8.0 便携包，解压到固定文件夹后运行 `FanControl.exe`。
 
 首次启动时如果 Windows 弹出权限确认，请选择允许。软件需要管理员权限读取硬件温度，并可能安装或调用温度读取所需的辅助组件。
 
@@ -65,13 +65,12 @@ FanControl 现在以内置设备档案的方式支持多种设备。不同设备
 
 ## 最新版本
 
-当前正式版本：`2.7.2`
+当前正式版本：`2.8.0`
 
-- 历史曲线移除突变点标记，最大值和最小值仅在单数据系列显示时呈现。
-- 配置保存、设备连接和挂起恢复后的状态同步更加稳定。
-- 减少后台重复读取和重复处理，降低不必要的资源占用。
-- 修复蜡笔小新与小八 Plus 主题中“总”字缺失的问题。
-- 统一自定义主题缓存标识，并继续兼容旧主题缓存。
+- 改进部分 AMD 8945HX 机型的温度与功耗读取，并优化原生 BLE/HID 设备连接恢复。
+- 设置中支持重新安装 PawnIO，便于处理传感器读取异常。
+- 自启动支持电池供电启动和异常退出后恢复，托盘图标可在 Explorer 重启或睡眠唤醒后恢复。
+- 原 THRM 主题升级并更名为 FanControl Classic，新增一体化幕布、毛玻璃 Dock 与卡片视觉。
 
 完整更新记录请查看 [GitHub Releases](https://github.com/Eureka-o/FanControlPortable/releases) 或 `docs/release-notes/`。
 

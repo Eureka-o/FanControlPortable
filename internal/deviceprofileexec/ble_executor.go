@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/deviceproto"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/deviceproto"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 	"tinygo.org/x/bluetooth"
 )
 

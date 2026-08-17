@@ -1,8 +1,8 @@
 package guiapp
 
 import (
-	"github.com/TIANLI0/THRM/internal/config"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/config"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 )
 

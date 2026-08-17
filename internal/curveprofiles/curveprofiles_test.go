@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 func TestGenerateIDIncludesCollisionCounter(t *testing.T) {

@@ -4,7 +4,7 @@
  *
  * 这个模板的目标：
  *   1. 尽量接近 FanControl 系统默认浅色效果。
- *   2. 只使用 THRM/FanControl 都常见的组件：CSS 变量 + .glacier-* 选择器。
+ *   2. 只使用稳定的基础组件：CSS 变量 + .glacier-* 兼容选择器。
  *   3. 不使用 FanControl 高级 data-theme-card / data-theme-ui 钩子。
  *   4. 每一块都能单独删除，方便普通用户和 AI 二次修改。
  *

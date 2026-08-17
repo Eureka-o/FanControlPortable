@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/bridge"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/bridge"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 type testLogger struct{}
@@ -143,7 +143,7 @@ func TestReadUsesRecentBridgeTemperatureOnTransientFailure(t *testing.T) {
 			},
 			{
 				Success: false,
-				Error:   "timeout",
+				Error:   "sensor enumeration failed",
 			},
 		},
 	}
@@ -156,6 +156,9 @@ func TestReadUsesRecentBridgeTemperatureOnTransientFailure(t *testing.T) {
 	if !first.BridgeOk || first.CPUTemp != 61 || first.GPUTemp != 54 {
 		t.Fatalf("first read = %+v, want successful bridge data", first)
 	}
+	if first.TelemetrySource != types.TelemetrySourceBridge || first.TelemetryFailureStage != types.TelemetryFailureStageNone {
+		t.Fatalf("first telemetry metadata = source %q stage %q, want bridge/none", first.TelemetrySource, first.TelemetryFailureStage)
+	}
 
 	now = now.Add(5 * time.Second)
 	second := reader.Read(selection)
@@ -167,6 +170,9 @@ func TestReadUsesRecentBridgeTemperatureOnTransientFailure(t *testing.T) {
 	}
 	if second.CPUTemp != 61 || second.GPUTemp != 54 || second.CPUPowerWatts != 22.5 || second.GPUPowerWatts != 31.25 {
 		t.Fatalf("second read = %+v, want last valid bridge values", second)
+	}
+	if second.TelemetrySource != types.TelemetrySourceBridgeCache || second.TelemetryFailureStage != types.TelemetryFailureStageEnumeration {
+		t.Fatalf("cached telemetry metadata = source %q stage %q, want bridge-cache/enumeration", second.TelemetrySource, second.TelemetryFailureStage)
 	}
 }
 
@@ -274,6 +280,7 @@ func TestTelemetryStateClassifiesFreshDelayedAndUnavailable(t *testing.T) {
 		{name: "fresh", temp: types.TemperatureData{BridgeOk: true, TelemetryFresh: true, ControlTemp: 60}, want: types.TelemetryStateFresh},
 		{name: "delayed", temp: types.TemperatureData{BridgeOk: true, ControlTemp: 60}, want: types.TelemetryStateDelayed},
 		{name: "bridge unavailable", temp: types.TemperatureData{ControlTemp: 60}, want: types.TelemetryStateUnavailable},
+		{name: "fallback data", temp: types.TemperatureData{TelemetrySource: types.TelemetrySourceWMI, ControlTemp: 60}, want: types.TelemetryStateDelayed},
 		{name: "invalid temperature", temp: types.TemperatureData{BridgeOk: true, TelemetryFresh: true}, want: types.TelemetryStateUnavailable},
 	}
 
@@ -281,6 +288,41 @@ func TestTelemetryStateClassifiesFreshDelayedAndUnavailable(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := telemetryStateFor(tc.temp); got != tc.want {
 				t.Fatalf("telemetryStateFor() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFallbackMetadataKeepsPerSensorSources(t *testing.T) {
+	temp := types.TemperatureData{}
+	applyFallbackMetadata(&temp, fallbackReading{
+		cpuTemp:   72,
+		gpuTemp:   68,
+		cpuSource: types.TelemetrySourceWMI,
+		gpuSource: types.TelemetrySourceNVIDIA,
+	})
+	if temp.CPUTelemetrySource != types.TelemetrySourceWMI || temp.GPUTelemetrySource != types.TelemetrySourceNVIDIA {
+		t.Fatalf("fallback sources = %q/%q", temp.CPUTelemetrySource, temp.GPUTelemetrySource)
+	}
+	if temp.TelemetrySource != types.TelemetrySourceWMI || temp.TelemetryFailureStage != types.TelemetryFailureStageFallback {
+		t.Fatalf("fallback metadata = source %q stage %q", temp.TelemetrySource, temp.TelemetryFailureStage)
+	}
+}
+
+func TestClassifyTelemetryFailureStage(t *testing.T) {
+	cases := map[string]string{
+		"enumeration": "sensor enumeration failed",
+		"selection":   "GPU device selection failed",
+		"transport":   "pipe timeout",
+	}
+	for name, message := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := classifyTelemetryFailureStage(message); got != map[string]string{
+				"enumeration": types.TelemetryFailureStageEnumeration,
+				"selection":   types.TelemetryFailureStageSelection,
+				"transport":   types.TelemetryFailureStageTransport,
+			}[name] {
+				t.Fatalf("classifyTelemetryFailureStage(%q) = %q", message, got)
 			}
 		})
 	}

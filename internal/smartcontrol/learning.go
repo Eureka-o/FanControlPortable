@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 // StableObserver + 稳态学习用到的常量。

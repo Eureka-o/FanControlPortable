@@ -68,6 +68,7 @@ export function DeviceCompatibilityPanel({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
+            data-theme-ui="compatibility-divider"
             className="mt-3 overflow-hidden border-t border-border/50"
           >
             <div className="space-y-3 pt-4">

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/deviceprofileexec"
-	"github.com/TIANLI0/THRM/internal/deviceprofiles"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/deviceprofileexec"
+	"github.com/Eureka-o/FanControlPortable/internal/deviceprofiles"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 const idleBLEScanCooldown = 15 * time.Minute
@@ -143,7 +143,12 @@ func (m *Manager) ConnectNativeProfileContext(ctx context.Context, profile types
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	profile = types.NormalizeDeviceProfile(profile, "")
+	var err error
+	profile, err = deviceprofiles.PrepareRuntimeProfile(profile, "")
+	if err != nil {
+		m.logWarn("native device profile rejected: %v", err)
+		return false, nil
+	}
 	if !types.IsNativeDeviceTransport(profile.Transport) {
 		return false, nil
 	}
@@ -187,7 +192,11 @@ func nativeAutoConnectCandidates(profiles []types.DeviceProfile, preferred ...ty
 	bleProfiles := make([]types.DeviceProfile, 0)
 
 	add := func(target *[]types.DeviceProfile, profile types.DeviceProfile) {
-		profile = types.NormalizeDeviceProfile(profile, "")
+		var err error
+		profile, err = deviceprofiles.PrepareRuntimeProfile(profile, "")
+		if err != nil {
+			return
+		}
 		if !types.IsNativeDeviceTransport(profile.Transport) {
 			return
 		}

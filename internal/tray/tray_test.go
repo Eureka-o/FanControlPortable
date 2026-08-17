@@ -1,10 +1,12 @@
 package tray
 
 import (
+	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 func TestFormatFanSpeedForTrayUsesSpeedUnit(t *testing.T) {
@@ -26,6 +28,24 @@ func TestFormatFanSpeedForTrayUsesSpeedUnit(t *testing.T) {
 				t.Fatalf("formatFanSpeedForTray() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestStatusDoesNotCarrySmartControlDetails(t *testing.T) {
+	if _, ok := reflect.TypeOf(Status{}).FieldByName("SmartControlDecision"); ok {
+		t.Fatal("tray status should not carry SmartControl detail data")
+	}
+}
+
+func TestSystrayInstanceBudget(t *testing.T) {
+	m := NewManager(nil, nil)
+	atomic.StoreInt32(&m.instanceCount, maxSystrayInstances-1)
+	if m.systrayBudgetExhausted() {
+		t.Fatal("budget should allow the final instance")
+	}
+	atomic.StoreInt32(&m.instanceCount, maxSystrayInstances)
+	if !m.systrayBudgetExhausted() {
+		t.Fatal("budget should stop an unbounded rebuild loop")
 	}
 }
 

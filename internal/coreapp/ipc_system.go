@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/ipc"
+	"github.com/Eureka-o/FanControlPortable/internal/ipc"
 )
 
 func (a *CoreApp) handleAutostartIPCRequest(req ipc.Request) (ipc.Response, bool) {

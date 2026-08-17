@@ -763,6 +763,7 @@ html:is(
     [data-theme="maodie"],
     [data-theme="miku-01"],
     [data-theme="shinchan"],
+    [data-theme="fancontrol-classic"],
     [data-theme="thrm"],
     [data-theme="xiaoba"],
     [data-theme="xiaoba-deluxe"]
@@ -875,6 +876,34 @@ html[data-theme][data-theme]
   button[data-theme-ui="sidebar-item"][aria-selected="true"]::after {
   content: none !important;
   display: none !important;
+}
+
+/* Custom themes share the same device-status semantics. Keep theme artwork
+ * intact while removing the shared Hero decoration and styling the empty state
+ * through the same card contract. */
+html[data-theme][data-theme]
+  body
+  .glacier-shell
+  [data-theme-card="device-hero"]::before,
+html[data-theme][data-theme]
+  body
+  .glacier-shell
+  [data-theme-card="device-hero"]::after {
+  content: none !important;
+  display: none !important;
+}
+
+html[data-theme][data-theme]
+  body
+  .glacier-shell
+  [data-theme-card="connection-empty"] {
+  border: 1px solid var(--theme-card-border, var(--border)) !important;
+  border-style: solid !important;
+  border-radius: var(--theme-card-radius, var(--radius-xl)) !important;
+  background: var(--theme-card-background, var(--card)) !important;
+  box-shadow: var(--theme-card-shadow, var(--shadow-sm)) !important;
+  -webkit-backdrop-filter: var(--theme-card-backdrop-filter, none) !important;
+  backdrop-filter: var(--theme-card-backdrop-filter, none) !important;
 }
 
 html
@@ -1002,21 +1031,21 @@ html.dark [data-app-ui="brand-wordmark"] {
 }
 
 [data-app-ui="brand-wordmark"] > [data-brand-part="f"] {
-  clip-path: inset(0 87% 0 0);
+  clip-path: inset(0 calc(87% - 1px) 0 0);
   transform: scale(0.78);
 }
 
 [data-app-ui="brand-wordmark"] > [data-brand-part="an"] {
-  clip-path: inset(0 67% 0 13%);
+  clip-path: inset(0 calc(67% - 1px) 0 calc(13% - 1px));
 }
 
 [data-app-ui="brand-wordmark"] > [data-brand-part="c"] {
-  clip-path: inset(0 55% 0 33%);
+  clip-path: inset(0 calc(55% - 1px) 0 calc(33% - 1px));
   transform: translateX(-20px) scale(0.78);
 }
 
 [data-app-ui="brand-wordmark"] > [data-brand-part="ontrol"] {
-  clip-path: inset(0 0 0 45%);
+  clip-path: inset(0 0 0 calc(45% - 1px));
 }
 
 [data-app-ui="brand-wordmark"] > :is([data-brand-part="an"], [data-brand-part="ontrol"]) {

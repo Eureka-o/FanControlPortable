@@ -50,3 +50,11 @@ test('migrates legacy THRM theme and locale storage names without breaking start
   assert.match(readFileSync(new URL('../src/app/lib/i18n.tsx', import.meta.url), 'utf8'), /fancontrol\.locale/);
   assert.match(readFileSync(new URL('../src/app/lib/i18n.tsx', import.meta.url), 'utf8'), /thrm\.locale/);
 });
+
+test('applies the FanControl theme contract to built-in and custom themes', () => {
+  assert.match(source, /THEME_CONTRACT = 'fancontrol\/v1'/);
+  assert.match(source, /root\.dataset\.themeContract = THEME_CONTRACT/);
+  assert.match(source, /snapshot\.contract === THEME_CONTRACT \? THEME_CONTRACT : LEGACY_THEME_CONTRACT/);
+  assert.match(syncSource, /document\.documentElement\.dataset\.themeContract = contract/);
+  assert.match(syncSource, /normalizeThemeContract\(meta\.contract\)/);
+});

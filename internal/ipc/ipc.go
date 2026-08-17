@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/Microsoft/go-winio"
-	"github.com/TIANLI0/THRM/internal/appmeta"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 // currentProtocolVersion 是当前 IPC 协议版本,统一引用 appmeta 以避免版本号漂移。

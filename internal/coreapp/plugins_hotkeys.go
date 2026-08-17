@@ -3,11 +3,11 @@ package coreapp
 import (
 	"fmt"
 
-	"github.com/TIANLI0/THRM/internal/appmeta"
-	hotkeysvc "github.com/TIANLI0/THRM/internal/hotkey"
-	"github.com/TIANLI0/THRM/internal/ipc"
-	"github.com/TIANLI0/THRM/internal/plugins/fnqpowermode"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
+	hotkeysvc "github.com/Eureka-o/FanControlPortable/internal/hotkey"
+	"github.com/Eureka-o/FanControlPortable/internal/ipc"
+	"github.com/Eureka-o/FanControlPortable/internal/plugins/fnqpowermode"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 func (a *CoreApp) registerPlugins() {

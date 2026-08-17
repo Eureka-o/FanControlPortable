@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/smartcontrol"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/smartcontrol"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 const (

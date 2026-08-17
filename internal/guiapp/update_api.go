@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/config"
-	"github.com/TIANLI0/THRM/internal/version"
+	"github.com/Eureka-o/FanControlPortable/internal/config"
+	"github.com/Eureka-o/FanControlPortable/internal/version"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 

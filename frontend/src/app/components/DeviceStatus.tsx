@@ -888,12 +888,6 @@ export default function DeviceStatus({
       {/* ── Device header card ── */}
       <div data-theme-section="hero" data-theme-card="device-hero" className="glacier-hero-card relative overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm shadow-black/5">
         <div className="theme-fancontrol-only theme-thrm-only glacier-hero-art pointer-events-none absolute inset-y-0 right-0 hidden overflow-hidden md:block" aria-hidden="true">
-          <img
-            src="/theme/ice-operator-banner.png"
-            alt=""
-            draggable={false}
-            className="glacier-operator-art h-full w-full object-cover object-right opacity-[0.58] mix-blend-multiply"
-          />
           <div className="absolute inset-0 bg-gradient-to-r from-card/80 via-card/25 to-transparent" />
           <div className="absolute inset-0 bg-gradient-to-b from-white/20 via-transparent to-card/30" />
         </div>
@@ -1015,6 +1009,7 @@ export default function DeviceStatus({
           initial={{ opacity: 0, scale: 0.98 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.3 }}
+          data-theme-card="connection-empty"
           className="rounded-xl border border-dashed border-border bg-card p-14 text-center"
         >
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-muted">

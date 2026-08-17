@@ -1,6 +1,6 @@
 package deviceprofiles
 
-import "github.com/TIANLI0/THRM/internal/types"
+import "github.com/Eureka-o/FanControlPortable/internal/types"
 
 func BuiltInProfileByID(profileID string) (types.DeviceProfile, bool) {
 	return types.BuiltInDeviceProfileByID(profileID)

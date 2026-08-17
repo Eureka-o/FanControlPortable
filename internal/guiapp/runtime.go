@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/appmeta"
-	"github.com/TIANLI0/THRM/internal/ipc"
+	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
+	"github.com/Eureka-o/FanControlPortable/internal/ipc"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 	"go.uber.org/zap"

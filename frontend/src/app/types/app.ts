@@ -66,6 +66,10 @@ export interface TemperatureData {
   updateTime: number;  // 更新时间戳
   bridgeOk?: boolean;  // 桥接程序是否正常
   bridgeMessage?: string; // 桥接程序提示
+  telemetrySource?: 'bridge' | 'bridge-cache' | 'local' | 'wmi' | 'nvidia' | 'unknown' | string;
+  cpuTelemetrySource?: string;
+  gpuTelemetrySource?: string;
+  telemetryFailureStage?: 'none' | 'starting' | 'transport' | 'empty' | 'enumeration' | 'selection' | 'fallback' | string;
   telemetryState?: TelemetryState;
 }
 
@@ -97,7 +101,7 @@ export interface AppConfig {
   gearLight: boolean;          // 挡位灯
   powerOnStart: boolean;       // 通电自启动
   windowsAutoStart: boolean;   // Windows开机自启动
-  // 主题模式：system/light/dark 为内置基础主题；其它字符串为自定义主题 id（如 'thrm'）
+  // 主题模式：system/light/dark 为内置基础主题；其它字符串为自定义主题 id（如 'fancontrol-classic'）
   themeMode?: string;
   windowBlur?: 'acrylic' | 'mica' | 'tabbed' | 'off';
   smartStartStop: string;      // 智能启停
@@ -287,6 +291,7 @@ export interface ThemeMeta {
   version?: string;
   description?: string;
   layer?: 'basic' | 'advanced' | string; // basic | advanced
+  contract?: string;
   source: string;      // user | install | builtin
 }
 

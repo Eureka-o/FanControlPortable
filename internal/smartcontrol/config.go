@@ -1,6 +1,6 @@
 package smartcontrol
 
-import "github.com/TIANLI0/THRM/internal/types"
+import "github.com/Eureka-o/FanControlPortable/internal/types"
 
 // NormalizeConfig 归一化智能控温配置。
 func NormalizeConfig(cfg types.SmartControlConfig, curve []types.FanCurvePoint, debug bool) (types.SmartControlConfig, bool) {

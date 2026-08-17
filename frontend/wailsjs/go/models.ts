@@ -37,6 +37,7 @@ export namespace theme {
 	    version?: string;
 	    description?: string;
 	    layer?: string;
+	    contract?: string;
 	    source: string;
 
 	    static createFrom(source: any = {}) {
@@ -52,6 +53,7 @@ export namespace theme {
 	        this.version = source["version"];
 	        this.description = source["description"];
 	        this.layer = source["layer"];
+	        this.contract = source["contract"];
 	        this.source = source["source"];
 	    }
 	}
@@ -1215,6 +1217,8 @@ export namespace types {
 	    updateTime: number;
 	    success: boolean;
 	    error: string;
+	    telemetrySource?: string;
+	    telemetryFailureStage?: string;
 
 	    static createFrom(source: any = {}) {
 	        return new BridgeTemperatureData(source);
@@ -1241,6 +1245,8 @@ export namespace types {
 	        this.updateTime = source["updateTime"];
 	        this.success = source["success"];
 	        this.error = source["error"];
+	        this.telemetrySource = source["telemetrySource"];
+	        this.telemetryFailureStage = source["telemetryFailureStage"];
 	    }
 
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -1915,6 +1921,10 @@ export namespace types {
 	    updateTime: number;
 	    bridgeOk: boolean;
 	    bridgeMessage: string;
+	    telemetrySource?: string;
+	    cpuTelemetrySource?: string;
+	    gpuTelemetrySource?: string;
+	    telemetryFailureStage?: string;
 	    telemetryState: string;
 
 	    static createFrom(source: any = {}) {
@@ -1942,6 +1952,10 @@ export namespace types {
 	        this.updateTime = source["updateTime"];
 	        this.bridgeOk = source["bridgeOk"];
 	        this.bridgeMessage = source["bridgeMessage"];
+	        this.telemetrySource = source["telemetrySource"];
+	        this.cpuTelemetrySource = source["cpuTelemetrySource"];
+	        this.gpuTelemetrySource = source["gpuTelemetrySource"];
+	        this.telemetryFailureStage = source["telemetryFailureStage"];
 	        this.telemetryState = source["telemetryState"];
 	    }
 

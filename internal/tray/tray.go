@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"fyne.io/systray"
-	"github.com/TIANLI0/THRM/internal/appmeta"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 const (
@@ -26,6 +26,7 @@ const (
 	trayShellRestartSettleTimeout = 12 * time.Second
 	trayReadyRecoveryDelay        = 75 * time.Second
 	trayRestartThrottle           = 45 * time.Second
+	maxSystrayInstances           = 200
 )
 
 // Manager 系统托盘管理器
@@ -189,6 +190,10 @@ func (m *Manager) supervise() {
 			return
 		default:
 		}
+		if m.systrayBudgetExhausted() {
+			m.logError("系统托盘已重建 %d 次仍未稳定，停止继续重建；请重启 FanControl 核心服务", atomic.LoadInt32(&m.instanceCount))
+			return
+		}
 
 		ran := m.runSystrayInstance()
 
@@ -300,7 +305,7 @@ func (m *Manager) onTrayReady() {
 	if err := m.setupIcon(); err != nil {
 		m.logError("设置托盘图标失败: %v", err)
 		atomic.StoreInt32(&m.readyState, 0)
-		systray.Quit()
+		m.quitSystrayInstance()
 		return
 	}
 
@@ -317,7 +322,7 @@ func (m *Manager) onTrayReady() {
 	if err != nil {
 		m.logError("创建托盘菜单失败: %v", err)
 		atomic.StoreInt32(&m.readyState, 0)
-		systray.Quit()
+		m.quitSystrayInstance()
 		return
 	}
 	m.menuItems = menuItems
@@ -641,7 +646,6 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 				} else {
 					m.menuItems.AutoControl.Uncheck()
 				}
-
 				if status.Connected {
 					systray.SetTooltip(formatTrayTooltip(status, fanSpeedText))
 				} else {
@@ -893,14 +897,7 @@ func (m *Manager) Quit() {
 	}
 	m.mutex.Unlock()
 
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				m.logDebug("退出托盘时发生错误（可忽略）: %v", r)
-			}
-		}()
-		systray.Quit()
-	}()
+	m.quitSystrayInstance()
 }
 
 // RefreshIcon 主动刷新托盘图标。
@@ -970,10 +967,24 @@ func (m *Manager) requestTrayRestart(reason string) {
 	}
 	m.logError("系统托盘状态异常，准备重建: %s", reason)
 	atomic.StoreInt32(&m.readyState, 0)
-	go func() {
-		defer func() { _ = recover() }()
-		systray.Quit()
+	go m.quitSystrayInstance()
+}
+
+func (m *Manager) systrayBudgetExhausted() bool {
+	return atomic.LoadInt32(&m.instanceCount) >= maxSystrayInstances
+}
+
+// quitSystrayInstance bypasses fyne/systray's process-wide quitOnce during recovery.
+func (m *Manager) quitSystrayInstance() {
+	defer func() {
+		if r := recover(); r != nil {
+			m.logDebug("结束系统托盘消息循环时发生错误（可忽略）: %v", r)
+		}
 	}()
+	if postSystrayClose() {
+		return
+	}
+	systray.Quit()
 }
 
 // 日志辅助方法

@@ -23,3 +23,7 @@ func trayNotifyState() (uintptr, uint32) {
 func postTaskbarCreated() bool {
 	return true
 }
+
+func postSystrayClose() bool {
+	return false
+}

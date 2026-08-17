@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal EnableExtensions EnableDelayedExpansion
 echo Building TempBridge...
 
 set "ROOT=%~dp0"
@@ -8,9 +8,12 @@ set "OUTDIR=%ROOT%build\bin\bridge"
 set "BUILDROOT=%ROOT%build\bin"
 set "TEMPROOT=%ROOT%temp"
 set "LHM_URL=https://github.com/LibreHardwareMonitor/LibreHardwareMonitor.git"
-set "LHM_BRANCH=master"
+set "LHM_COMMIT=3f2b4baa6d1d8d20795e0bc3311cfe819b1567c8"
 set "LHM_REPO=%TEMPROOT%\LibreHardwareMonitor"
-if defined LIBRE_HARDWARE_MONITOR_REPO set "LHM_REPO=%LIBRE_HARDWARE_MONITOR_REPO%"
+if defined LIBRE_HARDWARE_MONITOR_REPO (
+	set "LHM_REPO=%LIBRE_HARDWARE_MONITOR_REPO%"
+	set "LHM_COMMIT="
+)
 set "LHM_PROJECT=%LHM_REPO%\LibreHardwareMonitorLib\LibreHardwareMonitorLib.csproj"
 set "PAWNIO_URL=https://github.com/namazso/PawnIO.Setup/releases/latest/download/PawnIO_setup.exe"
 set "PAWNIO_OUT=%BUILDROOT%\PawnIO_setup.exe"
@@ -31,14 +34,26 @@ if /I "%USE_LHM_SOURCE%"=="true" (
 
 	if not exist "%LHM_REPO%\.git" (
 		echo Cloning LibreHardwareMonitor into %LHM_REPO%...
-		git clone --depth 1 --branch %LHM_BRANCH% "%LHM_URL%" "%LHM_REPO%"
+		git clone --filter=blob:none "%LHM_URL%" "%LHM_REPO%"
 		if errorlevel 1 goto :error
-	) else (
-		echo Updating LibreHardwareMonitor in %LHM_REPO%...
-		git -C "%LHM_REPO%" checkout %LHM_BRANCH%
-		if errorlevel 1 goto :error
-		git -C "%LHM_REPO%" pull --ff-only origin %LHM_BRANCH%
-		if errorlevel 1 goto :error
+	)
+	if defined LHM_COMMIT (
+		set "LHM_CURRENT_COMMIT="
+		for /f %%i in ('git -C "%LHM_REPO%" rev-parse HEAD 2^>nul') do set "LHM_CURRENT_COMMIT=%%i"
+		if /I "!LHM_CURRENT_COMMIT!"=="%LHM_COMMIT%" (
+			echo LibreHardwareMonitor is already pinned to %LHM_COMMIT%.
+		) else (
+			echo Pinning LibreHardwareMonitor to official commit %LHM_COMMIT%...
+			git -C "%LHM_REPO%" diff --quiet
+			if errorlevel 1 (
+				echo ERROR: LibreHardwareMonitor source tree has local changes; refusing to overwrite it.
+				goto :error
+			)
+			git -C "%LHM_REPO%" fetch --depth 1 origin %LHM_COMMIT%
+			if errorlevel 1 goto :error
+			git -C "%LHM_REPO%" checkout --detach %LHM_COMMIT%
+			if errorlevel 1 goto :error
+		)
 	)
 
 	if not exist "%LHM_PROJECT%" (
@@ -46,8 +61,8 @@ if /I "%USE_LHM_SOURCE%"=="true" (
 		goto :error
 	)
 
-	for /f %%i in ('git -C "%LHM_REPO%" rev-parse HEAD') do set "LHM_COMMIT=%%i"
-	echo Using LibreHardwareMonitor source commit: %LHM_COMMIT%
+	for /f %%i in ('git -C "%LHM_REPO%" rev-parse HEAD') do set "LHM_RESOLVED_COMMIT=%%i"
+	echo Using LibreHardwareMonitor source commit: !LHM_RESOLVED_COMMIT!
 	set "LHM_SOURCE_PROPS=/p:UseLibreHardwareMonitorProjectReference=true /p:LibreHardwareMonitorRepoRoot=%LHM_REPO%"
 ) else (
 	echo Using LibreHardwareMonitorLib NuGet package for stable local packaging.

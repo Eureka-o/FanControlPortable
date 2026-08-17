@@ -1,6 +1,6 @@
 package guiapp
 
-import "github.com/TIANLI0/THRM/internal/deviceprofileexec"
+import "github.com/Eureka-o/FanControlPortable/internal/deviceprofileexec"
 
 func (a *App) ScanBLEDevices(params BLEScanParams) ([]BLEDeviceInfo, error) {
 	devices, err := deviceprofileexec.ScanBLEDevices(params)

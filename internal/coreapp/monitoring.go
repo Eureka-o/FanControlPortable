@@ -6,10 +6,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/bridge"
-	"github.com/TIANLI0/THRM/internal/ipc"
-	"github.com/TIANLI0/THRM/internal/smartcontrol"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/bridge"
+	"github.com/Eureka-o/FanControlPortable/internal/ipc"
+	"github.com/Eureka-o/FanControlPortable/internal/smartcontrol"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 const temperatureSafetyFallbackThreshold = 3
@@ -368,8 +368,9 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					if writeSucceeded {
 						gateReason = "temperature-safety-fallback"
 					}
-					a.setSmartControlDecision(smartControlDecisionSnapshot{
+					a.setSmartControlDecision(smartcontrol.Decision{
 						Active:         true,
+						ControlTemp:    temp.ControlTemp,
 						ControlSource:  types.NormalizeTempSource(temp.ControlSource),
 						SpeedUnit:      speedUnit,
 						SafetyFallback: true,
@@ -480,36 +481,24 @@ func (a *CoreApp) startTemperatureMonitoring() {
 						risePredictionSamples = risePredictionSamples[len(risePredictionSamples)-12:]
 					}
 				}
-				decision := evaluateSmartControlTarget(smartControlTargetInput{
+				decision := smartcontrol.EvaluateDecision(smartcontrol.DecisionInput{
 					ControlTemp:           controlTemp,
+					ControlSource:         temp.ControlSource,
 					Curve:                 cfg.FanCurve,
 					Config:                smartCfg,
 					SpeedUnit:             speedUnit,
+					PreviousTarget:        prevTargetRPM,
 					AdvancedTelemetry:     advancedSampleUsable,
+					PowerAvailable:        effectivePower.CPUValid || effectivePower.GPUValid,
 					RisePredictionSamples: risePredictionSamples,
 				})
-				curveMinRPM, curveMaxRPM := decision.CurveMin, decision.CurveMax
-				baseRPM := decision.BaseTarget
-				learnedTargetRPM := decision.LearnedTarget
-				targetRPM := decision.Target
-				prediction := decision.RisePrediction
-				predictionActive := prediction.RampUpMultiplier > 1 || prediction.Boost > 0
-				targetBeforeRamp := targetRPM
-				ramp := applySmartControlRamp(smartControlRampInput{
-					Target:               targetRPM,
-					PreviousTarget:       prevTargetRPM,
-					CurveMin:             curveMinRPM,
-					CurveMax:             curveMaxRPM,
-					Config:               smartCfg,
-					PredictionMultiplier: prediction.RampUpMultiplier,
-				})
-				targetRPM = ramp.Target
-				rampAdjustment := ramp.Adjustment
+				targetRPM := decision.FinalTarget
+				predictionActive := decision.PredictionRampMultiplier > 1 || decision.TemperatureRiseBoost > 0
 
 				rawAxisNoiseTarget := targetRPM
 				axisNoiseAdjusted := false
 				if adjustedTarget, adjusted := axisNoiseTargetForDevice(cfg, a.activeDeviceCurveScopeKey(cfg), targetRPM, prevTargetRPM, speedUnit); adjusted {
-					targetRPM = min(adjustedTarget, curveMaxRPM)
+					targetRPM = min(adjustedTarget, decision.CurveMax)
 					axisNoiseAdjusted = targetRPM != rawAxisNoiseTarget
 				}
 
@@ -519,7 +508,9 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				if targetLimited {
 					a.logInfo("智能控温目标受飞智当前供电/挡位上限限制: %dRPM -> %dRPM", requestedTargetRPM, targetRPM)
 				}
-				hardwareAdjustment := targetRPM - requestedTargetRPM
+				decision.NoiseAdjustment = requestedTargetRPM - rawAxisNoiseTarget
+				decision.HardwareAdjustment = targetRPM - requestedTargetRPM
+				decision.FinalTarget = targetRPM
 				observedRPM := targetRPM
 				if actualSpeedValid {
 					observedRPM = actualSpeed
@@ -563,26 +554,11 @@ func (a *CoreApp) startTemperatureMonitoring() {
 						confidence = "high"
 					}
 				}
-				a.setSmartControlDecision(smartControlDecisionSnapshot{
-					Active:               true,
-					ControlTemp:          controlTemp,
-					ControlSource:        types.NormalizeTempSource(temp.ControlSource),
-					SpeedUnit:            speedUnit,
-					BaseTarget:           baseRPM,
-					LearnedTarget:        learnedTargetRPM,
-					LearningOffset:       learnedTargetRPM - baseRPM,
-					PowerAvailable:       effectivePower.CPUValid || effectivePower.GPUValid,
-					PowerAssisted:        prediction.PowerAssisted,
-					TemperatureRiseBoost: targetBeforeRamp - learnedTargetRPM,
-					RampAdjustment:       rampAdjustment,
-					NoiseAdjustment:      requestedTargetRPM - rawAxisNoiseTarget,
-					HardwareAdjustment:   hardwareAdjustment,
-					FinalTarget:          targetRPM,
-					WriteAttempted:       shouldWrite,
-					WriteSucceeded:       writeSucceeded,
-					GateReason:           gateReason,
-					Confidence:           confidence,
-				})
+				decision.WriteAttempted = shouldWrite
+				decision.WriteSucceeded = writeSucceeded
+				decision.GateReason = gateReason
+				decision.Confidence = confidence
+				a.setSmartControlDecision(decision)
 
 				if smartCfg.Learning && advancedSampleUsable && !predictionActive && !targetLimited && !axisNoiseAdjusted && !a.noiseDiagnosticLeaseActive() {
 					steady := steadyObserver.ObserveWithEffectivePowerAt(now, controlTemp, observedRPM, effectivePower, controlCurve, smartCfg)
@@ -627,17 +603,18 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					steadyObserver.Reset()
 				}
 
-				if baseRPM > 0 {
-					a.logDebug("智能控温: 最高=%d°C 基准=%s 当前=%d°C 平均=%d°C 控制温度=%d°C 基础=%d%s 目标=%d%s", temp.MaxTemp, temp.ControlSource, temp.ControlTemp, avgTemp, controlTemp, displaySpeedForLog(baseRPM, speedUnit), types.FanSpeedDisplaySuffix(speedUnit), displaySpeedForLog(targetRPM, speedUnit), types.FanSpeedDisplaySuffix(speedUnit))
+				if decision.BaseTarget > 0 {
+					a.logDebug("智能控温: 最高=%d°C 基准=%s 当前=%d°C 平均=%d°C 控制温度=%d°C 基础=%d%s 学习=%+d 温升=%+d 坡度=%+d 噪声=%+d 硬件=%+d 目标=%d%s 原因=%s", temp.MaxTemp, temp.ControlSource, temp.ControlTemp, avgTemp, controlTemp, displaySpeedForLog(decision.BaseTarget, speedUnit), types.FanSpeedDisplaySuffix(speedUnit), decision.LearningOffset, decision.TemperatureRiseBoost, decision.RampAdjustment, decision.NoiseAdjustment, decision.HardwareAdjustment, displaySpeedForLog(decision.FinalTarget, speedUnit), types.FanSpeedDisplaySuffix(speedUnit), decision.GateReason)
 				}
 			}
 
-			gateReason := smartControlGateReason(cfg.AutoControl, inputReady, controlReady)
+			gateReason := smartcontrol.GateReason(cfg.AutoControl, inputReady, controlReady)
 			if gateReason != "" {
 				if !safetyFallbackDecisionRecorded {
-					a.setSmartControlDecision(smartControlDecisionSnapshot{
+					a.setSmartControlDecision(smartcontrol.Decision{
 						ControlTemp:   temp.ControlTemp,
 						ControlSource: types.NormalizeTempSource(temp.ControlSource),
+						SpeedUnit:     speedUnit,
 						GateReason:    gateReason,
 					})
 				}

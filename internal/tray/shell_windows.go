@@ -3,6 +3,7 @@
 package tray
 
 import (
+	"sync"
 	"time"
 	"unsafe"
 
@@ -13,10 +14,69 @@ var (
 	modUser32                 = windows.NewLazySystemDLL("user32.dll")
 	procFindWindowW           = modUser32.NewProc("FindWindowW")
 	procFindWindowExW         = modUser32.NewProc("FindWindowExW")
+	procEnumWindows           = modUser32.NewProc("EnumWindows")
+	procGetClassNameW         = modUser32.NewProc("GetClassNameW")
 	procGetWindowThreadProcID = modUser32.NewProc("GetWindowThreadProcessId")
 	procPostMessageW          = modUser32.NewProc("PostMessageW")
 	procRegisterWindowMessage = modUser32.NewProc("RegisterWindowMessageW")
 )
+
+const (
+	systrayWindowClass = "SystrayClass"
+	wmClose            = 0x0010
+)
+
+// postSystrayClose closes only this process's systray message window.
+func postSystrayClose() bool {
+	hwnd := findOwnSystrayWindow()
+	if hwnd == 0 {
+		return false
+	}
+	ret, _, _ := procPostMessageW.Call(hwnd, wmClose, 0, 0)
+	return ret != 0
+}
+
+var (
+	enumSystrayMu    sync.Mutex
+	enumSystrayPID   uint32
+	enumSystrayFound uintptr
+	enumSystrayOnce  sync.Once
+	enumSystrayProc  uintptr
+)
+
+func enumSystrayCallback() uintptr {
+	enumSystrayOnce.Do(func() {
+		enumSystrayProc = windows.NewCallback(func(hwnd uintptr, _ uintptr) uintptr {
+			var pid uint32
+			procGetWindowThreadProcID.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
+			if pid != enumSystrayPID || windowClassName(hwnd) != systrayWindowClass {
+				return 1
+			}
+			enumSystrayFound = hwnd
+			return 0
+		})
+	})
+	return enumSystrayProc
+}
+
+func findOwnSystrayWindow() uintptr {
+	enumSystrayMu.Lock()
+	defer enumSystrayMu.Unlock()
+
+	enumSystrayPID = windows.GetCurrentProcessId()
+	enumSystrayFound = 0
+	procEnumWindows.Call(enumSystrayCallback(), 0)
+	return enumSystrayFound
+}
+
+func windowClassName(hwnd uintptr) string {
+	buf := make([]uint16, 257)
+	n, _, _ := procGetClassNameW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	if n == 0 {
+		return ""
+	}
+	return windows.UTF16ToString(buf[:n])
+}
 
 // findTopWindow 查找指定类名的顶层窗口句柄，未找到返回 0。
 func findTopWindow(class string) uintptr {

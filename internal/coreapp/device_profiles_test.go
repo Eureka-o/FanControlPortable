@@ -3,11 +3,11 @@ package coreapp
 import (
 	"testing"
 
-	"github.com/TIANLI0/THRM/internal/config"
-	"github.com/TIANLI0/THRM/internal/device"
-	"github.com/TIANLI0/THRM/internal/deviceprofiles"
-	"github.com/TIANLI0/THRM/internal/ipc"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/config"
+	"github.com/Eureka-o/FanControlPortable/internal/device"
+	"github.com/Eureka-o/FanControlPortable/internal/deviceprofiles"
+	"github.com/Eureka-o/FanControlPortable/internal/ipc"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 func testSerialDeviceProfile() types.DeviceProfile {

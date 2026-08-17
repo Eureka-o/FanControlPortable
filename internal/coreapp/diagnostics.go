@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/appmeta"
-	"github.com/TIANLI0/THRM/internal/config"
-	"github.com/TIANLI0/THRM/internal/types"
-	"github.com/TIANLI0/THRM/internal/version"
+	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
+	"github.com/Eureka-o/FanControlPortable/internal/config"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/version"
 )
 
 const (
@@ -177,20 +177,13 @@ func (a *CoreApp) ExportDiagnostics() (types.DiagnosticsBundle, error) {
 	if err := addJSON("device-profiles-summary.json", buildDiagnosticsDeviceProfileSummary(cfg)); err != nil {
 		return types.DiagnosticsBundle{}, err
 	}
-	runtimeSnapshot := a.diagnosticsRuntimeSnapshot()
-	runtimeProfile := a.diagnosticsRuntimeDeviceProfile(cfg)
+	runtime := a.deviceRuntimeSnapshot(true)
+	runtimeSnapshot := a.diagnosticsRuntimeSnapshotFrom(runtime)
+	runtimeProfile := runtime.Profile
 	if err := addJSON("runtime-snapshot.json", runtimeSnapshot); err != nil {
 		return types.DiagnosticsBundle{}, err
 	}
-	connectionPhase := a.connectionPhase.Load()
-	runtimeStatus := resolveDeviceRuntimeStatus(deviceRuntimeStatusInput{
-		Connected:     runtimeSnapshot.IsConnected,
-		Discovering:   connectionPhase == deviceConnectionPhaseDiscovering || runtimeSnapshot.ReconnectInProgress,
-		Connecting:    connectionPhase == deviceConnectionPhaseConnecting,
-		Suspended:     runtimeSnapshot.SystemSuspended,
-		SettingsReady: runtimeSnapshot.DeviceSettings != nil && runtimeSnapshot.DeviceSettings.Available,
-		Capabilities:  runtimeProfile.Capabilities,
-	})
+	runtimeStatus := runtime.Runtime
 	if err := addJSON("connection-flight.json", a.connectionFlightSnapshot(runtimeStatus)); err != nil {
 		return types.DiagnosticsBundle{}, err
 	}
@@ -336,17 +329,12 @@ func buildDiagnosticsDeviceProfileSummaryEntry(profile types.DeviceProfile, cfg 
 	}
 }
 
-func (a *CoreApp) diagnosticsRuntimeDeviceProfile(cfg types.AppConfig) types.DeviceProfile {
-	if a.deviceManager != nil {
-		if profile := a.deviceManager.ActiveProfile(); profile.ID != "" {
-			return profile
-		}
-	}
-	return types.ActiveDeviceProfile(&cfg)
+func (a *CoreApp) diagnosticsRuntimeSnapshot() diagnosticsRuntimeSnapshot {
+	runtime := a.deviceRuntimeSnapshot(true)
+	return a.diagnosticsRuntimeSnapshotFrom(runtime)
 }
 
-func (a *CoreApp) diagnosticsRuntimeSnapshot() diagnosticsRuntimeSnapshot {
-	runtime := a.deviceRuntimeSnapshot()
+func (a *CoreApp) diagnosticsRuntimeSnapshotFrom(runtime deviceRuntimeSnapshotData) diagnosticsRuntimeSnapshot {
 	a.mutex.RLock()
 	currentTemp := a.currentTemp
 	lastDeviceMode := a.lastDeviceMode

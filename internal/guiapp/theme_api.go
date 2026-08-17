@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	goruntime "runtime"
 
-	"github.com/TIANLI0/THRM/internal/theme"
+	"github.com/Eureka-o/FanControlPortable/internal/theme"
 )
 
 // ListThemes 返回所有可用的自定义主题（供前端「界面主题」下拉动态渲染）。

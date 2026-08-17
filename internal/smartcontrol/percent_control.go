@@ -1,6 +1,6 @@
 package smartcontrol
 
-import "github.com/TIANLI0/THRM/internal/types"
+import "github.com/Eureka-o/FanControlPortable/internal/types"
 
 // CalculatePercentTargetTicks is the FanControl-owned percent control path.
 // Config curves stay in 0-100 percent for compatibility; this path converts

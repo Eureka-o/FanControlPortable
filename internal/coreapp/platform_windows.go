@@ -3,103 +3,55 @@
 package coreapp
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
-	"github.com/TIANLI0/THRM/internal/appmeta"
-	"github.com/TIANLI0/THRM/internal/config"
+	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
+	"github.com/Eureka-o/FanControlPortable/internal/config"
 	"golang.org/x/sys/windows/registry"
 )
 
-// ReinstallPawnIO runs the bundled PawnIO installer stored under the install directory.
+// ReinstallPawnIO schedules a clean PawnIO reinstall after FanControl exits.
 func (a *CoreApp) ReinstallPawnIO() (map[string]any, error) {
 	installDir := config.GetInstallDir()
 	installerPath := appmeta.FirstExistingPath(appmeta.PawnIOInstallerCandidates(installDir))
 	if installerPath == "" {
 		return nil, fmt.Errorf("未找到 PawnIO 安装包，已尝试路径: %v", appmeta.PawnIOInstallerCandidates(installDir))
 	}
+	guiPath := appmeta.FirstExistingPath(appmeta.GUIExecutableCandidates(installDir))
+	if guiPath == "" {
+		return nil, fmt.Errorf("未找到 FanControl 主程序，已尝试路径: %v", appmeta.GUIExecutableCandidates(installDir))
+	}
 
 	result := map[string]any{
-		"success": false,
-		"path":    installerPath,
+		"success":     false,
+		"path":        installerPath,
+		"restartPath": guiPath,
 	}
 	installedVersionBefore := readInstalledPawnIOVersion()
 	if installedVersionBefore != "" {
 		result["installedVersionBefore"] = installedVersionBefore
 	}
 
-	a.logInfo("开始修复/更新 PawnIO: %s", installerPath)
-	a.bridgeManager.Stop()
-
-	installStep, installErr := a.runPawnIOInstaller(installerPath, "install", "-install", "-silent")
-	result["install"] = installStep
-	installedVersionAfter := readInstalledPawnIOVersion()
-	if installedVersionAfter != "" {
-		result["installedVersionAfter"] = installedVersionAfter
+	if err := launchPawnIOReinstallScript(installerPath, guiPath, os.Getpid()); err != nil {
+		result["error"] = err.Error()
+		return result, err
 	}
 
-	if installErr != nil {
-		if isPawnIOInstallerTimeout(installErr) {
-			result["error"] = "PawnIO 安装超时"
-			return result, fmt.Errorf("PawnIO 安装超时，请稍后检查驱动状态或手动运行 %s", installerPath)
-		}
-
-		if pawnIOInstallerExitCode(installErr) == pawnIOAlreadyExistsExitCode && installedVersionAfter != "" {
-			result["alreadyInstalled"] = true
-			result["warning"] = "PawnIO 安装器返回 183（已存在），已确认系统中仍有 PawnIO 安装记录。"
-			a.logInfo("PawnIO 安装器返回 183，检测到已安装版本 %s，按非致命结果处理", installedVersionAfter)
-		} else {
-			result["error"] = installErr.Error()
-			return result, formatPawnIOInstallerError("PawnIO 安装失败", installErr, installStep)
-		}
-	} else {
-		a.logInfo("PawnIO 安装程序执行完成")
-	}
-
+	a.logInfo("已安排 PawnIO 重装，正在退出 FanControl: %s", installerPath)
 	result["success"] = true
-	bridgeResult, bridgeErr := a.bridgeManager.RestartPawnIO()
-	if bridgeErr != nil {
-		result["bridgeWarning"] = bridgeErr.Error()
-		a.logError("PawnIO 安装后重新初始化温度监控失败: %v", bridgeErr)
-	} else {
-		result["bridge"] = bridgeResult
-	}
+	result["scheduled"] = true
+	a.safeGo("pawnio-reinstall-quit", func() {
+		time.Sleep(800 * time.Millisecond)
+		a.onQuitRequest()
+	})
 
 	return result, nil
-}
-
-func (a *CoreApp) runPawnIOInstaller(installerPath, action string, args ...string) (map[string]any, error) {
-	ctx, cancel := context.WithTimeout(a.ctx, pawnIOInstallerTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, installerPath, args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	output, err := cmd.CombinedOutput()
-	outputText := strings.TrimSpace(string(output))
-	step := map[string]any{
-		"action":   action,
-		"args":     args,
-		"success":  err == nil,
-		"exitCode": pawnIOInstallerExitCode(err),
-	}
-	if outputText != "" {
-		step["output"] = outputText
-	}
-	if ctx.Err() == context.DeadlineExceeded {
-		step["timeout"] = true
-		step["success"] = false
-		return step, ctx.Err()
-	}
-	if err != nil {
-		step["error"] = err.Error()
-	}
-	return step, err
 }
 
 func readInstalledPawnIOVersion() string {
@@ -115,28 +67,6 @@ func readInstalledPawnIOVersion() string {
 		}
 	}
 	return ""
-}
-
-func pawnIOInstallerExitCode(err error) int {
-	if err == nil {
-		return 0
-	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return exitErr.ExitCode()
-	}
-	return -1
-}
-
-func isPawnIOInstallerTimeout(err error) bool {
-	return errors.Is(err, context.DeadlineExceeded)
-}
-
-func formatPawnIOInstallerError(prefix string, err error, step map[string]any) error {
-	if output, ok := step["output"].(string); ok && output != "" {
-		return fmt.Errorf("%s: %v；输出: %s", prefix, err, output)
-	}
-	return fmt.Errorf("%s: %v", prefix, err)
 }
 
 // launchGUI 启动 GUI 程序

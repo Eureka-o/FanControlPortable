@@ -51,6 +51,13 @@ test('clears every correlated field for disconnects and core failures', () => {
       fanData: null,
     });
   }
+
+  const clearedByCoreError = reduceDeviceSnapshot(
+    deviceSnapshotFromStatus({ ...stale, connected: true }),
+    { type: 'core-error' },
+  );
+  assert.equal(clearedByCoreError.isConnected, false);
+  assert.equal(clearedByCoreError.fanData, null);
 });
 
 test('patches settings and fan data only while connected', () => {
