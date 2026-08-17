@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 func normalizeSerialPortInfos(ports []types.SerialPortInfo) []types.SerialPortInfo {

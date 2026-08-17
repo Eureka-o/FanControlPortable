@@ -7,13 +7,18 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/TIANLI0/THRM/internal/coreapp"
+	"github.com/Eureka-o/FanControlPortable/internal/autostart"
+	"github.com/Eureka-o/FanControlPortable/internal/coreapp"
 )
 
 //go:embed icon.ico
 var iconData []byte
 
 func main() {
+	if autostart.IsInstallAutoStartRequest(os.Args[1:]) {
+		os.Exit(runInstallAutoStart())
+	}
+
 	closeFatalOutput, fatalLogPath := setupFatalOutput()
 	defer closeFatalOutput()
 	if fatalLogPath != "" {

@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 const (
@@ -176,6 +176,21 @@ func NormalizeAndValidate(profile types.DeviceProfile, fallbackEndpoint string) 
 		return types.DeviceProfile{}, err
 	}
 	return profile, nil
+}
+
+// PrepareRuntimeProfile applies the same validation used by user imports and
+// saves at the connection seam. Built-ins are canonicalized first so stale
+// persisted copies cannot override the shipped capability contract.
+func PrepareRuntimeProfile(profile types.DeviceProfile, fallbackEndpoint string) (types.DeviceProfile, error) {
+	if IsBuiltInProfileID(profile.ID) {
+		if canonical, ok := BuiltInProfileByID(profile.ID); ok {
+			connection := profile.Connection
+			profile = canonical
+			// Endpoint/serial address is runtime state, not a capability override.
+			profile.Connection = connection
+		}
+	}
+	return NormalizeAndValidate(profile, fallbackEndpoint)
 }
 
 func Validate(profile types.DeviceProfile) error {

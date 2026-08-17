@@ -4,15 +4,19 @@
 package autostart
 
 import (
+	"bytes"
+	"encoding/xml"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
+	"unicode/utf16"
 
-	"github.com/TIANLI0/THRM/internal/appmeta"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
@@ -75,55 +79,259 @@ func (m *Manager) SetWindowsAutoStart(enable bool) error {
 	}
 }
 
-// createScheduledTask 创建任务计划程序
-func (m *Manager) createScheduledTask() error {
+// autoStartTargetPath 返回自启动应当拉起的可执行文件：优先核心服务，找不到时退回当前程序。
+func autoStartTargetPath() (string, error) {
 	exePath, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("获取程序路径失败: %v", err)
+		return "", fmt.Errorf("获取程序路径失败: %v", err)
+	}
+	if corePath := appmeta.FirstExistingPath(appmeta.CoreExecutableCandidates(filepath.Dir(exePath))); corePath != "" {
+		return corePath, nil
+	}
+	return exePath, nil
+}
+
+// currentUserAccount 返回用于任务主体的账户标识，优先当前进程令牌的 SID。
+// SID 不依赖域控解析，离线域账号机器也能注册任务。
+func currentUserAccount() string {
+	if user, err := windows.GetCurrentProcessToken().GetTokenUser(); err == nil && user != nil {
+		if sid := user.User.Sid; sid != nil {
+			return sid.String()
+		}
+	}
+	if domain, name := os.Getenv("USERDOMAIN"), os.Getenv("USERNAME"); name != "" {
+		if domain != "" {
+			return domain + `\` + name
+		}
+		return name
+	}
+	return ""
+}
+
+// buildScheduledTaskXML 是自启动任务的唯一 XML 定义来源。
+func buildScheduledTaskXML(command, account string) string {
+	principals := `
+  <Principals>
+    <Principal id="Author">` + taskUserIDElement(account, 6) + `
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>`
+
+	return `<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Author>` + escapeXML(appmeta.AppName) + `</Author>
+    <Description>` + escapeXML(appmeta.AppName+" 开机自启动（登录后启动核心服务）") + `</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>` + taskUserIDElement(account, 6) + `
+    </LogonTrigger>
+  </Triggers>` + principals + `
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>6</Priority>
+    <RestartOnFailure>
+      <Interval>PT1M</Interval>
+      <Count>3</Count>
+    </RestartOnFailure>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>` + escapeXML(command) + `</Command>
+      <Arguments>--autostart</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+`
+}
+
+func taskUserIDElement(account string, indent int) string {
+	if account == "" {
+		return ""
+	}
+	return "\n" + strings.Repeat(" ", indent) + "<UserId>" + escapeXML(account) + "</UserId>"
+}
+
+func escapeXML(value string) string {
+	var buf strings.Builder
+	if err := xml.EscapeText(&buf, []byte(value)); err != nil {
+		return value
+	}
+	return buf.String()
+}
+
+// createScheduledTask 创建任务计划程序
+func (m *Manager) createScheduledTask() error {
+	command, err := autoStartTargetPath()
+	if err != nil {
+		return err
 	}
 
-	// 获取核心服务路径
-	exeDir := filepath.Dir(exePath)
-	corePath := appmeta.FirstExistingPath(appmeta.CoreExecutableCandidates(exeDir))
-	if corePath == "" {
-		corePath = exePath
+	xmlPath, cleanup, err := writeTaskXMLFile(buildScheduledTaskXML(command, currentUserAccount()))
+	if err != nil {
+		return err
 	}
-	taskCommand := fmt.Sprintf("\"%s\" --autostart", corePath)
-	cmd := exec.Command("schtasks", "/create",
-		"/tn", appmeta.AppName,
-		"/tr", taskCommand,
-		"/sc", "onlogon",
-		"/delay", "0000:15",
-		"/rl", "highest",
-		"/f")
+	defer cleanup()
+
+	cmd := exec.Command("schtasks", "/create", "/tn", appmeta.AppName, "/xml", xmlPath, "/f")
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("创建任务计划失败: %v, 输出: %s", err, string(output))
+		return fmt.Errorf("创建任务计划失败: %v, 输出: %s", err, decodeSchtasksOutput(output))
 	}
 
-	m.logger.Info("已通过任务计划程序设置开机自启动")
+	m.logger.Info("已通过任务计划程序设置开机自启动（电池供电下同样启动，且不限运行时长）")
 	return nil
+}
+
+func writeTaskXMLFile(content string) (string, func(), error) {
+	file, err := os.CreateTemp("", "fancontrol-autostart-*.xml")
+	if err != nil {
+		return "", func() {}, fmt.Errorf("创建任务定义临时文件失败: %v", err)
+	}
+	path := file.Name()
+	cleanup := func() { _ = os.Remove(path) }
+
+	encoded := utf16.Encode([]rune(content))
+	buf := make([]byte, 0, len(encoded)*2+2)
+	buf = append(buf, 0xFF, 0xFE)
+	for _, unit := range encoded {
+		buf = append(buf, byte(unit), byte(unit>>8))
+	}
+	if _, err := file.Write(buf); err != nil {
+		_ = file.Close()
+		cleanup()
+		return "", func() {}, fmt.Errorf("写入任务定义失败: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("关闭任务定义文件失败: %v", err)
+	}
+	return path, cleanup, nil
+}
+
+func decodeSchtasksOutput(output []byte) string {
+	if len(output) >= 2 && output[0] == 0xFF && output[1] == 0xFE {
+		units := make([]uint16, 0, (len(output)-2)/2)
+		for i := 2; i+1 < len(output); i += 2 {
+			units = append(units, uint16(output[i])|uint16(output[i+1])<<8)
+		}
+		return string(utf16.Decode(units))
+	}
+	return string(output)
+}
+
+type scheduledTaskSettings struct {
+	Settings struct {
+		DisallowStartIfOnBatteries *bool  `xml:"DisallowStartIfOnBatteries"`
+		StopIfGoingOnBatteries     *bool  `xml:"StopIfGoingOnBatteries"`
+		ExecutionTimeLimit         string `xml:"ExecutionTimeLimit"`
+	} `xml:"Settings"`
+}
+
+func trimUnicodeBOM(data []byte) []byte {
+	return bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
+}
+
+func parseTaskDefinition(definition string, out any) error {
+	decoder := xml.NewDecoder(bytes.NewReader(trimUnicodeBOM([]byte(definition))))
+	decoder.CharsetReader = func(_ string, input io.Reader) (io.Reader, error) {
+		return input, nil
+	}
+	return decoder.Decode(out)
+}
+
+func scheduledTaskNeedsUpgrade(definition string) bool {
+	var parsed scheduledTaskSettings
+	if err := parseTaskDefinition(definition, &parsed); err != nil {
+		return false
+	}
+	settings := parsed.Settings
+	if settings.DisallowStartIfOnBatteries == nil || *settings.DisallowStartIfOnBatteries {
+		return true
+	}
+	if settings.StopIfGoingOnBatteries == nil || *settings.StopIfGoingOnBatteries {
+		return true
+	}
+	return strings.TrimSpace(settings.ExecutionTimeLimit) != "PT0S"
+}
+
+// EnsureAutoStartTaskHealthy 将旧版命令行任务升级到当前 XML 定义。
+func (m *Manager) EnsureAutoStartTaskHealthy() (bool, error) {
+	taskName := m.scheduledTaskName()
+	if taskName == "" {
+		return false, nil
+	}
+
+	cmd := exec.Command("schtasks", "/query", "/tn", taskName, "/xml")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	output, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("查询自启动任务定义失败: %v", err)
+	}
+	if !scheduledTaskNeedsUpgrade(decodeSchtasksOutput(output)) {
+		return false, nil
+	}
+	if !m.IsRunningAsAdmin() {
+		m.logger.Info("自启动任务仍是旧定义，需以管理员身份运行一次以自动修正")
+		return false, nil
+	}
+
+	m.logger.Info("检测到旧版自启动任务定义，正在重建")
+	if err := m.createScheduledTask(); err != nil {
+		return false, err
+	}
+	if !strings.EqualFold(taskName, appmeta.AppName) {
+		if err := m.deleteScheduledTaskByName(taskName); err != nil {
+			return true, fmt.Errorf("删除旧版自启动任务失败: %v", err)
+		}
+	}
+	return true, nil
 }
 
 // deleteScheduledTask 删除任务计划程序
 func (m *Manager) deleteScheduledTask() error {
 	for _, taskName := range []string{appmeta.AppName, appmeta.LegacyAppName} {
-		cmd := exec.Command("schtasks", "/delete", "/tn", taskName, "/f")
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			if strings.Contains(string(output), "cannot be found") || strings.Contains(string(output), "不存在") {
-				continue
-			}
-			return fmt.Errorf("delete scheduled task failed: %v, output: %s", err, string(output))
+		if err := m.deleteScheduledTaskByName(taskName); err != nil {
+			return err
 		}
 	}
 
 	m.logger.Info("Deleted auto-start scheduled tasks")
+	return nil
+}
+
+func (m *Manager) deleteScheduledTaskByName(taskName string) error {
+	cmd := exec.Command("schtasks", "/delete", "/tn", taskName, "/f")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		decoded := decodeSchtasksOutput(output)
+		if strings.Contains(decoded, "cannot be found") || strings.Contains(decoded, "不存在") {
+			return nil
+		}
+		return fmt.Errorf("delete scheduled task failed: %v, output: %s", err, decoded)
+	}
 	return nil
 }
 
@@ -231,6 +439,10 @@ func (m *Manager) CheckWindowsAutoStart() bool {
 
 // checkScheduledTask 检查任务计划程序中的自启动任务
 func (m *Manager) checkScheduledTask() bool {
+	return m.scheduledTaskName() != ""
+}
+
+func (m *Manager) scheduledTaskName() string {
 	for _, taskName := range []string{appmeta.AppName, appmeta.LegacyAppName} {
 		cmd := exec.Command("schtasks", "/query", "/tn", taskName, "/fo", "list", "/v")
 		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
@@ -239,12 +451,12 @@ func (m *Manager) checkScheduledTask() bool {
 		if err != nil {
 			continue
 		}
-		command := scheduledTaskCommandLine(string(output))
+		command := scheduledTaskCommandLine(decodeSchtasksOutput(output))
 		if command == "" || commandTargetsFanControl(command) {
-			return true
+			return taskName
 		}
 	}
-	return false
+	return ""
 }
 
 // checkRegistryAutoStart 检查注册表中的自启动项

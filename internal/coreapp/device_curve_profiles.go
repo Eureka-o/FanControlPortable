@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/TIANLI0/THRM/internal/curveprofiles"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/curveprofiles"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 const deviceCurveScopeSeparator = "::"

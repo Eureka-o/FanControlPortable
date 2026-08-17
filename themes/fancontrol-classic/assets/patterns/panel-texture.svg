@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320" fill="none">
+  <defs>
+    <linearGradient id="wash" x1="0" y1="0" x2="320" y2="320" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E8F4FF" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#B8DDF4" stop-opacity=".04"/>
+    </linearGradient>
+    <pattern id="panels" width="160" height="160" patternUnits="userSpaceOnUse">
+      <path d="M0 34h56l18-18h86M0 122h38l16 16h106M112 0v22l18 18v64l-18 18v38M34 160v-24l16-16V58L34 42V0" stroke="#6FA9D0" stroke-opacity=".1"/>
+      <path d="M74 16v36l14 14h38M54 138h42l18-18v-32" stroke="#2F74FF" stroke-opacity=".07"/>
+      <path d="M6 76h32M122 146h28" stroke="#D54A58" stroke-opacity=".08" stroke-linecap="round"/>
+    </pattern>
+  </defs>
+  <rect width="320" height="320" fill="url(#wash)"/>
+  <rect width="320" height="320" fill="url(#panels)"/>
+</svg>

@@ -10,10 +10,13 @@ import {
   LEGACY_CUSTOM_STYLE_ID,
   isBuiltinMode,
   normalizeCustomThemeLayer,
+  normalizeThemeContract,
   parseThemeBootstrapSnapshot,
   serializeThemeBootstrapSnapshot,
   THEME_BOOTSTRAP_STORAGE_KEY,
   LEGACY_THEME_BOOTSTRAP_STORAGE_KEY,
+  LEGACY_THEME_CONTRACT,
+  THEME_CONTRACT,
   type CustomThemeBase,
   type CustomThemeLayer,
   type ThemeBootstrapSnapshot,
@@ -110,6 +113,7 @@ function clearCustomTheme() {
   }
   delete document.documentElement.dataset.theme;
   delete document.documentElement.dataset.themeLayer;
+  document.documentElement.dataset.themeContract = THEME_CONTRACT;
 }
 
 // 应用内置基础主题：仅切换 .dark，并清掉任何自定义主题残留。
@@ -147,6 +151,7 @@ function applyCachedCustomTheme(snapshot: ThemeBootstrapSnapshot) {
     document.documentElement.classList.toggle('dark', base === 'dark');
     document.documentElement.dataset.theme = snapshot.mode;
     document.documentElement.dataset.themeLayer = layer;
+    document.documentElement.dataset.themeContract = normalizeThemeContract(snapshot.contract);
   });
   syncWindowsTheme(base, base === 'dark');
 }
@@ -164,12 +169,16 @@ async function applyCustomTheme(id: string, isCancelled?: () => boolean): Promis
   let layer: CustomThemeLayer = cachedSnapshot?.mode === id
     ? normalizeCustomThemeLayer(cachedSnapshot.layer)
     : 'basic';
+  let contract = cachedSnapshot?.mode === id
+    ? normalizeThemeContract(cachedSnapshot.contract)
+    : LEGACY_THEME_CONTRACT;
   try {
     const themes = await apiService.listThemes();
     const meta = themes.find((t) => t.id === id);
     if (meta) {
       base = meta.base === 'dark' ? 'dark' : 'light';
       layer = normalizeCustomThemeLayer(meta.layer);
+      contract = normalizeThemeContract(meta.contract);
     }
   } catch {
     /* Keep cached metadata while theme discovery is temporarily unavailable. */
@@ -201,8 +210,9 @@ async function applyCustomTheme(id: string, isCancelled?: () => boolean): Promis
     document.documentElement.classList.toggle('dark', base === 'dark');
     document.documentElement.dataset.theme = id;
     document.documentElement.dataset.themeLayer = layer;
+    document.documentElement.dataset.themeContract = contract;
   });
-  writeThemeBootstrapSnapshot(createCustomThemeSnapshot(id, base, css, layer));
+  writeThemeBootstrapSnapshot(createCustomThemeSnapshot(id, base, css, layer, contract));
 }
 
 export default function SystemThemeSync() {

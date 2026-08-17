@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 func testWiFiProfile() types.DeviceProfile {
@@ -257,6 +257,36 @@ func TestValidateBLEAndSerialProfiles(t *testing.T) {
 	}
 	if _, err := NormalizeAndValidate(serial, ""); err != nil {
 		t.Fatalf("valid serial profile returned error: %v", err)
+	}
+}
+
+func TestPrepareRuntimeProfileCanonicalizesBuiltInProfile(t *testing.T) {
+	profile := types.DefaultWiFiPercentProfile("10.0.0.42")
+	profile.SpeedUnit = types.FanSpeedUnitRPM
+	profile.Capabilities = types.DeviceCapabilities{}
+	profile.Connection.Endpoint = "10.0.0.99"
+
+	prepared, err := PrepareRuntimeProfile(profile, "")
+	if err != nil {
+		t.Fatalf("PrepareRuntimeProfile() error = %v", err)
+	}
+	if prepared.SpeedUnit != types.FanSpeedUnitPercent {
+		t.Fatalf("speed unit = %q, want percent", prepared.SpeedUnit)
+	}
+	if !prepared.Capabilities.SupportsReadState || !prepared.Capabilities.SupportsSetSpeed {
+		t.Fatalf("built-in capabilities were not restored: %#v", prepared.Capabilities)
+	}
+	if prepared.Connection.Endpoint != "10.0.0.99" {
+		t.Fatalf("runtime endpoint = %q, want 10.0.0.99", prepared.Connection.Endpoint)
+	}
+}
+
+func TestPrepareRuntimeProfileRejectsInvalidCustomProfile(t *testing.T) {
+	profile := testWiFiProfile()
+	profile.Transport = "unsupported"
+
+	if _, err := PrepareRuntimeProfile(profile, ""); err == nil {
+		t.Fatal("expected invalid custom runtime profile to be rejected")
 	}
 }
 

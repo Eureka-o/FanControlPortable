@@ -9,18 +9,19 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/autostart"
-	"github.com/TIANLI0/THRM/internal/bridge"
-	"github.com/TIANLI0/THRM/internal/config"
-	"github.com/TIANLI0/THRM/internal/device"
-	hotkeysvc "github.com/TIANLI0/THRM/internal/hotkey"
-	"github.com/TIANLI0/THRM/internal/ipc"
-	"github.com/TIANLI0/THRM/internal/logger"
-	"github.com/TIANLI0/THRM/internal/notifier"
-	"github.com/TIANLI0/THRM/internal/plugins"
-	"github.com/TIANLI0/THRM/internal/temperature"
-	"github.com/TIANLI0/THRM/internal/tray"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/autostart"
+	"github.com/Eureka-o/FanControlPortable/internal/bridge"
+	"github.com/Eureka-o/FanControlPortable/internal/config"
+	"github.com/Eureka-o/FanControlPortable/internal/device"
+	hotkeysvc "github.com/Eureka-o/FanControlPortable/internal/hotkey"
+	"github.com/Eureka-o/FanControlPortable/internal/ipc"
+	"github.com/Eureka-o/FanControlPortable/internal/logger"
+	"github.com/Eureka-o/FanControlPortable/internal/notifier"
+	"github.com/Eureka-o/FanControlPortable/internal/plugins"
+	"github.com/Eureka-o/FanControlPortable/internal/smartcontrol"
+	"github.com/Eureka-o/FanControlPortable/internal/temperature"
+	"github.com/Eureka-o/FanControlPortable/internal/tray"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 // CoreApp 核心应用结构
@@ -80,7 +81,7 @@ type CoreApp struct {
 	healthConsecutiveFailureCount int32
 	connectionFlights             *connectionFlightRecorder
 	smartControlDecisionMu        sync.RWMutex
-	smartControlDecision          smartControlDecisionSnapshot
+	smartControlDecision          smartcontrol.Decision
 
 	powerNotifyStop func()
 	hidNotifyStop   func()
@@ -105,8 +106,6 @@ const (
 	systemResumeRecoveryCooldown = 15 * time.Second
 	systemResumeReconnectDelay   = 3 * time.Second
 	suspendCleanupGrace          = 2 * time.Second
-	pawnIOInstallerTimeout       = 90 * time.Second
-	pawnIOAlreadyExistsExitCode  = 183
 	pawnIORegistryPath           = `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO`
 )
 

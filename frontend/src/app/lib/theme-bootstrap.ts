@@ -2,6 +2,8 @@ export const CUSTOM_STYLE_ID = 'fancontrol-custom-theme-style';
 export const LEGACY_CUSTOM_STYLE_ID = 'thrm-custom-theme-style';
 export const THEME_BOOTSTRAP_STORAGE_KEY = 'fancontrol.theme-bootstrap';
 export const LEGACY_THEME_BOOTSTRAP_STORAGE_KEY = 'thrm.theme-bootstrap';
+export const THEME_CONTRACT = 'fancontrol/v1';
+export const LEGACY_THEME_CONTRACT = 'legacy';
 
 // Bump this when custom theme CSS resource semantics change, so stale cached
 // CSS cannot point at assets unavailable to the current executable.
@@ -22,6 +24,7 @@ export type ThemeBootstrapSnapshot = {
   mode: string;
   base?: CustomThemeBase;
   layer?: CustomThemeLayer;
+  contract?: string;
   css?: string;
   /** CSS 被截断时标记，避免重放超长旧缓存 */
   cssTruncated?: boolean;
@@ -44,6 +47,10 @@ export function normalizeCustomThemeLayer(value: unknown): CustomThemeLayer {
   return value === 'advanced' ? 'advanced' : 'basic';
 }
 
+export function normalizeThemeContract(value: unknown): string {
+  return value === THEME_CONTRACT ? THEME_CONTRACT : LEGACY_THEME_CONTRACT;
+}
+
 export function parseThemeBootstrapSnapshot(raw: string | null | undefined): ThemeBootstrapSnapshot | null {
   if (!raw) {
     return null;
@@ -60,6 +67,7 @@ export function parseThemeBootstrapSnapshot(raw: string | null | undefined): The
       return {
         version: THEME_BOOTSTRAP_VERSION,
         mode,
+        contract: THEME_CONTRACT,
       };
     }
 
@@ -72,6 +80,7 @@ export function parseThemeBootstrapSnapshot(raw: string | null | undefined): The
       mode,
       base: parsed.base === 'dark' ? 'dark' : 'light',
       layer: normalizeCustomThemeLayer(parsed.layer),
+      contract: normalizeThemeContract(parsed.contract),
       css: typeof parsed.css === 'string' ? parsed.css : '',
       cssTruncated: false,
     };
@@ -88,16 +97,18 @@ export function createBuiltinThemeSnapshot(mode: BuiltinThemeMode): ThemeBootstr
   return {
     version: THEME_BOOTSTRAP_VERSION,
     mode,
+    contract: THEME_CONTRACT,
   };
 }
 
-export function createCustomThemeSnapshot(mode: string, base: CustomThemeBase, css: string, layer: CustomThemeLayer = 'basic'): ThemeBootstrapSnapshot {
+export function createCustomThemeSnapshot(mode: string, base: CustomThemeBase, css: string, layer: CustomThemeLayer = 'basic', contract: string = THEME_CONTRACT): ThemeBootstrapSnapshot {
   const cssTruncated = css.length > MAX_CACHED_CSS_BYTES;
   return {
     version: THEME_BOOTSTRAP_VERSION,
     mode,
     base,
     layer,
+    contract: normalizeThemeContract(contract),
     css: cssTruncated ? css.slice(0, MAX_CACHED_CSS_BYTES) : css,
     cssTruncated,
   };
@@ -109,8 +120,11 @@ export function getThemeBootstrapScript(): string {
   const STYLE_IDS = [${JSON.stringify(CUSTOM_STYLE_ID)}, ${JSON.stringify(LEGACY_CUSTOM_STYLE_ID)}];
   const STORAGE_KEYS = [${JSON.stringify(THEME_BOOTSTRAP_STORAGE_KEY)}, ${JSON.stringify(LEGACY_THEME_BOOTSTRAP_STORAGE_KEY)}];
   const BUILTIN_MODES = new Set(${JSON.stringify([...BUILTIN_THEME_MODES])});
+  const THEME_CONTRACT = ${JSON.stringify(THEME_CONTRACT)};
+  const LEGACY_THEME_CONTRACT = ${JSON.stringify(LEGACY_THEME_CONTRACT)};
   const root = document.documentElement;
   root.dataset.windowBlur = 'on';
+  root.dataset.themeContract = THEME_CONTRACT;
 
   const applyBaseTheme = (isDark) => {
     for (const styleId of STYLE_IDS) {
@@ -119,6 +133,7 @@ export function getThemeBootstrapScript(): string {
     }
     delete root.dataset.theme;
     delete root.dataset.themeLayer;
+    root.dataset.themeContract = THEME_CONTRACT;
     root.classList.toggle('dark', !!isDark);
   };
 
@@ -177,6 +192,7 @@ export function getThemeBootstrapScript(): string {
 
   delete root.dataset.windowBlur;
   root.dataset.themeLayer = snapshot.layer === 'advanced' ? 'advanced' : 'basic';
+  root.dataset.themeContract = snapshot.contract === THEME_CONTRACT ? THEME_CONTRACT : LEGACY_THEME_CONTRACT;
   let styleEl = document.getElementById(${JSON.stringify(CUSTOM_STYLE_ID)});
   if (!styleEl) {
     styleEl = document.createElement('style');

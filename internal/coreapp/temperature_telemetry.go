@@ -3,8 +3,8 @@ package coreapp
 import (
 	"strings"
 
-	"github.com/TIANLI0/THRM/internal/bridge"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/bridge"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 func trackBridgeTemperatureStaleness(temp types.TemperatureData, lastUpdate int64, staleCount int) (int64, int, bool) {

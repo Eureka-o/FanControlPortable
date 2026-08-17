@@ -97,24 +97,14 @@ export default function DeviceDebugPanel({ config, isConnected, onConfigChange }
   const handleReinstallPawnIO = useCallback(async () => {
     setPawnIOReinstallLoading(true);
     try {
-      const result = await apiService.reinstallPawnIO();
+      await apiService.reinstallPawnIO();
       toast.success(t('controlPanel.debug.toasts.reinstallExecuted'));
-      if (result?.warning) {
-        toast.warning(result.warning);
-      }
-      if (result?.uninstallWarning) {
-        toast.warning(t('controlPanel.debug.toasts.uninstallWarning', { warning: result.uninstallWarning }));
-      }
-      if (result?.bridgeWarning) {
-        toast.warning(t('controlPanel.debug.toasts.bridgeWarning', { warning: result.bridgeWarning }));
-      }
-      await fetchDebugInfo();
     } catch (error) {
       toast.error(t('controlPanel.debug.toasts.reinstallFailed', { error: getErrorMessage(error) }));
     } finally {
       setPawnIOReinstallLoading(false);
     }
-  }, [fetchDebugInfo, t]);
+  }, [t]);
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>

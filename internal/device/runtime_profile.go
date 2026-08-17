@@ -3,7 +3,7 @@ package device
 import (
 	"strings"
 
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 // ActiveProfile returns the runtime device profile currently held by the

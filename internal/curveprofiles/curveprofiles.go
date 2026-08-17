@@ -13,8 +13,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	cfgpkg "github.com/TIANLI0/THRM/internal/config"
-	"github.com/TIANLI0/THRM/internal/types"
+	cfgpkg "github.com/Eureka-o/FanControlPortable/internal/config"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 const exportPrefix = "B2C1."

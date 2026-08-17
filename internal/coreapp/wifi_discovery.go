@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/TIANLI0/THRM/internal/device"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/device"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 func (a *CoreApp) ScanWiFiDevices(mode string) types.WiFiDiscoveryResult {

@@ -1,6 +1,6 @@
 # Basic 基础主题模板
 
-这个版本适合做 THRM/FanControl 都尽量可用的主题。它只使用完整默认浅色变量、`.glacier-*` 组件钩子和通用 HTML 角色选择器，不依赖 FanControl 高级 `data-theme-card` / `data-theme-ui` 钩子。
+这个版本适合做 FanControl 基础主题。它只使用完整默认浅色变量、`.glacier-*` 组件钩子和通用 HTML 角色选择器，不依赖 FanControl 高级 `data-theme-card` / `data-theme-ui` 钩子。
 
 ## 适合做什么
 

@@ -214,6 +214,51 @@ func TestParseMetaDefaultsMissingLayerToBasic(t *testing.T) {
 	}
 }
 
+func TestParseMetaDefaultsMissingContractToLegacy(t *testing.T) {
+	meta, ok := parseMeta([]byte(`{"id":"plain","name":"Plain","base":"light"}`), "plain")
+	if !ok {
+		t.Fatal("parseMeta failed")
+	}
+	if meta.Contract != ContractLegacy {
+		t.Fatalf("Contract = %q, want %q", meta.Contract, ContractLegacy)
+	}
+}
+
+func TestParseMetaKeepsFanControlContract(t *testing.T) {
+	meta, ok := parseMeta([]byte(`{"id":"modern","name":"Modern","base":"light","contract":"fancontrol/v1"}`), "modern")
+	if !ok {
+		t.Fatal("parseMeta failed")
+	}
+	if meta.Contract != ContractFanControlV1 {
+		t.Fatalf("Contract = %q, want %q", meta.Contract, ContractFanControlV1)
+	}
+}
+
+func TestListHidesLegacyTHRMTheme(t *testing.T) {
+	root := t.TempDir()
+	installDir := filepath.Join(root, "install", "themes")
+	writeTheme(t, installDir, LegacyThemeID, "THRM", "1.0.0", "/* old */")
+	writeTheme(t, installDir, ClassicThemeID, "FanControl Classic", "1.0.0", "/* classic */")
+
+	themes := NewManager(installDir, nil, nil).List()
+	for _, meta := range themes {
+		if meta.ID == LegacyThemeID {
+			t.Fatalf("legacy theme should be hidden: %#v", themes)
+		}
+	}
+}
+
+func TestReadCSSKeepsLegacyTHRMAlias(t *testing.T) {
+	root := t.TempDir()
+	installDir := filepath.Join(root, "install", "themes")
+	writeTheme(t, installDir, ClassicThemeID, "FanControl Classic", "1.0.0", "/* classic */")
+
+	css, err := NewManager(installDir, nil, nil).ReadCSS(LegacyThemeID)
+	if err != nil || !strings.Contains(css, "classic") {
+		t.Fatalf("legacy alias css = %q, err=%v", css, err)
+	}
+}
+
 func TestParseMetaKeepsAdvancedLayer(t *testing.T) {
 	meta, ok := parseMeta([]byte(`{"id":"deluxe","name":"Deluxe","base":"dark","layer":"advanced"}`), "deluxe")
 	if !ok {

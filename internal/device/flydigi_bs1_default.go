@@ -3,7 +3,7 @@
 package device
 
 import (
-	"github.com/TIANLI0/THRM/internal/deviceproto"
+	"github.com/Eureka-o/FanControlPortable/internal/deviceproto"
 )
 
 func (m *Manager) setFlyDigiBS1PowerOnStart(enabled bool) bool {

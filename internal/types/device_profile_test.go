@@ -3,7 +3,7 @@ package types
 import (
 	"testing"
 
-	"github.com/TIANLI0/THRM/internal/appmeta"
+	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
 )
 
 func TestDefaultWiFiPercentProfileNormalizesCapabilities(t *testing.T) {

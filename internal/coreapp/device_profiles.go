@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/TIANLI0/THRM/internal/deviceprofileexec"
-	"github.com/TIANLI0/THRM/internal/deviceprofiles"
-	"github.com/TIANLI0/THRM/internal/ipc"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/deviceprofileexec"
+	"github.com/Eureka-o/FanControlPortable/internal/deviceprofiles"
+	"github.com/Eureka-o/FanControlPortable/internal/ipc"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 func (a *CoreApp) deviceProfilesPayloadFromConfig(cfg types.AppConfig) types.DeviceProfilesPayload {

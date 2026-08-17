@@ -3,6 +3,8 @@ package temperature
 import (
 	"sync"
 	"time"
+
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 const (
@@ -12,8 +14,10 @@ const (
 )
 
 type fallbackReading struct {
-	cpuTemp int
-	gpuTemp int
+	cpuTemp   int
+	gpuTemp   int
+	cpuSource string
+	gpuSource string
 }
 
 func (r fallbackReading) usable() bool {
@@ -42,6 +46,9 @@ func (s *fallbackState) next(usable bool) time.Duration {
 
 func (r *Reader) readFallback(gpuNotPolled bool) fallbackReading {
 	reading := fallbackReading{cpuTemp: r.readSensorCPUTemperature()}
+	if reading.cpuTemp > 0 {
+		reading.cpuSource = types.TelemetrySourceLocal
+	}
 	needCPU := reading.cpuTemp <= 0
 	if !needCPU && gpuNotPolled {
 		return reading
@@ -50,8 +57,10 @@ func (r *Reader) readFallback(gpuNotPolled bool) fallbackReading {
 	external := r.readThrottledFallback(needCPU, gpuNotPolled)
 	if needCPU {
 		reading.cpuTemp = external.cpuTemp
+		reading.cpuSource = external.cpuSource
 	}
 	reading.gpuTemp = external.gpuTemp
+	reading.gpuSource = external.gpuSource
 	return reading
 }
 
@@ -72,6 +81,9 @@ func (r *Reader) readThrottledFallback(needCPU, gpuNotPolled bool) fallbackReadi
 		go func() {
 			defer wg.Done()
 			reading.cpuTemp = r.readWindowsCPUTemp()
+			if reading.cpuTemp > 0 {
+				reading.cpuSource = types.TelemetrySourceWMI
+			}
 		}()
 	}
 	if !gpuNotPolled {
@@ -79,6 +91,9 @@ func (r *Reader) readThrottledFallback(needCPU, gpuNotPolled bool) fallbackReadi
 		go func() {
 			defer wg.Done()
 			reading.gpuTemp = r.readGPUTemperature()
+			if reading.gpuTemp > 0 {
+				reading.gpuSource = r.detectGPUVendor()
+			}
 		}()
 	}
 	wg.Wait()

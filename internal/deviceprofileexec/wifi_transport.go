@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 func (t *httpWiFiTransport) do(ctx context.Context, method, endpoint string, body []byte, contentType string) ([]byte, error) {

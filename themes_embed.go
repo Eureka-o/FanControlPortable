@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/TIANLI0/THRM/internal/appmeta"
-	"github.com/TIANLI0/THRM/internal/theme"
+	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
+	"github.com/Eureka-o/FanControlPortable/internal/theme"
 )
 
 // embeddedThemes 仅内嵌不含自定义字体的基础主题，作为无 themes/ 目录时的安全兜底。
@@ -18,7 +18,7 @@ import (
 //
 // 如需新增高级主题，请将其放入源码 themes/ 目录（发布时随包发布），不必修改此处。
 //
-//go:embed themes/thrm themes/xiaoba themes/maodie themes/doro
+//go:embed themes/fancontrol-classic themes/xiaoba themes/maodie themes/doro
 var embeddedThemes embed.FS
 
 // newThemeManager 基于当前可执行文件位置构造主题管理器。

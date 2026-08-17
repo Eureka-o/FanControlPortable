@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/TIANLI0/THRM/internal/guiapp"
-	"github.com/TIANLI0/THRM/internal/theme"
+	"github.com/Eureka-o/FanControlPortable/internal/guiapp"
+	"github.com/Eureka-o/FanControlPortable/internal/theme"
 )
 
 // App keeps the Wails binding surface in package main while delegating implementation to internal/guiapp.

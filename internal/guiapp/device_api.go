@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/ipc"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/ipc"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 // ConnectDevice 连接HID设备

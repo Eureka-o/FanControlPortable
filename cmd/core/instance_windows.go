@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"unsafe"
 
-	"github.com/TIANLI0/THRM/internal/appmeta"
+	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
 	"golang.org/x/sys/windows"
 )
 

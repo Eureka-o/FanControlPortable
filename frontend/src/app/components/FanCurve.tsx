@@ -968,8 +968,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     };
   }, [historySeriesMeta, historySeriesVisibility, zoomedHistoryChartData]);
   const historyRightTimestamp = zoomedHistoryChartData[zoomedHistoryChartData.length - 1]?.timestamp ?? 0;
-  const renderHistoryStatistics = useCallback((series: (typeof historySeriesMeta)[number] | undefined, yAxisId: 'temp' | 'fan' | 'power', showExtrema = true) => {
-    if (!historyShowStatistics || !series) {
+  const renderHistoryStatistics = useCallback((series: (typeof historySeriesMeta)[number] | undefined, yAxisId: 'temp' | 'fan' | 'power', showStatisticsForSingleSeries = true) => {
+    if (!historyShowStatistics || !showStatisticsForSingleSeries || !series) {
       return null;
     }
     const statistics = historyStatistics.values[series.key];
@@ -985,9 +985,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       { key: 'average', value: statistics.average, timestamps: [], color: 'var(--chart-stat-average)', opacity: 0.82 },
     ] as const;
     return entries.flatMap(({ key, value, timestamps, color, opacity }) => {
-      if ((key === 'max' || key === 'min') && !showExtrema) {
-        return [];
-      }
       const leftmostTimestamp = timestamps[0] ?? 0;
       const emphasizedTimestamps = timestamps.slice(0, 1);
       return [

@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/bridge"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/bridge"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 	"github.com/shirou/gopsutil/v4/sensors"
 )
 
@@ -58,9 +58,11 @@ func NewReader(bridgeManager bridgeTemperatureProvider, logger types.Logger) *Re
 func (r *Reader) Read(selection types.TemperatureSelection) (temp types.TemperatureData) {
 	selection = types.NormalizeTemperatureSelection(selection)
 	temp = types.TemperatureData{
-		UpdateTime:    time.Now().UnixMilli(),
-		BridgeOk:      true,
-		ControlSource: selection.TempSource,
+		UpdateTime:            time.Now().UnixMilli(),
+		BridgeOk:              true,
+		TelemetrySource:       types.TelemetrySourceUnknown,
+		TelemetryFailureStage: types.TelemetryFailureStageNone,
+		ControlSource:         selection.TempSource,
 	}
 	defer func() { temp.TelemetryState = telemetryStateFor(temp) }()
 
@@ -74,12 +76,14 @@ func (r *Reader) Read(selection types.TemperatureSelection) (temp types.Temperat
 	if bridgeTemp.Success {
 		if bridgeTemp.CpuTemp == 0 && bridgeTemp.GpuTemp == 0 {
 			temp.BridgeOk = false
+			temp.TelemetryFailureStage = types.TelemetryFailureStageEmpty
 			temp.BridgeMsg = "桥接程序返回空温度（CPU/GPU 均为 0），已尝试备用读取；可重新初始化温度监控或检查 PawnIO/其它硬件监控工具。"
 			r.logger.Warn("桥接程序返回空温度数据，使用备用方法")
 
 			fallback := r.readFallback(gpuNotPolled)
 			temp.CPUTemp = fallback.cpuTemp
 			temp.GPUTemp = fallback.gpuTemp
+			applyFallbackMetadata(&temp, fallback)
 			if !gpuNotPolled {
 				if temp.GPUTemp > 0 && temp.GPUReadState == "" {
 					temp.GPUReadState = types.GPUReadStateActive
@@ -92,6 +96,12 @@ func (r *Reader) Read(selection types.TemperatureSelection) (temp types.Temperat
 
 		temp.BridgeOk = true
 		temp.BridgeMsg = ""
+		if temp.TelemetrySource == "" || temp.TelemetrySource == types.TelemetrySourceUnknown {
+			temp.TelemetrySource = types.TelemetrySourceBridge
+		}
+		if temp.TelemetryFailureStage == "" {
+			temp.TelemetryFailureStage = types.TelemetryFailureStageNone
+		}
 		temp.TelemetryFresh = true
 		r.storeLastGoodBridgeTemperature(selection, temp)
 		return temp
@@ -104,17 +114,21 @@ func (r *Reader) Read(selection types.TemperatureSelection) (temp types.Temperat
 		cached.UpdateTime = time.Now().UnixMilli()
 		cached.BridgeOk = true
 		cached.BridgeMsg = ""
+		cached.TelemetrySource = types.TelemetrySourceBridgeCache
+		cached.TelemetryFailureStage = classifyTelemetryFailureStage(bridgeTemp.Error)
 		cached.TelemetryFresh = false
 		return cached
 	}
 	if bridge.IsStarting(bridgeTemp.Error) {
 		temp.BridgeOk = false
+		temp.TelemetryFailureStage = types.TelemetryFailureStageStarting
 		temp.BridgeMsg = bridgeTemp.Error
 		return temp
 	}
 
 	temp.BridgeOk = false
 	temp.BridgeMsg = bridgeTemp.Error
+	temp.TelemetryFailureStage = classifyTelemetryFailureStage(bridgeTemp.Error)
 	if strings.TrimSpace(temp.BridgeMsg) == "" {
 		temp.BridgeMsg = "CPU/GPU 温度读取失败，可重新初始化温度监控；若 CPU 仍为空，请安装/更新 PawnIO 或关闭其它硬件监控工具。"
 	}
@@ -122,6 +136,7 @@ func (r *Reader) Read(selection types.TemperatureSelection) (temp types.Temperat
 	fallback := r.readFallback(gpuNotPolled)
 	temp.CPUTemp = fallback.cpuTemp
 	temp.GPUTemp = fallback.gpuTemp
+	applyFallbackMetadata(&temp, fallback)
 	if !gpuNotPolled {
 		if temp.GPUTemp > 0 && temp.GPUReadState == "" {
 			temp.GPUReadState = types.GPUReadStateActive
@@ -136,13 +151,43 @@ func (r *Reader) Read(selection types.TemperatureSelection) (temp types.Temperat
 }
 
 func telemetryStateFor(temp types.TemperatureData) string {
-	if !temp.BridgeOk || temp.ControlTemp <= 0 {
+	if temp.ControlTemp <= 0 {
+		return types.TelemetryStateUnavailable
+	}
+	if !temp.BridgeOk && (temp.TelemetrySource == "" || temp.TelemetrySource == types.TelemetrySourceUnknown) {
 		return types.TelemetryStateUnavailable
 	}
 	if temp.TelemetryFresh {
 		return types.TelemetryStateFresh
 	}
 	return types.TelemetryStateDelayed
+}
+
+func applyFallbackMetadata(temp *types.TemperatureData, fallback fallbackReading) {
+	if temp == nil {
+		return
+	}
+	temp.CPUTelemetrySource = fallback.cpuSource
+	temp.GPUTelemetrySource = fallback.gpuSource
+	if fallback.cpuSource != "" {
+		temp.TelemetrySource = fallback.cpuSource
+	} else if fallback.gpuSource != "" {
+		temp.TelemetrySource = fallback.gpuSource
+	}
+	if fallback.usable() {
+		temp.TelemetryFailureStage = types.TelemetryFailureStageFallback
+	}
+}
+
+func classifyTelemetryFailureStage(message string) string {
+	msg := strings.ToLower(strings.TrimSpace(message))
+	if strings.Contains(msg, "sensor") || strings.Contains(msg, "enumerat") || strings.Contains(msg, "hardware") {
+		return types.TelemetryFailureStageEnumeration
+	}
+	if strings.Contains(msg, "select") || strings.Contains(msg, "gpu device") || strings.Contains(msg, "profile") {
+		return types.TelemetryFailureStageSelection
+	}
+	return types.TelemetryFailureStageTransport
 }
 
 func (r *Reader) storeLastGoodBridgeTemperature(selection types.TemperatureSelection, temp types.TemperatureData) {
@@ -178,6 +223,8 @@ func copyBridgeTemperatureMetadata(temp *types.TemperatureData, bridgeTemp types
 	temp.CPUPowerWatts = bridgeTemp.CpuPowerWatts
 	temp.GPUPowerWatts = bridgeTemp.GpuPowerWatts
 	temp.GPUReadState = normalizeGPUReadState(bridgeTemp.GPUReadState, bridgeTemp.GpuTemp)
+	temp.TelemetrySource = bridgeTemp.TelemetrySource
+	temp.TelemetryFailureStage = bridgeTemp.TelemetryFailureStage
 	temp.MaxTemp = bridgeTemp.MaxTemp
 	temp.ControlTemp = bridgeTemp.ControlTemp
 	temp.ControlSource = bridgeTemp.ControlSource

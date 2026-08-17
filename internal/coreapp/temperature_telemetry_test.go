@@ -3,8 +3,8 @@ package coreapp
 import (
 	"testing"
 
-	"github.com/TIANLI0/THRM/internal/bridge"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/bridge"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 func TestShouldRestartTemperatureBridgeClassifiesPermanentMSRFailure(t *testing.T) {

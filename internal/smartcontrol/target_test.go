@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 func TestCalculateTargetRPMIgnoresOffsetsWhenLearningDisabled(t *testing.T) {

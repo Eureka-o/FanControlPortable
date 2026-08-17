@@ -1,11 +1,11 @@
-// Package types 定义了 BS2PRO 控制器应用中使用的所有共享类型
+// Package types 定义 FanControl 使用的共享类型。
 package types
 
 import (
 	"maps"
 	"math"
 
-	"github.com/TIANLI0/THRM/internal/deviceproto"
+	"github.com/Eureka-o/FanControlPortable/internal/deviceproto"
 )
 
 // FanCurvePoint 风扇曲线点
@@ -21,7 +21,8 @@ const (
 	ThemeModeSystem                     = "system"
 	ThemeModeLight                      = "light"
 	ThemeModeDark                       = "dark"
-	ThemeModeTHRM                       = "thrm"
+	ThemeModeClassic                    = "fancontrol-classic"
+	ThemeModeTHRM                       = "thrm" // legacy configuration value
 	WindowBlurAcrylic                   = "acrylic"
 	WindowBlurMica                      = "mica"
 	WindowBlurTabbed                    = "tabbed"
@@ -36,6 +37,19 @@ const (
 	GPUReadStateUnavailable             = "unavailable"
 	GPUReadStateError                   = "error"
 	GPUReadStateUnknown                 = "unknown"
+	TelemetrySourceBridge               = "bridge"
+	TelemetrySourceBridgeCache          = "bridge-cache"
+	TelemetrySourceLocal                = "local"
+	TelemetrySourceWMI                  = "wmi"
+	TelemetrySourceNVIDIA               = "nvidia"
+	TelemetrySourceUnknown              = "unknown"
+	TelemetryFailureStageNone           = "none"
+	TelemetryFailureStageStarting       = "starting"
+	TelemetryFailureStageTransport      = "transport"
+	TelemetryFailureStageEmpty          = "empty"
+	TelemetryFailureStageEnumeration    = "enumeration"
+	TelemetryFailureStageSelection      = "selection"
+	TelemetryFailureStageFallback       = "fallback"
 	TelemetryStateFresh                 = "fresh"
 	TelemetryStateDelayed               = "delayed"
 	TelemetryStateUnavailable           = "unavailable"
@@ -111,7 +125,7 @@ func ClampWiFiSmartStartStopStandbyPercent(percent int) int {
 //
 // 取值说明：
 //   - system/light/dark：内置基础主题。
-//   - 其它合法 id（小写字母/数字/-/_）：视为自定义主题 id（如 "thrm"），原样透传，
+//   - 其它合法 id（小写字母/数字/-/_）：视为自定义主题 id（如 "fancontrol-classic"），原样透传，
 //     由前端按安装目录/用户目录下发现的主题加载对应 CSS。
 //   - 空值或非法字符：回退为 system。
 func NormalizeThemeMode(mode string) string {
@@ -122,6 +136,8 @@ func NormalizeThemeMode(mode string) string {
 		return ThemeModeDark
 	case ThemeModeSystem:
 		return ThemeModeSystem
+	case ThemeModeTHRM:
+		return ThemeModeClassic
 	}
 	if isValidThemeID(mode) {
 		return mode
@@ -435,27 +451,31 @@ type GearCommand struct {
 
 // TemperatureData 温度数据
 type TemperatureData struct {
-	CPUTemp           int                    `json:"cpuTemp"` // CPU温度
-	GPUTemp           int                    `json:"gpuTemp"` // GPU温度
-	CPUPowerWatts     float64                `json:"cpuPowerWatts,omitempty"`
-	GPUPowerWatts     float64                `json:"gpuPowerWatts,omitempty"`
-	GPUReadState      string                 `json:"gpuReadState,omitempty"`
-	MaxTemp           int                    `json:"maxTemp"`           // 最高温度
-	ControlTemp       int                    `json:"controlTemp"`       // 当前控温基准温度
-	ControlSource     string                 `json:"controlSource"`     // 当前控温基准来源
-	SelectedGpuDevice string                 `json:"selectedGpuDevice"` // 当前选中的 GPU 设备 key
-	CpuModel          string                 `json:"cpuModel"`          // 当前识别的 CPU 型号
-	GpuModel          string                 `json:"gpuModel"`          // 当前识别的 GPU 型号
-	CpuSensors        []TemperatureSensor    `json:"cpuSensors"`        // 当前识别到的 CPU 温度传感器
-	GpuSensors        []TemperatureSensor    `json:"gpuSensors"`        // 当前识别到的 GPU 温度传感器
-	CpuPowerSensors   []PowerSensor          `json:"cpuPowerSensors"`   // 当前识别到的 CPU 功耗传感器
-	GpuPowerSensors   []PowerSensor          `json:"gpuPowerSensors"`   // 当前识别到的 GPU 功耗传感器
-	GpuDevices        []TemperatureGPUDevice `json:"gpuDevices"`        // 当前识别到的 GPU 设备列表
-	UpdateTime        int64                  `json:"updateTime"`        // 更新时间戳
-	BridgeOk          bool                   `json:"bridgeOk"`          // 桥接程序是否正常
-	BridgeMsg         string                 `json:"bridgeMessage"`     // 桥接故障提示
-	TelemetryState    string                 `json:"telemetryState"`    // 前端展示用的遥测可信度
-	TelemetryFresh    bool                   `json:"-"`                 // 本轮是否直接读取到有效桥接遥测
+	CPUTemp               int                    `json:"cpuTemp"` // CPU温度
+	GPUTemp               int                    `json:"gpuTemp"` // GPU温度
+	CPUPowerWatts         float64                `json:"cpuPowerWatts,omitempty"`
+	GPUPowerWatts         float64                `json:"gpuPowerWatts,omitempty"`
+	GPUReadState          string                 `json:"gpuReadState,omitempty"`
+	MaxTemp               int                    `json:"maxTemp"`           // 最高温度
+	ControlTemp           int                    `json:"controlTemp"`       // 当前控温基准温度
+	ControlSource         string                 `json:"controlSource"`     // 当前控温基准来源
+	SelectedGpuDevice     string                 `json:"selectedGpuDevice"` // 当前选中的 GPU 设备 key
+	CpuModel              string                 `json:"cpuModel"`          // 当前识别的 CPU 型号
+	GpuModel              string                 `json:"gpuModel"`          // 当前识别的 GPU 型号
+	CpuSensors            []TemperatureSensor    `json:"cpuSensors"`        // 当前识别到的 CPU 温度传感器
+	GpuSensors            []TemperatureSensor    `json:"gpuSensors"`        // 当前识别到的 GPU 温度传感器
+	CpuPowerSensors       []PowerSensor          `json:"cpuPowerSensors"`   // 当前识别到的 CPU 功耗传感器
+	GpuPowerSensors       []PowerSensor          `json:"gpuPowerSensors"`   // 当前识别到的 GPU 功耗传感器
+	GpuDevices            []TemperatureGPUDevice `json:"gpuDevices"`        // 当前识别到的 GPU 设备列表
+	UpdateTime            int64                  `json:"updateTime"`        // 更新时间戳
+	BridgeOk              bool                   `json:"bridgeOk"`          // 桥接程序是否正常
+	BridgeMsg             string                 `json:"bridgeMessage"`     // 桥接故障提示
+	TelemetrySource       string                 `json:"telemetrySource,omitempty"`
+	CPUTelemetrySource    string                 `json:"cpuTelemetrySource,omitempty"`
+	GPUTelemetrySource    string                 `json:"gpuTelemetrySource,omitempty"`
+	TelemetryFailureStage string                 `json:"telemetryFailureStage,omitempty"`
+	TelemetryState        string                 `json:"telemetryState"` // 前端展示用的遥测可信度
+	TelemetryFresh        bool                   `json:"-"`              // 本轮是否直接读取到有效桥接遥测
 }
 
 // TemperatureHistoryPoint CPU/GPU 温度历史点。
@@ -477,25 +497,27 @@ type TemperatureHistoryPayload struct {
 
 // BridgeTemperatureData 桥接程序返回的温度数据
 type BridgeTemperatureData struct {
-	CpuTemp           int                    `json:"cpuTemp"`
-	GpuTemp           int                    `json:"gpuTemp"`
-	CpuPowerWatts     float64                `json:"cpuPowerWatts,omitempty"`
-	GpuPowerWatts     float64                `json:"gpuPowerWatts,omitempty"`
-	GPUReadState      string                 `json:"gpuReadState,omitempty"`
-	MaxTemp           int                    `json:"maxTemp"`
-	ControlTemp       int                    `json:"controlTemp"`
-	ControlSource     string                 `json:"controlSource"`
-	SelectedGpuDevice string                 `json:"selectedGpuDevice"`
-	CpuModel          string                 `json:"cpuModel"`
-	GpuModel          string                 `json:"gpuModel"`
-	CpuSensors        []TemperatureSensor    `json:"cpuSensors"`
-	GpuSensors        []TemperatureSensor    `json:"gpuSensors"`
-	CpuPowerSensors   []PowerSensor          `json:"cpuPowerSensors"`
-	GpuPowerSensors   []PowerSensor          `json:"gpuPowerSensors"`
-	GpuDevices        []TemperatureGPUDevice `json:"gpuDevices"`
-	UpdateTime        int64                  `json:"updateTime"`
-	Success           bool                   `json:"success"`
-	Error             string                 `json:"error"`
+	CpuTemp               int                    `json:"cpuTemp"`
+	GpuTemp               int                    `json:"gpuTemp"`
+	CpuPowerWatts         float64                `json:"cpuPowerWatts,omitempty"`
+	GpuPowerWatts         float64                `json:"gpuPowerWatts,omitempty"`
+	GPUReadState          string                 `json:"gpuReadState,omitempty"`
+	MaxTemp               int                    `json:"maxTemp"`
+	ControlTemp           int                    `json:"controlTemp"`
+	ControlSource         string                 `json:"controlSource"`
+	SelectedGpuDevice     string                 `json:"selectedGpuDevice"`
+	CpuModel              string                 `json:"cpuModel"`
+	GpuModel              string                 `json:"gpuModel"`
+	CpuSensors            []TemperatureSensor    `json:"cpuSensors"`
+	GpuSensors            []TemperatureSensor    `json:"gpuSensors"`
+	CpuPowerSensors       []PowerSensor          `json:"cpuPowerSensors"`
+	GpuPowerSensors       []PowerSensor          `json:"gpuPowerSensors"`
+	GpuDevices            []TemperatureGPUDevice `json:"gpuDevices"`
+	UpdateTime            int64                  `json:"updateTime"`
+	Success               bool                   `json:"success"`
+	Error                 string                 `json:"error"`
+	TelemetrySource       string                 `json:"telemetrySource,omitempty"`
+	TelemetryFailureStage string                 `json:"telemetryFailureStage,omitempty"`
 }
 
 // BridgeCommand 桥接程序命令

@@ -3,7 +3,7 @@ package coreapp
 import (
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 const (
@@ -82,7 +82,10 @@ func (a *CoreApp) connectionFlightSnapshot(runtime deviceRuntimeStatus) connecti
 	})
 }
 
-func (a *CoreApp) deviceRuntimeSnapshot() deviceRuntimeSnapshotData {
+// deviceRuntimeSnapshot keeps normal status reads non-blocking; diagnostics
+// may opt into the configured manager profile because it runs off the control
+// path and needs the same profile identity used by the connection adapter.
+func (a *CoreApp) deviceRuntimeSnapshot(includeConfiguredProfile ...bool) deviceRuntimeSnapshotData {
 	a.mutex.RLock()
 	coreConnected := a.isConnected
 	manager := a.deviceManager
@@ -95,6 +98,11 @@ func (a *CoreApp) deviceRuntimeSnapshot() deviceRuntimeSnapshotData {
 	if a.configManager != nil {
 		cfg := a.configManager.Get()
 		profile = types.ActiveDeviceProfile(&cfg)
+	}
+	if manager != nil && (connected || (len(includeConfiguredProfile) > 0 && includeConfiguredProfile[0])) {
+		if runtimeProfile := manager.ActiveProfile(); runtimeProfile.ID != "" {
+			profile = runtimeProfile
+		}
 	}
 	capabilities := profile.Capabilities
 	snapshot := deviceRuntimeSnapshotData{

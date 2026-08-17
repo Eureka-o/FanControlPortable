@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 func TestDiscoverWiFiDevicesFindsDefaultStateEndpoint(t *testing.T) {

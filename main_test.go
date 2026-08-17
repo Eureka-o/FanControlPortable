@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/TIANLI0/THRM/internal/theme"
+	"github.com/Eureka-o/FanControlPortable/internal/theme"
 )
 
 func TestThemeAssetMiddlewareServesThemeAssetBeforeNextHandler(t *testing.T) {

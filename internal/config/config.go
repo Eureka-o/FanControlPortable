@@ -6,14 +6,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 
-	"github.com/TIANLI0/THRM/internal/appmeta"
-	"github.com/TIANLI0/THRM/internal/deviceprofiles"
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
+	"github.com/Eureka-o/FanControlPortable/internal/deviceprofiles"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 const configLearningCurveScopeSeparator = "::curve::"
@@ -1128,6 +1129,9 @@ func (m *Manager) Update(config types.AppConfig) error {
 	config = cloneAppConfig(config)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if sameAppConfig(m.config, config) {
+		return nil
+	}
 	previous := m.config
 	m.config = config
 	if err := m.saveLocked(); err != nil {
@@ -1148,6 +1152,9 @@ func (m *Manager) MutateAndSave(mutate func(*types.AppConfig)) (types.AppConfig,
 	previous := m.config
 	next := cloneAppConfig(m.config)
 	mutate(&next)
+	if sameAppConfig(m.config, next) {
+		return cloneAppConfig(m.config), nil
+	}
 	m.config = cloneAppConfig(next)
 	if err := m.saveLocked(); err != nil {
 		m.config = previous
@@ -1182,6 +1189,9 @@ func (m *Manager) MutateIfRevisionAndSave(expected uint64, mutate func(*types.Ap
 	previous := m.config
 	next := cloneAppConfig(m.config)
 	mutate(&next)
+	if sameAppConfig(m.config, next) {
+		return cloneAppConfig(m.config), m.revision, false, nil
+	}
 	m.config = cloneAppConfig(next)
 	if err := m.saveLocked(); err != nil {
 		m.config = previous
@@ -1189,6 +1199,10 @@ func (m *Manager) MutateIfRevisionAndSave(expected uint64, mutate func(*types.Ap
 	}
 	m.bumpRevisionLocked()
 	return cloneAppConfig(m.config), m.revision, true, nil
+}
+
+func sameAppConfig(left, right types.AppConfig) bool {
+	return reflect.DeepEqual(left, right)
 }
 
 func (m *Manager) bumpRevisionLocked() {

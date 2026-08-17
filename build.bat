@@ -21,7 +21,7 @@ if "!VERSION!"=="" (
 )
 
 set "BUILD_BIN=build\bin"
-set LDFLAGS=-s -w -X github.com/TIANLI0/THRM/internal/version.BuildVersion=!VERSION! -H=windowsgui
+set LDFLAGS=-s -w -X github.com/Eureka-o/FanControlPortable/internal/version.BuildVersion=!VERSION! -H=windowsgui
 for /f "delims=" %%G in ('go env GOPATH 2^>nul') do set "GOPATH_VALUE=%%G"
 if not "!GOPATH_VALUE!"=="" (
     set "PATH=!GOPATH_VALUE!\bin;!PATH!"
@@ -73,7 +73,11 @@ if exist "!BUILD_BIN!\config\hardware-profile.json" del /q "!BUILD_BIN!\config\h
 if exist "!BUILD_BIN!\config" rmdir "!BUILD_BIN!\config" 2>nul
 
 echo Building temperature bridge...
-dotnet publish bridge\TempBridge\TempBridge.csproj -c Release --self-contained false -o build\bin\bridge /p:Platform=x64 /p:DebugType=none /p:DebugSymbols=false /p:UseLibreHardwareMonitorProjectReference=false
+if /I "!USE_LHM_SOURCE!"=="true" (
+    call build_bridge.bat
+) else (
+    dotnet publish bridge\TempBridge\TempBridge.csproj -c Release --self-contained false -o build\bin\bridge /p:Platform=x64 /p:DebugType=none /p:DebugSymbols=false /p:UseLibreHardwareMonitorProjectReference=false
+)
 if errorlevel 1 exit /b 1
 
 REM Build core service first

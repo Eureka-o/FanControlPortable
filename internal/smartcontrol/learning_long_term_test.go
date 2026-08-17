@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TIANLI0/THRM/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 func observeSteadySegment(observer *StableObserver, start time.Time, power EffectivePower, curve []types.FanCurvePoint, cfg types.SmartControlConfig) SteadyResult {
