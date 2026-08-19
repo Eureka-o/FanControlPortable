@@ -115,6 +115,8 @@ export function ReinstallPawnIO():Promise<Record<string, any>>;
 
 export function ResetLearnedOffsets():Promise<void>;
 
+export function RestartCore(arg1:boolean):Promise<void>;
+
 export function RestartPawnIO():Promise<types.BridgeTemperatureData>;
 
 export function ResumeUpdateDownload():Promise<boolean>;
@@ -164,6 +166,8 @@ export function SetPowerOnStart(arg1:boolean):Promise<boolean>;
 export function SetSmartStartStop(arg1:string):Promise<boolean>;
 
 export function SetTemperatureHistoryEnabled(arg1:boolean):Promise<void>;
+
+export function SetTemperatureHistoryRetentionHours(arg1:number):Promise<void>;
 
 export function SetWiFiSmartStartStopStandbySpeed(arg1:number):Promise<boolean>;
 

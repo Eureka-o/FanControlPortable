@@ -169,6 +169,10 @@ type reconnectAttemptResult struct {
 }
 
 func (a *CoreApp) requestReconnect(reason string, retryDelays []time.Duration) {
+	if a.monitorOnlyActive() {
+		a.logDebug("仅监控模式已启用，忽略重连请求: %s", reason)
+		return
+	}
 	if a.autoReconnectSuppressed.Load() {
 		a.logInfo("自动重连已被手动断开抑制，忽略请求: %s", reason)
 		return
@@ -257,6 +261,9 @@ func (a *CoreApp) runReconnectLoopWithWake(
 	wake <-chan struct{},
 	attempt func(context.Context) reconnectAttemptResult,
 ) {
+	if a.monitorOnlyActive() {
+		return
+	}
 	a.logInfo("启动设备重连流程: %s", reason)
 	a.connectionFlights.record(connectionFlightEvent{
 		Stage:  connectionFlightStageReconnecting,
@@ -274,6 +281,9 @@ func (a *CoreApp) runReconnectLoopWithWake(
 		}
 		if a.systemSuspended.Load() {
 			a.logDebug("系统进入挂起状态，停止重连流程: %s", reason)
+			return
+		}
+		if a.monitorOnlyActive() {
 			return
 		}
 
@@ -402,6 +412,9 @@ func waitForReconnectDelayWithWake(ctx context.Context, delay time.Duration, wak
 }
 
 func (a *CoreApp) reconnectDevice(ctx context.Context) reconnectAttemptResult {
+	if a.monitorOnlyActive() {
+		return reconnectAttemptResult{}
+	}
 	a.connectMutex.Lock()
 	defer a.connectMutex.Unlock()
 	leavePhase := newDeviceConnectionFlow(a).enterPhase(deviceConnectionPhaseConnecting)
@@ -774,6 +787,9 @@ func (a *CoreApp) ConnectDevice() bool {
 }
 
 func (a *CoreApp) AutoScanDevices() map[string]any {
+	if a.monitorOnlyActive() {
+		return map[string]any{"connected": false, "devices": []any{}, "matched": false, "error": "仅监控模式已启用"}
+	}
 	leavePhase := newDeviceConnectionFlow(a).enterPhase(deviceConnectionPhaseDiscovering)
 	defer leavePhase()
 	cfg := a.configManager.Get()
@@ -793,6 +809,9 @@ func (a *CoreApp) AutoScanDevices() map[string]any {
 }
 
 func (a *CoreApp) ConnectNativeDevice(profileID string) bool {
+	if a.monitorOnlyActive() {
+		return false
+	}
 	a.cancelReconnect()
 	a.connectMutex.Lock()
 	defer a.connectMutex.Unlock()
@@ -800,6 +819,11 @@ func (a *CoreApp) ConnectNativeDevice(profileID string) bool {
 }
 
 func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string, caller string) *types.DeviceSettings {
+	if a.monitorOnlyActive() {
+		a.deviceManager.DisconnectSilently()
+		newDeviceConnectionFlow(a).setRuntimeDisconnected("monitor-only")
+		return nil
+	}
 	a.deviceManager.UnblockWrites()
 	a.syncConnectedBuiltInDeviceProfile(deviceInfo)
 
@@ -921,6 +945,7 @@ func (a *CoreApp) GetDeviceStatus() map[string]any {
 	if !snapshot.Connected {
 		return map[string]any{
 			"connected":            false,
+			"monitorOnly":          a.monitorOnlyActive(),
 			"monitoring":           monitoring,
 			"currentData":          nil,
 			"temperature":          currentTemp,
@@ -937,6 +962,7 @@ func (a *CoreApp) GetDeviceStatus() map[string]any {
 
 	return map[string]any{
 		"connected":            true,
+		"monitorOnly":          a.monitorOnlyActive(),
 		"monitoring":           monitoring,
 		"currentData":          snapshot.CurrentData,
 		"temperature":          currentTemp,

@@ -125,6 +125,7 @@ interface AppShellProps {
   activeTab: ActiveTab;
   onTabChange: (tab: ActiveTab) => void;
   isConnected: boolean;
+  monitorOnlyActive?: boolean;
   fanData: types.FanData | null;
   temperature: types.TemperatureData | null;
   runtimeDeviceProfile?: types.DeviceProfile | null;
@@ -682,6 +683,7 @@ export default function AppShell({
   activeTab,
   onTabChange,
   isConnected,
+  monitorOnlyActive = false,
   fanData,
   temperature,
   runtimeDeviceProfile,
@@ -871,6 +873,7 @@ export default function AppShell({
       <aside
         data-theme-section="sidebar"
         data-dock-expanded={dockExpanded ? "true" : "false"}
+        data-monitor-only={monitorOnlyActive ? "true" : "false"}
         className="glacier-sidebar flex shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[1px_0_0_rgba(15,23,42,0.04)] transition-[width] duration-[420ms] ease-[cubic-bezier(0.16,1,0.3,1)] dark:shadow-[1px_0_0_rgba(255,255,255,0.04)]"
         style={{ width: dockWidth }}
       >
@@ -915,7 +918,7 @@ export default function AppShell({
           role="tablist"
           style={NO_DRAG_STYLE}
         >
-          {MAIN_TAB_ITEMS.map((tab) => (
+          {MAIN_TAB_ITEMS.filter((tab) => !(monitorOnlyActive && tab.id === "curve")).map((tab) => (
             <DockButton
               key={tab.id}
               icon={tab.icon}

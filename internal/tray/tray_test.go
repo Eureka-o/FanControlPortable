@@ -71,11 +71,32 @@ func TestFormatTrayTooltipKeepsFanSpeedEarlyAndShort(t *testing.T) {
 	}
 }
 
+func TestMonitorOnlyTrayTooltipKeepsTelemetryWithoutFanControls(t *testing.T) {
+	status := Status{
+		MonitorOnly:   true,
+		CPUTemp:       62,
+		GPUTemp:       55,
+		CPUPowerWatts: 18,
+		GPUPowerWatts: 42,
+	}
+
+	got := formatTrayTooltip(status, "1300 RPM")
+	if !strings.Contains(got, "CPU 62°C") || !strings.Contains(got, "GPU 55°C") {
+		t.Fatalf("tooltip = %q, want CPU/GPU telemetry", got)
+	}
+	if strings.Contains(got, "设备未连接") || strings.Contains(got, "风扇 1300 RPM") {
+		t.Fatalf("tooltip = %q, want monitor-only telemetry without device controls", got)
+	}
+}
+
 func TestDeviceStatusTitleUsesRuntimeDeviceName(t *testing.T) {
-	if got := deviceStatusTitle("FlyDigi BS3 Pro", true); got != "FlyDigi BS3 Pro：已连接" {
+	if got := deviceStatusTitle("FlyDigi BS3 Pro", true, false); got != "FlyDigi BS3 Pro：已连接" {
 		t.Fatalf("deviceStatusTitle() = %q", got)
 	}
-	if got := deviceStatusTitle("", false); got != "设备：未连接" {
+	if got := deviceStatusTitle("", false, false); got != "设备：未连接" {
 		t.Fatalf("deviceStatusTitle(empty) = %q", got)
+	}
+	if got := deviceStatusTitle("", false, true); got != "仅监控模式：运行中" {
+		t.Fatalf("deviceStatusTitle(monitor-only) = %q", got)
 	}
 }

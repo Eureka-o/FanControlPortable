@@ -15,6 +15,48 @@ export const CORE_HISTORY_RETENTION_MS = 60 * 60 * 1000;
 export const SESSION_HISTORY_RETENTION_MS = 5 * 60 * 1000;
 export const HISTORY_SAMPLE_INTERVAL_MS = 5 * 1000;
 export const HISTORY_LIMIT = CORE_HISTORY_LIMIT;
+export const DEFAULT_HISTORY_RETENTION_HOURS = 1;
+export const MAX_HISTORY_RETENTION_HOURS = 24;
+export const HISTORY_RETENTION_HOUR_OPTIONS = [1, 2, 3, 6, 12, 24] as const;
+export const HOME_CHART_WINDOW_MS = 60 * 60 * 1000;
+
+export const clampHistoryRetentionHours = (hours: number | null | undefined) => {
+  const numeric = Math.round(Number(hours || 0));
+  if (!Number.isFinite(numeric) || numeric < DEFAULT_HISTORY_RETENTION_HOURS) return DEFAULT_HISTORY_RETENTION_HOURS;
+  return Math.min(MAX_HISTORY_RETENTION_HOURS, numeric);
+};
+
+export const historyRetentionLimit = (hours: number) => (
+  clampHistoryRetentionHours(hours) * Math.round((60 * 60 * 1000) / HISTORY_SAMPLE_INTERVAL_MS)
+);
+
+export const clipHistoryToRecentWindow = (
+  points: TemperatureHistoryPoint[],
+  windowMs = HOME_CHART_WINDOW_MS,
+) => {
+  if (points.length === 0 || windowMs <= 0) return points;
+  const cutoff = points[points.length - 1].timestamp - windowMs;
+  if (points[0].timestamp >= cutoff) return points;
+
+  let low = 0;
+  let high = points.length - 1;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (points[mid].timestamp < cutoff) low = mid + 1;
+    else high = mid;
+  }
+  return points.slice(low);
+};
+
+export const downsampleHistoryPoints = <T extends { timestamp: number }>(points: T[], maxPoints: number) => {
+  if (maxPoints <= 0 || points.length <= maxPoints) return points;
+  const stride = Math.ceil(points.length / maxPoints);
+  const sampled: T[] = [];
+  for (let index = 0; index < points.length; index += stride) sampled.push(points[index]);
+  const last = points[points.length - 1];
+  if (sampled[sampled.length - 1] !== last) sampled.push(last);
+  return sampled;
+};
 
 export const normalizeHistoryTimestamp = (timestamp: number | null | undefined) => {
   const numeric = Number(timestamp || 0);

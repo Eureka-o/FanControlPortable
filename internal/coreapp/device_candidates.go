@@ -15,6 +15,9 @@ func (a *CoreApp) ScanDeviceCandidates(mode string) types.DeviceScanResult {
 
 func (a *CoreApp) scanDeviceCandidates(mode string, includeNative bool) types.DeviceScanResult {
 	mode = normalizeDeviceScanMode(mode)
+	if a.monitorOnlyActive() {
+		return types.DeviceScanResult{Mode: mode, Error: "仅监控模式已启用"}
+	}
 
 	cfg := a.configManager.Get()
 	types.NormalizeDeviceProfileConfig(&cfg)
@@ -172,6 +175,9 @@ func availableSerialPortNames() map[string]bool {
 }
 
 func (a *CoreApp) ConnectDeviceCandidate(req types.DeviceConnectRequest) bool {
+	if a.monitorOnlyActive() {
+		return false
+	}
 	a.cancelReconnect()
 	a.connectMutex.Lock()
 	defer a.connectMutex.Unlock()
@@ -179,6 +185,9 @@ func (a *CoreApp) ConnectDeviceCandidate(req types.DeviceConnectRequest) bool {
 }
 
 func (a *CoreApp) ConnectBestScannedDevice() bool {
+	if a.monitorOnlyActive() {
+		return false
+	}
 	a.cancelReconnect()
 	a.connectMutex.Lock()
 	defer a.connectMutex.Unlock()

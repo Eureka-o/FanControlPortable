@@ -84,6 +84,9 @@ func (a *CoreApp) ensureTemperatureMonitoringHealthy() {
 
 // checkDeviceHealth 检查设备健康状态
 func (a *CoreApp) checkDeviceHealth() {
+	if a.monitorOnlyActive() {
+		return
+	}
 	snapshot := a.deviceRuntimeSnapshot()
 	connected := snapshot.Connected
 

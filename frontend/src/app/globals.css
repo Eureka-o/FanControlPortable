@@ -681,6 +681,20 @@ html .glacier-sidebar:has([data-theme-tab="devices"][aria-selected="true"]) {
   --sidebar-active-offset: 9rem;
 }
 
+/* The curve tab is intentionally absent in monitor-only mode, so the
+ * remaining primary tabs use the compact navigation positions. */
+html .glacier-sidebar[data-monitor-only="true"]:has(
+    [data-theme-tab="control"][aria-selected="true"]
+  ) {
+  --sidebar-active-offset: 3rem;
+}
+
+html .glacier-sidebar[data-monitor-only="true"]:has(
+    [data-theme-tab="devices"][aria-selected="true"]
+  ) {
+  --sidebar-active-offset: 6rem;
+}
+
 html .glacier-sidebar:has([data-theme-tab="about"][aria-selected="true"]) {
   --sidebar-active-offset: calc(100dvh - 11.75rem);
 }
@@ -891,6 +905,14 @@ html[data-theme][data-theme]
   [data-theme-card="device-hero"]::after {
   content: none !important;
   display: none !important;
+}
+
+html[data-theme][data-theme]
+  body
+  .glacier-shell
+  [data-theme-ui="hero-actions"][data-hero-connected="true"] {
+  border: 0 !important;
+  border-color: transparent !important;
 }
 
 html[data-theme][data-theme]

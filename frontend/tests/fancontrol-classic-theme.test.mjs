@@ -16,7 +16,7 @@ test('FanControl Classic uses the advanced theme contract', () => {
   assert.equal(manifest.id, 'fancontrol-classic');
   assert.equal(manifest.layer, 'advanced');
   assert.equal(manifest.contract, 'fancontrol/v1');
-  assert.equal(manifest.version, '2.1.7');
+  assert.equal(manifest.version, '2.1.9');
   assert.match(sourceCss, /--classic-curtain:\s*url\("assets\/curtain\.webp"\)/);
   assert.match(sourceCss, /--classic-panel-texture:\s*url\("assets\/patterns\/panel-texture\.svg"\)/);
   assert.doesNotMatch(sourceCss, /assets\/(?:curtain\.svg|panel-texture\.webp)/);
@@ -48,7 +48,7 @@ test('FanControl Classic uses the advanced theme contract', () => {
   assert.match(advancedCss, /--classic-dock-shadow:[\s\S]*?4px 0 16px -14px rgba\(47, 116, 255, 0\.28\)/);
   assert.doesNotMatch(advancedCss, /--classic-dock-shadow:[\s\S]*?0 0 0 1px/);
   assert.match(advancedCss, /\.glacier-sidebar \{[\s\S]*?border-color: transparent !important;[\s\S]*?background: transparent !important;[\s\S]*?box-shadow: none !important/);
-  assert.match(advancedCss, /\.glacier-sidebar::before \{[\s\S]*?inset: 0\.55rem 0\.4rem !important;[\s\S]*?border: 1px solid var\(--classic-dock-border\) !important;[\s\S]*?background:\s*var\(--classic-dock-texture\) center top \/ 152px 152px repeat,\s*var\(--classic-surface-background\) !important;[\s\S]*?box-shadow: var\(--classic-dock-shadow\) !important;[\s\S]*?animation: classic-dock-drift 32s ease-in-out infinite alternate/);
+  assert.match(advancedCss, /\.glacier-sidebar::before \{[\s\S]*?inset: 0\.55rem 0\.4rem !important;[\s\S]*?border: 1px solid var\(--classic-dock-border\) !important;[\s\S]*?background:\s*(?:var\(--classic-dock-texture\) center top \/ 152px 152px repeat,\s*)+var\(--classic-surface-background\) !important;[\s\S]*?box-shadow: var\(--classic-dock-shadow\) !important;[\s\S]*?animation: classic-dock-drift 32s ease-in-out infinite alternate/);
   assert.match(advancedCss, /\.glacier-sidebar::after \{[\s\S]*?content: none !important;[\s\S]*?display: none !important/);
   assert.match(advancedCss, /data-theme-ui="compatibility-divider"[\s\S]*?border-top: 0 !important/);
   assert.match(advancedCss, /data-theme-page="status"\] :is\([\s\S]*?\.glacier-metric-card,[\s\S]*?\.glacier-control-card,[\s\S]*?data-theme-card="fan-curve-preview"[\s\S]*?data-theme-card="temperature-history"[\s\S]*?background: var\(--classic-surface-background\) !important;[\s\S]*?backdrop-filter: var\(--classic-surface-filter\) !important/);

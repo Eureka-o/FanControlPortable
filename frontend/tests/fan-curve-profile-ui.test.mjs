@@ -99,7 +99,8 @@ test('keeps curve jump aligned until the target layout stabilizes', () => {
 });
 
 test('shows only history and never normalizes or saves a curve while disconnected', () => {
-  assert.match(source, /\{isConnected && \(\s*<>\s*<motion\.div\s*data-theme-card="curve-header"/s);
+  assert.match(source, /\{!historyOnly && isConnected && \(\s*<>\s*<motion\.div\s*data-theme-card="curve-header"/s);
+  assert.match(source, /historyOnly\?: boolean/);
   assert.match(source, /<\/>,?\s*\)\}\s*<section ref=\{historyDetailsRef\} data-theme-card="curve-history"/s);
   assert.match(source, /if \(!isConnected && focusTarget !== 'history-details'\) \{\s*onFocusHandled\(\);\s*return;/);
   assert.match(source, /setCurveDraftDirty\(isConnected && hasUnsavedChanges\)/);
@@ -134,7 +135,7 @@ test('splits power history into an aligned conditional chart with a shared full-
 test('lets the history detail page select one time range for both trend charts', () => {
   assert.match(source, /const \[historyZoomDomain, setHistoryZoomDomain\] = useState/);
   assert.match(source, /const \[historyZoomSelect, setHistoryZoomSelect\] = useState/);
-  assert.equal([...source.matchAll(/data=\{zoomedHistoryChartData\}/g)].length, 2);
+  assert.equal([...source.matchAll(/data=\{historyDisplayData\}/g)].length, 2);
   assert.equal([...source.matchAll(/syncId="historyTrend"/g)].length, 2);
   assert.equal([...source.matchAll(/onMouseDown=\{handleHistoryZoomMouseDown\}/g)].length, 2);
   assert.equal([...source.matchAll(/onMouseMove=\{handleHistoryZoomMouseMove\}/g)].length, 2);

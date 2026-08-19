@@ -93,6 +93,7 @@ type CurveOption struct {
 // Status 状态信息
 type Status struct {
 	Connected            bool
+	MonitorOnly          bool
 	DeviceName           string
 	CPUTemp              int
 	GPUTemp              int
@@ -379,7 +380,7 @@ func (m *Manager) createMenu() (items *MenuItems, err error) {
 	items.Show = systray.AddMenuItem("打开 FanControl", "显示 FanControl 主窗口")
 	systray.AddSeparator()
 
-	items.DeviceStatus = systray.AddMenuItem(deviceStatusTitle("", false), "查看散热器连接状态")
+	items.DeviceStatus = systray.AddMenuItem(deviceStatusTitle("", false, false), "查看散热器连接状态")
 	items.DeviceStatus.Disable()
 
 	items.CPUTemperature = systray.AddMenuItem("CPU 温度：无数据", "显示当前 CPU 温度")
@@ -535,7 +536,10 @@ func formatTrayDeviceName(name string) string {
 	return string(runes[:maxRunes]) + "…"
 }
 
-func deviceStatusTitle(deviceName string, connected bool) string {
+func deviceStatusTitle(deviceName string, connected, monitorOnly bool) string {
+	if monitorOnly {
+		return "仅监控模式：运行中"
+	}
 	statusText := "未连接"
 	if connected {
 		statusText = "已连接"
@@ -560,11 +564,13 @@ func formatTrayGPUTemperaturePowerLine(status Status) string {
 
 func formatTrayTooltip(status Status, fanSpeedText string) string {
 	modeText := "手动"
-	if status.AutoControlState {
+	if status.MonitorOnly {
+		modeText = "仅监控"
+	} else if status.AutoControlState {
 		modeText = "智能"
 	}
 	lines := []string{fmt.Sprintf("%s %s", appmeta.AppName, modeText)}
-	if fanSpeedText != "" {
+	if !status.MonitorOnly && fanSpeedText != "" {
 		lines = append(lines, fmt.Sprintf("风扇 %s", fanSpeedText))
 	}
 	lines = append(lines,
@@ -603,7 +609,7 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 					return
 				}
 
-				m.menuItems.DeviceStatus.SetTitle(deviceStatusTitle(status.DeviceName, status.Connected))
+				m.menuItems.DeviceStatus.SetTitle(deviceStatusTitle(status.DeviceName, status.Connected, status.MonitorOnly))
 
 				if status.CPUTemp > 0 {
 					m.menuItems.CPUTemperature.SetTitle(fmt.Sprintf("CPU 温度：%d°C", status.CPUTemp))
@@ -630,23 +636,40 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 				}
 
 				fanSpeedText := formatFanSpeedForTray(status.CurrentRPM, status.SpeedUnit)
-				if fanSpeedText != "" {
+				if status.MonitorOnly {
+					m.menuItems.FanSpeed.SetTitle("风扇速度：仅监控不可用")
+					m.menuItems.FanSpeed.Disable()
+				} else if fanSpeedText != "" {
 					m.menuItems.FanSpeed.SetTitle(fmt.Sprintf("风扇速度：%s", fanSpeedText))
 				} else {
 					m.menuItems.FanSpeed.SetTitle("风扇速度：无数据")
 				}
 
 				if m.menuItems.CurveSelect != nil {
-					m.ensureCurveMenuItems(m.menuItems.CurveSelect, status.CurveProfiles)
-					m.updateCurveMenuSelection(status.ActiveCurveProfileID)
+					if status.MonitorOnly {
+						m.menuItems.CurveSelect.SetTitle("温控曲线（仅监控不可用）")
+						m.menuItems.CurveSelect.Disable()
+					} else {
+						m.menuItems.CurveSelect.SetTitle("温控曲线")
+						m.menuItems.CurveSelect.Enable()
+						m.ensureCurveMenuItems(m.menuItems.CurveSelect, status.CurveProfiles)
+						m.updateCurveMenuSelection(status.ActiveCurveProfileID)
+					}
 				}
 
-				if status.AutoControlState {
-					m.menuItems.AutoControl.Check()
+				if status.MonitorOnly {
+					m.menuItems.AutoControl.SetTitle("智能温控（仅监控不可用）")
+					m.menuItems.AutoControl.Disable()
 				} else {
-					m.menuItems.AutoControl.Uncheck()
+					m.menuItems.AutoControl.SetTitle("智能温控")
+					m.menuItems.AutoControl.Enable()
+					if status.AutoControlState {
+						m.menuItems.AutoControl.Check()
+					} else {
+						m.menuItems.AutoControl.Uncheck()
+					}
 				}
-				if status.Connected {
+				if status.MonitorOnly || status.Connected {
 					systray.SetTooltip(formatTrayTooltip(status, fanSpeedText))
 				} else {
 					systray.SetTooltip(appmeta.AppName + " - 设备未连接")

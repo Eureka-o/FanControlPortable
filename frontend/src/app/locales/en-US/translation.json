@@ -486,6 +486,23 @@
       "titleWithDevice": "{{name}} is not connected",
       "descriptionWithDevice": "{{name}} is the enabled device. Check its connection type and address, then connect."
     },
+    "monitorOnly": {
+      "entryTitle": "Don't need to connect a device?",
+      "entryDescription": "Enable monitor-only mode to reduce background memory use",
+      "enable": "Enable monitor-only",
+      "dialogTitle": "Enable monitor-only mode",
+      "dialogDescription": "The frontend and background service will restart to apply monitor-only mode.",
+      "dialogTemporary": "This homepage action applies only to the current session and turns off after the software is restarted.",
+      "dialogPersistentHint": "For a persistent setting, enable monitor-only mode in System Settings.",
+      "cancel": "Cancel",
+      "confirm": "Enable",
+      "restartFailed": "Failed to enable monitor-only mode: {{error}}",
+      "sensorOnly": "Monitor-only mode: device connection and control are disabled",
+      "cpuInfo": "CPU information",
+      "gpuInfo": "GPU information",
+      "power": "Power",
+      "historyTitle": "Temperature and power history"
+    },
     "recovery": {
       "deviceAvailable": "Confirm the device is powered on and visible in Windows.",
       "releaseCompetingTools": "Close other hardware or fan-control tools that may be using it.",
@@ -788,7 +805,7 @@
     },
     "history": {
       "detailsTitle": "Temperature and fan history details",
-      "detailsDescription": "The curve page keeps a 1-hour history overview so you can compare the current curve against recent temperature trends.",
+      "detailsDescription": "Choose how long to retain history and compare the current curve against temperature trends.",
       "saving": "Saving",
       "backgroundRecording": "Background recording",
       "emptyEnabled": "Background recording is enabled. Waiting for more temperature and fan samples.",
@@ -798,6 +815,10 @@
       "resetZoom": "Reset zoom",
       "zoomHint": "Drag on the chart to select a time range",
       "zoomSelecting": "Selecting {{from}} - {{to}}",
+      "retention": {
+        "label": "Retention",
+        "hours": "{{count}} h"
+      },
       "events": {
         "disconnect": "Device disconnected",
         "reconnect": "Device connected",
@@ -1087,6 +1108,14 @@
       "windowBlurTitle": "Blur effect",
       "windowBlurDescription": "Choose Acrylic, Mica, Mica Alt, or Off. Built-in light and dark themes adapt automatically; custom themes are unchanged.",
       "windowBlurTip": "Restart the app for this setting to take effect.",
+      "monitorOnlyTitle": "Monitor-only mode",
+      "monitorOnlyDescription": "Enable this when the device is away for a long time. Performance monitoring stays on while device connection and control are disabled.",
+      "monitorOnlyTip": "The frontend and background service restart when this changes.",
+      "monitorOnlyDialogTitle": "Enable monitor-only mode",
+      "monitorOnlyDialogDescription": "The frontend will close, restart the background service, and then reopen automatically.",
+      "monitorOnlyDialogWarning": "Device discovery, connection, and control will be disabled. CPU, GPU, temperature, and power monitoring will remain available.",
+      "monitorOnlyDialogCancel": "Cancel",
+      "monitorOnlyDialogConfirm": "Enable",
       "languageTitle": "Language",
       "languageDescription": "Change the app language instantly and remember the choice automatically.",
       "hotkeys": {

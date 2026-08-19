@@ -47,3 +47,22 @@ func TestSelectDynamicWiFiEndpointRequiresSingleNewEndpoint(t *testing.T) {
 		})
 	}
 }
+
+func TestMonitorOnlyBlocksWiFiDiscoveryButAllowsCancellation(t *testing.T) {
+	app := &CoreApp{wifiScanControl: types.NewWiFiDiscoveryControl()}
+	app.monitorOnly.Store(true)
+
+	result := app.ScanWiFiDevices(types.WiFiDiscoveryModeNormal)
+	if result.Error == "" {
+		t.Fatal("ScanWiFiDevices() should be blocked in monitor-only mode")
+	}
+	if app.wifiScanRunning.Load() {
+		t.Fatal("blocked WiFi scan should not mark a scan as running")
+	}
+	if app.ControlWiFiScan(types.WiFiScanControlResume) {
+		t.Fatal("monitor-only mode should not resume WiFi scanning")
+	}
+	if !app.ControlWiFiScan(types.WiFiScanControlCancel) {
+		t.Fatal("monitor-only mode should allow cancelling a pending scan")
+	}
+}

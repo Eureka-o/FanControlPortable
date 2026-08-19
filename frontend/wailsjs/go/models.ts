@@ -761,12 +761,14 @@ export namespace types {
 	    gpuPowerSpoofPercent: number;
 	    gpuPowerSpoofOffsetWatts: number;
 	    windowsAutoStart: boolean;
+	    monitorOnly: boolean;
 	    themeMode: string;
 	    windowBlur: string;
 	    smartStartStop: string;
 	    brightness: number;
 	    tempUpdateRate: number;
 	    tempSampleCount: number;
+	    temperatureHistoryRetentionHours: number;
 	    tempSource: string;
 	    gpuDevice: string;
 	    cpuSensor: string;
@@ -826,12 +828,14 @@ export namespace types {
 	        this.gpuPowerSpoofPercent = source["gpuPowerSpoofPercent"];
 	        this.gpuPowerSpoofOffsetWatts = source["gpuPowerSpoofOffsetWatts"];
 	        this.windowsAutoStart = source["windowsAutoStart"];
+	        this.monitorOnly = source["monitorOnly"];
 	        this.themeMode = source["themeMode"];
 	        this.windowBlur = source["windowBlur"];
 	        this.smartStartStop = source["smartStartStop"];
 	        this.brightness = source["brightness"];
 	        this.tempUpdateRate = source["tempUpdateRate"];
 	        this.tempSampleCount = source["tempSampleCount"];
+	        this.temperatureHistoryRetentionHours = source["temperatureHistoryRetentionHours"];
 	        this.tempSource = source["tempSource"];
 	        this.gpuDevice = source["gpuDevice"];
 	        this.cpuSensor = source["cpuSensor"];
@@ -2003,6 +2007,7 @@ export namespace types {
 	export class TemperatureHistoryPayload {
 	    enabled: boolean;
 	    sampleIntervalSeconds: number;
+	    retentionHours: number;
 	    points: TemperatureHistoryPoint[];
 
 	    static createFrom(source: any = {}) {
@@ -2013,6 +2018,7 @@ export namespace types {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.enabled = source["enabled"];
 	        this.sampleIntervalSeconds = source["sampleIntervalSeconds"];
+	        this.retentionHours = source["retentionHours"];
 	        this.points = this.convertValues(source["points"], TemperatureHistoryPoint);
 	    }
 

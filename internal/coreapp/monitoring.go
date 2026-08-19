@@ -54,6 +54,8 @@ const smartControlLearningSaveInterval = 2 * time.Minute
 // 此时温度读取仅用于托盘提示与历史记录，放慢采样可降低桥接传感器扫描带来的后台 CPU 占用。
 const idleTemperatureMonitorInterval = 5 * time.Second
 
+const monitorOnlyTemperatureInterval = 2 * time.Second
+
 // idleMemoryReleaseCooldown 限制 GUI 断开后归还内存的最小间隔，避免频繁开关 GUI 时反复触发 GC。
 const idleMemoryReleaseCooldown = 30 * time.Second
 
@@ -119,7 +121,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	// EnterAutoMode 和转速设置会在首次成功读取温度后，由 SetFanSpeed 内部统一完成。
 
 	cfg, cfgRevision := a.configManager.GetWithRevision()
-	updateInterval := temperatureMonitorInterval(cfg.TempUpdateRate)
+	updateInterval := monitorOnlySamplingInterval(temperatureMonitorInterval(cfg.TempUpdateRate), a.monitorOnlyActive())
 
 	// 温度采样使用 EMA 平滑。
 	sampleCount := max(cfg.TempSampleCount, 1)
@@ -188,6 +190,9 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	timer := time.NewTimer(updateInterval)
 	wifiOverviewInterval := wifiOverviewRefreshInterval(false, cfg.AutoControl)
 	wifiOverviewTimer := time.NewTimer(wifiOverviewInterval)
+	if a.monitorOnlyActive() {
+		wifiOverviewTimer.Stop()
+	}
 	defer timer.Stop()
 	defer wifiOverviewTimer.Stop()
 
@@ -254,7 +259,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 
 			// 后台空闲（无 GUI 连接且未开启智能控温）时放慢采样；智能控温或前台打开时保持原频率。
 			hasClients := a.ipcServer != nil && a.ipcServer.HasClients()
-			updateInterval = activeTemperatureMonitorInterval(cfg.TempUpdateRate, hasClients, cfg.AutoControl)
+			updateInterval = monitorOnlySamplingInterval(activeTemperatureMonitorInterval(cfg.TempUpdateRate, hasClients, cfg.AutoControl), a.monitorOnlyActive())
 			// GUI 断开瞬间把会话期间膨胀的堆内存归还操作系统，降低核心常驻后台时的 RSS。
 			if prevHasClients && !hasClients && now.Sub(lastMemRelease) > idleMemoryReleaseCooldown {
 				lastMemRelease = now
@@ -675,6 +680,13 @@ func temperatureMonitorInterval(updateRateSeconds int) time.Duration {
 		updateRateSeconds = 1
 	}
 	return time.Duration(updateRateSeconds) * time.Second
+}
+
+func monitorOnlySamplingInterval(interval time.Duration, monitorOnly bool) time.Duration {
+	if monitorOnly && interval < monitorOnlyTemperatureInterval {
+		return monitorOnlyTemperatureInterval
+	}
+	return interval
 }
 
 func activeTemperatureMonitorInterval(updateRateSeconds int, hasClients, autoControl bool) time.Duration {

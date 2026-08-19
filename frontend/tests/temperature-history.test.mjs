@@ -4,6 +4,8 @@ import test from 'node:test';
 import {
   CORE_HISTORY_LIMIT,
   HISTORY_SAMPLE_INTERVAL_MS,
+  clampHistoryRetentionHours,
+  historyRetentionLimit,
   normalizeHistoryPoints,
 } from '../src/app/lib/temperature-history.ts';
 
@@ -19,4 +21,11 @@ test('keeps the full rolling hour at the five-second core cadence', () => {
   const normalized = normalizeHistoryPoints(points);
   assert.equal(normalized.length, CORE_HISTORY_LIMIT);
   assert.equal(normalized.at(-1).timestamp - normalized[0].timestamp, 60 * 60 * 1000 - HISTORY_SAMPLE_INTERVAL_MS);
+});
+
+test('clamps selectable retention to the supported window', () => {
+  assert.equal(clampHistoryRetentionHours(0), 1);
+  assert.equal(clampHistoryRetentionHours(6.4), 6);
+  assert.equal(clampHistoryRetentionHours(999), 24);
+  assert.equal(historyRetentionLimit(3), CORE_HISTORY_LIMIT * 3);
 });

@@ -59,6 +59,7 @@ func main() {
 	// 检测命令行参数
 	debugMode := false
 	isAutoStart := false
+	monitorOnlySession := false
 
 	for _, arg := range os.Args {
 		switch arg {
@@ -66,11 +67,16 @@ func main() {
 			debugMode = true
 		case "--autostart", "/autostart", "-autostart":
 			isAutoStart = true
+		case "--monitor-only-session":
+			monitorOnlySession = true
 		}
 	}
 
 	// 创建核心应用
 	app = coreapp.NewCoreApp(debugMode, isAutoStart, iconData)
+	if monitorOnlySession {
+		app.SetSessionMonitorOnly(true)
+	}
 
 	// 启动应用
 	if err := app.Start(); err != nil {

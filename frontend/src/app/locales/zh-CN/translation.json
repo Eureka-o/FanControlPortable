@@ -486,6 +486,23 @@
       "titleWithDevice": "{{name}} 未连接",
       "descriptionWithDevice": "当前启用设备为 {{name}}，确认连接方式和地址后即可连接。"
     },
+    "monitorOnly": {
+      "entryTitle": "不需要连接设备？",
+      "entryDescription": "开启仅监控模式，减少后台内存占用",
+      "enable": "启用仅监控",
+      "dialogTitle": "启用仅监控模式",
+      "dialogDescription": "仅监控模式会重启前端和后台服务。",
+      "dialogTemporary": "仅监控模式仅本次生效，重启软件后会自动关闭。",
+      "dialogPersistentHint": "如需长期开启，请到系统设置中启用仅监控模式。",
+      "cancel": "取消",
+      "confirm": "确认启用",
+      "restartFailed": "启用仅监控模式失败：{{error}}",
+      "sensorOnly": "仅监控模式：设备连接与控制已关闭",
+      "cpuInfo": "CPU 信息",
+      "gpuInfo": "GPU 信息",
+      "power": "功耗",
+      "historyTitle": "温度与功耗历史"
+    },
     "recovery": {
       "deviceAvailable": "确认设备已通电，并且 Windows 可以识别。",
       "releaseCompetingTools": "退出可能占用设备的其他硬件或风扇控制工具。",
@@ -788,7 +805,7 @@
     },
     "history": {
       "detailsTitle": "温度与风扇历史详情",
-      "detailsDescription": "曲线页保留最近 1 小时历史概览，便于对照当前曲线与温度走势。",
+      "detailsDescription": "可选择历史保留时长，便于对照当前曲线与温度走势。",
       "saving": "保存中",
       "backgroundRecording": "后台记录",
       "emptyEnabled": "后台记录已开启，等待更多温度与风扇样本。",
@@ -798,6 +815,10 @@
       "resetZoom": "重置缩放",
       "zoomHint": "在图表上拖拽可框选时间范围",
       "zoomSelecting": "选择中 {{from}} - {{to}}",
+      "retention": {
+        "label": "保留时长",
+        "hours": "{{count}} 小时"
+      },
       "events": {
         "disconnect": "设备断开",
         "reconnect": "设备连接",
@@ -1087,6 +1108,14 @@
       "windowBlurTitle": "毛玻璃效果",
       "windowBlurDescription": "选择 Acrylic、Mica、Mica Alt 或关闭，内置浅色和深色主题会自动适配。自定义主题不受影响。",
       "windowBlurTip": "此设置需要重启应用后生效。",
+      "monitorOnlyTitle": "仅监控模式",
+      "monitorOnlyDescription": "如果设备长期不在身边可开启，仅保留性能监控并关闭设备连接与控制。",
+      "monitorOnlyTip": "开启后会重启前端和后台服务。",
+      "monitorOnlyDialogTitle": "开启仅监控模式",
+      "monitorOnlyDialogDescription": "应用将先退出前端，重启后台服务后再自动打开。",
+      "monitorOnlyDialogWarning": "开启后不会搜索、连接或控制设备，只保留 CPU、GPU、温度和功耗监控。",
+      "monitorOnlyDialogCancel": "取消",
+      "monitorOnlyDialogConfirm": "确认开启",
       "languageTitle": "界面语言",
       "languageDescription": "切换应用显示语言，立即生效并自动记住。",
       "hotkeys": {

@@ -54,6 +54,9 @@ func (f deviceConnectionFlow) setRuntimeDisconnected(reason string) bool {
 }
 
 func (f deviceConnectionFlow) connectBestScannedDevice() bool {
+	if f.app.monitorOnlyActive() {
+		return false
+	}
 	leavePhase := f.enterPhase(deviceConnectionPhaseDiscovering)
 	defer leavePhase()
 	f.app.connectionFlights.record(connectionFlightEvent{
@@ -130,6 +133,9 @@ func (f deviceConnectionFlow) connectScannedCandidate(device types.DeviceCandida
 }
 
 func (f deviceConnectionFlow) connectCandidate(req types.DeviceConnectRequest) bool {
+	if f.app.monitorOnlyActive() {
+		return false
+	}
 	leavePhase := f.enterPhase(deviceConnectionPhaseConnecting)
 	defer leavePhase()
 	transport := candidateTransport(req.Transport)
@@ -151,6 +157,9 @@ func (f deviceConnectionFlow) connectCandidate(req types.DeviceConnectRequest) b
 }
 
 func (f deviceConnectionFlow) connectNativeDevice(profileID string) bool {
+	if f.app.monitorOnlyActive() {
+		return false
+	}
 	leavePhase := f.enterPhase(deviceConnectionPhaseConnecting)
 	defer leavePhase()
 	f.app.autoReconnectSuppressed.Store(false)

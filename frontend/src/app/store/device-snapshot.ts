@@ -10,8 +10,9 @@ export interface DeviceStatusPayload {
   temperature?: types.TemperatureData | null;
   productId?: string;
   deviceName?: string;
-  model?: string;
-  error?: string;
+	model?: string;
+	monitorOnly?: boolean;
+	error?: string;
   runtime?: { state?: string };
 }
 
@@ -23,7 +24,8 @@ export type DeviceSnapshotState = {
   deviceSettings: DeviceSettings | null;
   runtimeDeviceProfile: types.DeviceProfile | null;
   runtimeDeviceCapabilities: types.DeviceCapabilities | null;
-  fanData: types.FanData | null;
+	fanData: types.FanData | null;
+	monitorOnlyActive?: boolean;
 };
 
 export type DeviceSnapshotEvent =
@@ -39,8 +41,8 @@ export function deviceSnapshotFromStatus(
   connectedFallbackState = 'ready',
 ): DeviceSnapshotState {
   const connected = status?.connected === true;
-  return {
-    isConnected: connected,
+	const snapshot: DeviceSnapshotState = {
+		isConnected: connected,
     deviceRuntimeState: status?.runtime?.state || (connected ? connectedFallbackState : 'disconnected'),
     deviceProductId: connected ? status?.productId || null : null,
     deviceModel: connected ? status?.deviceName || status?.model || null : null,
@@ -49,8 +51,10 @@ export function deviceSnapshotFromStatus(
     runtimeDeviceCapabilities: connected
       ? status?.deviceCapabilities || status?.deviceProfile?.capabilities || null
       : null,
-    fanData: connected ? status?.currentData || null : null,
-  };
+		fanData: connected ? status?.currentData || null : null,
+	};
+	if (status?.monitorOnly === true) snapshot.monitorOnlyActive = true;
+	return snapshot;
 }
 
 export function reduceDeviceSnapshot(
@@ -62,9 +66,11 @@ export function reduceDeviceSnapshot(
       return deviceSnapshotFromStatus(event.status, event.connectedFallbackState);
     case 'connected':
       return deviceSnapshotFromStatus({ ...(event.status || {}), connected: true }, 'capabilities');
-    case 'disconnected':
-    case 'core-error':
-      return deviceSnapshotFromStatus(null);
+		case 'disconnected':
+		case 'core-error':
+			return previous.monitorOnlyActive
+				? { ...deviceSnapshotFromStatus(null), monitorOnlyActive: true }
+				: deviceSnapshotFromStatus(null);
     case 'settings':
       return previous.isConnected ? { ...previous, deviceSettings: event.settings || null } : previous;
     case 'fan-data':

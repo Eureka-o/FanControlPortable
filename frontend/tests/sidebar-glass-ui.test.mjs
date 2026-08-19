@@ -337,6 +337,21 @@ test("keeps illustration curtains on the full window shell", () => {
   );
 });
 
+test("keeps the Miku hero brand mark across page navigation", () => {
+  assert.doesNotMatch(
+    mikuTheme,
+    /data-theme-page="status"\]\s*\[data-theme-ui="hero-brand-mark"\]/,
+  );
+  assert.match(
+    mikuTheme,
+    /\.glacier-shell \[data-theme-ui="hero-brand-mark"\] > svg[\s\S]*?opacity: 0 !important/,
+  );
+  assert.match(
+    mikuTheme,
+    /\.glacier-shell \[data-theme-ui="hero-brand-mark"\]::after[\s\S]*?mask: var\(--miku-01-icon-music\)/,
+  );
+});
+
 test("keeps the cyberpunk compact dock hover inside the icon slot", () => {
   assert.ok(
     cyberpunkTheme.lastIndexOf("Keep compact dock feedback") >

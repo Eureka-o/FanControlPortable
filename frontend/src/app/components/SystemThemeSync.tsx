@@ -102,7 +102,9 @@ function ensureCustomThemeStyle(css: string) {
     document.head.appendChild(styleEl);
   }
   styleEl.id = CUSTOM_STYLE_ID;
-  styleEl.textContent = css;
+  if (styleEl.textContent !== css) {
+    styleEl.textContent = css;
+  }
 }
 
 // 清除已注入的自定义主题（移除 <style> 与 <html data-theme>）。

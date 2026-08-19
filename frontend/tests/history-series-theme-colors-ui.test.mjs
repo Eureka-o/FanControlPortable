@@ -76,14 +76,21 @@ test('keeps independent home chart visibility and supports total power in the th
   assert.match(curveSource, /homeDisplayTitle/);
   assert.match(curveSource, /toggleHomeSeriesVisible/);
   assert.match(statusSource, /visibleSeries=\{homeSeriesVisibility\}/);
-  assert.match(statusSource, /orderedSeries=\{HISTORY_SERIES_ORDER\}/);
+  assert.match(statusSource, /orderedSeries=\{monitorOnlyActive \? HISTORY_SERIES_ORDER\.filter\(\(series\) => series !== 'fan'\)/);
   assert.match(statusSource, /totalPower: buildPath\(getAvailableTotalPowerWatts, yForPower\)/);
   assert.match(statusSource, /const TOTAL_POWER_STROKE = 'var\(--chart-primary\)'/);
+  assert.match(curveSource, /filter\(\(key\) => !\(monitorOnlyActive && key === 'fan'\)\)/);
+  assert.match(curveSource, /\{!monitorOnlyActive && \([\s\S]*?<YAxis[\s\S]*?yAxisId="fan"[\s\S]*?width=\{64\}/);
+  assert.doesNotMatch(curveSource, /yAxisId="fan"[\s\S]*?hide=\{monitorOnlyActive\}/);
+  assert.match(curveSource, /const historyTimelineAxisId = monitorOnlyActive \? 'temp' : 'fan'/);
+  assert.match(curveSource, /yAxisId=\{historyTimelineAxisId\}/);
+  assert.match(curveSource, /monitorOnlyActive \? \([\s\S]*?<YAxis[\s\S]*?yAxisId="power"[\s\S]*?orientation="right"[\s\S]*?width=\{44\}/);
+  assert.match(curveSource, /yAxisId="powerSpacer"[\s\S]*?orientation="right"[\s\S]*?width=\{44\}/);
 });
 
 test('keeps raw history values and relies on monotone rendering for light smoothing', () => {
   assert.doesNotMatch(curveSource, /smoothHistoryChartData/);
-  assert.equal((curveSource.match(/data=\{zoomedHistoryChartData\}/g) || []).length, 2);
+  assert.equal((curveSource.match(/data=\{historyDisplayData\}/g) || []).length, 2);
   assert.equal((curveSource.match(/type="monotone"/g) || []).length >= 4, true);
   assert.match(curveSource, /for \(const point of zoomedHistoryChartData\)/);
   assert.doesNotMatch(curveSource, /detectAbruptHistoryPoints|historyAbruptPoints|-abrupt-/);

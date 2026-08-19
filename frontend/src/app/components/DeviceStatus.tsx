@@ -21,7 +21,7 @@ import { types } from '../../../wailsjs/go/models';
 import { apiService } from '../services/api';
 import { useTemperatureHistory } from '../hooks/useTemperatureHistory';
 import { HISTORY_SERIES_ORDER, useHistoryDisplayPreferences } from '../hooks/useHistoryDisplayPreferences';
-import { type HistorySeriesKey, type TemperatureHistoryPoint } from '../lib/temperature-history';
+import { clipHistoryToRecentWindow, downsampleHistoryPoints, type HistorySeriesKey, type TemperatureHistoryPoint } from '../lib/temperature-history';
 import {
   clampFanSpeedToRange,
   fanSpeedUnitLabel,
@@ -41,6 +41,7 @@ import { ToggleSwitch, Button } from './ui/index';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import clsx from 'clsx';
 import { toast } from 'sonner';
+import FanCurve from './FanCurve';
 
 interface DeviceStatusProps {
   isConnected: boolean;
@@ -51,10 +52,12 @@ interface DeviceStatusProps {
   fanData: types.FanData | null;
   temperature: types.TemperatureData | null;
   runtimeDeviceProfile?: types.DeviceProfile | null;
-  config: types.AppConfig;
-  coreServiceError?: string | null;
-  onConnect: () => void;
-  onDisconnect: () => void;
+	config: types.AppConfig;
+	coreServiceError?: string | null;
+	monitorOnlyActive?: boolean;
+	onConnect: () => void;
+	onDisconnect: () => void;
+	onEnableMonitorOnly?: () => void;
   onConfigChange: (config: types.AppConfig) => void;
   onOpenCurveEditor: () => void;
   onOpenHistoryDetails: () => void;
@@ -75,10 +78,10 @@ interface BridgeRuntimeStatus {
 }
 
 const getTempStatus = (temp: number) => {
-  if (temp > 85) return { color: 'text-red-500', bg: 'bg-red-500', labelKey: 'deviceStatus.tempStatus.overheat' };
-  if (temp > 75) return { color: 'text-orange-500', bg: 'bg-orange-500', labelKey: 'deviceStatus.tempStatus.high' };
-  if (temp > 60) return { color: 'text-primary', bg: 'bg-primary', labelKey: 'deviceStatus.tempStatus.normal' };
-  return { color: 'text-primary', bg: 'bg-primary', labelKey: 'deviceStatus.tempStatus.good' };
+  if (temp > 85) return { color: 'text-red-500', bg: 'bg-red-500', colorVar: 'var(--status-temperature-hot)', labelKey: 'deviceStatus.tempStatus.overheat' };
+  if (temp > 75) return { color: 'text-orange-500', bg: 'bg-orange-500', colorVar: 'var(--status-temperature-warm)', labelKey: 'deviceStatus.tempStatus.high' };
+  if (temp > 60) return { color: 'text-primary', bg: 'bg-primary', colorVar: 'var(--primary)', labelKey: 'deviceStatus.tempStatus.normal' };
+  return { color: 'text-primary', bg: 'bg-primary', colorVar: 'var(--primary)', labelKey: 'deviceStatus.tempStatus.good' };
 };
 
 const getFanSpinDuration = (speed?: number, minSpeed = 0, maxSpeed = 100) => {
@@ -142,6 +145,7 @@ const FAN_SPEED_STROKE = 'var(--chart-fan-speed)';
 const CPU_POWER_STROKE = 'var(--chart-cpu-power)';
 const GPU_POWER_STROKE = 'var(--chart-gpu-power)';
 const TOTAL_POWER_STROKE = 'var(--chart-primary)';
+const POWER_TREND_WINDOW_MS = 60 * 1000;
 
 const getAvailableTotalPowerWatts = (point: TemperatureHistoryPoint) => {
   const cpu = Number(point.cpuPowerWatts || 0);
@@ -224,15 +228,158 @@ const SpinningFanIcon = memo(function SpinningFanIcon({ duration, className }: {
 const MetricHeader = memo(function MetricHeader({
   icon,
   label,
+  align = 'center',
 }: {
   icon: React.ReactNode;
   label: string;
+  align?: 'center' | 'start';
 }) {
   return (
-    <div className="mb-2 flex items-center justify-center">
-      <div className="flex min-w-0 max-w-full items-center justify-center gap-2 text-[13px] font-medium text-muted-foreground">
+    <div className={clsx('mb-2 flex items-center', align === 'start' ? 'justify-start' : 'justify-center')}>
+      <div className={clsx('flex min-w-0 max-w-full items-center gap-2 text-[13px] font-medium text-muted-foreground', align === 'start' ? 'justify-start' : 'justify-center')}>
         <span className="metric-header-icon shrink-0 text-primary [&_svg]:stroke-[2.4]">{icon}</span>
         <span className="shrink-0">{label}</span>
+      </div>
+    </div>
+  );
+});
+
+const PowerTrendChart = memo(function PowerTrendChart({
+  points,
+  series,
+  label,
+  value,
+  available = true,
+}: {
+  points: TemperatureHistoryPoint[];
+  series: 'cpu' | 'gpu';
+  label: string;
+  value: string;
+  available?: boolean;
+}) {
+  const { t } = useTranslation();
+  const width = 260;
+  const height = 68;
+  const pad = { left: 4, right: 4, top: 6, bottom: 6 };
+  const plotWidth = width - pad.left - pad.right;
+  const plotHeight = height - pad.top - pad.bottom;
+  const chart = useMemo(() => {
+    if (!available) {
+      return { path: '', area: '', current: null, min: 0, max: 0, width, height, pad, plotWidth, plotHeight };
+    }
+
+    const recent = clipHistoryToRecentWindow(points, POWER_TREND_WINDOW_MS);
+    const values = recent
+      .map((point) => Number(series === 'cpu' ? point.cpuPowerWatts || 0 : point.gpuPowerWatts || 0))
+      .filter((power) => Number.isFinite(power) && power > 0);
+    if (values.length < 2) {
+      return { path: '', area: '', current: null, min: 0, max: 0, width, height, pad, plotWidth, plotHeight };
+    }
+
+    const min = Math.max(0, Math.floor((Math.min(...values) - 2) / 5) * 5);
+    const max = Math.max(min + 10, Math.ceil((Math.max(...values) + 2) / 5) * 5);
+    const range = Math.max(1, max - min);
+    const firstTimestamp = recent[0]?.timestamp ?? 0;
+    const lastTimestamp = recent[recent.length - 1]?.timestamp ?? firstTimestamp;
+    const timestampRange = Math.max(1, lastTimestamp - firstTimestamp);
+    const xFor = (timestamp: number) => pad.left + ((timestamp - firstTimestamp) / timestampRange) * plotWidth;
+    const yFor = (power: number) => pad.top + plotHeight - ((Math.max(min, Math.min(max, power)) - min) / range) * plotHeight;
+    const coordinates = recent.map((point) => {
+      const power = Number(series === 'cpu' ? point.cpuPowerWatts || 0 : point.gpuPowerWatts || 0);
+      return power > 0 ? { x: xFor(point.timestamp), y: yFor(power) } : null;
+    });
+    const segments: string[] = [];
+    let segment = '';
+    coordinates.forEach((coordinate) => {
+      if (!coordinate) {
+        if (segment) segments.push(segment.trim());
+        segment = '';
+        return;
+      }
+      segment += `${segment ? 'L' : 'M'} ${coordinate.x.toFixed(1)} ${coordinate.y.toFixed(1)} `;
+    });
+    if (segment) segments.push(segment.trim());
+    const path = segments.join(' ');
+    const last = coordinates[coordinates.length - 1];
+    const first = coordinates.find(Boolean);
+    const area = first && last
+      ? `${first.x.toFixed(1)},${(pad.top + plotHeight).toFixed(1)} ${path.replace(/[ML] /g, '').trim()} ${last.x.toFixed(1)},${(pad.top + plotHeight).toFixed(1)}`
+      : '';
+    return { path, area, current: last, min, max, width, height, pad, plotWidth, plotHeight };
+  }, [available, height, pad, plotHeight, plotWidth, points, series, width]);
+
+  return (
+    <div className="min-w-0">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span className="truncate text-[10px] font-medium text-muted-foreground">{label}</span>
+        <span className="shrink-0 text-sm font-semibold leading-none tabular-nums text-foreground">{value}</span>
+      </div>
+      <div className="h-[68px] overflow-hidden rounded-lg border border-border/60 bg-background/35 px-1.5 py-1">
+        {chart.path ? (
+          <svg viewBox={`0 0 ${chart.width} ${chart.height}`} className="h-full w-full" preserveAspectRatio="none" role="img" aria-label={`${label}: ${value}`}>
+            <line x1={chart.pad.left} y1={chart.pad.top + chart.plotHeight / 2} x2={chart.pad.left + chart.plotWidth} y2={chart.pad.top + chart.plotHeight / 2} stroke="var(--chart-grid)" strokeWidth="1" opacity="0.7" />
+            <polygon points={chart.area} fill={series === 'cpu' ? CPU_POWER_STROKE : GPU_POWER_STROKE} opacity="0.12" />
+            <path d={chart.path} fill="none" stroke={series === 'cpu' ? CPU_POWER_STROKE : GPU_POWER_STROKE} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+            {chart.current && <circle cx={chart.current.x} cy={chart.current.y} r="3" fill={series === 'cpu' ? CPU_POWER_STROKE : GPU_POWER_STROKE} />}
+          </svg>
+        ) : (
+          <div className="flex h-full items-center justify-center text-[10px] text-muted-foreground">
+            {available ? t('deviceStatus.history.waiting') : t('deviceStatus.tempGauge.notRead')}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+const MonitorInfoCard = memo(function MonitorInfoCard({
+  icon,
+  label,
+  themeCard,
+  model,
+  temperature,
+  ready,
+  powerLabel,
+  power,
+  powerPoints,
+  powerSeries,
+  powerAvailable,
+  idleLabel,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  themeCard?: string;
+  model?: string;
+  temperature?: number;
+  ready: boolean;
+  powerLabel: string;
+  power: string;
+  powerPoints: TemperatureHistoryPoint[];
+  powerSeries: 'cpu' | 'gpu';
+  powerAvailable?: boolean;
+  idleLabel?: string;
+}) {
+  return (
+    <div data-theme-card={themeCard} className="glacier-metric-card flex h-full min-h-[230px] flex-col rounded-xl border border-border bg-card px-4 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10">
+      <div className="mb-2.5 flex min-h-8 items-start justify-between gap-3">
+        <div className="pt-1">
+          <MetricHeader icon={icon} label={label} align="start" />
+        </div>
+        <div className="flex h-8 min-w-0 max-w-[58%] items-center rounded-lg border border-border/70 bg-background/55 px-2.5 text-[11px] text-muted-foreground">
+          <span className="truncate">{model || '--'}</span>
+        </div>
+      </div>
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(9rem,0.9fr)_minmax(0,1.1fr)] items-center gap-3">
+        <div className="flex min-h-[145px] min-w-0 items-center justify-center">
+          <TempGaugeDisplay temp={temperature} ready={ready} idleLabel={idleLabel} />
+        </div>
+        <PowerTrendChart
+          points={powerPoints}
+          series={powerSeries}
+          label={powerLabel}
+          value={power}
+          available={powerAvailable}
+        />
       </div>
     </div>
   );
@@ -478,26 +625,32 @@ const MiniFanCurveChart = memo(function MiniFanCurveChart({
 });
 
 const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
-  points,
+	  points: retainedPoints,
   enabled,
   source,
   minSpeed,
   maxSpeed,
-  visibleSeries,
-  orderedSeries,
-  onOpen,
+	  visibleSeries,
+	  orderedSeries,
+	  title,
+	  onOpen,
 }: {
   points: TemperatureHistoryPoint[];
   enabled: boolean;
   source: 'core' | 'session';
   minSpeed: number;
   maxSpeed: number;
-  visibleSeries: Record<HistorySeriesKey, boolean>;
-  orderedSeries: HistorySeriesKey[];
-  onOpen?: () => void;
+	  visibleSeries: Record<HistorySeriesKey, boolean>;
+	  orderedSeries: HistorySeriesKey[];
+	  title?: string;
+	  onOpen?: () => void;
 }) {
-  const { t } = useTranslation();
-  const sourceLabel = source === 'core' ? t('deviceStatus.history.source.core') : t('deviceStatus.history.source.session');
+	const { t } = useTranslation();
+	const sourceLabel = source === 'core' ? t('deviceStatus.history.source.core') : t('deviceStatus.history.source.session');
+	const points = useMemo(
+		() => downsampleHistoryPoints(clipHistoryToRecentWindow(retainedPoints), 600),
+		[retainedPoints],
+	);
   const chart = useMemo(() => {
     const width = 520;
     const height = 168;
@@ -605,7 +758,7 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
     >
       <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <div className="text-xs font-semibold text-foreground">{t('deviceStatus.history.title')}</div>
+	          <div className="text-xs font-semibold text-foreground">{title || t('deviceStatus.history.title')}</div>
           <span className="rounded-full border border-border/70 bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground">{sourceLabel}</span>
           {onOpen && (
             <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
@@ -701,8 +854,10 @@ export default function DeviceStatus({
   onConfigChange,
   onOpenCurveEditor,
   onOpenHistoryDetails,
-  onExportDiagnostics,
-  diagnosticsExporting = false,
+	onExportDiagnostics,
+	diagnosticsExporting = false,
+	monitorOnlyActive = false,
+	onEnableMonitorOnly,
 }: DeviceStatusProps) {
   const { t } = useTranslation();
   const [bridgeWarningReady, setBridgeWarningReady] = useState(false);
@@ -717,7 +872,8 @@ export default function DeviceStatus({
   const {
     homeSeriesVisibility,
   } = useHistoryDisplayPreferences();
-  const hasBridgeWarning = isConnected && temperature?.bridgeOk === false;
+	const showMonitoringLayout = isConnected || monitorOnlyActive;
+	const hasBridgeWarning = isConnected && temperature?.bridgeOk === false;
   const configuredDeviceProfile = useMemo(() => (getActiveDeviceProfile(config as any) as types.DeviceProfile | undefined) || null, [config]);
   const activeDeviceProfile = runtimeDeviceProfile || configuredDeviceProfile;
   const activeCurveContextKey = [
@@ -766,6 +922,14 @@ export default function DeviceStatus({
   useEffect(() => {
     let cancelled = false;
 
+    if (!isConnected) {
+      setActiveCurveProfileName('');
+      setActiveCurveProfileCurve(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const loadActiveCurveProfile = async () => {
       try {
         const payload = await apiService.getFanCurveProfiles();
@@ -788,7 +952,7 @@ export default function DeviceStatus({
     return () => {
       cancelled = true;
     };
-  }, [activeCurveContextKey, (config as any).activeFanCurveProfileId]);
+  }, [activeCurveContextKey, isConnected, (config as any).activeFanCurveProfileId]);
 
   const handleAutoControlChange = async (enabled: boolean) => {
     try {
@@ -827,8 +991,10 @@ export default function DeviceStatus({
     }
     return fanSpeedRange;
   }, [fanSpeedRange, fanSpeedUnit, flyDigiCapability]);
-  const currentFanSpeed = clampFanSpeedToRange(readCurrentFanSpeed(fanData, fanSpeedUnit, config as any, runtimeDeviceProfile as any), displayFanSpeedRange);
-  const targetFanSpeed = clampFanSpeedToRange(readTargetFanSpeed(fanData, fanSpeedUnit, config as any, runtimeDeviceProfile as any), displayFanSpeedRange);
+	const currentFanSpeed = clampFanSpeedToRange(readCurrentFanSpeed(fanData, fanSpeedUnit, config as any, runtimeDeviceProfile as any), displayFanSpeedRange);
+	const targetFanSpeed = clampFanSpeedToRange(readTargetFanSpeed(fanData, fanSpeedUnit, config as any, runtimeDeviceProfile as any), displayFanSpeedRange);
+	const displayCurrentFanSpeed = monitorOnlyActive && !isConnected ? undefined : currentFanSpeed;
+	const displayTargetFanSpeed = monitorOnlyActive && !isConnected ? undefined : targetFanSpeed;
   const fixedModeSpeed = clampFanSpeedToRange(config.customSpeedRPM, displayFanSpeedRange, currentFanSpeed);
   const modeDesc = config.autoControl
     ? t('deviceStatus.mode.smartDescription')
@@ -884,7 +1050,7 @@ export default function DeviceStatus({
                   : '';
   const maxTempStatus = getTempStatus(temperature?.maxTemp || 0);
   return (
-    <div data-page-reveal="cards" className="space-y-3">
+    <div className="space-y-3">
       {/* ── Device header card ── */}
       <div data-theme-section="hero" data-theme-card="device-hero" className="glacier-hero-card relative overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm shadow-black/5">
         <div className="theme-fancontrol-only theme-thrm-only glacier-hero-art pointer-events-none absolute inset-y-0 right-0 hidden overflow-hidden md:block" aria-hidden="true">
@@ -934,13 +1100,19 @@ export default function DeviceStatus({
                 <p className={clsx('mt-1 text-xs', coreServiceError ? 'text-destructive' : 'text-muted-foreground')}>
                   {coreServiceError
                     ? t('deviceStatus.hero.coreUnavailable')
-                    : t('deviceStatus.disconnected.description')}
+                    : monitorOnlyActive
+                      ? t('deviceStatus.monitorOnly.sensorOnly')
+                      : t('deviceStatus.disconnected.description')}
                 </p>
               )}
             </div>
           </div>
 
-          <div data-theme-ui="hero-actions" className="glacier-hero-actions flex items-center gap-3">
+          <div
+            data-theme-ui="hero-actions"
+            data-hero-connected={isConnected ? 'true' : 'false'}
+            className="glacier-hero-actions flex items-center gap-3"
+          >
             {isConnected && (
               <ToggleSwitch
                 enabled={config.autoControl}
@@ -950,22 +1122,58 @@ export default function DeviceStatus({
                 color="blue"
               />
             )}
-            <Button
-              variant={isConnected ? 'secondary' : 'primary'}
-              size="sm"
-              onClick={isConnected ? onDisconnect : onConnect}
-            >
-              {isConnected ? t('deviceStatus.actions.disconnect') : t('deviceStatus.actions.connect')}
-            </Button>
+            {(!monitorOnlyActive || isConnected) && (
+              <Button
+                variant={isConnected ? 'secondary' : 'primary'}
+                size="sm"
+                onClick={isConnected ? onDisconnect : onConnect}
+              >
+                {isConnected ? t('deviceStatus.actions.disconnect') : t('deviceStatus.actions.connect')}
+              </Button>
+            )}
           </div>
         </div>
       </div>
 
       {/* ── Metric cards ── */}
-      {isConnected ? (
+      {monitorOnlyActive && !isConnected ? (
         <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.3, ease: 'easeOut' }}
+          className="grid grid-cols-1 items-stretch gap-3 md:grid-cols-2"
+        >
+          <MonitorInfoCard
+            icon={<Cpu className="h-4 w-4" />}
+            label={t('deviceStatus.monitorOnly.cpuInfo')}
+            themeCard="cpu-temperature"
+            model={temperature?.cpuModel || t('deviceStatus.device.unknown')}
+            temperature={cpuDisplayTemp}
+            ready={cpuDisplayReady}
+            powerLabel={t('deviceStatus.monitorOnly.power')}
+            power={formatPowerWatts(temperature?.cpuPowerWatts)}
+            powerPoints={temperatureHistory}
+            powerSeries="cpu"
+          />
+          <MonitorInfoCard
+            icon={<Gpu className="h-4 w-4" />}
+            label={t('deviceStatus.monitorOnly.gpuInfo')}
+            themeCard="gpu-temperature"
+            model={temperature?.gpuModel || t('deviceStatus.device.unknown')}
+            temperature={temperature?.gpuTemp}
+            ready={gpuReady}
+            powerLabel={t('deviceStatus.monitorOnly.power')}
+            power={formatGpuPowerWatts(temperature?.gpuPowerWatts, gpuReadState)}
+            powerPoints={temperatureHistory}
+            powerSeries="gpu"
+            powerAvailable={!gpuNotPolled}
+            idleLabel={gpuNotPolled ? t('deviceStatus.tempGauge.notRead') : undefined}
+          />
+        </motion.div>
+      ) : showMonitoringLayout ? (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
           transition={{ duration: 0.3, ease: 'easeOut' }}
           className="grid grid-cols-1 items-stretch gap-3 md:grid-cols-3"
         >
@@ -996,8 +1204,8 @@ export default function DeviceStatus({
               label={t('deviceStatus.metrics.fanRpm')}
             />
             <FanSpeedDisplay
-              currentSpeed={currentFanSpeed}
-              targetSpeed={targetFanSpeed}
+              currentSpeed={displayCurrentFanSpeed}
+              targetSpeed={displayTargetFanSpeed}
               unit={fanSpeedLabel}
               minSpeed={displayFanSpeedRange.min}
               maxSpeed={displayFanSpeedRange.max}
@@ -1006,8 +1214,8 @@ export default function DeviceStatus({
         </motion.div>
       ) : (
         <motion.div
-          initial={{ opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
+          initial={{ scale: 0.98 }}
+          animate={{ scale: 1 }}
           transition={{ duration: 0.3 }}
           data-theme-card="connection-empty"
           className="rounded-xl border border-dashed border-border bg-card p-14 text-center"
@@ -1046,6 +1254,18 @@ export default function DeviceStatus({
             )}
           </div>
         </motion.div>
+      )}
+
+      {!isConnected && !monitorOnlyActive && onEnableMonitorOnly && (
+        <div data-theme-card="monitor-only-entry" className="flex flex-col items-start justify-between gap-3 rounded-xl border border-border bg-card p-4 shadow-sm shadow-black/5 sm:flex-row sm:items-center">
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-foreground">{t('deviceStatus.monitorOnly.entryTitle')}</h3>
+            <p className="mt-1 text-xs text-muted-foreground">{t('deviceStatus.monitorOnly.entryDescription')}</p>
+          </div>
+          <Button onClick={onEnableMonitorOnly} size="sm" icon={<Gauge className="h-4 w-4" />}>
+            {t('deviceStatus.monitorOnly.enable')}
+          </Button>
+        </div>
       )}
 
       {/* ── Bridge warning ── */}
@@ -1182,31 +1402,52 @@ export default function DeviceStatus({
         </motion.div>
       )}
 
-      {isConnected && (
+      {showMonitoringLayout && (
         <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
           transition={{ delay: 0.2, duration: 0.3 }}
-          className="grid grid-cols-1 items-stretch gap-2.5 lg:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.95fr)]"
+          className={clsx(
+            'grid grid-cols-1 items-stretch gap-2.5',
+            monitorOnlyActive ? 'lg:grid-cols-1' : 'lg:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.95fr)]',
+          )}
         >
-          <MiniFanCurveChart
-            curve={activeCurveProfileCurve || config.fanCurve}
-            currentTemp={referenceTemp}
-            minSpeed={fanSpeedRange.min}
-            maxSpeed={fanSpeedRange.max}
-            unitLabel={fanSpeedLabel}
-            onOpen={onOpenCurveEditor}
-          />
-          <TemperatureHistoryPanel
-            points={temperatureHistory}
-            enabled={temperatureHistoryEnabled}
-            source={temperatureHistorySource}
-            minSpeed={fanSpeedRange.min}
-            maxSpeed={fanSpeedRange.max}
-            visibleSeries={homeSeriesVisibility}
-            orderedSeries={HISTORY_SERIES_ORDER}
-            onOpen={onOpenHistoryDetails}
-          />
+          {!monitorOnlyActive && (
+            <MiniFanCurveChart
+              curve={activeCurveProfileCurve || config.fanCurve}
+              currentTemp={referenceTemp}
+              minSpeed={fanSpeedRange.min}
+              maxSpeed={fanSpeedRange.max}
+              unitLabel={fanSpeedLabel}
+              onOpen={onOpenCurveEditor}
+            />
+          )}
+          {monitorOnlyActive ? (
+            <FanCurve
+              config={config}
+              onConfigChange={onConfigChange}
+              isConnected={false}
+              fanData={null}
+              temperature={temperature}
+              runtimeDeviceProfile={runtimeDeviceProfile}
+              deviceModel={deviceModel}
+              focusTarget={null}
+              onFocusHandled={() => undefined}
+              historyOnly
+            />
+          ) : (
+            <TemperatureHistoryPanel
+              points={temperatureHistory}
+              enabled={temperatureHistoryEnabled}
+              source={temperatureHistorySource}
+              minSpeed={fanSpeedRange.min}
+              maxSpeed={fanSpeedRange.max}
+              visibleSeries={homeSeriesVisibility}
+              orderedSeries={monitorOnlyActive ? HISTORY_SERIES_ORDER.filter((series) => series !== 'fan') : HISTORY_SERIES_ORDER}
+              title={monitorOnlyActive ? t('deviceStatus.monitorOnly.historyTitle') : undefined}
+              onOpen={monitorOnlyActive ? undefined : onOpenHistoryDetails}
+            />
+          )}
         </motion.div>
       )}
     </div>

@@ -13,6 +13,6 @@
   "_base_说明": "本主题基于哪种底色，可填 light 或 dark。应用会先套用对应的浅色/深色底，再叠加本主题的 theme.css。",
 
   "author": "FanControl",
-  "version": "2.1.7",
+  "version": "2.1.9",
   "description": "FanControl 的冰川科技高级主题，采用凌波丽轻机甲幕布与统一玻璃组件。"
 }

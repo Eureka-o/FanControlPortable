@@ -22,6 +22,15 @@ import (
 var assets embed.FS
 
 func main() {
+	if guiapp.RunRelaunchHelper() {
+		return
+	}
+	for _, arg := range os.Args {
+		if arg == "--monitor-only-session" {
+			guiapp.SetMonitorOnlySession(true)
+			break
+		}
+	}
 	if !guiapp.EnsureCoreServiceRunning() {
 		println("警告：无法启动核心服务，GUI 将以有限功能模式运行")
 	}

@@ -453,6 +453,7 @@ func applyMissingTemperatureDefaults(cfg *types.AppConfig, rawConfig map[string]
 	cfg.CpuPowerSensor = types.NormalizeSensorSelection(cfg.CpuPowerSensor)
 	cfg.GpuPowerSensor = types.NormalizeSensorSelection(cfg.GpuPowerSensor)
 	cfg.GpuReadMode = types.NormalizeGPUReadMode(cfg.GpuReadMode)
+	cfg.HistoryRetentionHours = types.NormalizeTemperatureHistoryRetentionHours(cfg.HistoryRetentionHours)
 	cfg.GpuLowPowerProtection = cfg.GpuReadMode != types.GPUReadModeAlways
 	if cfg.GpuReadMode == types.GPUReadModeNever && cfg.TempSource == types.TempSourceGPU {
 		cfg.TempSource = types.TempSourceCPU

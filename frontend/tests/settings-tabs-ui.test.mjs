@@ -86,6 +86,12 @@ test('reports user-triggered settings failures', () => {
   assert.match(systemSettingsSource, /toast\.error/);
 });
 
+test('confirms monitor-only activation before restarting the app', () => {
+  assert.match(systemSettingsSource, /monitorOnlyDialogOpen/);
+  assert.match(systemSettingsSource, /monitorOnlyDialogWarning/);
+  assert.match(systemSettingsSource, /apiService\.restartCore\(false\)/);
+});
+
 test('keeps the initial settings reveal ordered while section switches stay below the tabs', () => {
   assert.match(source, /data-theme-section="settings-page" data-page-reveal="cards"/);
   const overview = source.indexOf('data-theme-card="settings-overview"');

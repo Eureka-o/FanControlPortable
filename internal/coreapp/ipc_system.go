@@ -56,6 +56,16 @@ func (a *CoreApp) handleWindowIPCRequest(req ipc.Request) (ipc.Response, bool) {
 		// GUI 自己处理隐藏
 		return a.successResponse(true), true
 
+	case ipc.ReqRestartCore:
+		var params ipc.RestartCoreParams
+		if len(req.Data) > 0 {
+			if err := json.Unmarshal(req.Data, &params); err != nil {
+				return a.errorResponse("解析参数失败: " + err.Error()), true
+			}
+		}
+		a.restartCore(params)
+		return a.successResponse(true), true
+
 	case ipc.ReqQuitApp:
 		a.safeGo("onQuitRequest", func() {
 			a.onQuitRequest()

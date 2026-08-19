@@ -33,7 +33,7 @@ import { useTemperatureHistory } from '../hooks/useTemperatureHistory';
 import { HISTORY_SERIES_ORDER, HISTORY_TIMELINE_EVENT_ORDER, useHistoryDisplayPreferences } from '../hooks/useHistoryDisplayPreferences';
 import { useLocale } from '../lib/i18n';
 import { getFanSpeedUnit, getFanSpeedRange, getFanSpeedTicks, fanSpeedUnitLabel } from '../lib/fan-speed';
-import { type HistorySeriesKey, type TemperatureHistoryPoint } from '../lib/temperature-history';
+import { downsampleHistoryPoints, HISTORY_RETENTION_HOUR_OPTIONS, type HistorySeriesKey, type TemperatureHistoryPoint } from '../lib/temperature-history';
 import {
   cancelCurveEditorSwitch,
   createCurveEditorSession,
@@ -327,6 +327,7 @@ interface FanCurveProps {
   deviceModel: string | null;
   focusTarget: CurveFocusTarget | null;
   onFocusHandled: () => void;
+  historyOnly?: boolean;
 }
 
 function formatHistoryTime(timestamp: number, locale: string) {
@@ -462,7 +463,7 @@ const DraggablePoint = memo(function DraggablePoint({
    ─── Main FanCurve Component ───
    ═══════════════════════════════════════════════════════════ */
 
-const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, fanData, temperature, runtimeDeviceProfile, runtimeDeviceCapabilities, deviceModel, focusTarget, onFocusHandled }: FanCurveProps) {
+const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, fanData, temperature, runtimeDeviceProfile, runtimeDeviceCapabilities, deviceModel, focusTarget, onFocusHandled, historyOnly = false }: FanCurveProps) {
   const { t } = useTranslation();
   const { locale } = useLocale();
   const [localCurve, setLocalCurve] = useState<types.FanCurvePoint[]>([]);
@@ -485,6 +486,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const hasUnsavedChanges = editorSession.dirty;
   const pendingProfileId = editorSession.pendingProfileId;
   const pendingTab = useAppStore((state) => state.pendingTab);
+  const monitorOnlyActive = useAppStore((state) => state.monitorOnlyActive);
   const timelineEvents = useAppStore((state) => state.timelineEvents);
   const setCurveDraftDirty = useAppStore((state) => state.setCurveDraftDirty);
   const completePendingTabChange = useAppStore((state) => state.completePendingTabChange);
@@ -559,9 +561,11 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const {
     points: temperatureHistory,
     enabled: temperatureHistoryEnabled,
-    saving: temperatureHistorySaving,
-    setEnabled: setTemperatureHistoryEnabled,
-  } = useTemperatureHistory();
+	    saving: temperatureHistorySaving,
+	    setEnabled: setTemperatureHistoryEnabled,
+	    retentionHours: historyRetentionHours,
+	    setRetentionHours: setHistoryRetentionHours,
+	  } = useTemperatureHistory();
 
   useEffect(() => {
     setHistoryZoomSelect(null);
@@ -897,14 +901,18 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const historyChartData = historyChartStats.data;
   const historyPowerMax = historyChartStats.powerMax;
   const historyHasPower = historyChartStats.hasPower;
-  const zoomedHistoryChartData = useMemo(() => {
+	const zoomedHistoryChartData = useMemo(() => {
     if (!historyZoomDomain) {
       return historyChartData;
     }
     const [from, to] = historyZoomDomain;
     const selected = historyChartData.filter((point) => point.timestamp >= from && point.timestamp <= to);
     return selected.length >= 2 ? selected : historyChartData;
-  }, [historyChartData, historyZoomDomain]);
+	}, [historyChartData, historyZoomDomain]);
+	const historyDisplayData = useMemo(
+		() => downsampleHistoryPoints(zoomedHistoryChartData, 1500),
+		[zoomedHistoryChartData],
+	);
   const historySeriesMeta = useMemo(() => {
     const meta: Record<HistorySeriesKey, { key: HistorySeriesKey; label: string; color: string; dataKey: 'cpuTemp' | 'gpuTemp' | 'fanRpm' | 'cpuPowerWatts' | 'gpuPowerWatts' | 'totalPowerWatts'; axisId: 'temp' | 'fan' | 'power' }> = {
       cpu: { key: 'cpu', label: t('fanCurve.history.series.cpu'), color: CPU_TEMP_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.cpu, axisId: HISTORY_SERIES_AXIS.cpu },
@@ -914,8 +922,11 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       gpuPower: { key: 'gpuPower', label: t('fanCurve.history.series.gpuPower'), color: GPU_POWER_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.gpuPower, axisId: HISTORY_SERIES_AXIS.gpuPower },
       totalPower: { key: 'totalPower', label: t('fanCurve.history.series.totalPower'), color: TOTAL_POWER_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.totalPower, axisId: HISTORY_SERIES_AXIS.totalPower },
     };
-    return orderedSeries.map((key) => meta[key]).filter(Boolean);
-  }, [orderedSeries, t, locale]);
+    return orderedSeries
+      .filter((key) => !(monitorOnlyActive && key === 'fan'))
+      .map((key) => meta[key])
+      .filter(Boolean);
+  }, [locale, monitorOnlyActive, orderedSeries, t]);
   const historyStatistics = useMemo(() => {
     const values: Partial<Record<HistorySeriesKey, { min: number; max: number; average: number; minTimestamps: number[]; maxTimestamps: number[] }>> = {};
     const seriesWithData = historySeriesMeta.filter((series) => {
@@ -1079,11 +1090,14 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     const lastTimestamp = zoomedHistoryChartData[zoomedHistoryChartData.length - 1]?.timestamp ?? firstTimestamp;
     if (!historyShowTimelineEvents || !firstTimestamp) return [];
     return timelineEvents.filter((event) => (
+      !(monitorOnlyActive && (event.type === 'disconnect' || event.type === 'reconnect'))
+      &&
       historyTimelineEventVisibility[event.type]
       && event.timestamp >= firstTimestamp
       && event.timestamp <= lastTimestamp
     )).slice(-12);
-  }, [historyShowTimelineEvents, historyTimelineEventVisibility, timelineEvents, zoomedHistoryChartData]);
+  }, [historyShowTimelineEvents, historyTimelineEventVisibility, monitorOnlyActive, timelineEvents, zoomedHistoryChartData]);
+  const historyTimelineAxisId = monitorOnlyActive ? 'temp' : 'fan';
   const historyTimeDomain = useMemo<[number, number]>(() => {
     const firstTimestamp = zoomedHistoryChartData[0]?.timestamp ?? 0;
     const lastSampleTimestamp = zoomedHistoryChartData[zoomedHistoryChartData.length - 1]?.timestamp ?? firstTimestamp;
@@ -1834,7 +1848,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
         : (!isConnected && !initialFocusTarget ? 'cards-delayed' : (!initialFocusTarget ? 'cards' : undefined))}
       className="relative space-y-4 px-1 pb-2"
     >
-      {isConnected && (
+      {!historyOnly && isConnected && (
         <>
         <motion.div
           data-theme-card="curve-header"
@@ -2314,8 +2328,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
 
               <div data-theme-card="curve-history-chart" className="rounded-xl border border-border/70 bg-background/35 p-3 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.history.recentTrend')}</div>
+	                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+	                    <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.history.recentTrend')}</div>
                     {historyZoomSelectionBounds ? (
                       <span className="rounded-full border border-primary/45 bg-primary/12 px-2 py-0.5 text-[11px] font-medium text-primary">
                         {t('fanCurve.history.zoomSelecting', {
@@ -2332,8 +2346,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                         {t('fanCurve.history.resetZoom')}
                       </button>
                     ) : (
-                      <span className="text-[11px] text-muted-foreground/60">{t('fanCurve.history.zoomHint')}</span>
-                    )}
+	                      <span className="text-[11px] text-muted-foreground/60">{t('fanCurve.history.zoomHint')}</span>
+	                    )}
                   </div>
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     {historySeriesMeta.map((series) => (
@@ -2373,7 +2387,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                     <div data-history-chart="thermal-fan" className="h-72 cursor-crosshair select-none">
                       <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 960, height: 288 }}>
                         <ComposedChart
-                          data={zoomedHistoryChartData}
+	                          data={historyDisplayData}
                           syncId="historyTrend"
                           margin={{ top: 12, right: 16, left: 4, bottom: 8 }}
                           onMouseDown={handleHistoryZoomMouseDown}
@@ -2402,18 +2416,20 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                             axisLine={{ stroke: 'var(--chart-axis)' }}
                             tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
                           />
-                          <YAxis
-                            yAxisId="fan"
-                            type="number"
-                            domain={[speedRange.min, speedRange.max]}
-                            ticks={speedRange.ticks}
-                            allowDataOverflow
-                            tickFormatter={(value) => `${formatSpeedValue(Number(value))}${speedUnitSuffix}`}
-                            tickLine={false}
-                            axisLine={{ stroke: 'var(--chart-axis)' }}
-                            tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
-                            width={64}
-                          />
+                          {!monitorOnlyActive && (
+                            <YAxis
+                              yAxisId="fan"
+                              type="number"
+                              domain={[speedRange.min, speedRange.max]}
+                              ticks={speedRange.ticks}
+                              allowDataOverflow
+                              tickFormatter={(value) => `${formatSpeedValue(Number(value))}${speedUnitSuffix}`}
+                              tickLine={false}
+                              axisLine={{ stroke: 'var(--chart-axis)' }}
+                              tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
+                              width={64}
+                            />
+                          )}
                           <YAxis
                             yAxisId="temp"
                             orientation="right"
@@ -2434,7 +2450,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                               <ReferenceLine
                                 key={`${event.timestamp}-${event.type}-${index}`}
                                 x={event.timestamp}
-                                yAxisId="fan"
+                                yAxisId={historyTimelineAxisId}
                                 stroke={markerColor}
                                 strokeDasharray="4 3"
                                 label={(labelProps: { viewBox?: { x?: number; y?: number } }) => {
@@ -2524,7 +2540,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                         <div className="h-48 cursor-crosshair select-none">
                           <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 960, height: 192 }}>
                               <ComposedChart
-                                data={zoomedHistoryChartData}
+	                          data={historyDisplayData}
                                 syncId="historyTrend"
                                 margin={{ top: 12, right: 16, left: 4, bottom: 8 }}
                                 onMouseDown={handleHistoryZoomMouseDown}
@@ -2553,26 +2569,42 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                                   axisLine={{ stroke: 'var(--chart-axis)' }}
                                   tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
                                 />
-                                <YAxis
-                                  yAxisId="power"
-                                  type="number"
-                                  domain={[0, historyPowerMax]}
-                                  tickFormatter={(value) => Number(value) === 0 ? '0 W' : `${formatPowerValue(Number(value))} W`}
-                                  tickLine={false}
-                                  axisLine={{ stroke: 'var(--chart-axis)' }}
-                                  tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
-                                  width={64}
-                                />
-                                <YAxis
-                                  yAxisId="powerSpacer"
-                                  orientation="right"
-                                  type="number"
-                                  domain={[0, historyPowerMax]}
-                                  tick={false}
-                                  tickLine={false}
-                                  axisLine={false}
-                                  width={44}
-                                />
+                                {monitorOnlyActive ? (
+                                  <YAxis
+                                    yAxisId="power"
+                                    orientation="right"
+                                    type="number"
+                                    domain={[0, historyPowerMax]}
+                                    tickFormatter={(value) => Number(value) === 0 ? '0 W' : `${formatPowerValue(Number(value))} W`}
+                                    tickLine={false}
+                                    axisLine={{ stroke: 'var(--chart-axis)' }}
+                                    tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
+                                    width={44}
+                                  />
+                                ) : (
+                                  <>
+                                    <YAxis
+                                      yAxisId="power"
+                                      type="number"
+                                      domain={[0, historyPowerMax]}
+                                      tickFormatter={(value) => Number(value) === 0 ? '0 W' : `${formatPowerValue(Number(value))} W`}
+                                      tickLine={false}
+                                      axisLine={{ stroke: 'var(--chart-axis)' }}
+                                      tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
+                                      width={64}
+                                    />
+                                    <YAxis
+                                      yAxisId="powerSpacer"
+                                      orientation="right"
+                                      type="number"
+                                      domain={[0, historyPowerMax]}
+                                      tick={false}
+                                      tickLine={false}
+                                      axisLine={false}
+                                      width={44}
+                                    />
+                                  </>
+                                )}
                                 <RechartsTooltip content={renderHistoryTooltip} />
                                 {powerSingleSeries && (
                                   <Area
@@ -2723,6 +2755,21 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                             />
                           </div>
                         ))}
+                      </div>
+                      <div className="flex items-center justify-between gap-3 border-t border-border/70 pt-3">
+                        <div className="text-sm font-medium text-foreground">{t('fanCurve.history.retention.label')}</div>
+                        <Select
+                          value={historyRetentionHours}
+                          onChange={(value) => { void setHistoryRetentionHours(Number(value)); }}
+                          disabled={temperatureHistorySaving}
+                          size="sm"
+                          className="min-w-28"
+                          triggerClassName="h-8 rounded-lg px-3 text-xs"
+                          options={HISTORY_RETENTION_HOUR_OPTIONS.map((hours) => ({
+                            value: hours,
+                            label: t('fanCurve.history.retention.hours', { count: hours }),
+                          }))}
+                        />
                       </div>
                     </div>
                     <div className="space-y-3 border-t border-border/70 pt-5 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
