@@ -73,6 +73,21 @@ const (
 	PowerSpoofOffsetMax                 = 10000
 )
 
+const (
+	DefaultTemperatureHistoryRetentionHours = 1
+	MaxTemperatureHistoryRetentionHours     = 24
+)
+
+func NormalizeTemperatureHistoryRetentionHours(hours int) int {
+	if hours < DefaultTemperatureHistoryRetentionHours {
+		return DefaultTemperatureHistoryRetentionHours
+	}
+	if hours > MaxTemperatureHistoryRetentionHours {
+		return MaxTemperatureHistoryRetentionHours
+	}
+	return hours
+}
+
 func NormalizeDeviceTransport(transport string) string {
 	switch transport {
 	case DeviceTransportHID:
@@ -492,6 +507,7 @@ type TemperatureHistoryPoint struct {
 type TemperatureHistoryPayload struct {
 	Enabled               bool                      `json:"enabled"`
 	SampleIntervalSeconds int                       `json:"sampleIntervalSeconds"`
+	RetentionHours        int                       `json:"retentionHours"`
 	Points                []TemperatureHistoryPoint `json:"points"`
 }
 
@@ -629,19 +645,21 @@ type AppConfig struct {
 	CPUPowerSpoofOffsetWatts          float64                                `json:"cpuPowerSpoofOffsetWatts"`
 	GPUPowerSpoofPercent              float64                                `json:"gpuPowerSpoofPercent"`
 	GPUPowerSpoofOffsetWatts          float64                                `json:"gpuPowerSpoofOffsetWatts"`
-	WindowsAutoStart                  bool                                   `json:"windowsAutoStart"` // Windows开机自启动
-	ThemeMode                         string                                 `json:"themeMode"`        // 主题模式: system/light/dark/thrm
-	WindowBlur                        string                                 `json:"windowBlur"`       // 窗口材质: acrylic/mica/tabbed/off
-	SmartStartStop                    string                                 `json:"smartStartStop"`   // 智能启停
-	Brightness                        int                                    `json:"brightness"`       // 亮度
-	TempUpdateRate                    int                                    `json:"tempUpdateRate"`   // 温度更新频率(秒)
-	TempSampleCount                   int                                    `json:"tempSampleCount"`  // 温度采样次数(用于平均)
-	TempSource                        string                                 `json:"tempSource"`       // 控温温度来源: max/cpu/gpu
-	GpuDevice                         string                                 `json:"gpuDevice"`        // GPU 设备选择: auto 或设备 key
-	CpuSensor                         string                                 `json:"cpuSensor"`        // CPU 传感器选择: auto 或传感器 key
-	GpuSensor                         string                                 `json:"gpuSensor"`        // GPU 传感器选择: auto 或传感器 key
-	CpuPowerSensor                    string                                 `json:"cpuPowerSensor"`   // CPU 功耗传感器选择: auto 或传感器 key
-	GpuPowerSensor                    string                                 `json:"gpuPowerSensor"`   // GPU 功耗传感器选择: auto 或传感器 key
+	WindowsAutoStart                  bool                                   `json:"windowsAutoStart"`                 // Windows开机自启动
+	MonitorOnly                       bool                                   `json:"monitorOnly"`                      // 仅监控模式（持久配置）
+	ThemeMode                         string                                 `json:"themeMode"`                        // 主题模式: system/light/dark/thrm
+	WindowBlur                        string                                 `json:"windowBlur"`                       // 窗口材质: acrylic/mica/tabbed/off
+	SmartStartStop                    string                                 `json:"smartStartStop"`                   // 智能启停
+	Brightness                        int                                    `json:"brightness"`                       // 亮度
+	TempUpdateRate                    int                                    `json:"tempUpdateRate"`                   // 温度更新频率(秒)
+	TempSampleCount                   int                                    `json:"tempSampleCount"`                  // 温度采样次数(用于平均)
+	HistoryRetentionHours             int                                    `json:"temperatureHistoryRetentionHours"` // 温度历史后台保留时长(小时)
+	TempSource                        string                                 `json:"tempSource"`                       // 控温温度来源: max/cpu/gpu
+	GpuDevice                         string                                 `json:"gpuDevice"`                        // GPU 设备选择: auto 或设备 key
+	CpuSensor                         string                                 `json:"cpuSensor"`                        // CPU 传感器选择: auto 或传感器 key
+	GpuSensor                         string                                 `json:"gpuSensor"`                        // GPU 传感器选择: auto 或传感器 key
+	CpuPowerSensor                    string                                 `json:"cpuPowerSensor"`                   // CPU 功耗传感器选择: auto 或传感器 key
+	GpuPowerSensor                    string                                 `json:"gpuPowerSensor"`                   // GPU 功耗传感器选择: auto 或传感器 key
 	GpuReadMode                       string                                 `json:"gpuReadMode"`
 	GpuLowPowerProtection             bool                                   `json:"gpuLowPowerProtection"`
 	ConfigPath                        string                                 `json:"configPath"`              // 配置文件路径
@@ -1132,6 +1150,7 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		Brightness:               100,
 		TempUpdateRate:           2,
 		TempSampleCount:          1,
+		HistoryRetentionHours:    DefaultTemperatureHistoryRetentionHours,
 		TempSource:               defaultTempSelection.TempSource,
 		GpuDevice:                defaultTempSelection.GpuDevice,
 		CpuSensor:                defaultTempSelection.CpuSensor,

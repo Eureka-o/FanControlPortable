@@ -9,6 +9,9 @@ import (
 )
 
 func (a *CoreApp) ScanWiFiDevices(mode string) types.WiFiDiscoveryResult {
+	if a.monitorOnlyActive() {
+		return types.WiFiDiscoveryResult{Mode: mode, Error: "仅监控模式已启用"}
+	}
 	if !a.wifiScanRunning.CompareAndSwap(false, true) {
 		return types.WiFiDiscoveryResult{
 			Mode:  mode,
@@ -30,6 +33,9 @@ func (a *CoreApp) ScanWiFiDevices(mode string) types.WiFiDiscoveryResult {
 }
 
 func (a *CoreApp) ControlWiFiScan(action string) bool {
+	if a.monitorOnlyActive() && !strings.EqualFold(strings.TrimSpace(action), types.WiFiScanControlCancel) {
+		return false
+	}
 	if a.wifiScanControl == nil {
 		a.wifiScanControl = types.NewWiFiDiscoveryControl()
 	}
@@ -47,6 +53,9 @@ func (a *CoreApp) ControlWiFiScan(action string) bool {
 }
 
 func (a *CoreApp) recoverDynamicWiFiEndpoint(cfg *types.AppConfig) bool {
+	if a.monitorOnlyActive() {
+		return false
+	}
 	if cfg == nil || !cfg.WiFiCompatibilityEnabled {
 		return false
 	}

@@ -88,6 +88,47 @@ func (r *HistoryRecorder) IsEnabled() bool {
 	return r.enabled
 }
 
+func (r *HistoryRecorder) pointsPerHourLocked() int {
+	if r.sampleInterval <= 0 {
+		return DefaultHistoryCapacity
+	}
+	points := int(time.Hour / r.sampleInterval)
+	if points <= 0 {
+		return DefaultHistoryCapacity
+	}
+	return points
+}
+
+func (r *HistoryRecorder) RetentionHours() int {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+	hours := r.capacity / r.pointsPerHourLocked()
+	return types.NormalizeTemperatureHistoryRetentionHours(hours)
+}
+
+func (r *HistoryRecorder) SetRetentionHours(hours int) error {
+	hours = types.NormalizeTemperatureHistoryRetentionHours(hours)
+
+	r.mutex.Lock()
+	newCapacity := r.pointsPerHourLocked() * hours
+	if newCapacity <= 0 || newCapacity == r.capacity {
+		r.mutex.Unlock()
+		return nil
+	}
+	ordered := r.snapshotPointsLocked()
+	r.capacity = newCapacity
+	r.points = make([]types.TemperatureHistoryPoint, 0, newCapacity)
+	r.next = 0
+	r.filled = false
+	r.applyLoadedPointsLocked(ordered)
+	payload, err := r.serializeLocked()
+	r.mutex.Unlock()
+	if err != nil {
+		return err
+	}
+	return r.writeFile(payload)
+}
+
 func (r *HistoryRecorder) Flush() error {
 	r.mutex.Lock()
 	if r.dirtyCount == 0 {
@@ -190,6 +231,7 @@ func (r *HistoryRecorder) Snapshot() types.TemperatureHistoryPayload {
 	return types.TemperatureHistoryPayload{
 		Enabled:               r.enabled,
 		SampleIntervalSeconds: int(r.sampleInterval / time.Second),
+		RetentionHours:        types.NormalizeTemperatureHistoryRetentionHours(r.capacity / r.pointsPerHourLocked()),
 		Points:                r.snapshotPointsLocked(),
 	}
 }

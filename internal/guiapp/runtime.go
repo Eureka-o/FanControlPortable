@@ -8,6 +8,7 @@ import (
 	goruntime "runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
@@ -26,6 +27,12 @@ func init() {
 
 var wailsContext *context.Context
 var ensureCoreServiceRunningMu sync.Mutex
+var monitorOnlySession atomic.Bool
+
+// SetMonitorOnlySession keeps the temporary homepage choice across a core restart.
+func SetMonitorOnlySession(enabled bool) {
+	monitorOnlySession.Store(enabled)
+}
 
 // SetWailsContext 保存当前 Wails 上下文，供单实例回调恢复窗口使用。
 func SetWailsContext(ctx context.Context) {
@@ -85,6 +92,9 @@ func EnsureCoreServiceRunning() bool {
 
 	cmd := exec.Command(corePath)
 	configureCoreCommand(cmd)
+	if monitorOnlySession.Load() {
+		cmd.Args = append(cmd.Args, "--monitor-only-session")
+	}
 
 	if err := cmd.Start(); err != nil {
 		mainLogger.Errorf("启动核心服务失败: %v", err)
@@ -100,6 +110,7 @@ func EnsureCoreServiceRunning() bool {
 		time.Sleep(100 * time.Millisecond)
 		if ipc.CheckCoreServiceRunning() {
 			mainLogger.Infof("核心服务已就绪（等待 %d ms）", (i+1)*100)
+			monitorOnlySession.Store(false)
 			return true
 		}
 	}

@@ -57,6 +57,8 @@ type CoreApp struct {
 	userSetAutoControl            bool
 	isAutoStartLaunch             bool
 	debugMode                     bool
+	monitorOnly                   atomic.Bool
+	sessionMonitorOnly            atomic.Bool
 	legionFnQSupported            atomic.Bool
 	legionFnQSupportChecked       atomic.Bool
 	legionFnQRegistered           atomic.Bool
@@ -163,7 +165,9 @@ func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 			}
 		}
 	}
-	tempHistory := temperature.NewHistoryRecorder(historyPath, temperature.DefaultHistoryCapacity, temperature.DefaultHistorySampleInterval, customLogger)
+	historyRetentionHours := types.NormalizeTemperatureHistoryRetentionHours(configMgr.Get().HistoryRetentionHours)
+	historyPointsPerHour := int(time.Hour / temperature.DefaultHistorySampleInterval)
+	tempHistory := temperature.NewHistoryRecorder(historyPath, historyPointsPerHour*historyRetentionHours, temperature.DefaultHistorySampleInterval, customLogger)
 	trayMgr := tray.NewManager(customLogger, iconData)
 	autostartMgr := autostart.NewManager(customLogger)
 	pluginMgr := plugins.NewManager(customLogger)

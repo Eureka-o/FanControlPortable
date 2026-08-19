@@ -27,7 +27,7 @@ func (a *CoreApp) registerPlugins() {
 }
 
 func (a *CoreApp) applyCachedLegionFnQSupport(cfg *types.AppConfig) bool {
-	if cfg == nil || !cfg.LegionFnQSupport.Checked {
+	if cfg == nil || cfg.MonitorOnly || a.monitorOnlyActive() || !cfg.LegionFnQSupport.Checked {
 		return false
 	}
 
@@ -44,6 +44,9 @@ func (a *CoreApp) applyCachedLegionFnQSupport(cfg *types.AppConfig) bool {
 }
 
 func (a *CoreApp) startLegionFnQSupportDetection() {
+	if a.monitorOnlyActive() {
+		return
+	}
 	a.safeGo("detectLegionFnQSupport", func() {
 		supported, hostInfo, err := fnqpowermode.DetectSupport()
 		if err != nil {
@@ -132,7 +135,7 @@ func (a *CoreApp) handleLegionPowerModeChange(state fnqpowermode.PowerModeState)
 }
 
 func (a *CoreApp) applyPluginConfig(cfg types.AppConfig) {
-	if a.pluginManager == nil || !a.legionFnQSupported.Load() {
+	if a.monitorOnlyActive() || a.pluginManager == nil || !a.legionFnQSupported.Load() {
 		return
 	}
 

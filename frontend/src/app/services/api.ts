@@ -26,6 +26,7 @@ import {
   GetTemperature,
   GetTemperatureHistory,
   SetTemperatureHistoryEnabled,
+  SetTemperatureHistoryRetentionHours,
   GetCurrentFanData,
   TestTemperatureReading,
   GetDebugInfo,
@@ -256,9 +257,17 @@ class ApiService {
     return EventsOn('update-download-progress', callback);
   }
 
-  async updateConfig(config: types.AppConfig): Promise<void> {
-    return await UpdateConfig(config);
-  }
+	async updateConfig(config: types.AppConfig): Promise<void> {
+		return await UpdateConfig(config);
+	}
+
+	async restartCore(monitorOnlySession = false): Promise<void> {
+		const restart = (window as any).go?.main?.App?.RestartCore;
+		if (typeof restart !== 'function') {
+			throw new Error('核心服务重启接口不可用');
+		}
+		await restart(monitorOnlySession);
+	}
 
   async getDeviceProfiles(): Promise<types.DeviceProfilesPayload> {
     return await (window as any).go?.main?.App?.GetDeviceProfiles();
@@ -440,6 +449,10 @@ class ApiService {
 
   async setTemperatureHistoryEnabled(enabled: boolean): Promise<void> {
     return await SetTemperatureHistoryEnabled(enabled);
+  }
+
+  async setTemperatureHistoryRetentionHours(hours: number): Promise<void> {
+    return await SetTemperatureHistoryRetentionHours(hours);
   }
 
   async getCurrentFanData(): Promise<types.FanData | null> {

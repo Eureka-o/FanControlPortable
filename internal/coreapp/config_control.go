@@ -113,6 +113,8 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	}()
 
 	oldCfg := a.configManager.Get()
+	monitorOnlyChanged := oldCfg.MonitorOnly != cfg.MonitorOnly
+	cfg.HistoryRetentionHours = types.NormalizeTemperatureHistoryRetentionHours(oldCfg.HistoryRetentionHours)
 	oldConnectionKey := deviceProfileConnectionKey(oldCfg)
 	if len(cfg.FanCurveProfiles) == 0 && len(oldCfg.FanCurveProfiles) > 0 {
 		cfg.FanCurveProfiles = curveprofiles.CloneProfiles(oldCfg.FanCurveProfiles)
@@ -202,12 +204,41 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 				}
 			}
 		}
+		if monitorOnlyChanged {
+			if committed.MonitorOnly {
+				a.refreshMonitorOnlyRuntime(true)
+			}
+			a.scheduleCoreRestart()
+		}
 	})
 }
 
 func (a *CoreApp) SetTemperatureHistoryEnabled(enabled bool) error {
 	if err := a.tempHistory.SetEnabled(enabled); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (a *CoreApp) SetTemperatureHistoryRetentionHours(hours int) error {
+	hours = types.NormalizeTemperatureHistoryRetentionHours(hours)
+	previous := a.tempHistory.RetentionHours()
+	if err := a.tempHistory.SetRetentionHours(hours); err != nil {
+		return err
+	}
+
+	a.mutex.Lock()
+	cfg := a.configManager.Get()
+	cfg.HistoryRetentionHours = hours
+	err := a.configManager.Update(cfg)
+	committed := a.configManager.Get()
+	a.mutex.Unlock()
+	if err != nil {
+		_ = a.tempHistory.SetRetentionHours(previous)
+		return err
+	}
+	if a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, committed)
 	}
 	return nil
 }

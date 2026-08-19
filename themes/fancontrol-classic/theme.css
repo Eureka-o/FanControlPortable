@@ -704,6 +704,7 @@ html[data-theme="fancontrol-classic"] .glacier-sidebar::before {
   border-radius: 1.25rem !important;
   background:
     var(--classic-dock-texture) center top / 152px 152px repeat,
+    var(--classic-dock-texture) center top / 152px 152px repeat,
     var(--classic-surface-background) !important;
   box-shadow: var(--classic-dock-shadow) !important;
   -webkit-backdrop-filter: var(--classic-surface-filter) !important;
@@ -865,6 +866,7 @@ html[data-theme="fancontrol-classic"] .glacier-shell .glacier-hero-card [data-th
 html[data-theme="fancontrol-classic"] .glacier-shell[data-theme-page="status"] :is(
   .glacier-metric-card,
   .glacier-control-card,
+  [data-theme-card="connection-empty"],
   [data-theme-card="fan-curve-preview"],
   [data-theme-card="temperature-history"]
 ) {

@@ -53,6 +53,18 @@ func TestActiveTemperatureMonitorIntervalReturnsFromIdleToForeground(t *testing.
 	}
 }
 
+func TestMonitorOnlySamplingIntervalHasTwoSecondFloor(t *testing.T) {
+	if got := monitorOnlySamplingInterval(time.Second, true); got != monitorOnlyTemperatureInterval {
+		t.Fatalf("monitor-only interval = %v, want %v", got, monitorOnlyTemperatureInterval)
+	}
+	if got := monitorOnlySamplingInterval(3*time.Second, true); got != 3*time.Second {
+		t.Fatalf("configured slow interval = %v, want 3s", got)
+	}
+	if got := monitorOnlySamplingInterval(time.Second, false); got != time.Second {
+		t.Fatalf("normal interval = %v, want 1s", got)
+	}
+}
+
 func TestSmartControlSampleContextChangesForTelemetryOrSpeedUnit(t *testing.T) {
 	selection := types.TemperatureSelection{
 		TempSource:     types.TempSourceCPU,

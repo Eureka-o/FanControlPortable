@@ -31,6 +31,37 @@ func TestHistoryRecorderDefaultsEnabled(t *testing.T) {
 	}
 }
 
+func TestHistoryRecorderRetentionResizeKeepsLatestPoints(t *testing.T) {
+	t.Parallel()
+
+	recorder := NewHistoryRecorder(filepath.Join(t.TempDir(), "history.bin"), 12, 5*time.Second, nil)
+	enableRecorderForTest(t, recorder)
+	baseSeconds := int64(1_717_000_000)
+	for i := int64(0); i < 12; i++ {
+		if _, recorded := recorder.Add(types.TemperatureData{CPUTemp: 60 + int(i), UpdateTime: baseSeconds + i*5}, nil); !recorded {
+			t.Fatalf("expected sample %d to be recorded", i)
+		}
+	}
+
+	if err := recorder.SetRetentionHours(2); err != nil {
+		t.Fatalf("resize to 2h: %v", err)
+	}
+	snapshot := recorder.Snapshot()
+	if snapshot.RetentionHours != 2 || len(snapshot.Points) != 12 {
+		t.Fatalf("retention resize lost data: hours=%d points=%d", snapshot.RetentionHours, len(snapshot.Points))
+	}
+	if snapshot.Points[0].CPUTemp != 60 || snapshot.Points[len(snapshot.Points)-1].CPUTemp != 71 {
+		t.Fatalf("retention resize reordered points: %+v", snapshot.Points)
+	}
+
+	if err := recorder.SetRetentionHours(1); err != nil {
+		t.Fatalf("resize to 1h: %v", err)
+	}
+	if got := len(recorder.Snapshot().Points); got != 12 {
+		t.Fatalf("shrinking retention unexpectedly dropped recent points: %d", got)
+	}
+}
+
 func TestHistoryRecorderAddNormalizesSecondTimestamp(t *testing.T) {
 	t.Parallel()
 

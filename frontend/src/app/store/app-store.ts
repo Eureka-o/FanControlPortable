@@ -17,11 +17,13 @@ import {
 import { types } from '../../../wailsjs/go/models';
 import { apiService } from '../services/api';
 import {
-  appendSampledHistoryPoint,
-  createLiveHistoryPoint,
-  normalizeHistoryPoints,
-  SESSION_HISTORY_LIMIT,
-  SESSION_HISTORY_RETENTION_MS,
+	appendSampledHistoryPoint,
+	createLiveHistoryPoint,
+	clampHistoryRetentionHours,
+	historyRetentionLimit,
+	SESSION_HISTORY_LIMIT,
+	SESSION_HISTORY_RETENTION_MS,
+	trimHistoryPoints,
 } from '../lib/temperature-history';
 import type { TemperatureHistoryPoint } from '../lib/temperature-history';
 import { i18n } from '../lib/i18n';
@@ -172,7 +174,8 @@ interface AppStore {
   runtimeDeviceProfile: types.DeviceProfile | null;
   runtimeDeviceCapabilities: types.DeviceCapabilities | null;
   config: types.AppConfig | null;
-  fanData: types.FanData | null;
+	fanData: types.FanData | null;
+	monitorOnlyActive: boolean;
   temperature: types.TemperatureData | null;
   legionFnQSupported: boolean;
   bridgeWarning: string | null;
@@ -184,9 +187,10 @@ interface AppStore {
   pendingTab: ActiveTab | null;
   curveFocusTarget: CurveFocusTarget | null;
   sessionHistoryPoints: TemperatureHistoryPoint[];
-  temperatureHistoryPoints: TemperatureHistoryPoint[];
-  temperatureHistoryEnabled: boolean;
-  temperatureHistoryLoading: boolean;
+	temperatureHistoryPoints: TemperatureHistoryPoint[];
+	temperatureHistoryEnabled: boolean;
+	temperatureHistoryRetentionHours: number;
+	temperatureHistoryLoading: boolean;
   temperatureHistorySaving: boolean;
   temperatureHistoryInitialized: boolean;
   timelineEvents: TimelineEvent[];
@@ -201,7 +205,8 @@ interface AppStore {
   handleTemperaturePayload: (data: types.TemperatureData | null) => void;
   appendSessionHistoryPoint: (data: types.TemperatureData | null) => void;
   loadTemperatureHistory: (force?: boolean) => Promise<void>;
-  setTemperatureHistoryEnabled: (enabled: boolean) => Promise<void>;
+	setTemperatureHistoryEnabled: (enabled: boolean) => Promise<void>;
+	setTemperatureHistoryRetentionHours: (hours: number) => Promise<void>;
 
   initializeApp: () => Promise<void>;
   resyncCore: () => Promise<void>;
@@ -213,16 +218,20 @@ interface AppStore {
   startEventListeners: () => () => void;
 }
 
-const deviceSnapshotStateFromStore = (state: AppStore): DeviceSnapshotState => ({
-  isConnected: state.isConnected,
-  deviceRuntimeState: state.deviceRuntimeState,
-  deviceProductId: state.deviceProductId,
-  deviceModel: state.deviceModel,
-  deviceSettings: state.deviceSettings,
-  runtimeDeviceProfile: state.runtimeDeviceProfile,
-  runtimeDeviceCapabilities: state.runtimeDeviceCapabilities,
-  fanData: state.fanData,
-});
+const deviceSnapshotStateFromStore = (state: AppStore): DeviceSnapshotState => {
+	const snapshot: DeviceSnapshotState = {
+		isConnected: state.isConnected,
+		deviceRuntimeState: state.deviceRuntimeState,
+		deviceProductId: state.deviceProductId,
+		deviceModel: state.deviceModel,
+		deviceSettings: state.deviceSettings,
+		runtimeDeviceProfile: state.runtimeDeviceProfile,
+		runtimeDeviceCapabilities: state.runtimeDeviceCapabilities,
+		fanData: state.fanData,
+	};
+	if (state.monitorOnlyActive) snapshot.monitorOnlyActive = true;
+	return snapshot;
+};
 
 const applyDeviceSnapshotEvent = (state: AppStore, event: DeviceSnapshotEvent): DeviceSnapshotState => (
   reduceDeviceSnapshot(deviceSnapshotStateFromStore(state), event)
@@ -237,7 +246,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   runtimeDeviceProfile: null,
   runtimeDeviceCapabilities: null,
   config: null,
-  fanData: null,
+	fanData: null,
+	monitorOnlyActive: false,
   temperature: null,
   legionFnQSupported: false,
   bridgeWarning: null,
@@ -249,9 +259,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
   pendingTab: null,
   curveFocusTarget: null,
   sessionHistoryPoints: [],
-  temperatureHistoryPoints: [],
-  temperatureHistoryEnabled: false,
-  temperatureHistoryLoading: false,
+	temperatureHistoryPoints: [],
+	temperatureHistoryEnabled: false,
+	temperatureHistoryRetentionHours: 1,
+	temperatureHistoryLoading: false,
   temperatureHistorySaving: false,
   temperatureHistoryInitialized: false,
   timelineEvents: [],
@@ -327,21 +338,28 @@ export const useAppStore = create<AppStore>((set, get) => ({
         return;
       }
 
-      const enabled = payload?.enabled !== false;
-      set({
-        temperatureHistoryEnabled: enabled,
-        temperatureHistoryPoints: enabled
-          ? normalizeHistoryPoints((payload?.points || []) as TemperatureHistoryPoint[])
-          : [],
+		const enabled = payload?.enabled !== false;
+		const retentionHours = clampHistoryRetentionHours(payload?.retentionHours);
+		set({
+			temperatureHistoryEnabled: enabled,
+			temperatureHistoryRetentionHours: retentionHours,
+			temperatureHistoryPoints: enabled
+				? trimHistoryPoints(
+					(payload?.points || []) as TemperatureHistoryPoint[],
+					retentionHours * 60 * 60 * 1000,
+					historyRetentionLimit(retentionHours),
+				)
+				: [],
         temperatureHistoryInitialized: true,
       });
     } catch {
       if (!temperatureHistoryRequestGate.isCurrent(requestGeneration)) {
         return;
       }
-      set({
-        temperatureHistoryEnabled: false,
-        temperatureHistoryPoints: [],
+		set({
+			temperatureHistoryEnabled: false,
+			temperatureHistoryRetentionHours: 1,
+			temperatureHistoryPoints: [],
         temperatureHistoryInitialized: true,
       });
     } finally {
@@ -351,7 +369,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  setTemperatureHistoryEnabled: async (enabled) => {
+	setTemperatureHistoryEnabled: async (enabled) => {
     set({ temperatureHistorySaving: true });
     try {
       await apiService.setTemperatureHistoryEnabled(enabled);
@@ -360,8 +378,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
       console.error('设置温度历史失败:', error);
     } finally {
       set({ temperatureHistorySaving: false });
-    }
-  },
+		}
+	},
+
+	setTemperatureHistoryRetentionHours: async (hours) => {
+		set({ temperatureHistorySaving: true });
+		try {
+			await apiService.setTemperatureHistoryRetentionHours(hours);
+			await get().loadTemperatureHistory(true);
+		} catch (error) {
+			console.error('设置温度历史保留时长失败:', error);
+		} finally {
+			set({ temperatureHistorySaving: false });
+		}
+	},
 
   initializeApp: async () => {
     try {
@@ -377,6 +407,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set((state) => ({
         config: appConfig,
         ...applyDeviceSnapshotEvent(state, { type: 'status', status: deviceStatus }),
+        monitorOnlyActive: deviceStatus.monitorOnly === true,
         legionFnQSupported: debugInfo?.legionFnQSupported === true,
         coreServiceError,
         error: coreServiceError,
@@ -427,7 +458,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
       await apiService.disconnectDevice();
       set((state) => ({
         ...applyDeviceSnapshotEvent(state, { type: 'disconnected' }),
-        timelineEvents: appendTimelineEvent(state.timelineEvents, { timestamp: Date.now(), type: 'disconnect' }),
+        timelineEvents: state.monitorOnlyActive
+          ? state.timelineEvents
+          : appendTimelineEvent(state.timelineEvents, { timestamp: Date.now(), type: 'disconnect' }),
       }));
     } catch (error) {
       console.error('断开连接失败:', error);
@@ -459,6 +492,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set((state) => ({
         config: appConfig ? types.AppConfig.createFrom(appConfig) : state.config,
         ...applyDeviceSnapshotEvent(state, { type: 'status', status }),
+        monitorOnlyActive: status?.monitorOnly === true,
         coreServiceError,
         error: coreServiceError,
       }));
@@ -525,7 +559,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ...applyDeviceSnapshotEvent(state, { type: 'connected', status: info }),
           coreServiceError: null,
           error: null,
-          timelineEvents: appendTimelineEvent(state.timelineEvents, { timestamp: Date.now(), type: 'reconnect' }),
+          timelineEvents: state.monitorOnlyActive
+            ? state.timelineEvents
+            : appendTimelineEvent(state.timelineEvents, { timestamp: Date.now(), type: 'reconnect' }),
         }));
         if (connectedDeviceName) {
           toast.success(i18n.t('store.device.connectedTitle'), {
@@ -543,7 +579,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
         console.log('设备已断开');
         set((state) => ({
           ...applyDeviceSnapshotEvent(state, { type: 'disconnected' }),
-          timelineEvents: appendTimelineEvent(state.timelineEvents, { timestamp: Date.now(), type: 'disconnect' }),
+          timelineEvents: state.monitorOnlyActive
+            ? state.timelineEvents
+            : appendTimelineEvent(state.timelineEvents, { timestamp: Date.now(), type: 'disconnect' }),
         }));
       })
     );
@@ -581,12 +619,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     unsubscribers.push(
       apiService.onTemperatureHistoryUpdate((point) => {
-        if (!get().temperatureHistoryEnabled) return;
-        set((state) => {
-          const points = appendSampledHistoryPoint(
-            state.temperatureHistoryPoints,
-            point as TemperatureHistoryPoint,
-          );
+				if (!get().temperatureHistoryEnabled) return;
+				set((state) => {
+					const points = appendSampledHistoryPoint(
+						state.temperatureHistoryPoints,
+						point as TemperatureHistoryPoint,
+						{
+							retentionMs: state.temperatureHistoryRetentionHours * 60 * 60 * 1000,
+							limit: historyRetentionLimit(state.temperatureHistoryRetentionHours),
+						},
+					);
           return points === state.temperatureHistoryPoints ? state : { temperatureHistoryPoints: points };
         });
       })

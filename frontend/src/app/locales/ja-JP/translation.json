@@ -486,6 +486,23 @@
       "titleWithDevice": "{{name}} は未接続です",
       "descriptionWithDevice": "現在有効なデバイスは {{name}} です。接続方式とアドレスを確認してから接続してください。"
     },
+    "monitorOnly": {
+      "entryTitle": "デバイスを接続する必要がありませんか？",
+      "entryDescription": "モニター専用モードでバックグラウンドのメモリ使用量を減らします",
+      "enable": "モニター専用を有効化",
+      "dialogTitle": "モニター専用モードを有効化",
+      "dialogDescription": "適用するためにフロントエンドとバックグラウンドサービスを再起動します。",
+      "dialogTemporary": "このホーム画面からの設定は今回のセッションだけ有効で、ソフトウェア再起動後に自動的にオフになります。",
+      "dialogPersistentHint": "常に使う場合はシステム設定でモニター専用モードを有効にしてください。",
+      "cancel": "キャンセル",
+      "confirm": "有効化",
+      "restartFailed": "モニター専用モードの有効化に失敗しました: {{error}}",
+      "sensorOnly": "モニター専用モード: デバイス接続と制御は無効です",
+      "cpuInfo": "CPU 情報",
+      "gpuInfo": "GPU 情報",
+      "power": "電力",
+      "historyTitle": "温度と電力の履歴"
+    },
     "recovery": {
       "deviceAvailable": "デバイスの電源が入り、Windows で認識されていることを確認します。",
       "releaseCompetingTools": "デバイスを使用している可能性のある他のハードウェア・ファン制御ツールを終了します。",
@@ -788,7 +805,7 @@
     },
     "history": {
       "detailsTitle": "温度とファン履歴の詳細",
-      "detailsDescription": "カーブタブでは直近 1 時間の履歴概要を保持し、現在のカーブと温度推移を比較できます。",
+      "detailsDescription": "履歴の保持時間を選び、現在のカーブと温度推移を比較できます。",
       "saving": "保存中",
       "backgroundRecording": "バックグラウンド記録",
       "emptyEnabled": "バックグラウンド記録は有効です。さらなる温度とファンのサンプルを待っています。",
@@ -798,6 +815,10 @@
       "resetZoom": "ズームをリセット",
       "zoomHint": "グラフ上をドラッグして時間範囲を選択",
       "zoomSelecting": "選択中 {{from}} - {{to}}",
+      "retention": {
+        "label": "保持時間",
+        "hours": "{{count}} 時間"
+      },
       "events": {
         "disconnect": "デバイス切断",
         "reconnect": "デバイス接続",
@@ -1087,6 +1108,14 @@
       "windowBlurTitle": "ぼかし効果",
       "windowBlurDescription": "Acrylic、Mica、Mica Alt、オフから選択できます。内蔵のライト/ダークテーマに合わせて表示され、カスタムテーマには影響しません。",
       "windowBlurTip": "この設定はアプリ再起動後に反映されます。",
+      "monitorOnlyTitle": "モニター専用モード",
+      "monitorOnlyDescription": "デバイスが長時間そばにない場合に有効にします。性能監視だけを残し、デバイス接続と制御を無効にします。",
+      "monitorOnlyTip": "変更時にフロントエンドとバックグラウンドサービスを再起動します。",
+      "monitorOnlyDialogTitle": "モニター専用モードを有効化",
+      "monitorOnlyDialogDescription": "フロントエンドを終了し、バックグラウンドサービスを再起動してから自動的に再開します。",
+      "monitorOnlyDialogWarning": "デバイスの検索、接続、制御を無効にし、CPU・GPU・温度・電力の監視だけを続けます。",
+      "monitorOnlyDialogCancel": "キャンセル",
+      "monitorOnlyDialogConfirm": "有効化",
       "languageTitle": "言語",
       "languageDescription": "アプリの表示言語を切り替え、選択した言語は自動で保存されます。",
       "hotkeys": {

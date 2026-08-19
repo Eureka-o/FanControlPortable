@@ -100,14 +100,16 @@ export interface AppConfig {
   activeFanCurveProfileId?: string;
   gearLight: boolean;          // 挡位灯
   powerOnStart: boolean;       // 通电自启动
-  windowsAutoStart: boolean;   // Windows开机自启动
+	windowsAutoStart: boolean;   // Windows开机自启动
+	monitorOnly?: boolean;        // 仅监控模式
   // 主题模式：system/light/dark 为内置基础主题；其它字符串为自定义主题 id（如 'fancontrol-classic'）
   themeMode?: string;
   windowBlur?: 'acrylic' | 'mica' | 'tabbed' | 'off';
   smartStartStop: string;      // 智能启停
   brightness: number;          // 亮度
   tempUpdateRate: number;      // 温度更新频率(秒)
-  tempSampleCount?: number;
+	  tempSampleCount?: number;
+	  temperatureHistoryRetentionHours?: number;
   tempSource?: 'max' | 'cpu' | 'gpu';
   cpuSensor?: string;
   gpuSensor?: string;

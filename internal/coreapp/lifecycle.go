@@ -88,6 +88,7 @@ func (a *CoreApp) Start() error {
 	}
 	a.syncManualGearLevelMemory(cfg)
 	a.configureDeviceManager(cfg)
+	a.refreshMonitorOnlyRuntime(cfg.MonitorOnly)
 	a.logInfo("配置加载完成，配置路径: %s", cfg.ConfigPath)
 
 	// 同步调试模式配置
@@ -99,13 +100,17 @@ func (a *CoreApp) Start() error {
 		a.logInfo("从配置文件同步调试模式: 启用")
 	}
 
-	// 初始化HID
-	a.logInfo("初始化HID库")
-	if err := a.deviceManager.Init(); err != nil {
-		a.logError("初始化HID库失败: %v", err)
-		return err
+	if a.monitorOnlyActive() {
+		a.logInfo("仅监控模式已启用，跳过HID库初始化")
+	} else {
+		// 初始化HID
+		a.logInfo("初始化HID库")
+		if err := a.deviceManager.Init(); err != nil {
+			a.logError("初始化HID库失败: %v", err)
+			return err
+		}
+		a.logInfo("HID库初始化成功")
 	}
-	a.logInfo("HID库初始化成功")
 
 	// 设置设备回调
 	a.deviceManager.SetCallbacks(a.onFanDataUpdate, a.onDeviceDisconnect)
@@ -117,7 +122,7 @@ func (a *CoreApp) Start() error {
 		a.logError("启动 IPC 服务器失败: %v", err)
 		return err
 	}
-	if !a.legionFnQSupportChecked.Load() {
+	if !a.monitorOnlyActive() && !a.legionFnQSupportChecked.Load() {
 		a.startLegionFnQSupportDetection()
 	}
 
@@ -125,7 +130,9 @@ func (a *CoreApp) Start() error {
 	a.logInfo("开始初始化系统托盘")
 	a.initSystemTray()
 	a.applyHotkeyBindings(cfg)
-	a.applyPluginConfig(cfg)
+	if !a.monitorOnlyActive() {
+		a.applyPluginConfig(cfg)
+	}
 
 	// 注册系统睡眠/唤醒通知：睡眠前主动断开设备/桥接，唤醒后恢复，避免唤醒崩溃。
 	if stop, err := powernotify.RegisterSuspendResumeNotifications(a.onSystemSuspend, a.onSystemResume); err != nil {
@@ -134,29 +141,31 @@ func (a *CoreApp) Start() error {
 		a.powerNotifyStop = stop
 		a.logInfo("已注册系统睡眠/唤醒通知")
 	}
-	if stop, err := powernotify.RegisterHIDInterfaceArrivalNotifications(
-		types.FlyDigiHIDVendorID,
-		[]uint16{
-			types.FlyDigiBS2ProductID,
-			types.FlyDigiBS2PROProductID,
-			types.FlyDigiBS3ProductID,
-			types.FlyDigiBS3PROProductID,
-		},
-		a.onSupportedHIDArrival,
-	); err != nil {
-		a.logDebug("注册飞智 HID 到达通知失败，将继续使用分阶段重连: %v", err)
-	} else {
-		a.hidNotifyStop = stop
-		a.logInfo("已注册飞智 HID 接口到达通知")
-	}
-	if stop, err := powernotify.RegisterBluetoothLEInterfaceArrivalNotifications(a.onSupportedBLEArrival); err != nil {
-		a.logDebug("Bluetooth LE interface arrival notifications unavailable; using reconnect backoff: %v", err)
-	} else {
-		a.bleNotifyStop = stop
-		a.logInfo("Bluetooth LE interface arrival notifications registered")
+	if !a.monitorOnlyActive() {
+		if stop, err := powernotify.RegisterHIDInterfaceArrivalNotifications(
+			types.FlyDigiHIDVendorID,
+			[]uint16{
+				types.FlyDigiBS2ProductID,
+				types.FlyDigiBS2PROProductID,
+				types.FlyDigiBS3ProductID,
+				types.FlyDigiBS3PROProductID,
+			},
+			a.onSupportedHIDArrival,
+		); err != nil {
+			a.logDebug("注册飞智 HID 到达通知失败，将继续使用分阶段重连: %v", err)
+		} else {
+			a.hidNotifyStop = stop
+			a.logInfo("已注册飞智 HID 接口到达通知")
+		}
+		if stop, err := powernotify.RegisterBluetoothLEInterfaceArrivalNotifications(a.onSupportedBLEArrival); err != nil {
+			a.logDebug("Bluetooth LE interface arrival notifications unavailable; using reconnect backoff: %v", err)
+		} else {
+			a.bleNotifyStop = stop
+			a.logInfo("Bluetooth LE interface arrival notifications registered")
+		}
 	}
 
-	// 健康循环还负责断线重连、挂起恢复和监控自愈，不能跟随 GUI 监控关闭。
+	// 健康循环还负责温度监控自愈；仅监控模式下设备健康检查会直接返回。
 	a.logInfo("启动健康监控")
 	a.safeGo("startHealthMonitoring", func() {
 		a.startHealthMonitoring()
@@ -170,7 +179,11 @@ func (a *CoreApp) Start() error {
 	})
 
 	// 启动连接与健康检查共用可取消的 generation 重连链路。
-	a.requestStartupReconnect()
+	if a.monitorOnlyActive() {
+		a.logInfo("仅监控模式已启用，跳过启动设备搜索")
+	} else {
+		a.requestStartupReconnect()
+	}
 
 	return nil
 }
@@ -336,6 +349,7 @@ func (a *CoreApp) initSystemTray() {
 
 			return tray.Status{
 				Connected:            a.isConnected,
+				MonitorOnly:          a.monitorOnlyActive(),
 				DeviceName:           deviceName,
 				CPUTemp:              a.currentTemp.CPUTemp,
 				GPUTemp:              a.currentTemp.GPUTemp,

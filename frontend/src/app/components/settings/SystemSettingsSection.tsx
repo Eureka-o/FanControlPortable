@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Clock3, Languages, Monitor, Sparkles } from 'lucide-react';
+import { Activity, AlertTriangle, Clock3, Languages, Monitor, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { toast } from 'sonner';
@@ -9,7 +9,7 @@ import { types } from '../../../../wailsjs/go/models';
 import { type ThemeMeta } from '../../types/app';
 import { type AppLocale, useLocale } from '../../lib/i18n';
 import { apiService } from '../../services/api';
-import { Button, Select, ToggleSwitch } from '../ui';
+import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Select, ToggleSwitch } from '../ui';
 import HotkeySettingsSection from './HotkeySettingsSection';
 import { Section, SettingRow } from './SettingLayout';
 
@@ -43,6 +43,7 @@ export default function SystemSettingsSection({
   const { locale, setLocale } = useLocale();
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
   const [customThemes, setCustomThemes] = useState<ThemeMeta[]>([]);
+  const [monitorOnlyDialogOpen, setMonitorOnlyDialogOpen] = useState(false);
 
   const setLoading = (key: string, value: boolean) => setLoadingStates((prev) => ({ ...prev, [key]: value }));
   const reportSettingsError = useCallback((error: unknown) => {
@@ -177,7 +178,35 @@ export default function SystemSettingsSection({
     }
   }, [config, onConfigChange, reportSettingsError]);
 
+  const applyMonitorOnlyChange = useCallback(async (enabled: boolean) => {
+    setLoading('monitorOnly', true);
+    const nextConfig = types.AppConfig.createFrom({ ...config, monitorOnly: enabled });
+    try {
+      await apiService.updateConfig(nextConfig);
+      onConfigChange(nextConfig);
+      await apiService.restartCore(false);
+    } catch (error) {
+      reportSettingsError(error);
+    } finally {
+      setLoading('monitorOnly', false);
+    }
+  }, [config, onConfigChange, reportSettingsError]);
+
+  const handleMonitorOnlyChange = useCallback((enabled: boolean) => {
+    if (enabled) {
+      setMonitorOnlyDialogOpen(true);
+      return;
+    }
+    void applyMonitorOnlyChange(false);
+  }, [applyMonitorOnlyChange]);
+
+  const confirmMonitorOnlyChange = useCallback(() => {
+    setMonitorOnlyDialogOpen(false);
+    void applyMonitorOnlyChange(true);
+  }, [applyMonitorOnlyChange]);
+
   return (
+    <>
     <Section title={t('controlPanel.system.sectionTitle')} icon={Monitor}>
       <SettingRow
         icon={<Monitor className="h-4 w-4" />}
@@ -235,6 +264,21 @@ export default function SystemSettingsSection({
         </div>
       </SettingRow>
 
+      <SettingRow
+        icon={<Activity className={clsx('h-4 w-4', config.monitorOnly ? 'text-emerald-500' : '')} />}
+        title={t('controlPanel.system.monitorOnlyTitle')}
+        description={t('controlPanel.system.monitorOnlyDescription')}
+        tip={t('controlPanel.system.monitorOnlyTip')}
+      >
+        <ToggleSwitch
+          enabled={config.monitorOnly === true}
+          onChange={handleMonitorOnlyChange}
+          loading={loadingStates.monitorOnly}
+          size="sm"
+          color="green"
+        />
+      </SettingRow>
+
       <HotkeySettingsSection config={config} onConfigChange={onConfigChange} />
 
       <SettingRow
@@ -266,5 +310,28 @@ export default function SystemSettingsSection({
         />
       </SettingRow>
     </Section>
+    <Dialog open={monitorOnlyDialogOpen} onOpenChange={(open) => !loadingStates.monitorOnly && setMonitorOnlyDialogOpen(open)}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-amber-600" />
+            {t('controlPanel.system.monitorOnlyDialogTitle')}
+          </DialogTitle>
+          <DialogDescription>{t('controlPanel.system.monitorOnlyDialogDescription')}</DialogDescription>
+        </DialogHeader>
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-sm leading-relaxed text-amber-800 dark:text-amber-200">
+          {t('controlPanel.system.monitorOnlyDialogWarning')}
+        </div>
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => setMonitorOnlyDialogOpen(false)} disabled={loadingStates.monitorOnly}>
+            {t('controlPanel.system.monitorOnlyDialogCancel')}
+          </Button>
+          <Button onClick={confirmMonitorOnlyChange} loading={loadingStates.monitorOnly}>
+            {t('controlPanel.system.monitorOnlyDialogConfirm')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

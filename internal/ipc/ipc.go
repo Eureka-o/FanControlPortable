@@ -13,9 +13,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Microsoft/go-winio"
 	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
 	"github.com/Eureka-o/FanControlPortable/internal/types"
+	"github.com/Microsoft/go-winio"
 )
 
 // currentProtocolVersion 是当前 IPC 协议版本,统一引用 appmeta 以避免版本号漂移。
@@ -88,14 +88,15 @@ const (
 	ReqSaveAxisNoiseProfile              RequestType = "SaveAxisNoiseProfile"
 
 	// 温度相关
-	ReqGetTemperature               RequestType = "GetTemperature"
-	ReqGetTemperatureHistory        RequestType = "GetTemperatureHistory"
-	ReqSetTemperatureHistoryEnabled RequestType = "SetTemperatureHistoryEnabled"
-	ReqTestTemperatureReading       RequestType = "TestTemperatureReading"
-	ReqTestBridgeProgram            RequestType = "TestBridgeProgram"
-	ReqGetBridgeProgramStatus       RequestType = "GetBridgeProgramStatus"
-	ReqRestartPawnIO                RequestType = "RestartPawnIO"
-	ReqReinstallPawnIO              RequestType = "ReinstallPawnIO"
+	ReqGetTemperature                      RequestType = "GetTemperature"
+	ReqGetTemperatureHistory               RequestType = "GetTemperatureHistory"
+	ReqSetTemperatureHistoryEnabled        RequestType = "SetTemperatureHistoryEnabled"
+	ReqSetTemperatureHistoryRetentionHours RequestType = "SetTemperatureHistoryRetentionHours"
+	ReqTestTemperatureReading              RequestType = "TestTemperatureReading"
+	ReqTestBridgeProgram                   RequestType = "TestBridgeProgram"
+	ReqGetBridgeProgramStatus              RequestType = "GetBridgeProgramStatus"
+	ReqRestartPawnIO                       RequestType = "RestartPawnIO"
+	ReqReinstallPawnIO                     RequestType = "ReinstallPawnIO"
 
 	// 自启动相关
 	ReqSetWindowsAutoStart    RequestType = "SetWindowsAutoStart"
@@ -105,9 +106,10 @@ const (
 	ReqSetAutoStartWithMethod RequestType = "SetAutoStartWithMethod"
 
 	// 窗口相关
-	ReqShowWindow RequestType = "ShowWindow"
-	ReqHideWindow RequestType = "HideWindow"
-	ReqQuitApp    RequestType = "QuitApp"
+	ReqShowWindow  RequestType = "ShowWindow"
+	ReqHideWindow  RequestType = "HideWindow"
+	ReqQuitApp     RequestType = "QuitApp"
+	ReqRestartCore RequestType = "RestartCore"
 
 	// 调试相关
 	ReqGetDebugInfo           RequestType = "GetDebugInfo"
@@ -904,6 +906,11 @@ func GetCoreLockFilePath() string {
 // StartCoreRequestParams 启动核心服务的请求参数
 type StartCoreRequestParams struct {
 	ShowGUI bool `json:"showGUI"`
+}
+
+// RestartCoreParams controls the core-only restart used by monitor-only mode.
+type RestartCoreParams struct {
+	MonitorOnlySession bool `json:"monitorOnlySession"`
 }
 
 // SetAutoControlParams 设置智能变频参数

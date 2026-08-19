@@ -222,6 +222,10 @@ export function ResetLearnedOffsets() {
   return window['go']['main']['App']['ResetLearnedOffsets']();
 }
 
+export function RestartCore(arg1) {
+  return window['go']['main']['App']['RestartCore'](arg1);
+}
+
 export function RestartPawnIO() {
   return window['go']['main']['App']['RestartPawnIO']();
 }
@@ -320,6 +324,10 @@ export function SetSmartStartStop(arg1) {
 
 export function SetTemperatureHistoryEnabled(arg1) {
   return window['go']['main']['App']['SetTemperatureHistoryEnabled'](arg1);
+}
+
+export function SetTemperatureHistoryRetentionHours(arg1) {
+  return window['go']['main']['App']['SetTemperatureHistoryRetentionHours'](arg1);
 }
 
 export function SetWiFiSmartStartStopStandbySpeed(arg1) {

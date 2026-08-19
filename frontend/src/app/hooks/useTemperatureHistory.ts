@@ -9,10 +9,12 @@ export function useTemperatureHistory() {
   const sessionHistoryPoints = useAppStore((state) => state.sessionHistoryPoints);
   const coreHistoryPoints = useAppStore((state) => state.temperatureHistoryPoints);
   const enabled = useAppStore((state) => state.temperatureHistoryEnabled);
+  const retentionHours = useAppStore((state) => state.temperatureHistoryRetentionHours);
   const loading = useAppStore((state) => state.temperatureHistoryLoading);
   const saving = useAppStore((state) => state.temperatureHistorySaving);
   const loadTemperatureHistory = useAppStore((state) => state.loadTemperatureHistory);
   const setEnabled = useAppStore((state) => state.setTemperatureHistoryEnabled);
+  const setRetentionHours = useAppStore((state) => state.setTemperatureHistoryRetentionHours);
   const config = useAppStore((state) => state.config);
   const points = enabled ? coreHistoryPoints : sessionHistoryPoints;
   const displayPoints = useMemo(
@@ -23,9 +25,11 @@ export function useTemperatureHistory() {
   return {
     points: displayPoints,
     enabled,
+    retentionHours,
     loading,
     saving,
     setEnabled,
+    setRetentionHours,
     source: enabled ? 'core' as const : 'session' as const,
     reload: () => loadTemperatureHistory(true),
   };

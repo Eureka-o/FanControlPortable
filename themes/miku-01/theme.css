@@ -195,7 +195,7 @@ html[data-theme="miku-01"] .glacier-sidebar::after {
   writing-mode: vertical-rl;
 }
 
-html[data-theme="miku-01"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] {
+html[data-theme="miku-01"] .glacier-shell [data-theme-ui="hero-brand-mark"] {
   border-width: 1px !important;
   border-color: color-mix(in srgb, var(--primary) 38%, white) !important;
   border-radius: 1.25rem !important;
@@ -211,7 +211,7 @@ html[data-theme="miku-01"] .glacier-shell[data-theme-page="status"] [data-theme-
   transform: rotate(-1deg);
 }
 
-html[data-theme="miku-01"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] svg,
+html[data-theme="miku-01"] .glacier-shell [data-theme-ui="hero-brand-mark"] svg,
 html[data-theme="miku-01"] .glacier-sidebar button svg {
   stroke-width: 2.45;
 }
@@ -813,7 +813,7 @@ html[data-theme="miku-01"] .glacier-shell .glacier-metric-card::after {
   display: none !important;
 }
 
-html[data-theme="miku-01"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] {
+html[data-theme="miku-01"] .glacier-shell [data-theme-ui="hero-brand-mark"] {
   background:
     radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.84), transparent 1.1rem),
     linear-gradient(145deg, rgba(255, 254, 250, 0.99), rgba(231, 247, 251, 0.92)) !important;
@@ -1441,9 +1441,9 @@ html[data-theme="miku-01"] {
     radial-gradient(ellipse at 16% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 40%),
     linear-gradient(
       135deg,
-      color-mix(in srgb, var(--card) 58%, transparent),
-      color-mix(in srgb, var(--card) 42%, transparent) 58%,
-      color-mix(in srgb, var(--secondary) 36%, transparent)
+      color-mix(in srgb, var(--card) 50%, transparent),
+      color-mix(in srgb, var(--card) 34%, transparent) 58%,
+      color-mix(in srgb, var(--secondary) 28%, transparent)
     );
   --miku-01-surface-border: color-mix(in srgb, var(--primary) 22%, rgba(38, 52, 56, 0.16));
   --miku-01-surface-border-hover: color-mix(in srgb, var(--primary) 38%, rgba(219, 95, 145, 0.3));
@@ -1608,7 +1608,7 @@ html[data-theme="miku-01"] .glacier-stat-tile::before {
   animation: none !important;
 }
 
-html[data-theme="miku-01"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] {
+html[data-theme="miku-01"] .glacier-shell [data-theme-ui="hero-brand-mark"] {
   transform: none !important;
   background-color: var(--miku-01-tile-background) !important;
   background-image: var(--miku-01-tile-image) !important;
@@ -1753,15 +1753,15 @@ html[data-theme="miku-01"] .glacier-shell[data-theme-page="status"] :is(
   opacity: 0.32;
 }
 
-html[data-theme="miku-01"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] {
+html[data-theme="miku-01"] .glacier-shell [data-theme-ui="hero-brand-mark"] {
   position: relative;
 }
 
-html[data-theme="miku-01"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] > svg {
+html[data-theme="miku-01"] .glacier-shell [data-theme-ui="hero-brand-mark"] > svg {
   opacity: 0 !important;
 }
 
-html[data-theme="miku-01"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"]::after {
+html[data-theme="miku-01"] .glacier-shell [data-theme-ui="hero-brand-mark"]::after {
   content: "";
   position: absolute;
   width: 1.18rem;
@@ -2300,7 +2300,7 @@ html[data-theme="miku-01"] .glacier-stat-tile::before {
   animation: none !important;
 }
 
-html[data-theme="miku-01"] .glacier-shell[data-theme-page="status"] [data-theme-ui="hero-brand-mark"] {
+html[data-theme="miku-01"] .glacier-shell [data-theme-ui="hero-brand-mark"] {
   transform: none !important;
   background-color: var(--miku-01-tile-background) !important;
   background-image: var(--miku-01-tile-image) !important;

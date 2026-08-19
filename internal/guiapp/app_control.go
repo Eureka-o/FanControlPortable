@@ -65,6 +65,25 @@ func (a *App) UpdateGuiResponseTime() error {
 	return err
 }
 
+// RestartCore restarts the core and GUI together, optionally carrying a temporary monitor-only mode.
+func (a *App) RestartCore(monitorOnlySession bool) error {
+	SetMonitorOnlySession(monitorOnlySession)
+	resp, err := a.sendRequest(ipc.ReqRestartCore, ipc.RestartCoreParams{MonitorOnlySession: monitorOnlySession})
+	if err != nil {
+		SetMonitorOnlySession(false)
+		return err
+	}
+	if !resp.Success {
+		SetMonitorOnlySession(false)
+		return fmt.Errorf("%s", resp.Error)
+	}
+	if err := ScheduleGUIRestart(monitorOnlySession); err != nil {
+		SetMonitorOnlySession(false)
+		return err
+	}
+	return nil
+}
+
 // GetDebugInfo 获取调试信息
 func (a *App) GetDebugInfo() map[string]any {
 	resp, err := a.sendRequest(ipc.ReqGetDebugInfo, nil)
