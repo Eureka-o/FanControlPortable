@@ -66,6 +66,20 @@ func (f deviceConnectionFlow) connectBestScannedDevice() bool {
 	cfg := f.app.configManager.Get()
 	selectionCfg := cfg
 	types.NormalizeDeviceProfileConfig(&cfg)
+	prioritizeWiFi := shouldPrioritizeWiFiConnection(cfg)
+	if prioritizeWiFi {
+		wifiScan := f.app.scanWiFiDevicesForConfig(cfg, types.WiFiDiscoveryModeNormal)
+		if len(wifiScan.Devices) > 1 {
+			f.broadcastError(fmt.Sprintf("发现多个 WiFi 设备（%d 个），请到设置页选择", len(wifiScan.Devices)))
+			return false
+		}
+		if len(wifiScan.Devices) == 1 {
+			candidate := wifiDeviceCandidate(wifiScan.Devices[0], activeWiFiProfile(cfg))
+			if candidate.ID != "" {
+				return f.connectScannedCandidate(candidate)
+			}
+		}
+	}
 	for _, transport := range []string{types.DeviceTransportBLE, types.DeviceTransportHID} {
 		devices := f.app.deviceManager.ScanNativeDevicesProfilesByTransport(cfg.DeviceProfiles, transport)
 		if len(devices) > 0 {
@@ -81,16 +95,27 @@ func (f deviceConnectionFlow) connectBestScannedDevice() bool {
 		}
 	}
 
-	scan := f.app.scanDeviceCandidates(types.DeviceScanModeNormal, false)
-	if len(scan.Devices) == 0 {
+	var devices []types.DeviceCandidate
+	if prioritizeWiFi {
+		if cfg.SerialCompatibilityEnabled {
+			devices = serialDeviceCandidates(cfg, availableSerialPortNames())
+		}
+	} else {
+		devices = f.app.scanDeviceCandidates(types.DeviceScanModeNormal, false).Devices
+	}
+	if len(devices) == 0 {
 		f.broadcastError("未发现可连接的设备")
 		return false
 	}
-	if len(scan.Devices) > 1 {
-		f.broadcastError(fmt.Sprintf("发现多个设备（%d 个），请到设置页选择", len(scan.Devices)))
+	if len(devices) > 1 {
+		f.broadcastError(fmt.Sprintf("发现多个设备（%d 个），请到设置页选择", len(devices)))
 		return false
 	}
-	return f.connectScannedCandidate(scan.Devices[0])
+	return f.connectScannedCandidate(devices[0])
+}
+
+func shouldPrioritizeWiFiConnection(cfg types.AppConfig) bool {
+	return cfg.WiFiCompatibilityEnabled && cfg.WiFiConnectionPriorityEnabled
 }
 
 func selectNativeAutoConnectCandidate(devices []map[string]string, cfg types.AppConfig, transport string) (map[string]string, bool) {

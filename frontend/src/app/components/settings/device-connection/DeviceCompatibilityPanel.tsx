@@ -14,6 +14,7 @@ interface DeviceCompatibilityPanelProps {
   compatibilityOpen: boolean;
   manualAddOpen: boolean;
   wifiCompatibilityEnabled: boolean;
+  wifiConnectionPriorityEnabled: boolean;
   wifiDynamicIPCompatibilityEnabled: boolean;
   serialCompatibilityEnabled: boolean;
   deviceIpInput: string;
@@ -21,6 +22,7 @@ interface DeviceCompatibilityPanelProps {
   onManualAddOpenChange: (next: boolean | ((value: boolean) => boolean)) => void;
   onDeviceIpInputChange: (value: string) => void;
   onWiFiCompatibilityChange: (enabled: boolean) => void;
+  onWiFiConnectionPriorityChange: (enabled: boolean) => void;
   onWiFiDynamicIPCompatibilityChange: (enabled: boolean) => void;
   onSerialCompatibilityChange: (enabled: boolean) => void;
   onManualAdd: () => void;
@@ -32,6 +34,7 @@ export function DeviceCompatibilityPanel({
   compatibilityOpen,
   manualAddOpen,
   wifiCompatibilityEnabled,
+  wifiConnectionPriorityEnabled,
   wifiDynamicIPCompatibilityEnabled,
   serialCompatibilityEnabled,
   deviceIpInput,
@@ -39,6 +42,7 @@ export function DeviceCompatibilityPanel({
   onManualAddOpenChange,
   onDeviceIpInputChange,
   onWiFiCompatibilityChange,
+  onWiFiConnectionPriorityChange,
   onWiFiDynamicIPCompatibilityChange,
   onSerialCompatibilityChange,
   onManualAdd,
@@ -86,6 +90,22 @@ export function DeviceCompatibilityPanel({
                         className="overflow-hidden"
                       >
                         <div data-theme-ui="compatibility-nested" className="mt-3 space-y-2">
+                          <div data-theme-ui="compatibility-nested-row" className="rounded-xl border border-border/55 bg-background/35 px-4 py-3">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                              <div className="min-w-0">
+                                <div className="text-sm font-medium text-foreground">{t('controlPanel.system.deviceConnection.wifiConnectionPriorityTitle')}</div>
+                                <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{t('controlPanel.system.deviceConnection.wifiConnectionPriorityDescription')}</div>
+                              </div>
+                              <ToggleSwitch
+                                enabled={wifiConnectionPriorityEnabled}
+                                onChange={(enabled) => void onWiFiConnectionPriorityChange(enabled)}
+                                loading={loadingKey === 'wifiConnectionPriority'}
+                                size="sm"
+                                color="green"
+                              />
+                            </div>
+                          </div>
+
                           <div data-theme-ui="compatibility-nested-row" className="rounded-xl border border-border/55 bg-background/35 px-4 py-3">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                               <div className="min-w-0">
