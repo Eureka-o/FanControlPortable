@@ -49,3 +49,15 @@ func TestSelectNativeAutoConnectCandidateUsesUniquePreferredProfile(t *testing.T
 		t.Fatalf("duplicate preferred profile should stay ambiguous: selected=%#v ok=%v", selected, ok)
 	}
 }
+
+func TestWiFiConnectionPriorityRequiresCompatibilityMode(t *testing.T) {
+	if shouldPrioritizeWiFiConnection(types.AppConfig{WiFiConnectionPriorityEnabled: true}) {
+		t.Fatal("WiFi priority should stay inactive while WiFi compatibility is disabled")
+	}
+	if !shouldPrioritizeWiFiConnection(types.AppConfig{
+		WiFiCompatibilityEnabled:      true,
+		WiFiConnectionPriorityEnabled: true,
+	}) {
+		t.Fatal("WiFi priority should activate when both settings are enabled")
+	}
+}

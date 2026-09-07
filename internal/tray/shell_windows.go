@@ -157,6 +157,8 @@ func waitForShellReady(done <-chan struct{}, timeout time.Duration) bool {
 func waitForTraySettle(done <-chan struct{}, settle, timeout time.Duration) {
 	deadline := time.Now().Add(timeout)
 	var stableSince time.Time
+	var stableTray uintptr
+	var stablePID uint32
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -165,8 +167,11 @@ func waitForTraySettle(done <-chan struct{}, settle, timeout time.Duration) {
 		case <-done:
 			return
 		case <-ticker.C:
-			if isShellReady() {
-				if stableSince.IsZero() {
+			currentTray, currentPID := trayNotifyState()
+			if currentTray != 0 {
+				if !sameTrayNotifyState(currentTray, currentPID, stableTray, stablePID) {
+					stableTray = currentTray
+					stablePID = currentPID
 					stableSince = time.Now()
 				}
 				if time.Since(stableSince) >= settle {
@@ -174,6 +179,8 @@ func waitForTraySettle(done <-chan struct{}, settle, timeout time.Duration) {
 				}
 			} else {
 				stableSince = time.Time{}
+				stableTray = 0
+				stablePID = 0
 			}
 			if time.Now().After(deadline) {
 				return
@@ -182,7 +189,11 @@ func waitForTraySettle(done <-chan struct{}, settle, timeout time.Duration) {
 	}
 }
 
-// postTaskbarCreated 重新广播 Windows 的 TaskbarCreated 消息。
+func sameTrayNotifyState(currentTray uintptr, currentPID uint32, stableTray uintptr, stablePID uint32) bool {
+	return currentTray != 0 && currentTray == stableTray && currentPID == stablePID
+}
+
+// postTaskbarCreated 向本进程托盘窗口补发 Windows 的 TaskbarCreated 消息。
 //
 // fyne/systray 内部已监听该消息并会执行 Shell_NotifyIcon(NIM_ADD)。Explorer 重启时
 // 系统广播可能早于 TrayNotifyWnd 稳定完成，导致首次 NIM_ADD 被静默丢弃；稳定后补发一次
@@ -196,7 +207,10 @@ func postTaskbarCreated() bool {
 	if msg == 0 {
 		return false
 	}
-	const hwndBroadcast = 0xffff
-	ret, _, _ := procPostMessageW.Call(hwndBroadcast, msg, 0, 0)
+	hwnd := findOwnSystrayWindow()
+	if hwnd == 0 {
+		return false
+	}
+	ret, _, _ := procPostMessageW.Call(hwnd, msg, 0, 0)
 	return ret != 0
 }

@@ -8,6 +8,7 @@ import { apiService, type DeviceCandidate, type DeviceScanResult } from '../../.
 import {
   isSerialCompatibilityEnabled,
   isWiFiCompatibilityEnabled,
+  isWiFiConnectionPriorityEnabled,
   isWiFiDynamicIPCompatibilityEnabled,
   profileLabel,
   activeProfileForTransport,
@@ -55,6 +56,7 @@ export default function DeviceConnectionPanel({
   const [compatibilityOpen, setCompatibilityOpen] = useState(false);
   const [manualAddOpen, setManualAddOpen] = useState(false);
   const [wifiCompatibilityEnabled, setWiFiCompatibilityEnabled] = useState(() => isWiFiCompatibilityEnabled(config));
+  const [wifiConnectionPriorityEnabled, setWiFiConnectionPriorityEnabled] = useState(() => isWiFiConnectionPriorityEnabled(config));
   const [wifiDynamicIPCompatibilityEnabled, setWiFiDynamicIPCompatibilityEnabled] = useState(() => isWiFiDynamicIPCompatibilityEnabled(config));
   const [serialCompatibilityEnabled, setSerialCompatibilityEnabled] = useState(() => isSerialCompatibilityEnabled(config));
 
@@ -98,6 +100,7 @@ export default function DeviceConnectionPanel({
 
   useEffect(() => {
     setWiFiCompatibilityEnabled(isWiFiCompatibilityEnabled(config));
+    setWiFiConnectionPriorityEnabled(isWiFiConnectionPriorityEnabled(config));
     setWiFiDynamicIPCompatibilityEnabled(isWiFiDynamicIPCompatibilityEnabled(config));
     setSerialCompatibilityEnabled(isSerialCompatibilityEnabled(config));
     setDeviceIpInput(wifiEndpoint || (((config as any).fanControlDeviceIp || '') as string));
@@ -212,6 +215,24 @@ export default function DeviceConnectionPanel({
     }
   }, [t, updateCompatibilityConfig]);
 
+  const handleWiFiConnectionPriorityChange = useCallback(async (enabled: boolean) => {
+    setWiFiConnectionPriorityEnabled(enabled);
+    setLoadingKey('wifiConnectionPriority');
+    try {
+      await updateCompatibilityConfig(
+        { wifiConnectionPriorityEnabled: enabled },
+        enabled
+          ? 'controlPanel.system.deviceConnection.toasts.wifiPriorityEnabled'
+          : 'controlPanel.system.deviceConnection.toasts.wifiPriorityDisabled',
+      );
+    } catch (error) {
+      setWiFiConnectionPriorityEnabled(!enabled);
+      toast.error(t('controlPanel.system.deviceConnection.toasts.transportFailed', { error: getErrorMessage(error) }));
+    } finally {
+      setLoadingKey('');
+    }
+  }, [t, updateCompatibilityConfig]);
+
   const handleManualAdd = useCallback(async () => {
     const endpoint = deviceIpInput.trim();
     if (!endpoint) {
@@ -269,6 +290,7 @@ export default function DeviceConnectionPanel({
         compatibilityOpen={compatibilityOpen}
         manualAddOpen={manualAddOpen}
         wifiCompatibilityEnabled={wifiCompatibilityEnabled}
+        wifiConnectionPriorityEnabled={wifiConnectionPriorityEnabled}
         wifiDynamicIPCompatibilityEnabled={wifiDynamicIPCompatibilityEnabled}
         serialCompatibilityEnabled={serialCompatibilityEnabled}
         deviceIpInput={deviceIpInput}
@@ -276,6 +298,7 @@ export default function DeviceConnectionPanel({
         onManualAddOpenChange={setManualAddOpen}
         onDeviceIpInputChange={setDeviceIpInput}
         onWiFiCompatibilityChange={handleWiFiCompatibilityChange}
+        onWiFiConnectionPriorityChange={handleWiFiConnectionPriorityChange}
         onWiFiDynamicIPCompatibilityChange={handleWiFiDynamicIPCompatibilityChange}
         onSerialCompatibilityChange={handleSerialCompatibilityChange}
         onManualAdd={handleManualAdd}

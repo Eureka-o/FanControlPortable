@@ -620,6 +620,7 @@ type AppConfig struct {
 	DeviceTransport                   string                                 `json:"deviceTransport"`          // 设备连接方式
 	FanControlDeviceIp                string                                 `json:"fanControlDeviceIp"`       // WiFi 控制器地址
 	WiFiCompatibilityEnabled          bool                                   `json:"wifiCompatibilityEnabled"` // WiFi 兼容模式
+	WiFiConnectionPriorityEnabled     bool                                   `json:"wifiConnectionPriorityEnabled"`
 	WiFiDynamicIPCompatibilityEnabled bool                                   `json:"wifiDynamicIpCompatibilityEnabled"`
 	WiFiSmartStartStopEnabled         bool                                   `json:"wifiSmartStartStopEnabled"`
 	WiFiSmartStartStopStandbySpeed    int                                    `json:"wifiSmartStartStopStandbySpeed"`
@@ -1111,6 +1112,7 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		DeviceTransport:                   "",
 		FanControlDeviceIp:                DefaultFanDeviceIP,
 		WiFiCompatibilityEnabled:          false,
+		WiFiConnectionPriorityEnabled:     false,
 		WiFiDynamicIPCompatibilityEnabled: true,
 		WiFiSmartStartStopEnabled:         false,
 		WiFiSmartStartStopStandbySpeed:    WiFiSmartStartStopStandbyMinPercent,

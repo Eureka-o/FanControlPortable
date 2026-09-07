@@ -79,6 +79,10 @@ export function isWiFiDynamicIPCompatibilityEnabled(config: types.AppConfig) {
   return Boolean((config as any).wifiDynamicIpCompatibilityEnabled);
 }
 
+export function isWiFiConnectionPriorityEnabled(config: types.AppConfig) {
+  return Boolean((config as any).wifiConnectionPriorityEnabled);
+}
+
 export function normalizeWiFiSmartStartStopStandbySpeed(value: unknown) {
   const numeric = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(numeric)) return 1;
