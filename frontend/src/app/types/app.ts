@@ -91,6 +91,7 @@ export interface AppConfig {
   legionFnQSupport?: LegionFnQSupportCache;
   deviceTransport?: string;
   fanControlDeviceIp?: string;
+  wifiConnectionPriorityEnabled?: boolean;
   wifiSmartStartStopEnabled?: boolean;
   wifiSmartStartStopStandbySpeed?: number;
   autoControl: boolean;         // 智能变频开关

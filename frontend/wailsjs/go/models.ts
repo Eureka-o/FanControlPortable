@@ -735,6 +735,7 @@ export namespace types {
 	    deviceTransport: string;
 	    fanControlDeviceIp: string;
 	    wifiCompatibilityEnabled: boolean;
+	    wifiConnectionPriorityEnabled: boolean;
 	    wifiDynamicIpCompatibilityEnabled: boolean;
 	    wifiSmartStartStopEnabled: boolean;
 	    wifiSmartStartStopStandbySpeed: number;
@@ -802,6 +803,7 @@ export namespace types {
 	        this.deviceTransport = source["deviceTransport"];
 	        this.fanControlDeviceIp = source["fanControlDeviceIp"];
 	        this.wifiCompatibilityEnabled = source["wifiCompatibilityEnabled"];
+	        this.wifiConnectionPriorityEnabled = source["wifiConnectionPriorityEnabled"];
 	        this.wifiDynamicIpCompatibilityEnabled = source["wifiDynamicIpCompatibilityEnabled"];
 	        this.wifiSmartStartStopEnabled = source["wifiSmartStartStopEnabled"];
 	        this.wifiSmartStartStopStandbySpeed = source["wifiSmartStartStopStandbySpeed"];

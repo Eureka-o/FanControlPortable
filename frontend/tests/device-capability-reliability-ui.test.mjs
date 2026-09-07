@@ -32,6 +32,8 @@ test('gives compatibility rows more room without changing their controls', () =>
   assert.match(compatibility, /className="space-y-3 pt-4"/);
   assert.match(compatibility, /data-theme-ui="compatibility-divider"/);
   assert.match(compatibility, /onWiFiCompatibilityChange/);
+  assert.match(compatibility, /wifiConnectionPriorityEnabled/);
+  assert.match(compatibility, /onWiFiConnectionPriorityChange/);
   assert.match(compatibility, /onSerialCompatibilityChange/);
 });
 
