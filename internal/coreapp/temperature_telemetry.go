@@ -97,7 +97,7 @@ func mergeTemperatureHardwareMetadata(previous, incoming types.TemperatureData) 
 	if incoming.GpuPowerSensors == nil || (incoming.GPUReadState == types.GPUReadStateNotPolled && len(incoming.GpuPowerSensors) == 0) {
 		incoming.GpuPowerSensors = previous.GpuPowerSensors
 	}
-	if incoming.GpuDevices == nil || (incoming.GPUReadState == types.GPUReadStateNotPolled && len(incoming.GpuDevices) == 0) {
+	if incoming.GpuDevices == nil || len(incoming.GpuDevices) == 0 {
 		incoming.GpuDevices = previous.GpuDevices
 	}
 	return incoming

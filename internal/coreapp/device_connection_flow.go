@@ -48,6 +48,7 @@ func (f deviceConnectionFlow) setRuntimeDisconnected(reason string) bool {
 	f.app.isConnected = false
 	f.app.deviceSettings = nil
 	f.app.lastSuccessfulDeviceReadAt = time.Time{}
+	f.app.lastPublishedFanData = nil
 	f.app.mutex.Unlock()
 	f.app.connectionFlights.record(connectionFlightEvent{Stage: connectionFlightStageDisconnected, Reason: reason})
 	return wasConnected

@@ -51,7 +51,7 @@ func (a *App) Startup(ctx context.Context) {
 	}
 
 	guiLogger.Info("已连接到核心服务")
-	if resp, pingErr := a.ipcClient.SendRequest(ipc.ReqPing, nil); pingErr != nil || resp == nil || !resp.Success {
+	if resp, pingErr := a.sendRequestWithTimeout(ipc.ReqPing, nil, 3*time.Second); pingErr != nil || resp == nil || !resp.Success {
 		if pingErr != nil {
 			guiLogger.Errorf("核心服务 Ping 失败: %v", pingErr)
 			a.emitCoreServiceError(pingErr.Error())
@@ -59,7 +59,6 @@ func (a *App) Startup(ctx context.Context) {
 			guiLogger.Errorf("核心服务 Ping 返回异常: %+v", resp)
 			a.emitCoreServiceError("核心服务 Ping 返回异常")
 		}
-		a.ipcClient.Close()
 	} else {
 		a.emitCoreServiceOK()
 	}

@@ -43,47 +43,49 @@ type CoreApp struct {
 	wifiScanControl  *types.WiFiDiscoveryControl
 	wifiScanRunning  atomic.Bool
 
-	isConnected                   bool
-	monitoringTemp                atomic.Bool
-	monitoringMutex               sync.Mutex
-	monitoringCancel              context.CancelFunc
-	monitoringDone                chan struct{}
-	monitoringStopping            bool
-	stopping                      atomic.Bool
-	currentTemp                   types.TemperatureData
-	deviceSettings                *types.DeviceSettings
-	lastSuccessfulDeviceReadAt    time.Time
-	lastDeviceMode                string
-	userSetAutoControl            bool
-	isAutoStartLaunch             bool
-	debugMode                     bool
-	monitorOnly                   atomic.Bool
-	sessionMonitorOnly            atomic.Bool
-	legionFnQSupported            atomic.Bool
-	legionFnQSupportChecked       atomic.Bool
-	legionFnQRegistered           atomic.Bool
-	reconnectInProgress           atomic.Bool
-	connectionPhase               atomic.Int32
-	connectMutex                  sync.Mutex
-	reconnectMutex                sync.Mutex
-	reconnectCancel               context.CancelFunc
-	reconnectWake                 chan struct{}
-	reconnectGeneration           uint64
-	autoReconnectSuppressed       atomic.Bool
-	hasSuccessfulConnection       atomic.Bool
-	lastConnectionWasNative       atomic.Bool
-	resumeRecoveryRunning         atomic.Bool
-	systemSuspended               atomic.Bool
-	resumeReconnectWanted         atomic.Bool
-	suspendGeneration             atomic.Uint64
-	wifiStandbyApplied            atomic.Bool
-	forceNextAutoTarget           atomic.Bool
-	lastResumeRecoveryUnix        int64
-	lastHealthReconnectUnix       int64
-	healthConsecutiveFailureCount int32
-	connectionFlights             *connectionFlightRecorder
-	smartControlDecisionMu        sync.RWMutex
-	smartControlDecision          smartcontrol.Decision
+	isConnected                      bool
+	monitoringTemp                   atomic.Bool
+	monitoringMutex                  sync.Mutex
+	monitoringCancel                 context.CancelFunc
+	monitoringDone                   chan struct{}
+	monitoringStopping               bool
+	stopping                         atomic.Bool
+	currentTemp                      types.TemperatureData
+	deviceSettings                   *types.DeviceSettings
+	lastSuccessfulDeviceReadAt       time.Time
+	lastDeviceMode                   string
+	lastPublishedFanData             *types.FanData
+	userSetAutoControl               bool
+	isAutoStartLaunch                bool
+	debugMode                        bool
+	monitorOnly                      atomic.Bool
+	sessionMonitorOnly               atomic.Bool
+	legionFnQSupported               atomic.Bool
+	legionFnQSupportChecked          atomic.Bool
+	legionFnQRegistered              atomic.Bool
+	reconnectInProgress              atomic.Bool
+	connectionPhase                  atomic.Int32
+	connectMutex                     sync.Mutex
+	reconnectMutex                   sync.Mutex
+	reconnectCancel                  context.CancelFunc
+	reconnectWake                    chan struct{}
+	reconnectGeneration              uint64
+	autoReconnectSuppressed          atomic.Bool
+	hasSuccessfulConnection          atomic.Bool
+	lastConnectionWasNative          atomic.Bool
+	resumeRecoveryRunning            atomic.Bool
+	temperatureBridgeRecoveryRunning atomic.Bool
+	systemSuspended                  atomic.Bool
+	resumeReconnectWanted            atomic.Bool
+	suspendGeneration                atomic.Uint64
+	wifiStandbyApplied               atomic.Bool
+	forceNextAutoTarget              atomic.Bool
+	lastResumeRecoveryUnix           int64
+	lastHealthReconnectUnix          int64
+	healthConsecutiveFailureCount    int32
+	connectionFlights                *connectionFlightRecorder
+	smartControlDecisionMu           sync.RWMutex
+	smartControlDecision             smartcontrol.Decision
 
 	powerNotifyStop func()
 	hidNotifyStop   func()

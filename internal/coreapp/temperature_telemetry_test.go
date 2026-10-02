@@ -67,3 +67,22 @@ func TestMergeTemperatureHardwareMetadataKeepsCPUSelectionsDuringTransientEmptyR
 		t.Fatalf("CPU power sensor metadata was not preserved: %#v", merged.CpuPowerSensors)
 	}
 }
+
+func TestMergeTemperatureHardwareMetadataKeepsGPUDevicesDuringTransientEmptyRead(t *testing.T) {
+	previous := types.TemperatureData{
+		GpuDevices: []types.TemperatureGPUDevice{{
+			Key:    "gpu/discrete",
+			Name:   "Discrete GPU",
+			Vendor: "nvidia",
+		}},
+	}
+
+	merged := mergeTemperatureHardwareMetadata(previous, types.TemperatureData{
+		GPUReadState: types.GPUReadStateActive,
+		GpuDevices:   []types.TemperatureGPUDevice{},
+	})
+
+	if len(merged.GpuDevices) != 1 || merged.GpuDevices[0].Key != "gpu/discrete" {
+		t.Fatalf("gpu devices = %#v, want previous gpu device metadata", merged.GpuDevices)
+	}
+}

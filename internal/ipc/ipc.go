@@ -196,6 +196,9 @@ type clientState struct {
 	sem       chan struct{}
 	closeOnce sync.Once
 	closed    chan struct{}
+	// interactive marks a client that has issued a non-probe request. Short
+	// named-pipe probes must not be mistaken for a live GUI client.
+	interactive atomic.Bool
 }
 
 const (
@@ -410,6 +413,9 @@ func (s *Server) handleClient(conn net.Conn, state *clientState) {
 		if req.Timestamp == 0 {
 			req.Timestamp = time.Now().UnixMilli()
 		}
+		if req.Type != ReqPing {
+			state.interactive.Store(true)
+		}
 		s.logDebug("IPC 请求[%s]: %s", req.RequestID, req.Type)
 		select {
 		case state.sem <- struct{}{}:
@@ -539,6 +545,19 @@ func (s *Server) HasClients() bool {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 	return len(s.clients) > 0
+}
+
+// HasInteractiveClients reports whether a client has issued a real GUI/API
+// request. Pipe probes and readiness Pings are deliberately excluded.
+func (s *Server) HasInteractiveClients() bool {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	for _, state := range s.clients {
+		if state != nil && state.interactive.Load() {
+			return true
+		}
+	}
+	return false
 }
 
 // 日志辅助方法
@@ -883,14 +902,57 @@ func (c *Client) logDebug(format string, v ...any) {
 	}
 }
 
-// CheckCoreServiceRunning 检查核心服务是否正在运行
+const coreServiceProbeTimeout = time.Second
+const coreServiceReadyDialTimeout = 250 * time.Millisecond
+
+// CheckCoreServiceRunning 检查核心服务命名管道是否可连接。
 func CheckCoreServiceRunning() bool {
-	timeout := 1 * time.Second
 	for _, pipeName := range appmeta.IPCPipeCandidates() {
+		timeout := coreServiceProbeTimeout
 		pipePath := `\\.\pipe\` + pipeName
 		conn, err := winio.DialPipe(pipePath, &timeout)
 		if err == nil {
 			conn.Close()
+			return true
+		}
+	}
+	return false
+}
+
+// CheckCoreServiceReady verifies that the core has started serving requests,
+// rather than only having created the named pipe listener.
+func CheckCoreServiceReady() bool {
+	for _, pipeName := range appmeta.IPCPipeCandidates() {
+		timeout := coreServiceReadyDialTimeout
+		pipePath := `\\.\pipe\` + pipeName
+		conn, err := winio.DialPipe(pipePath, &timeout)
+		if err != nil {
+			continue
+		}
+
+		ready := func() bool {
+			defer conn.Close()
+			_ = conn.SetDeadline(time.Now().Add(750 * time.Millisecond))
+			req := Request{
+				ProtocolVersion: currentProtocolVersion,
+				RequestID:       newMessageID("ready"),
+				Timestamp:       time.Now().UnixMilli(),
+				Type:            ReqPing,
+			}
+			payload, err := json.Marshal(req)
+			if err != nil {
+				return false
+			}
+			if _, err := conn.Write(append(payload, '\n')); err != nil {
+				return false
+			}
+			var resp Response
+			if err := json.NewDecoder(bufio.NewReader(conn)).Decode(&resp); err != nil {
+				return false
+			}
+			return resp.IsResponse && resp.Success && resp.RequestID == req.RequestID
+		}()
+		if ready {
 			return true
 		}
 	}

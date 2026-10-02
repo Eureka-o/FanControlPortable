@@ -19,6 +19,8 @@ import (
 
 const wifiRequestTimeout = 2 * time.Second
 
+const wifiHeartbeatFailureThreshold = 3
+
 type wifiDataResponse struct {
 	Speed           any `json:"speed"`
 	CurrentSpeed    any `json:"currentSpeed"`
@@ -288,6 +290,7 @@ func (m *Manager) disconnectWiFiLocked() bool {
 	m.wifiProtocol = ""
 	m.wifiConfig = false
 	m.wifiHeartbeat = false
+	m.wifiHbFailures = 0
 	return true
 }
 
@@ -660,7 +663,7 @@ func (m *Manager) startWiFiHeartbeatLocked() {
 	done := make(chan struct{})
 	m.wifiHbStop = stop
 	m.wifiHbDone = done
-	go wifiHeartbeatLoop(client, endpoint, stop, done)
+	go wifiHeartbeatLoop(client, endpoint, stop, done, m.handleWiFiHeartbeatResult)
 }
 
 func (m *Manager) stopWiFiHeartbeatLocked() {
@@ -670,38 +673,61 @@ func (m *Manager) stopWiFiHeartbeatLocked() {
 	close(m.wifiHbStop)
 	m.wifiHbStop = nil
 	m.wifiHbDone = nil
+	m.wifiHbFailures = 0
 }
 
-func wifiHeartbeatLoop(client *http.Client, endpoint string, stop <-chan struct{}, done chan<- struct{}) {
+func wifiHeartbeatLoop(client *http.Client, endpoint string, stop <-chan struct{}, done chan<- struct{}, report func(bool)) {
 	defer close(done)
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
-	postWiFiHeartbeat(client, endpoint)
+	report(postWiFiHeartbeat(client, endpoint))
 	for {
 		select {
 		case <-stop:
 			return
 		case <-ticker.C:
-			postWiFiHeartbeat(client, endpoint)
+			report(postWiFiHeartbeat(client, endpoint))
 		}
 	}
 }
 
-func postWiFiHeartbeat(client *http.Client, endpoint string) {
-	if client == nil {
+func (m *Manager) handleWiFiHeartbeatResult(success bool) {
+	m.mutex.Lock()
+	if m.deviceType != types.DeviceTransportWiFi || !m.isConnected || m.wifiHbStop == nil {
+		m.mutex.Unlock()
 		return
+	}
+	if success {
+		m.wifiHbFailures = 0
+		m.mutex.Unlock()
+		return
+	}
+	m.wifiHbFailures++
+	if m.wifiHbFailures < wifiHeartbeatFailureThreshold {
+		m.mutex.Unlock()
+		return
+	}
+	generation := m.connectionGen.Load()
+	m.mutex.Unlock()
+	m.disconnectWithGeneration(true, generation)
+}
+
+func postWiFiHeartbeat(client *http.Client, endpoint string) bool {
+	if client == nil {
+		return false
 	}
 	req, err := http.NewRequest(http.MethodPost, endpoint+"/api/heartbeat", bytes.NewReader([]byte("{}")))
 	if err != nil {
-		return
+		return false
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
-		return
+		return false
 	}
 	defer resp.Body.Close()
 	io.Copy(io.Discard, io.LimitReader(resp.Body, 4*1024))
+	return resp.StatusCode >= 200 && resp.StatusCode < 300
 }
 
 func fanDataFromWiFiResponse(data wifiDataResponse) *types.FanData {

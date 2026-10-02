@@ -29,6 +29,8 @@ var wailsContext *context.Context
 var ensureCoreServiceRunningMu sync.Mutex
 var monitorOnlySession atomic.Bool
 
+const coreServiceReadyWait = 10 * time.Second
+
 // SetMonitorOnlySession keeps the temporary homepage choice across a core restart.
 func SetMonitorOnlySession(enabled bool) {
 	monitorOnlySession.Store(enabled)
@@ -72,9 +74,13 @@ func EnsureCoreServiceRunning() bool {
 		}
 	}
 
-	if ipc.CheckCoreServiceRunning() {
+	if ipc.CheckCoreServiceReady() {
 		mainLogger.Info("核心服务已经在运行")
 		return true
+	}
+	if ipc.CheckCoreServiceRunning() {
+		mainLogger.Info("核心服务命名管道已存在，等待服务完成初始化...")
+		return waitForCoreServiceReady(coreServiceReadyWait)
 	}
 
 	mainLogger.Info("核心服务未运行，正在启动...")
@@ -106,17 +112,29 @@ func EnsureCoreServiceRunning() bool {
 		cmd.Process.Release()
 	}
 
-	for i := range 100 {
-		time.Sleep(100 * time.Millisecond)
-		if ipc.CheckCoreServiceRunning() {
-			mainLogger.Infof("核心服务已就绪（等待 %d ms）", (i+1)*100)
-			monitorOnlySession.Store(false)
-			return true
-		}
+	if waitForCoreServiceReady(coreServiceReadyWait) {
+		monitorOnlySession.Store(false)
+		return true
 	}
-
 	mainLogger.Warn("等待核心服务就绪超时（10秒）")
 	return false
+}
+
+func waitForCoreServiceReady(timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		if ipc.CheckCoreServiceReady() {
+			return true
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return false
+		}
+		if remaining > 100*time.Millisecond {
+			remaining = 100 * time.Millisecond
+		}
+		time.Sleep(remaining)
+	}
 }
 
 // DefaultFrameless reports whether the desktop window should use the custom Windows frame.

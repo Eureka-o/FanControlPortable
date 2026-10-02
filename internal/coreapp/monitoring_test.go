@@ -480,8 +480,8 @@ func TestTemperatureSafetyFallbackTransitions(t *testing.T) {
 		t.Fatalf("threshold transition = apply %v recovered %v, want true/false", apply, recovered)
 	}
 	state.markApplied()
-	if apply, _ := state.observe(true, false); apply {
-		t.Fatal("active safety fallback requested a duplicate write")
+	if apply, _ := state.observe(true, false); !apply {
+		t.Fatal("active safety fallback stopped requesting the next ramp step")
 	}
 	apply, recovered = state.observe(true, true)
 	if apply || !recovered {
@@ -489,6 +489,48 @@ func TestTemperatureSafetyFallbackTransitions(t *testing.T) {
 	}
 	if apply, recovered = state.observe(false, false); apply || recovered || state.invalidSamples != 0 || state.active {
 		t.Fatalf("disabled automatic control did not reset fallback state: %#v", state)
+	}
+}
+
+func TestRampTemperatureSafetyFallbackTarget(t *testing.T) {
+	tests := []struct {
+		name                       string
+		target, previous, up, down int
+		want                       int
+	}{
+		{name: "first fallback keeps ceiling", target: 4000, previous: -1, up: 220, down: 160, want: 4000},
+		{name: "fallback ramps upward", target: 4000, previous: 1800, up: 220, down: 160, want: 2020},
+		{name: "fallback ramps downward after limit change", target: 3000, previous: 3400, up: 220, down: 160, want: 3240},
+		{name: "unchanged target stays unchanged", target: 3000, previous: 3000, up: 220, down: 160, want: 3000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := rampTemperatureSafetyFallbackTarget(tt.target, tt.previous, tt.up, tt.down); got != tt.want {
+				t.Fatalf("rampTemperatureSafetyFallbackTarget() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFanDataTargetForControlUnitUsesMatchingDeviceBaseline(t *testing.T) {
+	tests := []struct {
+		name string
+		data *types.FanData
+		unit string
+		want int
+	}{
+		{name: "rpm target", data: &types.FanData{SpeedUnit: types.FanSpeedUnitRPM, TargetRPM: 1800, CurrentRPM: 1500}, unit: types.FanSpeedUnitRPM, want: 1800},
+		{name: "rpm current fallback", data: &types.FanData{SpeedUnit: types.FanSpeedUnitRPM, CurrentRPM: 1500}, unit: types.FanSpeedUnitRPM, want: 1500},
+		{name: "percent target", data: &types.FanData{SpeedUnit: types.FanSpeedUnitPercent, TargetRPM: 40}, unit: types.FanSpeedUnitPercent, want: 400},
+		{name: "unit mismatch", data: &types.FanData{SpeedUnit: types.FanSpeedUnitRPM, TargetRPM: 1800}, unit: types.FanSpeedUnitPercent, want: -1},
+		{name: "missing status", data: nil, unit: types.FanSpeedUnitRPM, want: -1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := fanDataTargetForControlUnit(tt.data, tt.unit); got != tt.want {
+				t.Fatalf("fanDataTargetForControlUnit() = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
 

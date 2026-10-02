@@ -92,8 +92,8 @@ export default function TemperatureBaselineSection({
   );
   const selectedGpuDevice = useMemo(() => {
     const configured = (((config as any).gpuDevice as string) || 'auto');
-    return configured === 'auto' || gpuDevices.some((device) => device.key === configured) ? configured : 'auto';
-  }, [config, gpuDevices]);
+    return configured || 'auto';
+  }, [config]);
   const detectedGpuDevice = (temperature as any)?.selectedGpuDevice;
   const activeGpuDeviceKey = useMemo(() => {
     if (selectedGpuDevice !== 'auto') {
@@ -138,7 +138,10 @@ export default function TemperatureBaselineSection({
       value: device.key,
       label: `${device.vendor ? `${device.vendor.toUpperCase()} · ` : ''}${device.name}`,
     })),
-  ], [gpuDevices, locale, t]);
+    ...(selectedGpuDevice !== 'auto' && !gpuDevices.some((device) => device.key === selectedGpuDevice)
+      ? [{ value: selectedGpuDevice, label: selectedGpuDevice, disabled: true }]
+      : []),
+  ], [gpuDevices, locale, selectedGpuDevice, t]);
   const cpuSensorOptions = useMemo(() => [
     { value: 'auto', label: cpuSensors.length > 0 ? t('controlPanel.options.sensor.autoRecommended') : t('controlPanel.options.sensor.auto') },
     ...cpuSensors.map((sensor) => ({ value: sensor.key, label: `${sensor.name} (${sensor.value}°C)` })),

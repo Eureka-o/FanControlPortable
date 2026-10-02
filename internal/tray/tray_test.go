@@ -49,6 +49,18 @@ func TestSystrayInstanceBudget(t *testing.T) {
 	}
 }
 
+func TestTrayReannounceRetryLimit(t *testing.T) {
+	if trayShellRestartReannounceAttempts != 3 {
+		t.Fatalf("tray reannounce attempts = %d, want 3", trayShellRestartReannounceAttempts)
+	}
+	if !shouldRetryTrayReannounce(0) || !shouldRetryTrayReannounce(1) {
+		t.Fatal("expected the first two reannounce attempts to retry")
+	}
+	if shouldRetryTrayReannounce(2) || shouldRetryTrayReannounce(99) {
+		t.Fatal("reannounce retries must stop at the bounded attempt limit")
+	}
+}
+
 func TestFormatTrayTooltipKeepsFanSpeedEarlyAndShort(t *testing.T) {
 	status := Status{
 		Connected:        true,
@@ -98,5 +110,18 @@ func TestDeviceStatusTitleUsesRuntimeDeviceName(t *testing.T) {
 	}
 	if got := deviceStatusTitle("", false, true); got != "仅监控模式：运行中" {
 		t.Fatalf("deviceStatusTitle(monitor-only) = %q", got)
+	}
+}
+
+func TestTrayCurveSignatureTracksOrderAndLabels(t *testing.T) {
+	first := trayCurveSignature([]CurveOption{{ID: "quiet", Name: "Quiet"}, {ID: "turbo", Name: "Turbo"}})
+	if first == trayCurveSignature([]CurveOption{{ID: "turbo", Name: "Turbo"}, {ID: "quiet", Name: "Quiet"}}) {
+		t.Fatal("curve signature must change when menu order changes")
+	}
+	if first == trayCurveSignature([]CurveOption{{ID: "quiet", Name: "Silent"}, {ID: "turbo", Name: "Turbo"}}) {
+		t.Fatal("curve signature must change when a menu label changes")
+	}
+	if first != trayCurveSignature([]CurveOption{{ID: "quiet", Name: "Quiet"}, {ID: "turbo", Name: "Turbo"}}) {
+		t.Fatal("curve signature should be stable for identical options")
 	}
 }

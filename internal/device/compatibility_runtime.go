@@ -93,20 +93,66 @@ func (compatibilityRuntime) refresh(manager *Manager) (bool, bool) {
 		manager.mutex.Unlock()
 		return false, true
 	}
+	generation := manager.connectionGen.Load()
+	profileUnit := types.NormalizeFanSpeedUnit(manager.activeProfile.SpeedUnit)
+	wifiExecutor := manager.wifiExecutor
+	serialExecutor := manager.serialExecutor
+	manager.mutex.Unlock()
 
 	var (
 		fanData *types.FanData
 		err     error
 	)
 	if transport == types.DeviceTransportWiFi {
-		fanData, err = manager.readWiFiStateLocked()
+		if wifiExecutor == nil {
+			// Legacy fallback still needs the Manager-owned endpoint/client snapshot.
+			manager.mutex.Lock()
+			if generation != manager.connectionGen.Load() || !manager.isConnected || manager.deviceType != transport {
+				manager.mutex.Unlock()
+				return true, true
+			}
+			fanData, err = manager.readWiFiStateLocked()
+			manager.mutex.Unlock()
+		} else {
+			fanData, err = wifiExecutor.ReadState(context.Background())
+		}
 	} else {
-		fanData, err = manager.readSerialStateLocked()
+		if serialExecutor == nil {
+			manager.mutex.Lock()
+			if generation != manager.connectionGen.Load() || !manager.isConnected || manager.deviceType != transport {
+				manager.mutex.Unlock()
+				return true, true
+			}
+			fanData, err = manager.readSerialStateLocked()
+			manager.mutex.Unlock()
+		} else {
+			fanData, err = serialExecutor.ReadState(context.Background())
+		}
 	}
 	if err != nil {
+		manager.mutex.Lock()
+		stale := generation != manager.connectionGen.Load() || !manager.isConnected || manager.deviceType != transport ||
+			(transport == types.DeviceTransportWiFi && manager.wifiExecutor != wifiExecutor) ||
+			(transport == types.DeviceTransportSerial && manager.serialExecutor != serialExecutor)
 		manager.mutex.Unlock()
+		if stale {
+			return true, true
+		}
 		manager.logError("%s controller state refresh failed: %v", transport, err)
 		return false, true
+	}
+	if fanData == nil {
+		return false, true
+	}
+	fanData.Transport = transport
+	fanData.SpeedUnit = profileUnit
+
+	manager.mutex.Lock()
+	if generation != manager.connectionGen.Load() || !manager.isConnected || manager.deviceType != transport ||
+		(transport == types.DeviceTransportWiFi && manager.wifiExecutor != wifiExecutor) ||
+		(transport == types.DeviceTransportSerial && manager.serialExecutor != serialExecutor) {
+		manager.mutex.Unlock()
+		return true, true
 	}
 	manager.currentFanData.Store(fanData)
 	callback := manager.onFanDataUpdate

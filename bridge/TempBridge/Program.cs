@@ -235,6 +235,7 @@ namespace FanControl.TempBridge
         private static readonly object lockObject = new object();
         private static Mutex singleInstanceMutex;
         private static int consecutiveFailures = 0;
+        private static int hardwareMonitorReinitializeQueued;
         private static string lastHardwareMonitorError = string.Empty;
         private static DateTime lastMemoryTrimUtc = DateTime.MinValue;
         private static bool currentGpuMonitoringEnabled = false;
@@ -2299,11 +2300,29 @@ namespace FanControl.TempBridge
                         consecutiveFailures = 0;
                         result.Error = "连续读取失败，正在重新初始化温度监控并重新获取硬件句柄...";
 
-                        ThreadPool.QueueUserWorkItem(_ =>
+                        // Keep at most one recovery task queued or running while reads continue to fail.
+                        if (Interlocked.CompareExchange(ref hardwareMonitorReinitializeQueued, 1, 0) == 0)
                         {
-                            try { ReinitializeHardwareMonitor(); }
-                            catch { }
-                        });
+                            bool queued;
+                            try
+                            {
+                                queued = ThreadPool.QueueUserWorkItem(_ =>
+                                {
+                                    try { ReinitializeHardwareMonitor(); }
+                                    catch { }
+                                    finally { Interlocked.Exchange(ref hardwareMonitorReinitializeQueued, 0); }
+                                });
+                            }
+                            catch
+                            {
+                                queued = false;
+                            }
+
+                            if (!queued)
+                            {
+                                Interlocked.Exchange(ref hardwareMonitorReinitializeQueued, 0);
+                            }
+                        }
                     }
                     else if (string.IsNullOrEmpty(result.Error))
                     {

@@ -12,6 +12,29 @@ import (
 	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
+func TestFanDataBroadcastSnapshotComparesValuesAndCopiesCapability(t *testing.T) {
+	data := &types.FanData{
+		CurrentRPM:        1200,
+		TargetRPM:         1400,
+		Transport:         types.DeviceTransportBLE,
+		FlyDigiCapability: &types.FlyDigiRuntimeCapability{Available: true, MaxRPM: 3300},
+	}
+	snapshot := cloneFanDataForBroadcast(data)
+	if snapshot == data || snapshot.FlyDigiCapability == data.FlyDigiCapability {
+		t.Fatal("broadcast snapshot must not share mutable pointers")
+	}
+	if !fanDataEqualForBroadcast(snapshot, data) {
+		t.Fatal("identical fan data should compare equal")
+	}
+	data.FlyDigiCapability.MaxRPM = 3600
+	if fanDataEqualForBroadcast(snapshot, data) {
+		t.Fatal("capability changes must trigger a new broadcast")
+	}
+	if fanDataEqualForBroadcast(nil, snapshot) {
+		t.Fatal("nil and non-nil fan data must not compare equal")
+	}
+}
+
 func TestManualDisconnectInvalidatesBlockedReconnectSuccess(t *testing.T) {
 	app := &CoreApp{deviceManager: device.NewManager(nil)}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -356,6 +379,24 @@ func TestReapplyConfigAfterReconnectKeepsNativeRuntimeProfile(t *testing.T) {
 
 	if got := app.deviceManager.ActiveProfile().ID; got != types.FlyDigiBS1ProfileID {
 		t.Fatalf("active profile = %q, want %q", got, types.FlyDigiBS1ProfileID)
+	}
+}
+
+func TestReconnectRuntimeReadyRequiresControllableReadyState(t *testing.T) {
+	if reconnectRuntimeReady(deviceRuntimeSnapshotData{
+		Runtime: deviceRuntimeStatus{State: deviceRuntimeStateCapabilities, CanControl: true},
+	}) {
+		t.Fatal("capabilities state must not permit reconnect speed restore")
+	}
+	if reconnectRuntimeReady(deviceRuntimeSnapshotData{
+		Runtime: deviceRuntimeStatus{State: deviceRuntimeStateReady},
+	}) {
+		t.Fatal("ready state without control permission must not permit reconnect speed restore")
+	}
+	if !reconnectRuntimeReady(deviceRuntimeSnapshotData{
+		Runtime: deviceRuntimeStatus{State: deviceRuntimeStateReady, CanControl: true},
+	}) {
+		t.Fatal("controllable ready state should permit reconnect speed restore")
 	}
 }
 

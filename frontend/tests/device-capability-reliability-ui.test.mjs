@@ -42,3 +42,10 @@ test('keeps sensor choices when compact updates omit unchanged metadata', () => 
   assert.match(store, /gpuSensors: data\.gpuSensors \?\? current\.temperature\.gpuSensors/);
   assert.match(store, /gpuDevices: data\.gpuDevices \?\? current\.temperature\.gpuDevices/);
 });
+
+test('does not replace a saved GPU device with auto during transient enumeration gaps', () => {
+  assert.match(store, /getConfigWriteGeneration\(\)/);
+  assert.match(readFileSync(new URL('../src/app/services/api.ts', import.meta.url), 'utf8'), /configWriteGeneration \+= 1/);
+  assert.match(readFileSync(new URL('../src/app/components/settings/TemperatureBaselineSection.tsx', import.meta.url), 'utf8'), /return configured \|\| 'auto'/);
+  assert.match(readFileSync(new URL('../src/app/components/settings/TemperatureBaselineSection.tsx', import.meta.url), 'utf8'), /selectedGpuDevice !== 'auto' && !gpuDevices\.some/);
+});

@@ -18,15 +18,18 @@ import (
 const (
 	// trayAutoStartSettleDelay 是自启动首次注册托盘前，要求任务栏通知区域持续稳定的时长。
 	trayAutoStartSettleDelay = 3 * time.Second
-	// trayAutoStartSettleTimeout 是等待通知区域稳定的最长时间，超时后仍会尝试注册。
+	// trayAutoStartSettleTimeout 是等待通知区域稳定的最长时间，超时后本次注册重试。
 	trayAutoStartSettleTimeout = 25 * time.Second
 	// trayShellRestartSettleDelay 是 Explorer/通知区域重建后补注册托盘前的稳定等待时间。
 	trayShellRestartSettleDelay = 2 * time.Second
 	// trayShellRestartSettleTimeout 是补注册托盘前等待通知区域恢复的最长时间。
 	trayShellRestartSettleTimeout = 12 * time.Second
-	trayReadyRecoveryDelay        = 75 * time.Second
-	trayRestartThrottle           = 45 * time.Second
-	maxSystrayInstances           = 200
+	// trayShellRestartReannounceAttempts covers the short race between a stable
+	// TrayNotifyWnd and Explorer accepting the first NIM_ADD.
+	trayShellRestartReannounceAttempts = 3
+	trayReadyRecoveryDelay             = 75 * time.Second
+	trayRestartThrottle                = 45 * time.Second
+	maxSystrayInstances                = 200
 )
 
 // Manager 系统托盘管理器
@@ -63,8 +66,9 @@ type Manager struct {
 	quitInFlight       int32
 
 	// 开机自启动相关：自启动时延时注册，等待任务栏通知区域稳定后再注册托盘。
-	autoStartLaunch int32 // atomic: 1=本次进程由开机自启动触发
-	instanceCount   int32 // atomic: systray 实例运行计数，用于识别首次注册
+	autoStartLaunch  int32 // atomic: 1=本次进程由开机自启动触发
+	autoStartSettled int32 // atomic: 1=首次托盘注册前通知区域已稳定
+	instanceCount    int32 // atomic: systray 实例运行计数，用于限制重建次数
 
 	// Explorer 重启时系统通知区会删除所有图标；防止补注册动作重复堆积。
 	shellReannounceInFlight int32
@@ -105,6 +109,38 @@ type Status struct {
 	AutoControlState     bool
 	ActiveCurveProfileID string
 	CurveProfiles        []CurveOption
+}
+
+type trayMenuRenderState struct {
+	deviceStatus string
+	cpuTemp      string
+	gpuTemp      string
+	cpuPower     string
+	gpuPower     string
+	fanSpeed     string
+	curveTitle   string
+	autoTitle    string
+	tooltip      string
+	fanEnabled   bool
+	curveEnabled bool
+	autoEnabled  bool
+	autoChecked  bool
+	curveSig     string
+	activeCurve  string
+}
+
+func trayCurveSignature(options []CurveOption) string {
+	var b strings.Builder
+	for _, option := range options {
+		if option.ID == "" {
+			continue
+		}
+		b.WriteString(option.ID)
+		b.WriteByte(0)
+		b.WriteString(option.Name)
+		b.WriteByte(0)
+	}
+	return b.String()
 }
 
 // NewManager 创建新的托盘管理器
@@ -251,9 +287,14 @@ func (m *Manager) runSystrayInstance() (ran time.Duration) {
 
 	// 开机自启动时外壳窗口可能创建很早，但通知区域尚未稳定，过早注册会导致图标被
 	// 静默丢弃。仅对首次注册追加稳定等待；后续因 Explorer 重启等触发的重建无需再延时。
-	if atomic.AddInt32(&m.instanceCount, 1) == 1 && m.isAutoStartLaunch() {
+	atomic.AddInt32(&m.instanceCount, 1)
+	if m.isAutoStartLaunch() && atomic.LoadInt32(&m.autoStartSettled) == 0 {
 		m.logInfo("自启动模式：等待任务栏通知区域稳定后再注册系统托盘")
-		waitForTraySettle(m.done, trayAutoStartSettleDelay, trayAutoStartSettleTimeout)
+		if !waitForTraySettle(m.done, trayAutoStartSettleDelay, trayAutoStartSettleTimeout) {
+			close(instanceDone)
+			return 0
+		}
+		atomic.StoreInt32(&m.autoStartSettled, 1)
 		select {
 		case <-m.done:
 			close(instanceDone)
@@ -590,6 +631,8 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
+	var lastApplied *trayMenuRenderState
+	var lastMenuItems *MenuItems
 
 	for {
 		select {
@@ -604,76 +647,121 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 			}
 
 			status := m.getStatus()
+			fanSpeedText := formatFanSpeedForTray(status.CurrentRPM, status.SpeedUnit)
+			state := trayMenuRenderState{
+				deviceStatus: deviceStatusTitle(status.DeviceName, status.Connected, status.MonitorOnly),
+				cpuTemp:      "CPU 温度：无数据",
+				gpuTemp:      "GPU 温度：无数据",
+				cpuPower:     fmt.Sprintf("CPU 功耗：%s", formatPowerWatts(status.CPUPowerWatts)),
+				gpuPower:     fmt.Sprintf("GPU 功耗：%s", formatPowerWatts(status.GPUPowerWatts)),
+				fanSpeed:     "风扇速度：无数据",
+				curveTitle:   "温控曲线",
+				autoTitle:    "智能温控",
+				fanEnabled:   !status.MonitorOnly,
+				curveEnabled: !status.MonitorOnly,
+				autoEnabled:  !status.MonitorOnly,
+				autoChecked:  !status.MonitorOnly && status.AutoControlState,
+				curveSig:     trayCurveSignature(status.CurveProfiles),
+				activeCurve:  status.ActiveCurveProfileID,
+			}
+			if status.CPUTemp > 0 {
+				state.cpuTemp = fmt.Sprintf("CPU 温度：%d°C", status.CPUTemp)
+			}
+			if status.GPUReadState == types.GPUReadStateNotPolled {
+				state.gpuTemp = "GPU 温度：未读取"
+			} else if status.GPUTemp > 0 {
+				state.gpuTemp = fmt.Sprintf("GPU 温度：%d°C", status.GPUTemp)
+			}
+			if status.GPUReadState == types.GPUReadStateNotPolled {
+				state.gpuPower = "GPU 功耗：0 W"
+			}
+			if status.MonitorOnly {
+				state.fanSpeed = "风扇速度：仅监控不可用"
+				state.curveTitle = "温控曲线（仅监控不可用）"
+				state.autoTitle = "智能温控（仅监控不可用）"
+			} else if fanSpeedText != "" {
+				state.fanSpeed = fmt.Sprintf("风扇速度：%s", fanSpeedText)
+			}
+			if status.MonitorOnly || status.Connected {
+				state.tooltip = formatTrayTooltip(status, fanSpeedText)
+			} else {
+				state.tooltip = appmeta.AppName + " - 设备未连接"
+			}
+
 			m.enqueueUI("update-menu-status", func() {
 				if m.menuItems == nil {
 					return
 				}
 
-				m.menuItems.DeviceStatus.SetTitle(deviceStatusTitle(status.DeviceName, status.Connected, status.MonitorOnly))
-
-				if status.CPUTemp > 0 {
-					m.menuItems.CPUTemperature.SetTitle(fmt.Sprintf("CPU 温度：%d°C", status.CPUTemp))
-				} else {
-					m.menuItems.CPUTemperature.SetTitle("CPU 温度：无数据")
+				previous := lastApplied
+				if lastMenuItems != m.menuItems {
+					previous = nil
+					lastMenuItems = m.menuItems
 				}
-
-				if status.GPUReadState == types.GPUReadStateNotPolled {
-					m.menuItems.GPUTemperature.SetTitle("GPU 温度：未读取")
-				} else if status.GPUTemp > 0 {
-					m.menuItems.GPUTemperature.SetTitle(fmt.Sprintf("GPU 温度：%d°C", status.GPUTemp))
-				} else {
-					m.menuItems.GPUTemperature.SetTitle("GPU 温度：无数据")
+				if previous == nil || previous.deviceStatus != state.deviceStatus {
+					m.menuItems.DeviceStatus.SetTitle(state.deviceStatus)
 				}
-
-				if m.menuItems.CPUPower != nil {
-					m.menuItems.CPUPower.SetTitle(fmt.Sprintf("CPU 功耗：%s", formatPowerWatts(status.CPUPowerWatts)))
+				if previous == nil || previous.cpuTemp != state.cpuTemp {
+					m.menuItems.CPUTemperature.SetTitle(state.cpuTemp)
 				}
-
-				if m.menuItems.GPUPower != nil && status.GPUReadState == types.GPUReadStateNotPolled {
-					m.menuItems.GPUPower.SetTitle("GPU 功耗：0 W")
-				} else if m.menuItems.GPUPower != nil {
-					m.menuItems.GPUPower.SetTitle(fmt.Sprintf("GPU 功耗：%s", formatPowerWatts(status.GPUPowerWatts)))
+				if previous == nil || previous.gpuTemp != state.gpuTemp {
+					m.menuItems.GPUTemperature.SetTitle(state.gpuTemp)
 				}
-
-				fanSpeedText := formatFanSpeedForTray(status.CurrentRPM, status.SpeedUnit)
-				if status.MonitorOnly {
-					m.menuItems.FanSpeed.SetTitle("风扇速度：仅监控不可用")
-					m.menuItems.FanSpeed.Disable()
-				} else if fanSpeedText != "" {
-					m.menuItems.FanSpeed.SetTitle(fmt.Sprintf("风扇速度：%s", fanSpeedText))
-				} else {
-					m.menuItems.FanSpeed.SetTitle("风扇速度：无数据")
+				if m.menuItems.CPUPower != nil && (previous == nil || previous.cpuPower != state.cpuPower) {
+					m.menuItems.CPUPower.SetTitle(state.cpuPower)
 				}
-
-				if m.menuItems.CurveSelect != nil {
-					if status.MonitorOnly {
-						m.menuItems.CurveSelect.SetTitle("温控曲线（仅监控不可用）")
-						m.menuItems.CurveSelect.Disable()
+				if m.menuItems.GPUPower != nil && (previous == nil || previous.gpuPower != state.gpuPower) {
+					m.menuItems.GPUPower.SetTitle(state.gpuPower)
+				}
+				if previous == nil || previous.fanSpeed != state.fanSpeed {
+					m.menuItems.FanSpeed.SetTitle(state.fanSpeed)
+				}
+				if previous == nil || previous.fanEnabled != state.fanEnabled {
+					if state.fanEnabled {
+						m.menuItems.FanSpeed.Enable()
 					} else {
-						m.menuItems.CurveSelect.SetTitle("温控曲线")
-						m.menuItems.CurveSelect.Enable()
-						m.ensureCurveMenuItems(m.menuItems.CurveSelect, status.CurveProfiles)
-						m.updateCurveMenuSelection(status.ActiveCurveProfileID)
+						m.menuItems.FanSpeed.Disable()
 					}
 				}
-
-				if status.MonitorOnly {
-					m.menuItems.AutoControl.SetTitle("智能温控（仅监控不可用）")
-					m.menuItems.AutoControl.Disable()
-				} else {
-					m.menuItems.AutoControl.SetTitle("智能温控")
-					m.menuItems.AutoControl.Enable()
-					if status.AutoControlState {
+				if m.menuItems.CurveSelect != nil {
+					if previous == nil || previous.curveTitle != state.curveTitle {
+						m.menuItems.CurveSelect.SetTitle(state.curveTitle)
+					}
+					if previous == nil || previous.curveEnabled != state.curveEnabled {
+						if state.curveEnabled {
+							m.menuItems.CurveSelect.Enable()
+						} else {
+							m.menuItems.CurveSelect.Disable()
+						}
+					}
+					if state.curveEnabled && (previous == nil || previous.curveSig != state.curveSig) {
+						m.ensureCurveMenuItems(m.menuItems.CurveSelect, status.CurveProfiles)
+					}
+					if state.curveEnabled && (previous == nil || previous.activeCurve != state.activeCurve || previous.curveSig != state.curveSig) {
+						m.updateCurveMenuSelection(state.activeCurve)
+					}
+				}
+				if previous == nil || previous.autoTitle != state.autoTitle {
+					m.menuItems.AutoControl.SetTitle(state.autoTitle)
+				}
+				if previous == nil || previous.autoEnabled != state.autoEnabled {
+					if state.autoEnabled {
+						m.menuItems.AutoControl.Enable()
+					} else {
+						m.menuItems.AutoControl.Disable()
+					}
+				}
+				if state.autoEnabled && (previous == nil || previous.autoChecked != state.autoChecked) {
+					if state.autoChecked {
 						m.menuItems.AutoControl.Check()
 					} else {
 						m.menuItems.AutoControl.Uncheck()
 					}
 				}
-				if status.MonitorOnly || status.Connected {
-					systray.SetTooltip(formatTrayTooltip(status, fanSpeedText))
-				} else {
-					systray.SetTooltip(appmeta.AppName + " - 设备未连接")
+				if previous == nil || previous.tooltip != state.tooltip {
+					systray.SetTooltip(state.tooltip)
 				}
+				lastApplied = &state
 			})
 		case <-instanceDone:
 			return
@@ -790,7 +878,11 @@ func (m *Manager) reannounceTrayIconAfterShellRestart(instanceDone <-chan struct
 
 		m.logInfo("检测到 Windows 通知区域重建（hwnd 0x%x/%d -> 0x%x/%d），等待稳定后恢复托盘图标", previousTray, previousPID, currentTray, currentPID)
 
-		waitForTraySettle(m.done, trayShellRestartSettleDelay, trayShellRestartSettleTimeout)
+		if !waitForTraySettle(m.done, trayShellRestartSettleDelay, trayShellRestartSettleTimeout) {
+			// Explorer can keep rebuilding the notification area. Preserve the
+			// existing reannounce attempt; the monitor will handle later changes.
+			m.logInfo("通知区域未在期限内稳定，继续尝试补注册托盘图标")
+		}
 
 		select {
 		case <-instanceDone:
@@ -800,20 +892,28 @@ func (m *Manager) reannounceTrayIconAfterShellRestart(instanceDone <-chan struct
 		default:
 		}
 
-		if !postTaskbarCreated() {
-			m.logError("补发 TaskbarCreated 消息失败，尝试仅刷新托盘图标")
-		}
-		m.refreshTrayIcon()
-
-		select {
-		case <-instanceDone:
-			return
-		case <-m.done:
-			return
-		case <-time.After(time.Second):
+		for attempt := 0; attempt < trayShellRestartReannounceAttempts; attempt++ {
+			if !postTaskbarCreated() {
+				m.logError("补发 TaskbarCreated 消息失败（第 %d/%d 次）", attempt+1, trayShellRestartReannounceAttempts)
+			}
 			m.refreshTrayIcon()
+
+			if !shouldRetryTrayReannounce(attempt) {
+				return
+			}
+			select {
+			case <-instanceDone:
+				return
+			case <-m.done:
+				return
+			case <-time.After(time.Second):
+			}
 		}
 	}()
+}
+
+func shouldRetryTrayReannounce(attempt int) bool {
+	return attempt+1 < trayShellRestartReannounceAttempts
 }
 
 // refreshTrayIcon 刷新托盘图标

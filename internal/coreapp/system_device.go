@@ -16,7 +16,7 @@ func (a *CoreApp) onShowWindowRequest() {
 	a.logInfo("收到显示窗口请求")
 
 	// 通知所有已连接的 GUI 客户端显示窗口
-	if a.ipcServer != nil && a.ipcServer.HasClients() {
+	if a.ipcServer != nil && a.ipcServer.HasInteractiveClients() {
 		a.ipcServer.BroadcastEvent("show-window", nil)
 	} else {
 		// 没有 GUI 连接，启动 GUI
@@ -63,6 +63,38 @@ func isManualDeviceWorkMode(mode string) bool {
 	}
 }
 
+func cloneFanDataForBroadcast(data *types.FanData) *types.FanData {
+	if data == nil {
+		return nil
+	}
+	clone := *data
+	if data.FlyDigiCapability != nil {
+		capability := *data.FlyDigiCapability
+		clone.FlyDigiCapability = &capability
+	}
+	return &clone
+}
+
+func fanDataEqualForBroadcast(left, right *types.FanData) bool {
+	if left == right {
+		return true
+	}
+	if left == nil || right == nil {
+		return false
+	}
+	if left.ReportID != right.ReportID || left.MagicSync != right.MagicSync || left.Command != right.Command ||
+		left.Status != right.Status || left.GearSettings != right.GearSettings || left.CurrentMode != right.CurrentMode ||
+		left.Reserved1 != right.Reserved1 || left.CurrentRPM != right.CurrentRPM || left.TargetRPM != right.TargetRPM ||
+		left.MaxGear != right.MaxGear || left.SetGear != right.SetGear || left.WorkMode != right.WorkMode ||
+		left.Transport != right.Transport || left.SpeedUnit != right.SpeedUnit {
+		return false
+	}
+	if left.FlyDigiCapability == nil || right.FlyDigiCapability == nil {
+		return left.FlyDigiCapability == right.FlyDigiCapability
+	}
+	return *left.FlyDigiCapability == *right.FlyDigiCapability
+}
+
 // onFanDataUpdate 风扇数据更新回调
 func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
 	if fanData != nil {
@@ -73,7 +105,11 @@ func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
 		a.lastSuccessfulDeviceReadAt = time.Now()
 	}
 	cfg := a.configManager.Get()
-	deviceSwitchedToManual := didDeviceSwitchToManualMode(a.lastDeviceMode, fanData.WorkMode)
+	currentWorkMode := ""
+	if fanData != nil {
+		currentWorkMode = fanData.WorkMode
+	}
+	deviceSwitchedToManual := didDeviceSwitchToManualMode(a.lastDeviceMode, currentWorkMode)
 
 	// 检查工作模式变化
 	// 如果开启了"断连保持配置模式"，则忽略设备状态变化，避免误判
@@ -95,7 +131,11 @@ func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
 		a.logInfo("检测到设备模式变化，但已开启断连保持配置模式，保持APP配置不变")
 	}
 
-	a.lastDeviceMode = fanData.WorkMode
+	a.lastDeviceMode = currentWorkMode
+	broadcastFanData := !fanDataEqualForBroadcast(a.lastPublishedFanData, fanData)
+	if broadcastFanData {
+		a.lastPublishedFanData = cloneFanDataForBroadcast(fanData)
+	}
 
 	if a.userSetAutoControl {
 		a.userSetAutoControl = false
@@ -104,7 +144,7 @@ func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
 	a.mutex.Unlock()
 
 	// 广播风扇数据更新
-	if a.ipcServer != nil {
+	if broadcastFanData && a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventFanDataUpdate, fanData)
 	}
 }
@@ -881,12 +921,19 @@ func (a *CoreApp) DisconnectDevice() {
 	}
 }
 
+func reconnectRuntimeReady(snapshot deviceRuntimeSnapshotData) bool {
+	return snapshot.Runtime.State == deviceRuntimeStateReady && snapshot.Runtime.CanControl
+}
+
 // reapplyConfigAfterReconnect 重连后重新应用APP配置
 func (a *CoreApp) reapplyConfigAfterReconnect() {
 	cfg := a.configManager.Get()
+	runtimeReady := reconnectRuntimeReady(a.deviceRuntimeSnapshot())
 
 	// 重新应用智能变频配置
-	if cfg.AutoControl {
+	if !runtimeReady {
+		a.logInfo("设备状态读取未就绪，跳过重连后的速度/挡位恢复")
+	} else if cfg.AutoControl {
 		a.logInfo("重新启动智能变频")
 	} else if cfg.CustomSpeedEnabled {
 		// 重新应用自定义转速
@@ -984,7 +1031,9 @@ func (a *CoreApp) RefreshDeviceSettings() (*types.DeviceSettings, error) {
 		return nil, err
 	}
 
-	newDeviceConnectionFlow(a).setRuntimeReady(&settings)
+	if err == nil && settings.Available {
+		newDeviceConnectionFlow(a).setRuntimeReady(&settings)
+	}
 
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventDeviceSettingsUpdate, settings)

@@ -84,7 +84,11 @@ func (a *CoreApp) ensureTemperatureMonitoringHealthy() {
 
 // checkDeviceHealth 检查设备健康状态
 func (a *CoreApp) checkDeviceHealth() {
-	if a.monitorOnlyActive() {
+	if a.monitorOnlyActive() || shouldSkipDeviceHealthCheck(
+		a.systemSuspended.Load(),
+		a.resumeRecoveryRunning.Load(),
+		a.reconnectInProgress.Load(),
+	) {
 		return
 	}
 	snapshot := a.deviceRuntimeSnapshot()
@@ -138,6 +142,10 @@ func (a *CoreApp) checkDeviceHealth() {
 	a.logError("健康检查: 设备连续 %d 次状态刷新失败，触发断开回调", healthConsecutiveFailureThreshold)
 	a.deviceManager.DisconnectForRecovery()
 	a.onDeviceDisconnect()
+}
+
+func shouldSkipDeviceHealthCheck(systemSuspended, resumeRecoveryRunning, reconnectInProgress bool) bool {
+	return systemSuspended || resumeRecoveryRunning || reconnectInProgress
 }
 
 func (a *CoreApp) shouldRunHealthReconnect(now time.Time) bool {

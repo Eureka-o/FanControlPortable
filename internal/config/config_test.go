@@ -733,3 +733,55 @@ func TestManagerMutateIfRevisionRejectsStaleConfigAndPreservesNewerFields(t *tes
 		t.Fatalf("atomic mutation did not preserve unrelated fields: %#v", updated)
 	}
 }
+
+func TestMutationCallbackCannotRetainManagerState(t *testing.T) {
+	tests := []struct {
+		name string
+		call func(*Manager, uint64, func(*types.AppConfig)) bool
+	}{
+		{
+			name: "mutate and save",
+			call: func(manager *Manager, _ uint64, mutate func(*types.AppConfig)) bool {
+				_, err := manager.MutateAndSave(mutate)
+				return err == nil
+			},
+		},
+		{
+			name: "mutate if revision",
+			call: func(manager *Manager, revision uint64, mutate func(*types.AppConfig)) bool {
+				_, _, applied := manager.MutateIfRevision(revision, mutate)
+				return applied
+			},
+		},
+		{
+			name: "mutate if revision and save",
+			call: func(manager *Manager, revision uint64, mutate func(*types.AppConfig)) bool {
+				_, _, applied, err := manager.MutateIfRevisionAndSave(revision, mutate)
+				return applied && err == nil
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			manager := NewManager(t.TempDir(), nil)
+			manager.Set(types.GetDefaultConfig(false))
+			before, revision := manager.GetWithRevision()
+			var retained *types.AppConfig
+			wantDebugMode := !before.DebugMode
+
+			if !test.call(manager, revision, func(current *types.AppConfig) {
+				retained = current
+				current.DebugMode = wantDebugMode
+			}) {
+				t.Fatal("mutation was not applied")
+			}
+
+			retained.DebugMode = before.DebugMode
+			after := manager.Get()
+			if after.DebugMode != wantDebugMode {
+				t.Fatalf("retained callback pointer changed manager state: got %v, want %v", after.DebugMode, wantDebugMode)
+			}
+		})
+	}
+}

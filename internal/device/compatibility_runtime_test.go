@@ -4,10 +4,38 @@ package device
 
 import (
 	"context"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/Eureka-o/FanControlPortable/internal/deviceprofileexec"
 	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
+
+type blockingRefreshSerialPort struct {
+	reads   [][]byte
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (p *blockingRefreshSerialPort) Read(buf []byte) (int, error) {
+	if len(p.reads) > 0 {
+		next := p.reads[0]
+		p.reads = p.reads[1:]
+		return copy(buf, next), nil
+	}
+	p.once.Do(func() { close(p.started) })
+	<-p.release
+	copy(buf, []byte("speed=40\n"))
+	return len("speed=40\n"), nil
+}
+
+func (p *blockingRefreshSerialPort) Write(buf []byte) (int, error) {
+	return len(buf), nil
+}
+
+func (p *blockingRefreshSerialPort) Close() error { return nil }
 
 func compatibilitySerialTestProfile(id string, supportsSetSpeed bool) types.DeviceProfile {
 	commands := []types.DeviceCommandTemplate{{Name: "readState", Command: "GET", Encoding: "ascii"}}
@@ -179,4 +207,53 @@ func TestCompatibilityRuntimeRefreshesSerialAdapter(t *testing.T) {
 	if fanData := manager.GetCurrentFanData(); fanData == nil || fanData.CurrentRPM != 40 {
 		t.Fatalf("refreshed fan data = %#v, want current speed 40", fanData)
 	}
+}
+
+func TestCompatibilityRuntimeRefreshDoesNotHoldManagerLockDuringSerialRead(t *testing.T) {
+	port := &blockingRefreshSerialPort{
+		reads:   [][]byte{[]byte("speed=25\n")},
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	manager := NewManager(nil)
+	manager.serialDialer = blockingRefreshSerialDialer{port: port}
+	manager.ConfigureProfile(compatibilitySerialTestProfile("compat.serial.blocking-refresh", false), "")
+	if connected, _ := manager.Connect(); !connected {
+		t.Fatal("serial compatibility adapter did not connect")
+	}
+
+	refreshDone := make(chan struct{})
+	go func() {
+		(compatibilityRuntime{}).refresh(manager)
+		close(refreshDone)
+	}()
+	select {
+	case <-port.started:
+	case <-time.After(time.Second):
+		t.Fatal("refresh did not reach the blocking serial read")
+	}
+
+	configureDone := make(chan bool, 1)
+	go func() {
+		configureDone <- manager.ConfigureProfile(compatibilitySerialTestProfile("compat.serial.other", false), "")
+	}()
+	select {
+	case <-configureDone:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("manager lock remained held during serial refresh I/O")
+	}
+	close(port.release)
+	select {
+	case <-refreshDone:
+	case <-time.After(time.Second):
+		t.Fatal("refresh did not finish after serial read release")
+	}
+}
+
+type blockingRefreshSerialDialer struct {
+	port *blockingRefreshSerialPort
+}
+
+func (d blockingRefreshSerialDialer) OpenSerialPort(types.DeviceProfile) (deviceprofileexec.SerialPort, error) {
+	return d.port, nil
 }
