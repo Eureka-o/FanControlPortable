@@ -144,7 +144,9 @@ func waitForShellReady(done <-chan struct{}, timeout time.Duration) bool {
 				return true
 			}
 			if time.Now().After(deadline) {
-				return true
+				// Registering before TrayNotifyWnd exists makes NIM_ADD fail
+				// silently. Let the supervisor retry after the shell is ready.
+				return false
 			}
 		}
 	}
@@ -153,8 +155,8 @@ func waitForShellReady(done <-chan struct{}, timeout time.Duration) bool {
 // waitForTraySettle 在自启动首次注册托盘前等待通知区域稳定。
 //
 // 即便 isShellReady 已返回 true，开机阶段通知区域仍可能在短时间内被重建。
-// 这里要求通知区域连续稳定一小段时间后再返回；超时后仍会继续注册，避免异常环境下永不显示。
-func waitForTraySettle(done <-chan struct{}, settle, timeout time.Duration) {
+// 这里要求通知区域连续稳定一小段时间后再返回；超时则交给监督循环重试。
+func waitForTraySettle(done <-chan struct{}, settle, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	var stableSince time.Time
 	var stableTray uintptr
@@ -165,7 +167,7 @@ func waitForTraySettle(done <-chan struct{}, settle, timeout time.Duration) {
 	for {
 		select {
 		case <-done:
-			return
+			return false
 		case <-ticker.C:
 			currentTray, currentPID := trayNotifyState()
 			if currentTray != 0 {
@@ -175,7 +177,7 @@ func waitForTraySettle(done <-chan struct{}, settle, timeout time.Duration) {
 					stableSince = time.Now()
 				}
 				if time.Since(stableSince) >= settle {
-					return
+					return true
 				}
 			} else {
 				stableSince = time.Time{}
@@ -183,7 +185,7 @@ func waitForTraySettle(done <-chan struct{}, settle, timeout time.Duration) {
 				stablePID = 0
 			}
 			if time.Now().After(deadline) {
-				return
+				return false
 			}
 		}
 	}

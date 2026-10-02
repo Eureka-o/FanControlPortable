@@ -51,6 +51,12 @@ import type {
   ThemeMeta,
 } from '../types/app';
 
+let configWriteGeneration = 0;
+
+export function getConfigWriteGeneration() {
+	return configWriteGeneration;
+}
+
 export interface AutoScanDeviceInfo {
   manufacturer?: string;
   product?: string;
@@ -258,6 +264,7 @@ class ApiService {
   }
 
 	async updateConfig(config: types.AppConfig): Promise<void> {
+		configWriteGeneration += 1;
 		return await UpdateConfig(config);
 	}
 

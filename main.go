@@ -31,10 +31,6 @@ func main() {
 			break
 		}
 	}
-	if !guiapp.EnsureCoreServiceRunning() {
-		println("警告：无法启动核心服务，GUI 将以有限功能模式运行")
-	}
-
 	themeManager := newThemeManager()
 	app := NewAppWithThemeManager(themeManager)
 	windowOptions := guiapp.ResolveWindowsOptions()

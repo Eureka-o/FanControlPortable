@@ -30,7 +30,9 @@ func (s *temperatureSafetyFallback) observe(autoControl, inputReady bool) (apply
 		return false, recovered
 	}
 	s.invalidSamples++
-	return s.invalidSamples >= temperatureSafetyFallbackThreshold && !s.active, false
+	// Keep applying the fallback while telemetry is unavailable so the target
+	// can ramp toward the safe ceiling instead of jumping there in one write.
+	return s.invalidSamples >= temperatureSafetyFallbackThreshold, false
 }
 
 func (s *temperatureSafetyFallback) markApplied() {
@@ -44,6 +46,26 @@ func temperatureSafetyFallbackTarget(curve []types.FanCurvePoint, unit string, f
 	_, target := smartcontrol.GetCurveRPMBounds(smartcontrol.CurveForUnit(curve, unit))
 	target, _ = applyFlyDigiRuntimeCapabilityToTarget(target, fanData, unit)
 	return target
+}
+
+func rampTemperatureSafetyFallbackTarget(target, previousTarget, rampUpLimit, rampDownLimit int) int {
+	if target <= 0 || previousTarget < 0 {
+		return target
+	}
+	return smartcontrol.ApplyRampLimit(target, previousTarget, rampUpLimit, rampDownLimit)
+}
+
+func fanDataTargetForControlUnit(fanData *types.FanData, unit string) int {
+	if fanData == nil || types.NormalizeFanSpeedUnit(fanData.SpeedUnit) != types.NormalizeFanSpeedUnit(unit) {
+		return -1
+	}
+	if fanData.TargetRPM > 0 {
+		return fanDataSpeedForControlUnit(int(fanData.TargetRPM), unit)
+	}
+	if fanData.CurrentRPM > 0 {
+		return fanDataSpeedForControlUnit(int(fanData.CurrentRPM), unit)
+	}
+	return -1
 }
 
 const staleBridgeUpdateThreshold = 3
@@ -79,7 +101,11 @@ func newSmartControlSampleContext(selection types.TemperatureSelection, speedUni
 }
 
 func (a *CoreApp) recoverTemperatureBridge(reason string) {
-	a.safeRun("temperature-bridge-recover@"+reason, func() {
+	if !a.temperatureBridgeRecoveryRunning.CompareAndSwap(false, true) {
+		return
+	}
+	a.safeGo("temperature-bridge-recover@"+reason, func() {
+		defer a.temperatureBridgeRecoveryRunning.Store(false)
 		a.bridgeManager.Stop()
 		if err := a.bridgeManager.EnsureRunning(); err != nil {
 			if bridge.IsStarting(err.Error()) {
@@ -348,9 +374,17 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			lastSmartTelemetryUsable = advancedTelemetryUsable
 
 			inputReady := automaticControlInputReady(temp)
+			controlReady := a.deviceControlReady()
+			if controlReady && lastTargetRPM < 0 {
+				speedUnit = a.activeDeviceSpeedUnit(&cfg)
+				lastTargetRPM = fanDataTargetForControlUnit(fanData, speedUnit)
+			}
 			applySafetyFallback, safetyFallbackRecovered := false, false
-			if !cfg.AutoControl || !bridge.IsStarting(temp.BridgeMsg) {
+			switch {
+			case !cfg.AutoControl:
 				applySafetyFallback, safetyFallbackRecovered = safetyFallback.observe(cfg.AutoControl, inputReady)
+			case controlReady && !bridge.IsStarting(temp.BridgeMsg) && !staleBridgeTelemetry && temp.TelemetrySource != types.TelemetrySourceBridgeCache:
+				applySafetyFallback, safetyFallbackRecovered = safetyFallback.observe(true, inputReady)
 			}
 			if safetyFallbackRecovered {
 				a.forceNextAutoTarget.Store(true)
@@ -359,7 +393,6 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			if cfg.AutoControl && inputReady && !lastAutoControl {
 				a.forceNextAutoTarget.Store(true)
 			}
-			controlReady := a.deviceControlReady()
 			safetyFallbackDecisionRecorded := false
 			if applySafetyFallback && controlReady {
 				if a.noiseDiagnosticLeaseActive() {
@@ -367,7 +400,8 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				}
 				speedUnit = a.activeDeviceSpeedUnit(&cfg)
 				target := temperatureSafetyFallbackTarget(cfg.FanCurve, speedUnit, fanData)
-				if target > 0 {
+				target = rampTemperatureSafetyFallbackTarget(target, lastTargetRPM, smartCfg.RampUpLimit, smartCfg.RampDownLimit)
+				if target > 0 && target != lastTargetRPM {
 					writeSucceeded := a.setTargetSpeed(target, speedUnit)
 					gateReason := "write-failed"
 					if writeSucceeded {

@@ -37,8 +37,8 @@ FanControl 现在以内置设备档案的方式支持多种设备。不同设备
 
 ## 下载哪个文件
 
-- `FanControl-2.8.2-amd64-installer.exe`：2.8.2 安装包，升级时会保留已有配置。
-- `FanControl-2.8.2-portable.zip`：2.8.2 便携包，解压到固定文件夹后运行 `FanControl.exe`。
+- `FanControl-2.8.3-amd64-installer.exe`：2.8.3 安装包，升级时会保留已有配置。
+- `FanControl-2.8.3-portable.zip`：2.8.3 便携包，解压到固定文件夹后运行 `FanControl.exe`。
 
 首次启动时如果 Windows 弹出权限确认，请选择允许。软件需要管理员权限读取硬件温度，并可能安装或调用温度读取所需的辅助组件。
 
@@ -65,10 +65,11 @@ FanControl 现在以内置设备档案的方式支持多种设备。不同设备
 
 ## 最新版本
 
-当前正式版本：`2.8.2`
+当前正式版本：`2.8.3`
 
 - WiFi 兼容模式支持可选的 WiFi 优先连接，未找到 WiFi 设备时再继续扫描 BLE/HID。
 - 改善 Windows Explorer 重启和通知区域重建后的托盘图标恢复。
+- 温度遥测短暂异常时，自动控温会按升速限幅逐步进入安全转速，避免风扇瞬间拉高。
 - 可直接覆盖安装旧版本，已有配置和历史数据会继续保留。
 
 完整更新记录请查看 [GitHub Releases](https://github.com/Eureka-o/FanControlPortable/releases) 或 `docs/release-notes/`。

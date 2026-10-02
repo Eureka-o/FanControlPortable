@@ -38,20 +38,22 @@ type Manager struct {
 	mutex     sync.Mutex
 	logger    types.Logger
 
-	startMu    sync.Mutex
-	starting   atomic.Bool
-	startDone  chan struct{}
-	lastTemp   types.BridgeTemperatureData
-	lastTempAt int64
+	startMu                  sync.Mutex
+	starting                 atomic.Bool
+	startDone                chan struct{}
+	lastTemp                 types.BridgeTemperatureData
+	lastTempAt               int64
+	temperatureCooldownUntil time.Time
 }
 
 const (
-	bridgeDefaultCommandTimeout = 3 * time.Second
-	bridgeGetTemperatureTimeout = 10 * time.Second
-	bridgeRestartPawnIOTimeout  = 20 * time.Second
-	bridgeExitTimeout           = 2 * time.Second
-	bridgeProcessExitWait       = 3 * time.Second
-	bridgeStartupTimeout        = 30 * time.Second
+	bridgeDefaultCommandTimeout      = 3 * time.Second
+	bridgeGetTemperatureTimeout      = 10 * time.Second
+	bridgeTemperatureFailureCooldown = 3 * time.Second
+	bridgeRestartPawnIOTimeout       = 20 * time.Second
+	bridgeExitTimeout                = 2 * time.Second
+	bridgeProcessExitWait            = 3 * time.Second
+	bridgeStartupTimeout             = 30 * time.Second
 
 	BridgeStateNotStarted = "not_started"
 	BridgeStateStarting   = "starting"
@@ -568,6 +570,13 @@ func (m *Manager) stopUnsafe() {
 }
 
 func (m *Manager) GetTemperature(selection types.TemperatureSelection) types.BridgeTemperatureData {
+	if remaining := m.temperatureReadCooldown(); remaining > 0 {
+		return types.BridgeTemperatureData{
+			Success: false,
+			Error:   fmt.Sprintf("桥接温度读取冷却中（剩余 %s）", remaining.Round(time.Millisecond)),
+		}
+	}
+
 	selection = types.NormalizeTemperatureSelection(selection)
 	selectionPayload, err := json.Marshal(selection)
 	if err != nil {
@@ -592,6 +601,7 @@ func (m *Manager) GetTemperature(selection types.TemperatureSelection) types.Bri
 
 	response, err := m.SendCommand("GetTemperature", string(selectionPayload))
 	if err != nil {
+		m.tripTemperatureReadCooldown()
 		return types.BridgeTemperatureData{
 			Success: false,
 			Error:   fmt.Sprintf("桥接程序通信失败: %v", err),
@@ -599,6 +609,7 @@ func (m *Manager) GetTemperature(selection types.TemperatureSelection) types.Bri
 	}
 
 	if !response.Success {
+		m.tripTemperatureReadCooldown()
 		if response.Data != nil {
 			result := *response.Data
 			result.Success = false
@@ -614,10 +625,15 @@ func (m *Manager) GetTemperature(selection types.TemperatureSelection) types.Bri
 	}
 
 	if response.Data == nil {
+		m.tripTemperatureReadCooldown()
 		return types.BridgeTemperatureData{
 			Success: false,
 			Error:   "桥接程序返回空数据",
 		}
+	}
+	if !response.Data.Success {
+		m.tripTemperatureReadCooldown()
+		return *response.Data
 	}
 
 	return m.recordLastTemp(*response.Data)
@@ -630,8 +646,30 @@ func (m *Manager) recordLastTemp(data types.BridgeTemperatureData) types.BridgeT
 	m.mutex.Lock()
 	m.lastTemp = data
 	m.lastTempAt = time.Now().UnixMilli()
+	m.temperatureCooldownUntil = time.Time{}
 	m.mutex.Unlock()
 	return data
+}
+
+func (m *Manager) temperatureReadCooldown() time.Duration {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	remaining := time.Until(m.temperatureCooldownUntil)
+	if remaining <= 0 {
+		m.temperatureCooldownUntil = time.Time{}
+		return 0
+	}
+	return remaining
+}
+
+func (m *Manager) tripTemperatureReadCooldown() {
+	until := time.Now().Add(bridgeTemperatureFailureCooldown)
+	m.mutex.Lock()
+	if until.After(m.temperatureCooldownUntil) {
+		m.temperatureCooldownUntil = until
+	}
+	m.mutex.Unlock()
 }
 
 func (m *Manager) GetStatus() map[string]any {

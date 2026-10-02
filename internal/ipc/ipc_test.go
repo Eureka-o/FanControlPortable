@@ -674,6 +674,29 @@ func TestServerWriterClosesStalledClientAfterTimeout(t *testing.T) {
 	}
 }
 
+func TestHasInteractiveClientsIgnoresReadinessProbe(t *testing.T) {
+	server := NewServer(nil, nil)
+	probe := &clientState{closed: make(chan struct{})}
+	gui := &clientState{closed: make(chan struct{})}
+	probeClient, probeServer := net.Pipe()
+	defer probeClient.Close()
+	defer probeServer.Close()
+	guiClient, guiServer := net.Pipe()
+	defer guiClient.Close()
+	defer guiServer.Close()
+	probe.conn = probeServer
+	gui.conn = guiServer
+	server.clients[probeServer] = probe
+	if server.HasInteractiveClients() {
+		t.Fatal("readiness probe must not count as an interactive client")
+	}
+	gui.interactive.Store(true)
+	server.clients[guiServer] = gui
+	if !server.HasInteractiveClients() {
+		t.Fatal("interactive client should be reported")
+	}
+}
+
 func TestServerWriterPrioritizesResponseOverQueuedEvents(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()

@@ -33,6 +33,7 @@ type Manager struct {
 	wifiProtocol      string
 	wifiConfig        bool
 	wifiHeartbeat     bool
+	wifiHbFailures    int
 	wifiHbStop        chan struct{}
 	wifiHbDone        chan struct{}
 	activeProfile     types.DeviceProfile

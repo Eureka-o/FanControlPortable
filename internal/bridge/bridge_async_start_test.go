@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,5 +46,28 @@ func TestLastSuccessfulTemperatureIsCached(t *testing.T) {
 	m.recordLastTemp(types.BridgeTemperatureData{Success: false})
 	if !m.lastTemp.Success || m.lastTempAt == 0 {
 		t.Fatalf("last successful temperature was not preserved: %+v", m.lastTemp)
+	}
+}
+
+func TestTemperatureReadCooldownFailsFast(t *testing.T) {
+	m := NewManager(testLogger{})
+	m.tripTemperatureReadCooldown()
+
+	started := time.Now()
+	data := m.GetTemperature(types.TemperatureSelection{})
+	if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
+		t.Fatalf("GetTemperature() blocked during cooldown for %s", elapsed)
+	}
+	if data.Success || !strings.Contains(data.Error, "冷却") {
+		t.Fatalf("GetTemperature() during cooldown = %+v; want a fast cooldown error", data)
+	}
+}
+
+func TestSuccessfulTemperatureClearsReadCooldown(t *testing.T) {
+	m := NewManager(testLogger{})
+	m.tripTemperatureReadCooldown()
+	m.recordLastTemp(types.BridgeTemperatureData{Success: true})
+	if remaining := m.temperatureReadCooldown(); remaining != 0 {
+		t.Fatalf("successful temperature left %s of cooldown", remaining)
 	}
 }

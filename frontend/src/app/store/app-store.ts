@@ -15,7 +15,7 @@ import {
   type DeviceStatusPayload,
 } from './device-snapshot';
 import { types } from '../../../wailsjs/go/models';
-import { apiService } from '../services/api';
+import { apiService, getConfigWriteGeneration } from '../services/api';
 import {
 	appendSampledHistoryPoint,
 	createLiveHistoryPoint,
@@ -414,6 +414,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }));
 
       get().handleTemperaturePayload(deviceStatus.temperature || null);
+      void get().loadTemperatureHistory();
     } catch (error) {
       console.error('初始化失败:', error);
       const detail = error instanceof Error ? error.message : undefined;
@@ -480,6 +481,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   refreshDeviceContext: async () => {
     const requestGeneration = deviceContextRequestGate.begin();
+    const configGeneration = getConfigWriteGeneration();
     try {
       const [appConfig, status] = await Promise.all([
         apiService.getConfig().catch(() => null),
@@ -488,9 +490,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
       if (!deviceContextRequestGate.isCurrent(requestGeneration)) {
         return status;
       }
-	      const coreServiceError = status?.error ? getCoreServiceErrorMessage(status.error) : null;
+      const coreServiceError = status?.error ? getCoreServiceErrorMessage(status.error) : null;
       set((state) => ({
-        config: appConfig ? types.AppConfig.createFrom(appConfig) : state.config,
+        config: appConfig && configGeneration === getConfigWriteGeneration()
+          ? types.AppConfig.createFrom(appConfig)
+          : state.config,
         ...applyDeviceSnapshotEvent(state, { type: 'status', status }),
         monitorOnlyActive: status?.monitorOnly === true,
         coreServiceError,
@@ -685,8 +689,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
         set({ legionFnQSupported: payload?.supported === true });
       })
     );
-
-    void get().loadTemperatureHistory();
 
     return () => {
       unsubscribers.forEach((unsubscribe) => unsubscribe());

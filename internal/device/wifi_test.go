@@ -384,6 +384,54 @@ func TestWiFiFirmwareV2ExposesNativeControlsButKeepsSpeedEndpoint(t *testing.T) 
 	}
 }
 
+func TestWiFiHeartbeatHealthUsesConsecutiveFailures(t *testing.T) {
+	m := NewManager(nil)
+	m.deviceType = types.DeviceTransportWiFi
+	m.deviceTransport = types.DeviceTransportWiFi
+	m.isConnected = true
+	m.wifiHbStop = make(chan struct{})
+	disconnected := make(chan struct{}, 2)
+	m.SetCallbacks(nil, func() { disconnected <- struct{}{} })
+
+	m.handleWiFiHeartbeatResult(false)
+	m.handleWiFiHeartbeatResult(false)
+	if !m.IsConnected() {
+		t.Fatal("transient heartbeat failures should not disconnect WiFi")
+	}
+	m.handleWiFiHeartbeatResult(true)
+	m.handleWiFiHeartbeatResult(false)
+	if !m.IsConnected() {
+		t.Fatal("successful heartbeat should clear consecutive failures")
+	}
+	m.handleWiFiHeartbeatResult(false)
+	m.handleWiFiHeartbeatResult(false)
+	m.handleWiFiHeartbeatResult(false)
+	if m.IsConnected() {
+		t.Fatal("heartbeat failure threshold should disconnect WiFi")
+	}
+	select {
+	case <-disconnected:
+	default:
+		t.Fatal("heartbeat health disconnect did not notify callback")
+	}
+	m.handleWiFiHeartbeatResult(false)
+	select {
+	case <-disconnected:
+		t.Fatal("heartbeat health disconnect notified callback more than once")
+	default:
+	}
+}
+
+func TestPostWiFiHeartbeatReportsHTTPHealth(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	if postWiFiHeartbeat(server.Client(), server.URL) {
+		t.Fatal("HTTP 503 heartbeat should be unhealthy")
+	}
+}
+
 func TestWiFiFirmwareV2WorksWithNonDefaultPercentProfile(t *testing.T) {
 	var postedConfigs []map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
