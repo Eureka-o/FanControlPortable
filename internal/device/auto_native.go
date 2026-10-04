@@ -229,7 +229,9 @@ func nativeAutoConnectCandidates(profiles []types.DeviceProfile, preferred ...ty
 		}
 	}
 	add(&hidProfiles, types.LegacyRPMProfileForTransport(types.DeviceTransportHID))
+	add(&hidProfiles, types.BlackSharkBRB02HIDProfile())
 	add(&bleProfiles, types.FlyDigiBS1Profile())
+	add(&bleProfiles, types.BlackSharkBRB02Profile())
 
 	// Keep the previous profile preferred only inside its transport group.
 	return append(preferredBLEProfiles, append(bleProfiles, append(preferredHIDProfiles, hidProfiles...)...)...)
@@ -243,7 +245,13 @@ func scanNativeHIDDevices(profiles []types.DeviceProfile) []map[string]string {
 		if profile.Transport != types.DeviceTransportHID {
 			continue
 		}
-		for _, candidate := range scanFlyDigiHIDDevices(flyDigiHIDProductIDsForProfile(profile.ID)) {
+		var candidates []flyDigiHIDCandidate
+		if profile.ID == types.BlackSharkBRB02HIDProfileID {
+			candidates = scanHIDDevices(types.BlackSharkHIDVendorID, []uint16{types.BlackSharkBRB02HIDProductID})
+		} else {
+			candidates = scanFlyDigiHIDDevices(flyDigiHIDProductIDsForProfile(profile.ID))
+		}
+		for _, candidate := range candidates {
 			path := strings.TrimSpace(candidate.path)
 			if path == "" || seenPaths[path] {
 				continue
@@ -285,6 +293,9 @@ func scanNativeBLEDevices(ctx context.Context, profiles []types.DeviceProfile) (
 
 func nativeHIDDeviceInfo(profile types.DeviceProfile, productID uint16, path string) map[string]string {
 	model := flyDigiHIDModelName(productID)
+	if profile.ID == types.BlackSharkBRB02HIDProfileID {
+		model = types.BlackSharkBRB02DisplayName
+	}
 	profileID := profile.ID
 	if profileID == types.LegacyRPMProfileID {
 		if id := types.FlyDigiProfileIDForHIDProductID(productID); id != "" {
@@ -298,6 +309,9 @@ func nativeHIDDeviceInfo(profile types.DeviceProfile, productID uint16, path str
 	manufacturer := strings.TrimSpace(profile.Vendor)
 	if manufacturer == "" {
 		manufacturer = "FlyDigi"
+	}
+	if profile.ID == types.BlackSharkBRB02HIDProfileID {
+		manufacturer = types.BlackSharkBRB02Vendor
 	}
 	return map[string]string{
 		"manufacturer": manufacturer,

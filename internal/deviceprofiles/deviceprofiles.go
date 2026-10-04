@@ -375,7 +375,7 @@ func validateTransportSettings(profile types.DeviceProfile, fallbackEndpoint str
 			return err
 		}
 	case types.DeviceTransportBLE:
-		if !isUUIDLike(profile.Connection.BLEServiceUUID) {
+		if strings.TrimSpace(profile.Connection.BLEServiceUUID) != "" && !isUUIDLike(profile.Connection.BLEServiceUUID) {
 			return fmt.Errorf("ble device profile requires a valid service UUID")
 		}
 		if profile.Capabilities.SupportsSetSpeed && !isUUIDLike(profile.Connection.BLEWriteCharacteristic) {

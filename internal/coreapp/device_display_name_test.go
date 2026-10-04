@@ -28,6 +28,11 @@ func TestConnectedDeviceDisplayName(t *testing.T) {
 			want:    flyDigi.DisplayName,
 		},
 		{
+			name:    "preserves canonical Black Shark name instead of protocol model",
+			profile: types.BlackSharkBRB02Profile(),
+			want:    types.BlackSharkBRB02DisplayName,
+		},
+		{
 			name:    "omits legacy vendor from Slim",
 			profile: slim,
 			want:    slim.Model,

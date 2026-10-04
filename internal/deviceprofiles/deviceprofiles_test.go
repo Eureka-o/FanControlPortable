@@ -260,6 +260,12 @@ func TestValidateBLEAndSerialProfiles(t *testing.T) {
 	}
 }
 
+func TestValidateBLEProfileAllowsDiscoveryWithoutFixedService(t *testing.T) {
+	if _, err := NormalizeAndValidate(types.BlackSharkBRB02Profile(), ""); err != nil {
+		t.Fatalf("Black Shark profile with split GATT services returned error: %v", err)
+	}
+}
+
 func TestPrepareRuntimeProfileCanonicalizesBuiltInProfile(t *testing.T) {
 	profile := types.DefaultWiFiPercentProfile("10.0.0.42")
 	profile.SpeedUnit = types.FanSpeedUnitRPM

@@ -6,7 +6,7 @@ FanControl is a Windows fan-control tool for external coolers, fan controllers a
 
 当前版本已内置 **Slim压风散热器Pro** 与多款飞智（FlyDigi）BS 系列设备档案；WiFi 与虚拟串口/COM 设备也可以通过兼容模式手动添加或扫描发现。
 
-The current version includes built-in profiles for **Slim压风散热器Pro** and multiple FlyDigi BS-series devices. WiFi and virtual serial/COM devices can also be added manually or discovered through compatibility mode.
+The current version includes built-in profiles for **Slim压风散热器Pro**, multiple FlyDigi BS-series devices, and **黑鲨（Black Shark）风神 Pro**. WiFi and virtual serial/COM devices can also be added manually or discovered through compatibility mode.
 
 [下载最新版](https://github.com/Eureka-o/FanControlPortable/releases/latest)
 
@@ -37,8 +37,8 @@ FanControl 现在以内置设备档案的方式支持多种设备。不同设备
 
 ## 下载哪个文件
 
-- `FanControl-2.8.3-amd64-installer.exe`：2.8.3 安装包，升级时会保留已有配置。
-- `FanControl-2.8.3-portable.zip`：2.8.3 便携包，解压到固定文件夹后运行 `FanControl.exe`。
+- `FanControl-2.9.0-beta-amd64-installer.exe`：2.9.0-beta 安装包，升级时会保留已有配置。
+- `FanControl-2.9.0-beta-portable.zip`：2.9.0-beta 便携包，解压到固定文件夹后运行 `FanControl.exe`。
 
 首次启动时如果 Windows 弹出权限确认，请选择允许。软件需要管理员权限读取硬件温度，并可能安装或调用温度读取所需的辅助组件。
 
@@ -65,7 +65,7 @@ FanControl 现在以内置设备档案的方式支持多种设备。不同设备
 
 ## 最新版本
 
-当前正式版本：`2.8.3`
+当前构建版本：`2.9.0-beta`
 
 - WiFi 兼容模式支持可选的 WiFi 优先连接，未找到 WiFi 设备时再继续扫描 BLE/HID。
 - 改善 Windows Explorer 重启和通知区域重建后的托盘图标恢复。

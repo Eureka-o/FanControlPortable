@@ -92,8 +92,10 @@ func TestNativeAutoConnectCandidatesKeepUserNativeProfilesBeforeBuiltInFallbacks
 	wantIDs := []string{
 		userBLE.ID,
 		types.FlyDigiBS1ProfileID,
+		types.BlackSharkBRB02ProfileID,
 		userHID.ID,
 		types.LegacyRPMProfileID,
+		types.BlackSharkBRB02HIDProfileID,
 	}
 	if len(gotIDs) != len(wantIDs) {
 		t.Fatalf("candidate IDs = %#v, want %#v", gotIDs, wantIDs)

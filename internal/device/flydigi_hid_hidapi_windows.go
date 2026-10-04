@@ -15,6 +15,7 @@ import (
 type flyDigiHIDDevice struct {
 	device    *hid.Device
 	path      string
+	vendorID  uint16
 	productID uint16
 }
 
@@ -32,13 +33,17 @@ func exitFlyDigiHIDAPI() error {
 }
 
 func openFlyDigiHIDDevice(productIDs []uint16) (*flyDigiHIDDevice, error) {
+	return openHIDDevice(types.FlyDigiHIDVendorID, productIDs)
+}
+
+func openHIDDevice(vendorID uint16, productIDs []uint16) (*flyDigiHIDDevice, error) {
 	if len(productIDs) == 0 {
 		productIDs = flyDigiHIDProductIDsForProfile(types.LegacyRPMProfileID)
 	}
 
 	var lastErr error
 	for _, productID := range productIDs {
-		dev, err := hid.OpenFirst(types.FlyDigiHIDVendorID, productID)
+		dev, err := hid.OpenFirst(vendorID, productID)
 		if err != nil {
 			lastErr = err
 			continue
@@ -46,6 +51,7 @@ func openFlyDigiHIDDevice(productIDs []uint16) (*flyDigiHIDDevice, error) {
 
 		wrapped := &flyDigiHIDDevice{
 			device:    dev,
+			vendorID:  vendorID,
 			productID: productID,
 		}
 		if info, err := dev.GetDeviceInfo(); err == nil && info != nil {
@@ -63,6 +69,10 @@ func openFlyDigiHIDDevice(productIDs []uint16) (*flyDigiHIDDevice, error) {
 }
 
 func scanFlyDigiHIDDevices(productIDs []uint16) []flyDigiHIDCandidate {
+	return scanHIDDevices(types.FlyDigiHIDVendorID, productIDs)
+}
+
+func scanHIDDevices(vendorID uint16, productIDs []uint16) []flyDigiHIDCandidate {
 	wanted := map[uint16]bool{}
 	for _, id := range productIDs {
 		wanted[id] = true
@@ -70,7 +80,7 @@ func scanFlyDigiHIDDevices(productIDs []uint16) []flyDigiHIDCandidate {
 
 	seen := map[string]bool{}
 	candidates := make([]flyDigiHIDCandidate, 0)
-	_ = hid.Enumerate(types.FlyDigiHIDVendorID, hid.ProductIDAny, func(info *hid.DeviceInfo) error {
+	_ = hid.Enumerate(vendorID, hid.ProductIDAny, func(info *hid.DeviceInfo) error {
 		if info == nil {
 			return nil
 		}

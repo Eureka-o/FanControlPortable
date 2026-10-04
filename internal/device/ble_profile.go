@@ -69,7 +69,7 @@ func (m *Manager) connectBLEWithContextLocked(ctx context.Context) (bool, map[st
 		m.onBLEConnectionLost(expectedGeneration)
 	})
 	m.bleExecutor.SetNotificationCallback(func(data *types.FanData) {
-		m.onBS1Notification(expectedGeneration, data)
+		m.onBLENotification(expectedGeneration, data)
 	})
 
 	fanData, err := m.readBLEStateWithContextLocked(ctx)
@@ -105,8 +105,8 @@ func (m *Manager) disconnectBLELocked() bool {
 	return true
 }
 
-func (m *Manager) markBS1DisconnectedLocked() func() {
-	if !m.isConnected || m.deviceType != types.DeviceTransportBLE || m.activeProfile.ID != types.FlyDigiBS1ProfileID {
+func (m *Manager) markBLEDisconnectedLocked() func() {
+	if !m.isConnected || m.deviceType != types.DeviceTransportBLE {
 		return nil
 	}
 	m.connectionGen.Add(1)
@@ -120,14 +120,14 @@ func (m *Manager) onBLEConnectionLost(expectedGeneration uint64) {
 		m.mutex.Unlock()
 		return
 	}
-	callback := m.markBS1DisconnectedLocked()
+	callback := m.markBLEDisconnectedLocked()
 	m.mutex.Unlock()
 	if callback != nil {
 		callback()
 	}
 }
 
-func (m *Manager) onBS1Notification(expectedGeneration uint64, data *types.FanData) {
+func (m *Manager) onBLENotification(expectedGeneration uint64, data *types.FanData) {
 	if data == nil {
 		return
 	}
@@ -136,7 +136,7 @@ func (m *Manager) onBS1Notification(expectedGeneration uint64, data *types.FanDa
 		m.mutex.Unlock()
 		return
 	}
-	if !m.isConnected || m.deviceType != types.DeviceTransportBLE || m.activeProfile.ID != types.FlyDigiBS1ProfileID {
+	if !m.isConnected || m.deviceType != types.DeviceTransportBLE {
 		m.mutex.Unlock()
 		return
 	}
@@ -186,7 +186,7 @@ func (m *Manager) RefreshBLEState() bool {
 		m.mutex.Unlock()
 		return false
 	}
-	if m.activeProfile.ID == types.FlyDigiBS1ProfileID {
+	if m.activeProfile.ID == types.FlyDigiBS1ProfileID || m.activeProfile.ID == types.BlackSharkBRB02ProfileID {
 		if m.bleExecutor == nil || !m.bleExecutor.IsConnected() {
 			m.mutex.Unlock()
 			return false
@@ -264,7 +264,7 @@ func (m *Manager) setBLETargetSpeedWithContextLocked(ctx context.Context, speed 
 	next, err := m.bleExecutor.SetSpeed(ctx, speed)
 	if err != nil {
 		m.logError("BLE profile speed command failed: %v", err)
-		if callback := m.markBS1DisconnectedLocked(); callback != nil {
+		if callback := m.markBLEDisconnectedLocked(); callback != nil {
 			go callback()
 		}
 		return false

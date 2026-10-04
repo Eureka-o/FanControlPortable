@@ -969,6 +969,8 @@
       "animationSpeed": "アニメーション速度",
       "brightness": "明るさ",
       "smartTempWarning": "スマート制御モードではデバイスがライティング効果を自動制御するため、カラーと明るさの調整はできません。",
+      "blackSharkTitle": "Black Shark 専用ライティング",
+      "blackSharkDescription": "これらのモードは Black Shark Cooler Pro 本体に保存され、デバイス側で実行されます。",
       "colorLabel": "カラー {{index}}",
       "applyHintConnected": "適用後すぐに反映されます",
       "applyHintDisconnected": "次回接続時に自動適用されます"
@@ -1434,6 +1436,34 @@
         "breathing": {
           "label": "ブリージング",
           "description": "3 色の点滅をループ表示"
+        },
+        "blackshark_breathing": {
+          "label": "ブリージング",
+          "description": "Black Shark のブリージング効果"
+        },
+        "blackshark_static": {
+          "label": "常時点灯",
+          "description": "Black Shark の単色常時点灯"
+        },
+        "blackshark_flashing": {
+          "label": "点滅",
+          "description": "Black Shark の点滅効果"
+        },
+        "blackshark_refresh": {
+          "label": "リフレッシュ",
+          "description": "Black Shark のリフレッシュ効果"
+        },
+        "blackshark_response": {
+          "label": "レスポンス",
+          "description": "Black Shark のレスポンス効果"
+        },
+        "blackshark_color_cycle": {
+          "label": "カラーサイクル",
+          "description": "Black Shark のカラーサイクル"
+        },
+        "blackshark_color_flow": {
+          "label": "カラーフロー",
+          "description": "Black Shark のカラーフロー"
         }
       },
       "lightSpeed": {

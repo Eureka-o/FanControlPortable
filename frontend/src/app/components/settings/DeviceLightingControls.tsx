@@ -51,13 +51,28 @@ function getDefaultLightStripConfig(): types.LightStripConfig {
   });
 }
 
+function normalizeLightMode(mode: unknown): string {
+  const migratedModes: Record<string, string> = {
+    blackshark_breathing: 'breathing',
+    blackshark_static: 'static_single',
+    blackshark_flashing: 'flowing',
+    blackshark_refresh: 'flowing',
+    blackshark_response: 'breathing',
+    blackshark_color_cycle: 'rotation',
+    blackshark_color_flow: 'flowing',
+  };
+  const rawMode = typeof mode === 'string' ? mode : '';
+  const normalized = migratedModes[rawMode] || rawMode;
+  return LIGHT_MODE_OPTIONS.some((option) => option.value === normalized) ? normalized : 'smart_temp';
+}
+
 function normalizeLightStripConfig(config: types.AppConfig): types.LightStripConfig {
   const defaults = getDefaultLightStripConfig();
   const raw = (config as any).lightStrip;
   if (!raw) return defaults;
 
   const normalized = types.LightStripConfig.createFrom({
-    mode: raw.mode || defaults.mode,
+    mode: normalizeLightMode(raw.mode),
     speed: raw.speed || defaults.speed,
     brightness: typeof raw.brightness === 'number' ? Math.max(0, Math.min(100, raw.brightness)) : defaults.brightness,
     colors: Array.isArray(raw.colors) && raw.colors.length > 0 ? raw.colors : defaults.colors,
@@ -86,10 +101,13 @@ function hexToRgb(hex: string): types.RGBColor {
 
 function getRequiredColorCount(mode: string): number {
   switch (mode) {
-    case 'static_single': return 1;
+    case 'static_single':
+    case 'breathing':
+      return 1;
     case 'off':
     case 'smart_temp':
     case 'flowing':
+    case 'rotation':
       return 0;
     case 'static_multi':
       return 3;

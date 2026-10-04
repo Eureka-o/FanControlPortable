@@ -969,6 +969,8 @@
       "animationSpeed": "Animation speed",
       "brightness": "Brightness",
       "smartTempWarning": "In Smart Temp mode the device controls lighting automatically, so color and brightness cannot be adjusted manually.",
+      "blackSharkTitle": "Black Shark lighting",
+      "blackSharkDescription": "These modes are stored and executed directly by the Black Shark Cooler Pro.",
       "colorLabel": "Color {{index}}",
       "applyHintConnected": "Takes effect immediately after applying",
       "applyHintDisconnected": "Will apply automatically on next connection"
@@ -1434,6 +1436,34 @@
         "breathing": {
           "label": "Breathing",
           "description": "Multi-color breathing effect"
+        },
+        "blackshark_breathing": {
+          "label": "Breathing",
+          "description": "Black Shark breathing effect"
+        },
+        "blackshark_static": {
+          "label": "Static",
+          "description": "Black Shark single-color static effect"
+        },
+        "blackshark_flashing": {
+          "label": "Flashing",
+          "description": "Black Shark flashing effect"
+        },
+        "blackshark_refresh": {
+          "label": "Refresh",
+          "description": "Black Shark refresh effect"
+        },
+        "blackshark_response": {
+          "label": "Response",
+          "description": "Black Shark response effect"
+        },
+        "blackshark_color_cycle": {
+          "label": "Color cycle",
+          "description": "Black Shark color cycle"
+        },
+        "blackshark_color_flow": {
+          "label": "Color flow",
+          "description": "Black Shark color flow"
         }
       },
       "lightSpeed": {

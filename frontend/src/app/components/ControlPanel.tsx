@@ -177,7 +177,7 @@ export default function ControlPanel({
     ? currentDeviceCapabilities.supportsCustomSpeed || currentDeviceCapabilities.supportsSetSpeed
     : true;
   const currentDeviceSupportsLighting = !!currentDeviceCapabilities?.supportsLighting;
-  const currentDeviceSupportsGearLight = !!((currentDeviceCapabilities as any)?.supportsGearLight || currentDeviceSupportsLighting);
+  const currentDeviceSupportsGearLight = !!(currentDeviceCapabilities as any)?.supportsGearLight;
   const currentDeviceSupportsBrightness = !!((currentDeviceCapabilities as any)?.supportsBrightness || currentDeviceSupportsLighting);
   const currentDeviceSupportsPowerOnStart = !!currentDeviceCapabilities?.supportsPowerOnStart;
   const currentDeviceSupportsSmartStartStop = !!currentDeviceCapabilities?.supportsSmartStartStop;

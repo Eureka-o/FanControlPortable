@@ -1,6 +1,7 @@
 package types
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
@@ -109,6 +110,8 @@ func TestBuiltInDeviceProfilesIncludeFlyDigiProfiles(t *testing.T) {
 		FlyDigiBS2PROProfileID,
 		FlyDigiBS3ProfileID,
 		FlyDigiBS3PROProfileID,
+		BlackSharkBRB02ProfileID,
+		BlackSharkBRB02HIDProfileID,
 	}
 	for _, id := range expectedIDs {
 		found := false
@@ -125,6 +128,103 @@ func TestBuiltInDeviceProfilesIncludeFlyDigiProfiles(t *testing.T) {
 	for _, profile := range profiles {
 		if profile.ID == LegacyRPMProfileID {
 			t.Fatalf("legacy RPM profile should not be part of the visible built-in device library: %#v", profile)
+		}
+	}
+}
+
+func TestBlackSharkBRB02ProfileDeclaresNativeLighting(t *testing.T) {
+	profile := NormalizeDeviceProfile(BlackSharkBRB02Profile(), "")
+	if profile.DisplayName != BlackSharkBRB02DisplayName || profile.Vendor != BlackSharkBRB02Vendor {
+		t.Fatalf("Black Shark identity = %q/%q", profile.DisplayName, profile.Vendor)
+	}
+	if profile.Model != BlackSharkBRB02DisplayName || profile.SpeedRange.Max != 4000 || profile.Capabilities.SpeedRange.Max != 4000 {
+		t.Fatalf("Black Shark public model/speed range = %q/%#v/%#v", profile.Model, profile.SpeedRange, profile.Capabilities.SpeedRange)
+	}
+	if profile.Connection.BLENameFilter != "BS BRB02 Cooler Pro" || profile.Connection.BLEWriteCharacteristic != "ae41" || profile.Connection.BLENotifyCharacteristic != "ae04" {
+		t.Fatalf("Black Shark BLE connection = %#v", profile.Connection)
+	}
+	if !profile.Capabilities.SupportsLighting || !profile.Capabilities.SupportsBrightness || profile.Capabilities.SupportsManualGears {
+		t.Fatalf("Black Shark capabilities = %#v", profile.Capabilities)
+	}
+}
+
+func TestBlackSharkBRB02HIDProfileMatchesBLECapabilities(t *testing.T) {
+	ble := NormalizeDeviceProfile(BlackSharkBRB02Profile(), "")
+	hid := NormalizeDeviceProfile(BlackSharkBRB02HIDProfile(), "")
+	if hid.ID != BlackSharkBRB02HIDProfileID || hid.Transport != DeviceTransportHID {
+		t.Fatalf("Black Shark HID identity = %q/%q", hid.ID, hid.Transport)
+	}
+	if hid.DisplayName != ble.DisplayName || hid.Model != ble.Model || hid.Vendor != ble.Vendor {
+		t.Fatalf("Black Shark HID identity differs from BLE: %#v vs %#v", hid, ble)
+	}
+	if hid.SpeedRange != ble.SpeedRange || hid.Capabilities.SpeedRange != ble.Capabilities.SpeedRange {
+		t.Fatalf("Black Shark HID speed range = %#v/%#v, want %#v", hid.SpeedRange, hid.Capabilities.SpeedRange, ble.SpeedRange)
+	}
+	bleCaps := ble.Capabilities
+	hidCaps := hid.Capabilities
+	bleCaps.ProfileID, bleCaps.Transport = "", ""
+	hidCaps.ProfileID, hidCaps.Transport = "", ""
+	if hidCaps != bleCaps {
+		t.Fatalf("Black Shark HID capabilities differ from BLE: %#v vs %#v", hidCaps, bleCaps)
+	}
+	if !strings.Contains(hid.Notes, "VID 0xE2B7") || !strings.Contains(hid.Notes, "PID 0x7001") {
+		t.Fatalf("Black Shark HID notes should identify VID/PID: %q", hid.Notes)
+	}
+}
+
+func TestBlackSharkBuiltInLookupAndTransportFiltering(t *testing.T) {
+	if BlackSharkBRB02HIDVendorID != 0xE2B7 || BlackSharkBRB02HIDProductID != 0x7001 {
+		t.Fatalf("Black Shark HID identifiers = %04X:%04X, want E2B7:7001", BlackSharkBRB02HIDVendorID, BlackSharkBRB02HIDProductID)
+	}
+	for _, test := range []struct {
+		id        string
+		transport string
+	}{
+		{BlackSharkBRB02ProfileID, DeviceTransportBLE},
+		{BlackSharkBRB02HIDProfileID, DeviceTransportHID},
+	} {
+		profile, ok := BuiltInDeviceProfileByID(test.id)
+		if !ok || profile.ID != test.id || profile.Transport != test.transport {
+			t.Fatalf("lookup %q = %#v/%v, want transport %q", test.id, profile, ok, test.transport)
+		}
+		if !IsBuiltInDeviceProfileID(test.id) {
+			t.Fatalf("%q should be recognized as built-in", test.id)
+		}
+	}
+	profiles := BuiltInDeviceProfiles("")
+	for _, transport := range []string{DeviceTransportBLE, DeviceTransportHID} {
+		found := false
+		for _, profile := range profiles {
+			if profile.ID == BlackSharkBRB02ProfileID && transport == DeviceTransportBLE ||
+				profile.ID == BlackSharkBRB02HIDProfileID && transport == DeviceTransportHID {
+				if NormalizeDeviceTransport(profile.Transport) == transport {
+					found = true
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("built-in Black Shark profile missing for transport %q", transport)
+		}
+	}
+}
+
+func TestEnsureBuiltInDeviceProfilesSeedsBlackSharkTransportsOnce(t *testing.T) {
+	cfg := &AppConfig{}
+	if !ensureBuiltInDeviceProfiles(cfg) {
+		t.Fatal("expected missing built-in profiles to be seeded")
+	}
+	if ensureBuiltInDeviceProfiles(cfg) {
+		t.Fatal("seeding an already-normalized profile list should not change config")
+	}
+	for _, id := range []string{BlackSharkBRB02ProfileID, BlackSharkBRB02HIDProfileID} {
+		count := 0
+		for _, profile := range cfg.DeviceProfiles {
+			if profile.ID == id {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Fatalf("seeded profile %q count = %d, want exactly one", id, count)
 		}
 	}
 }

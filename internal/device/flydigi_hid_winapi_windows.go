@@ -35,6 +35,7 @@ var (
 type flyDigiHIDDevice struct {
 	handle    windows.Handle
 	path      string
+	vendorID  uint16
 	productID uint16
 }
 
@@ -64,18 +65,23 @@ func exitFlyDigiHIDAPI() error {
 }
 
 func openFlyDigiHIDDevice(productIDs []uint16) (*flyDigiHIDDevice, error) {
+	return openHIDDevice(types.FlyDigiHIDVendorID, productIDs)
+}
+
+func openHIDDevice(vendorID uint16, productIDs []uint16) (*flyDigiHIDDevice, error) {
 	if len(productIDs) == 0 {
 		productIDs = flyDigiHIDProductIDsForProfile(types.LegacyRPMProfileID)
 	}
 
 	var lastErr error
-	for _, candidate := range scanFlyDigiHIDDevices(productIDs) {
+	for _, candidate := range scanHIDDevices(vendorID, productIDs) {
 		dev, err := openHIDPath(candidate.path)
 		if err != nil {
 			lastErr = fmt.Errorf("winapi 尝试打开 %s (PID 0x%04X) 失败: %w", candidate.path, candidate.productID, err)
 			continue
 		}
 		dev.productID = candidate.productID
+		dev.vendorID = vendorID
 		return dev, nil
 	}
 	if lastErr != nil {
@@ -85,6 +91,10 @@ func openFlyDigiHIDDevice(productIDs []uint16) (*flyDigiHIDDevice, error) {
 }
 
 func scanFlyDigiHIDDevices(productIDs []uint16) []flyDigiHIDCandidate {
+	return scanHIDDevices(types.FlyDigiHIDVendorID, productIDs)
+}
+
+func scanHIDDevices(vendorID uint16, productIDs []uint16) []flyDigiHIDCandidate {
 	paths, err := enumerateHIDDevicePaths()
 	if err != nil {
 		return nil
@@ -92,7 +102,7 @@ func scanFlyDigiHIDDevices(productIDs []uint16) []flyDigiHIDCandidate {
 	seen := map[string]bool{}
 	candidates := make([]flyDigiHIDCandidate, 0)
 	for _, path := range paths {
-		productID, ok := flyDigiHIDProductIDFromPath(path, productIDs)
+		productID, ok := hidProductIDFromPath(path, vendorID, productIDs)
 		if !ok || seen[path] {
 			continue
 		}

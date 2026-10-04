@@ -143,6 +143,9 @@ func (e *BLEExecutor) Open(ctx context.Context) (*types.FanData, error) {
 		e.lastState = cloneFanData(state)
 		return state, nil
 	}
+	if e.profile.ID == types.BlackSharkBRB02ProfileID {
+		return e.readBlackSharkStatusLocked(ctx)
+	}
 	if e.hasReadCommand || e.canReadDirectly() {
 		return e.readStateLocked(ctx)
 	}
@@ -176,6 +179,9 @@ func (e *BLEExecutor) ReadState(ctx context.Context) (*types.FanData, error) {
 	if e.profile.ID == types.FlyDigiBS1ProfileID && !e.hasReadCommand {
 		return e.readFlyDigiBS1StateLocked(ctx)
 	}
+	if e.profile.ID == types.BlackSharkBRB02ProfileID {
+		return e.readBlackSharkStatusLocked(ctx)
+	}
 	if e.hasReadCommand || e.canReadDirectly() {
 		return e.readStateLocked(ctx)
 	}
@@ -194,6 +200,9 @@ func (e *BLEExecutor) SetSpeed(ctx context.Context, speed types.FanSpeedValue) (
 	}
 	if e.profile.ID == types.FlyDigiBS1ProfileID {
 		return e.setFlyDigiBS1Speed(ctx, speed)
+	}
+	if e.profile.ID == types.BlackSharkBRB02ProfileID {
+		return e.setBlackSharkSpeed(ctx, speed)
 	}
 	if !e.hasSetCommand {
 		return nil, fmt.Errorf("ble profile does not define a setSpeed command")
@@ -299,6 +308,71 @@ func (e *BLEExecutor) setFlyDigiBS1SpeedOnceLocked(ctx context.Context, rpm int)
 	return state, nil
 }
 
+func (e *BLEExecutor) setBlackSharkSpeed(ctx context.Context, speed types.FanSpeedValue) (*types.FanData, error) {
+	if !types.IsRPMSpeedUnit(speed.Unit) {
+		return nil, fmt.Errorf("Black Shark BRB02 requires RPM speed")
+	}
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	if err := e.ensureOpenLocked(ctx); err != nil {
+		return nil, err
+	}
+	rpm := speed.Value
+	if rpm < 0 {
+		rpm = 0
+	}
+	if rpm > 4000 {
+		rpm = 4000
+	}
+	if err := e.writeRawLocked(ctx, deviceproto.BuildBlackSharkSetSpeed(rpm)); err != nil {
+		return nil, err
+	}
+	current := 0
+	if e.lastState != nil {
+		current = int(e.lastState.CurrentRPM)
+	}
+	mode := byte(1)
+	if e.lastState != nil {
+		mode = e.lastState.CurrentMode
+	}
+	state := e.stateWithValues(current, rpm, deviceproto.BlackSharkModeName(mode))
+	state.CurrentMode = mode
+	e.lastState = cloneFanData(state)
+	return state, nil
+}
+
+func (e *BLEExecutor) SetBlackSharkLighting(ctx context.Context, cfg types.LightStripConfig) error {
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	if err := e.ensureOpenLocked(ctx); err != nil {
+		return err
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.Mode), "off") {
+		return e.writeRawLocked(ctx, deviceproto.BuildBlackSharkSetRGBEnabled(false))
+	}
+	color := types.RGBColor{R: 255, G: 255, B: 255}
+	if len(cfg.Colors) > 0 {
+		color = cfg.Colors[0]
+	}
+	lighting, err := deviceproto.BuildBlackSharkSetLighting(cfg.Mode, cfg.Speed, cfg.Brightness, color.R, color.G, color.B)
+	if err != nil {
+		return err
+	}
+	if err := e.writeRawLocked(ctx, deviceproto.BuildBlackSharkSetRGBEnabled(true)); err != nil {
+		return err
+	}
+	return e.writeRawLocked(ctx, lighting)
+}
+
+func (e *BLEExecutor) SetBlackSharkRGBEnabled(ctx context.Context, enabled bool) error {
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	if err := e.ensureOpenLocked(ctx); err != nil {
+		return err
+	}
+	return e.writeRawLocked(ctx, deviceproto.BuildBlackSharkSetRGBEnabled(enabled))
+}
+
 func (e *BLEExecutor) readStateLocked(ctx context.Context) (*types.FanData, error) {
 	if e.hasReadCommand {
 		payload, err := e.bleCommandBytes(e.readCommand, SpeedVars{})
@@ -344,6 +418,54 @@ func (e *BLEExecutor) readFlyDigiBS1StateLocked(ctx context.Context) (*types.Fan
 		e.lastState = cloneFanData(state)
 		return state, nil
 	}
+}
+
+func (e *BLEExecutor) readBlackSharkStatusLocked(ctx context.Context) (*types.FanData, error) {
+	if err := e.writeRawLocked(ctx, deviceproto.BuildBlackSharkGetStatus()); err != nil {
+		return nil, err
+	}
+	opCtx, cancel := e.operationContext(ctx)
+	defer cancel()
+	for {
+		body, err := e.client.ReadBLEFrame(opCtx)
+		if err != nil {
+			return nil, err
+		}
+		frame, ok := deviceproto.ParseBlackSharkFrame(body)
+		if !ok {
+			continue
+		}
+		if frame.Command == deviceproto.BlackSharkCmdStatusNotify {
+			state, ok := e.blackSharkStateFromFrame(frame)
+			if ok {
+				e.lastState = cloneFanData(state)
+			}
+			continue
+		}
+		if frame.Command != deviceproto.BlackSharkCmdGetStatus {
+			continue
+		}
+		state, ok := e.blackSharkStateFromFrame(frame)
+		if !ok {
+			continue
+		}
+		e.lastState = cloneFanData(state)
+		return state, nil
+	}
+}
+
+func (e *BLEExecutor) blackSharkStateFromFrame(frame deviceproto.BlackSharkFrame) (*types.FanData, bool) {
+	rpm, flag, ok := deviceproto.ParseBlackSharkStatus(frame)
+	if !ok {
+		return nil, false
+	}
+	target := rpm
+	if e.lastState != nil && e.lastState.TargetRPM > 0 {
+		target = int(e.lastState.TargetRPM)
+	}
+	state := e.stateWithValues(rpm, target, deviceproto.BlackSharkModeName(flag))
+	state.CurrentMode = flag
+	return state, true
 }
 
 func (e *BLEExecutor) bleCommandBytes(command types.DeviceCommandTemplate, vars SpeedVars) ([]byte, error) {
@@ -498,8 +620,13 @@ func (e *BLEExecutor) ensureOpenLocked(ctx context.Context) error {
 			e.lastAddress = address
 		}
 	}
-	if notificationClient, ok := client.(BLENotificationConsumer); ok && e.profile.ID == types.FlyDigiBS1ProfileID {
-		notificationClient.SetBLENotificationCallback(e.handleBS1Notification)
+	if notificationClient, ok := client.(BLENotificationConsumer); ok {
+		switch e.profile.ID {
+		case types.FlyDigiBS1ProfileID:
+			notificationClient.SetBLENotificationCallback(e.handleBS1Notification)
+		case types.BlackSharkBRB02ProfileID:
+			notificationClient.SetBLENotificationCallback(e.handleBlackSharkNotification)
+		}
 	}
 	e.startBS1HeartbeatLocked()
 	return nil
@@ -562,6 +689,25 @@ func (e *BLEExecutor) handleBS1Notification(body []byte) {
 		return
 	}
 	e.mutex.Lock()
+	e.lastState = cloneFanData(state)
+	callback := e.notificationUpdate
+	e.mutex.Unlock()
+	if callback != nil {
+		callback(state)
+	}
+}
+
+func (e *BLEExecutor) handleBlackSharkNotification(body []byte) {
+	frame, ok := deviceproto.ParseBlackSharkFrame(body)
+	if !ok || frame.Command != deviceproto.BlackSharkCmdStatusNotify {
+		return
+	}
+	e.mutex.Lock()
+	state, ok := e.blackSharkStateFromFrame(frame)
+	if !ok {
+		e.mutex.Unlock()
+		return
+	}
 	e.lastState = cloneFanData(state)
 	callback := e.notificationUpdate
 	e.mutex.Unlock()

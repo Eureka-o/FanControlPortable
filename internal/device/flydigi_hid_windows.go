@@ -29,6 +29,9 @@ func (m *Manager) shouldUseLegacyHIDLocked() bool {
 }
 
 func (m *Manager) connectLegacyHIDLocked() (bool, map[string]string) {
+	if m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID {
+		return m.connectBlackSharkHIDLocked()
+	}
 	return m.connectFlyDigiHIDLocked()
 }
 
@@ -231,6 +234,9 @@ func (m *Manager) handleFlyDigiHIDRX(generation uint64, raw []byte) bool {
 	}
 
 	m.recordDebugFrame("rx", types.DeviceTransportHID, raw)
+	if m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID {
+		return m.handleBlackSharkHIDRX(generation, raw)
+	}
 	if fanData := parseFlyDigiFanData(raw); fanData != nil {
 		if m.connectionGen.Load() != generation {
 			return false
@@ -254,6 +260,9 @@ func (m *Manager) handleFlyDigiHIDRX(generation uint64, raw []byte) bool {
 }
 
 func (m *Manager) flyDigiHIDInfoLocked(productID uint16, path string) map[string]string {
+	if m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID {
+		return m.blackSharkHIDInfoLocked(path)
+	}
 	displayName := m.activeProfileDisplayNameLocked(flyDigiHIDModelName(productID))
 	model := strings.TrimSpace(m.activeProfile.Model)
 	if productID != 0 && m.activeProfile.ID == types.LegacyRPMProfileID {
@@ -313,8 +322,12 @@ func flyDigiHIDProductIDsForProfile(profileID string) []uint16 {
 }
 
 func flyDigiHIDProductIDFromPath(path string, productIDs []uint16) (uint16, bool) {
+	return hidProductIDFromPath(path, types.FlyDigiHIDVendorID, productIDs)
+}
+
+func hidProductIDFromPath(path string, vendorID uint16, productIDs []uint16) (uint16, bool) {
 	lower := strings.ToLower(path)
-	vendor := fmt.Sprintf("%04x", types.FlyDigiHIDVendorID)
+	vendor := fmt.Sprintf("%04x", vendorID)
 	vendorMatched := strings.Contains(lower, "vid_"+vendor) ||
 		strings.Contains(lower, "vid&"+vendor) ||
 		strings.Contains(lower, "vid&01"+vendor) ||
