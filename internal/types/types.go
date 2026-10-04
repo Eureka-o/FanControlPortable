@@ -1106,7 +1106,7 @@ func CloneDefaultManualGearRPMForUnit(unit string) map[string]map[string]int {
 func GetDefaultConfig(isAutoStart bool) AppConfig {
 	defaultCurve := GetDefaultFanCurve()
 	defaultTempSelection := GetDefaultTemperatureSelection()
-	defaultDeviceProfiles := FlyDigiBuiltInProfiles()
+	defaultDeviceProfiles := append(FlyDigiBuiltInProfiles(), BlackSharkBRB02Profile(), BlackSharkBRB02HIDProfile())
 
 	return AppConfig{
 		DeviceTransport:                   "",

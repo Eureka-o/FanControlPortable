@@ -207,6 +207,9 @@ func (m *Manager) GetModelName() string {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 	if m.deviceType == types.DeviceTransportHID {
+		if m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID {
+			return types.BlackSharkBRB02DisplayName
+		}
 		return flyDigiHIDModelName(m.productID)
 	}
 	if m.deviceType == types.DeviceTransportBLE && m.activeProfile.ID == types.FlyDigiBS1ProfileID {
@@ -275,6 +278,9 @@ func (m *Manager) SetTargetSpeed(value int, unit string) bool {
 	}
 	if types.IsRPMSpeedUnit(unit) {
 		if m.deviceType == types.DeviceTransportHID {
+			if m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID {
+				return m.setBlackSharkHIDTargetSpeedLocked(types.NewRPMSpeed(value))
+			}
 			return m.setFlyDigiHIDTargetSpeedLocked(types.NewRPMSpeed(value))
 		}
 		if m.deviceType == types.DeviceTransportBLE {
@@ -307,6 +313,9 @@ func (m *Manager) EnterAutoMode() error {
 		return fmt.Errorf("设备未连接")
 	}
 	if m.deviceType == types.DeviceTransportHID {
+		if m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID {
+			return fmt.Errorf("黑鲨 HID 不支持飞智实时模式命令")
+		}
 		return m.writeFlyDigiHIDFrameLocked(deviceproto.CmdEnterRealtimeRPM, nil, hidControlReportLen)
 	}
 	return nil
@@ -325,6 +334,12 @@ func (m *Manager) SetManualGearRPM(gear, level string, rpm int) bool {
 	unit := types.NormalizeFanSpeedUnit(m.activeProfile.SpeedUnit)
 	m.mutex.RUnlock()
 	if m.GetDeviceType() == types.DeviceTransportHID {
+		m.mutex.RLock()
+		blackShark := m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID
+		m.mutex.RUnlock()
+		if blackShark {
+			return m.SetTargetSpeed(rpm, unit)
+		}
 		return m.setFlyDigiHIDManualGearRPM(gear, level, rpm)
 	}
 	if types.IsRPMSpeedUnit(unit) {
@@ -335,7 +350,22 @@ func (m *Manager) SetManualGearRPM(gear, level string, rpm int) bool {
 
 func (m *Manager) SetGearLight(enabled bool) bool {
 	if m.GetDeviceType() == types.DeviceTransportHID {
+		m.mutex.RLock()
+		blackShark := m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID
+		m.mutex.RUnlock()
+		if blackShark {
+			return m.setBlackSharkHIDRGBEnabled(enabled)
+		}
 		return m.setFlyDigiHIDGearLight(enabled)
+	}
+	if m.GetDeviceType() == types.DeviceTransportBLE {
+		m.mutex.RLock()
+		blackShark := m.activeProfile.ID == types.BlackSharkBRB02ProfileID
+		executor := m.bleExecutor
+		m.mutex.RUnlock()
+		if blackShark && executor != nil {
+			return executor.SetBlackSharkRGBEnabled(nil, enabled) == nil
+		}
 	}
 	return false
 }
@@ -390,6 +420,12 @@ func (m *Manager) SetWiFiSmartStartStopStandbySpeed(percent int) bool {
 
 func (m *Manager) SetBrightness(percentage int) bool {
 	if m.GetDeviceType() == types.DeviceTransportHID {
+		m.mutex.RLock()
+		blackShark := m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID
+		m.mutex.RUnlock()
+		if blackShark {
+			return false
+		}
 		return m.setFlyDigiHIDBrightness(percentage)
 	}
 	return false
@@ -397,13 +433,34 @@ func (m *Manager) SetBrightness(percentage int) bool {
 
 func (m *Manager) SetLightStrip(cfg types.LightStripConfig) error {
 	if m.GetDeviceType() == types.DeviceTransportHID {
+		m.mutex.RLock()
+		blackShark := m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID
+		m.mutex.RUnlock()
+		if blackShark {
+			return m.setBlackSharkHIDLighting(cfg)
+		}
 		return m.setFlyDigiHIDLightStrip(cfg)
+	}
+	if m.GetDeviceType() == types.DeviceTransportBLE {
+		m.mutex.RLock()
+		blackShark := m.activeProfile.ID == types.BlackSharkBRB02ProfileID
+		executor := m.bleExecutor
+		m.mutex.RUnlock()
+		if blackShark && executor != nil {
+			return executor.SetBlackSharkLighting(nil, cfg)
+		}
 	}
 	return fmt.Errorf("active device does not support lighting")
 }
 
 func (m *Manager) SetRGBOff() bool {
 	if m.GetDeviceType() == types.DeviceTransportHID {
+		m.mutex.RLock()
+		blackShark := m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID
+		m.mutex.RUnlock()
+		if blackShark {
+			return m.setBlackSharkHIDRGBEnabled(false)
+		}
 		return m.setFlyDigiHIDRGBOff()
 	}
 	return false
@@ -420,6 +477,12 @@ func (m *Manager) QueryDeviceSettings() (types.DeviceSettings, error) {
 	m.mutex.RUnlock()
 
 	if source == types.DeviceTransportHID {
+		m.mutex.RLock()
+		blackShark := m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID
+		m.mutex.RUnlock()
+		if blackShark {
+			return m.queryBlackSharkHIDDeviceSettings()
+		}
 		return m.queryFlyDigiHIDDeviceSettings()
 	}
 

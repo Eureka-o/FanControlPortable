@@ -580,6 +580,23 @@ func normalizeLightStripConfig(cfg types.LightStripConfig) (types.LightStripConf
 	defaults := types.GetDefaultLightStripConfig()
 	changed := false
 
+	originalMode := cfg.Mode
+	switch strings.ToLower(strings.TrimSpace(cfg.Mode)) {
+	case "blackshark_breathing":
+		cfg.Mode = "breathing"
+	case "blackshark_static":
+		cfg.Mode = "static_single"
+	case "blackshark_flashing", "blackshark_refresh", "blackshark_color_flow":
+		cfg.Mode = "flowing"
+	case "blackshark_response":
+		cfg.Mode = "breathing"
+	case "blackshark_color_cycle":
+		cfg.Mode = "rotation"
+	}
+	if cfg.Mode != originalMode {
+		changed = true
+	}
+
 	if cfg.Mode == "" {
 		cfg.Mode = defaults.Mode
 		changed = true

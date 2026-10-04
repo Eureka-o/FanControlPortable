@@ -91,8 +91,8 @@ Unicode true
 !endif
 
 # Windows version resources require four numeric parts.
-VIProductVersion "2.8.3.0"
-VIFileVersion    "2.8.3.0"
+VIProductVersion "2.9.0.0"
+VIFileVersion    "2.9.0.0"
 
 VIAddVersionKey "CompanyName"     "${INFO_COMPANYNAME}"
 VIAddVersionKey "FileDescription" "${INFO_PRODUCTNAME} Installer"

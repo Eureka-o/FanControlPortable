@@ -896,10 +896,8 @@ func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string,
 		a.ipcServer.BroadcastEvent(ipc.EventDeviceConnected, eventPayload)
 	}
 
-	if a.deviceManager.GetDeviceType() == types.DeviceTypeHID {
-		if err := a.applyConfiguredLightStrip(); err != nil {
-			a.logError("应用灯带配置失败: %v", err)
-		}
+	if err := a.applyConfiguredLightStrip(); err != nil {
+		a.logError("应用灯带配置失败: %v", err)
 	}
 	a.safeGo("startTemperatureMonitoring@"+caller, func() {
 		a.startTemperatureMonitoring()
@@ -949,19 +947,15 @@ func (a *CoreApp) reapplyConfigAfterReconnect() {
 		}
 	}
 
-	// 以下功能仅旧 HID 设备支持
-	if a.deviceManager.GetDeviceType() == types.DeviceTypeHID {
-		// 重新应用挡位灯配置
-		if cfg.GearLight && a.activeDeviceCapabilities().AllowsGearLight() {
-			a.logInfo("重新开启挡位灯")
-			if !a.deviceManager.SetGearLight(true) {
-				a.logError("重新开启挡位灯失败")
-			}
+	// 设备能力决定是否恢复灯效；HID 与黑鲨 BLE 共享同一前端配置入口。
+	if cfg.GearLight && a.activeDeviceCapabilities().AllowsGearLight() {
+		a.logInfo("重新开启挡位灯")
+		if !a.deviceManager.SetGearLight(true) {
+			a.logError("重新开启挡位灯失败")
 		}
-
-		if err := a.applyConfiguredLightStrip(); err != nil {
-			a.logError("重连后重新应用灯带配置失败: %v", err)
-		}
+	}
+	if err := a.applyConfiguredLightStrip(); err != nil {
+		a.logError("重连后重新应用灯带配置失败: %v", err)
 	}
 
 	// 重新应用通电自启动配置（BS1 和 BS2/BS2PRO 都支持）

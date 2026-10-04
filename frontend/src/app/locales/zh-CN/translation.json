@@ -969,6 +969,8 @@
       "animationSpeed": "动画速度",
       "brightness": "亮度",
       "smartTempWarning": "智能温控模式由设备自动控制灯效，不支持手动调节颜色与亮度。",
+      "blackSharkTitle": "黑鲨专属灯效",
+      "blackSharkDescription": "这些模式由黑鲨风神 Pro 设备直接保存并执行。",
       "colorLabel": "颜色 {{index}}",
       "applyHintConnected": "应用后立即生效",
       "applyHintDisconnected": "下次连接时自动生效"
@@ -1434,6 +1436,34 @@
         "breathing": {
           "label": "呼吸",
           "description": "多色呼吸变化"
+        },
+        "blackshark_breathing": {
+          "label": "呼吸",
+          "description": "黑鲨设备呼吸灯效"
+        },
+        "blackshark_static": {
+          "label": "常亮",
+          "description": "黑鲨设备单色常亮"
+        },
+        "blackshark_flashing": {
+          "label": "闪烁",
+          "description": "黑鲨设备闪烁灯效"
+        },
+        "blackshark_refresh": {
+          "label": "刷新",
+          "description": "黑鲨设备刷新灯效"
+        },
+        "blackshark_response": {
+          "label": "响应",
+          "description": "黑鲨设备响应灯效"
+        },
+        "blackshark_color_cycle": {
+          "label": "彩色循环",
+          "description": "黑鲨设备彩色循环"
+        },
+        "blackshark_color_flow": {
+          "label": "彩色流动",
+          "description": "黑鲨设备彩色流动"
         }
       },
       "lightSpeed": {

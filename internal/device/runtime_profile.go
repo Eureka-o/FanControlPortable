@@ -21,6 +21,9 @@ func (m *Manager) ActiveCapabilities() types.DeviceCapabilities {
 
 func (m *Manager) activeProfileLocked() types.DeviceProfile {
 	if m.deviceType == types.DeviceTransportHID && m.productID != 0 {
+		if m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID {
+			return types.NormalizeDeviceProfile(types.BlackSharkBRB02HIDProfile(), m.wifiEndpoint)
+		}
 		if profile, ok := types.FlyDigiProfileForHIDProductID(m.productID); ok {
 			return types.NormalizeDeviceProfile(profile, m.wifiEndpoint)
 		}

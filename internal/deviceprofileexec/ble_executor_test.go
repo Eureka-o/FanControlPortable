@@ -199,6 +199,48 @@ func TestBLEExecutorFlyDigiBS1SetSpeedDoesNotFakeCurrentRPM(t *testing.T) {
 	}
 }
 
+func TestBLEExecutorBlackSharkSetSpeedClampsTo4000AndUsesRPMModeLabel(t *testing.T) {
+	client := &fakeBLEClient{}
+	executor, err := NewBLEExecutor(types.BlackSharkBRB02Profile(), &fakeBLEConnector{client: client})
+	if err != nil {
+		t.Fatalf("NewBLEExecutor() error = %v", err)
+	}
+	defer executor.Close()
+
+	state, err := executor.SetSpeed(nil, types.NewRPMSpeed(4500))
+	if err != nil {
+		t.Fatalf("SetSpeed() error = %v", err)
+	}
+	if len(client.writes) != 1 || string(client.writes[0].payload) != string(deviceproto.BuildBlackSharkSetSpeed(4000)) {
+		t.Fatalf("writes = %#v, want one 4000 RPM BlackShark frame", client.writes)
+	}
+	if state.TargetRPM != 4000 || state.WorkMode != "auto/realtime RPM mode" || state.CurrentMode != 1 {
+		t.Fatalf("set state = %#v, want 4000 RPM auto mode", state)
+	}
+}
+
+func TestBLEExecutorBlackSharkStatusUsesProtocolModeFlag(t *testing.T) {
+	client := &fakeBLEClient{reads: [][]byte{
+		deviceproto.BuildBlackSharkFrame(deviceproto.BlackSharkCmdGetStatus, 0, 0, 0, 0xAC, 0x08),
+	}}
+	executor, err := NewBLEExecutor(types.BlackSharkBRB02Profile(), &fakeBLEConnector{client: client})
+	if err != nil {
+		t.Fatalf("NewBLEExecutor() error = %v", err)
+	}
+	defer executor.Close()
+
+	state, err := executor.ReadState(nil)
+	if err != nil {
+		t.Fatalf("ReadState() error = %v", err)
+	}
+	if state.CurrentRPM != 2220 || state.CurrentMode != 0 || state.WorkMode != "manual/fixed gear mode" {
+		t.Fatalf("status state = %#v, want 2220 RPM manual mode", state)
+	}
+	if len(client.writes) != 1 || string(client.writes[0].payload) != string(deviceproto.BuildBlackSharkGetStatus()) {
+		t.Fatalf("writes = %#v, want one get-status frame", client.writes)
+	}
+}
+
 func TestBLEExecutorFlyDigiBS1SetSpeedReconnectsOnceAfterWriteFailure(t *testing.T) {
 	failed := &fakeBLEClient{writeErr: io.ErrClosedPipe}
 	recovered := &fakeBLEClient{}
