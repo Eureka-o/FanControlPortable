@@ -81,7 +81,7 @@ func (f deviceConnectionFlow) connectBestScannedDevice() bool {
 			}
 		}
 	}
-	for _, transport := range []string{types.DeviceTransportBLE, types.DeviceTransportHID} {
+	for _, transport := range []string{types.DeviceTransportBLE, types.DeviceTransportUSB, types.DeviceTransportHID} {
 		devices := f.app.deviceManager.ScanNativeDevicesProfilesByTransport(cfg.DeviceProfiles, transport)
 		if len(devices) > 0 {
 			selected, ok := selectNativeAutoConnectCandidate(devices, selectionCfg, transport)
@@ -174,7 +174,7 @@ func (f deviceConnectionFlow) connectCandidate(req types.DeviceConnectRequest) b
 	switch transport {
 	case types.DeviceTransportWiFi, types.DeviceTransportSerial:
 		return f.connectCompatibilityCandidate(transport, req.ProfileID, req.Endpoint)
-	case types.DeviceTransportHID, types.DeviceTransportBLE:
+	case types.DeviceTransportHID, types.DeviceTransportUSB, types.DeviceTransportBLE:
 		return f.connectNativeCandidate(transport, req.ProfileID, req.Endpoint)
 	default:
 		f.broadcastError("缺少可连接的设备信息")
@@ -352,6 +352,8 @@ func candidateTransport(value string) string {
 		return types.DeviceTransportHID
 	case types.DeviceTransportBLE:
 		return types.DeviceTransportBLE
+	case types.DeviceTransportUSB:
+		return types.DeviceTransportUSB
 	default:
 		return ""
 	}

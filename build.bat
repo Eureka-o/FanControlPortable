@@ -61,6 +61,14 @@ if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
 
 if not exist "!BUILD_BIN!" mkdir "!BUILD_BIN!"
 
+REM Black Shark WinUSB backend uses the small libusb runtime (129 KB).
+if exist "third_party\libusb\windows\amd64\libusb-1.0.dll" (
+    copy /y "third_party\libusb\windows\amd64\libusb-1.0.dll" "!BUILD_BIN!\libusb-1.0.dll" >nul
+    if errorlevel 1 exit /b 1
+) else (
+    echo WARNING: Black Shark USB runtime libusb-1.0.dll not found; USB support will be unavailable.
+)
+
 echo Cleaning stale root executables...
 if exist "core.exe" del /q "core.exe"
 

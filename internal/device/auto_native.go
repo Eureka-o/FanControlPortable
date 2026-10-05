@@ -39,6 +39,7 @@ func (m *Manager) ScanNativeDevices() []map[string]string {
 func (m *Manager) ScanNativeDevicesProfiles(profiles []types.DeviceProfile) []map[string]string {
 	devices := m.ScanNativeDevicesProfilesByTransport(profiles, types.DeviceTransportBLE)
 	devices = append(devices, m.ScanNativeDevicesProfilesByTransport(profiles, types.DeviceTransportHID)...)
+	devices = append(devices, m.ScanNativeDevicesProfilesByTransport(profiles, types.DeviceTransportUSB)...)
 	return devices
 }
 
@@ -51,6 +52,8 @@ func (m *Manager) ScanNativeDevicesProfilesByTransportContext(ctx context.Contex
 	switch types.NormalizeDeviceTransport(transport) {
 	case types.DeviceTransportHID:
 		return scanNativeHIDDevices(candidates)
+	case types.DeviceTransportUSB:
+		return scanNativeUSBDevices(candidates)
 	case types.DeviceTransportBLE:
 		devices, err := scanNativeBLEDevices(ctx, candidates)
 		if err != nil {
@@ -117,6 +120,10 @@ func (m *Manager) AutoConnectNativeProfilesContext(ctx context.Context, profiles
 			if success, info := m.connectLegacyHIDLocked(); success {
 				return true, info
 			}
+		case types.DeviceTransportUSB:
+			if success, info := m.connectBlackSharkUSBLocked(); success {
+				return true, info
+			}
 		case types.DeviceTransportBLE:
 			if !bleScanRecorded {
 				m.lastAutoBLEScanAt = time.Now()
@@ -126,6 +133,12 @@ func (m *Manager) AutoConnectNativeProfilesContext(ctx context.Context, profiles
 				return true, info
 			}
 		}
+	}
+	// Probe the optional Black Shark WinUSB path after the established native
+	// candidate order so existing BLE/HID arbitration remains unchanged.
+	m.configureProfileLocked(types.BlackSharkBRB02USBProfile(), previousEndpoint)
+	if success, info := m.connectBlackSharkUSBLocked(); success {
+		return true, info
 	}
 	if skipBLE {
 		m.logDebug("automatic BLE discovery is cooling down; HID candidates remained eligible")
@@ -147,6 +160,10 @@ func (m *Manager) ConnectNativeProfileContext(ctx context.Context, profile types
 	profile, err = deviceprofiles.PrepareRuntimeProfile(profile, "")
 	if err != nil {
 		m.logWarn("native device profile rejected: %v", err)
+		return false, nil
+	}
+	if isLegacyBlackSharkHIDProfileID(profile.ID) {
+		m.logWarn("legacy Black Shark HID profile is no longer supported")
 		return false, nil
 	}
 	if !types.IsNativeDeviceTransport(profile.Transport) {
@@ -175,6 +192,10 @@ func (m *Manager) ConnectNativeProfileContext(ctx context.Context, profile types
 		if success, info := m.connectLegacyHIDLocked(); success {
 			return true, info
 		}
+	case types.DeviceTransportUSB:
+		if success, info := m.connectBlackSharkUSBLocked(); success {
+			return true, info
+		}
 	case types.DeviceTransportBLE:
 		if success, info := m.connectBLEWithContextLocked(ctx); success {
 			return true, info
@@ -187,11 +208,16 @@ func (m *Manager) ConnectNativeProfileContext(ctx context.Context, profile types
 func nativeAutoConnectCandidates(profiles []types.DeviceProfile, preferred ...types.DeviceProfile) []types.DeviceProfile {
 	seen := map[string]bool{}
 	preferredBLEProfiles := make([]types.DeviceProfile, 0, len(preferred))
+	preferredUSBProfiles := make([]types.DeviceProfile, 0, len(preferred))
 	preferredHIDProfiles := make([]types.DeviceProfile, 0, len(preferred))
+	usbProfiles := make([]types.DeviceProfile, 0)
 	hidProfiles := make([]types.DeviceProfile, 0)
 	bleProfiles := make([]types.DeviceProfile, 0)
 
 	add := func(target *[]types.DeviceProfile, profile types.DeviceProfile) {
+		if isLegacyBlackSharkHIDProfileID(profile.ID) {
+			return
+		}
 		var err error
 		profile, err = deviceprofiles.PrepareRuntimeProfile(profile, "")
 		if err != nil {
@@ -212,9 +238,12 @@ func nativeAutoConnectCandidates(profiles []types.DeviceProfile, preferred ...ty
 	}
 
 	for _, profile := range preferred {
-		if types.NormalizeDeviceTransport(profile.Transport) == types.DeviceTransportBLE {
+		switch types.NormalizeDeviceTransport(profile.Transport) {
+		case types.DeviceTransportBLE:
 			add(&preferredBLEProfiles, profile)
-		} else {
+		case types.DeviceTransportUSB:
+			add(&preferredUSBProfiles, profile)
+		default:
 			add(&preferredHIDProfiles, profile)
 		}
 	}
@@ -222,35 +251,42 @@ func nativeAutoConnectCandidates(profiles []types.DeviceProfile, preferred ...ty
 		if profile.BuiltIn && deviceprofiles.IsBuiltInProfileID(profile.ID) {
 			continue
 		}
-		if types.NormalizeDeviceTransport(profile.Transport) == types.DeviceTransportHID {
+		switch types.NormalizeDeviceTransport(profile.Transport) {
+		case types.DeviceTransportHID:
 			add(&hidProfiles, profile)
-		} else {
+		case types.DeviceTransportUSB:
+			add(&usbProfiles, profile)
+		default:
 			add(&bleProfiles, profile)
 		}
 	}
+	add(&usbProfiles, types.BlackSharkBRB02USBProfile())
 	add(&hidProfiles, types.LegacyRPMProfileForTransport(types.DeviceTransportHID))
-	add(&hidProfiles, types.BlackSharkBRB02HIDProfile())
 	add(&bleProfiles, types.FlyDigiBS1Profile())
 	add(&bleProfiles, types.BlackSharkBRB02Profile())
 
 	// Keep the previous profile preferred only inside its transport group.
-	return append(preferredBLEProfiles, append(bleProfiles, append(preferredHIDProfiles, hidProfiles...)...)...)
+	result := make([]types.DeviceProfile, 0, len(preferred)+len(profiles)+5)
+	result = append(result, preferredBLEProfiles...)
+	result = append(result, bleProfiles...)
+	result = append(result, preferredUSBProfiles...)
+	result = append(result, usbProfiles...)
+	result = append(result, preferredHIDProfiles...)
+	return append(result, hidProfiles...)
 }
 
 func scanNativeHIDDevices(profiles []types.DeviceProfile) []map[string]string {
 	devices := make([]map[string]string, 0)
 	seenPaths := map[string]bool{}
 	for _, profile := range profiles {
+		if isLegacyBlackSharkHIDProfileID(profile.ID) {
+			continue
+		}
 		profile = types.NormalizeDeviceProfile(profile, "")
 		if profile.Transport != types.DeviceTransportHID {
 			continue
 		}
-		var candidates []flyDigiHIDCandidate
-		if profile.ID == types.BlackSharkBRB02HIDProfileID {
-			candidates = scanHIDDevices(types.BlackSharkHIDVendorID, []uint16{types.BlackSharkBRB02HIDProductID})
-		} else {
-			candidates = scanFlyDigiHIDDevices(flyDigiHIDProductIDsForProfile(profile.ID))
-		}
+		candidates := scanFlyDigiHIDDevices(flyDigiHIDProductIDsForProfile(profile.ID))
 		for _, candidate := range candidates {
 			path := strings.TrimSpace(candidate.path)
 			if path == "" || seenPaths[path] {
@@ -261,6 +297,44 @@ func scanNativeHIDDevices(profiles []types.DeviceProfile) []map[string]string {
 		}
 	}
 	return devices
+}
+
+func scanNativeUSBDevices(profiles []types.DeviceProfile) []map[string]string {
+	matched := false
+	for _, profile := range profiles {
+		profile = types.NormalizeDeviceProfile(profile, "")
+		if profile.Transport != types.DeviceTransportUSB || profile.ID != types.BlackSharkBRB02USBProfileID {
+			continue
+		}
+		matched = true
+		path, err := scanBlackSharkUSBDevice()
+		if err != nil {
+			return nil
+		}
+		return []map[string]string{nativeUSBDeviceInfo(profile, path)}
+	}
+	if !matched {
+		profile := types.BlackSharkBRB02USBProfile()
+		path, err := scanBlackSharkUSBDevice()
+		if err != nil {
+			return nil
+		}
+		return []map[string]string{nativeUSBDeviceInfo(profile, path)}
+	}
+	return nil
+}
+
+func nativeUSBDeviceInfo(profile types.DeviceProfile, path string) map[string]string {
+	return map[string]string{
+		"manufacturer": types.BlackSharkBRB02Vendor,
+		"product":      profile.DisplayName,
+		"model":        profile.Model,
+		"transport":    types.DeviceTransportUSB,
+		"endpoint":     path,
+		"serial":       path,
+		"productId":    fmt.Sprintf("0x%04X", types.BlackSharkBRB02HIDProductID),
+		"profileId":    profile.ID,
+	}
 }
 
 func scanNativeBLEDevices(ctx context.Context, profiles []types.DeviceProfile) ([]map[string]string, error) {
@@ -293,9 +367,6 @@ func scanNativeBLEDevices(ctx context.Context, profiles []types.DeviceProfile) (
 
 func nativeHIDDeviceInfo(profile types.DeviceProfile, productID uint16, path string) map[string]string {
 	model := flyDigiHIDModelName(productID)
-	if profile.ID == types.BlackSharkBRB02HIDProfileID {
-		model = types.BlackSharkBRB02DisplayName
-	}
 	profileID := profile.ID
 	if profileID == types.LegacyRPMProfileID {
 		if id := types.FlyDigiProfileIDForHIDProductID(productID); id != "" {
@@ -309,9 +380,6 @@ func nativeHIDDeviceInfo(profile types.DeviceProfile, productID uint16, path str
 	manufacturer := strings.TrimSpace(profile.Vendor)
 	if manufacturer == "" {
 		manufacturer = "FlyDigi"
-	}
-	if profile.ID == types.BlackSharkBRB02HIDProfileID {
-		manufacturer = types.BlackSharkBRB02Vendor
 	}
 	return map[string]string{
 		"manufacturer": manufacturer,

@@ -65,7 +65,7 @@ func (a *CoreApp) SetActiveDeviceProfile(profileID string) (types.DeviceProfile,
 		return types.DeviceProfile{}, fmt.Errorf("device profile not found")
 	}
 	if !isManualCompatibilityDeviceTransport(cfg.DeviceProfiles[idx].Transport) {
-		return types.DeviceProfile{}, fmt.Errorf("BLE/HID native devices are auto-managed")
+		return types.DeviceProfile{}, fmt.Errorf("BLE/HID/USB native devices are auto-managed")
 	}
 
 	cfg.ActiveDeviceProfileID = cfg.DeviceProfiles[idx].ID

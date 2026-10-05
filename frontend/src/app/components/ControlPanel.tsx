@@ -5,6 +5,7 @@ import { motion, useReducedMotion, type Variants } from 'framer-motion';
 import {
   Cpu,
   Gpu,
+  Monitor,
   Radio,
   Settings,
   Thermometer,
@@ -35,6 +36,8 @@ import {
 import FanControlSection from './settings/FanControlSection';
 import DeviceFeaturePanel from './settings/DeviceFeaturePanel';
 import DeviceLightingControls from './settings/DeviceLightingControls';
+import DeviceImageTransferControls from './settings/DeviceImageTransferControls';
+import { Section } from './settings/SettingLayout';
 import DeviceConnectionSection from './settings/DeviceConnectionSection';
 import SystemSettingsSection from './settings/SystemSettingsSection';
 import clsx from 'clsx';
@@ -183,6 +186,9 @@ export default function ControlPanel({
   const currentDeviceSupportsSmartStartStop = !!currentDeviceCapabilities?.supportsSmartStartStop;
   const currentDeviceSupportsWiFiSmartStartStopStandbySpeed = currentDeviceSupportsSmartStartStop && connectedDeviceTransport === 'wifi';
   const currentDeviceSupportsScreen = !!(currentDeviceCapabilities as any)?.supportsScreen;
+  const currentDeviceSupportsScreenImageTransfer = !!(currentDeviceCapabilities as any)?.supportsScreenImageTransfer;
+  const isBlackSharkDevice = isConnected
+    && (runtimeDeviceProfile?.id || '').startsWith('builtin.blackshark.brb02.');
   const overviewConnectionName = isConnected
     ? (connectedDeviceProfile ? profileLabel(connectedDeviceProfile) : connectedDeviceTransport.toUpperCase() || '--')
     : t('controlPanel.system.deviceConnection.connectedDevicesEmpty');
@@ -359,46 +365,62 @@ export default function ControlPanel({
 
   const settingsPanelContent: Record<SettingsTab, ReactNode> = {
     device: (
-      <DeviceFeaturePanel
-        config={config}
-        isConnected={isConnected}
-        refreshing={deviceContextRefreshing}
-        deviceProfile={effectiveDeviceProfile || null}
-        loadingStates={loadingStates}
-        supportsGearLight={currentDeviceSupportsGearLight}
-        supportsPowerOnStart={currentDeviceSupportsPowerOnStart}
-        supportsSmartStartStop={currentDeviceSupportsSmartStartStop}
-        supportsWiFiSmartStartStopStandbySpeed={currentDeviceSupportsWiFiSmartStartStopStandbySpeed}
-        supportsScreen={currentDeviceSupportsScreen}
-        smartStartStopOptions={smartStartStopOptions}
-        wifiSmartStartStopStandbySpeedOptions={wifiSmartStartStopStandbySpeedOptions}
-        onGearLightChange={handleGearLightChange}
-        onPowerOnStartChange={handlePowerOnStartChange}
-        onSmartStartStopChange={handleSmartStartStopChange}
-        onWiFiSmartStartStopStandbySpeedChange={handleWiFiSmartStartStopStandbySpeedChange}
-        lightingControls={currentDeviceSupportsLighting ? (
-          <DeviceLightingControls
-            config={config}
-            onConfigChange={onConfigChange}
-            isConnected={isConnected}
-            supportsBrightness={currentDeviceSupportsBrightness}
-          />
-        ) : undefined}
-      >
-        <DeviceConnectionSection
+      <>
+        <DeviceFeaturePanel
           config={config}
-          availableDeviceProfiles={availableDeviceProfiles}
-          activeDeviceProfileId={activeDeviceProfileId}
-          activeDeviceProfileIdsByTransport={activeDeviceProfileIdsByTransport}
-          connectedDeviceProfile={connectedDeviceProfile}
-          connectedDeviceTransport={connectedDeviceTransport}
-          onConfigChange={onConfigChange}
-          onActiveDeviceProfileIdChange={setActiveDeviceProfileId}
-          refreshDeviceConfig={refreshDeviceConfig}
-          loadDeviceProfiles={loadDeviceProfiles}
-          refreshConnectedDeviceContext={refreshConnectedDeviceContext}
-        />
-      </DeviceFeaturePanel>
+          isConnected={isConnected}
+          refreshing={deviceContextRefreshing}
+          deviceProfile={effectiveDeviceProfile || null}
+          loadingStates={loadingStates}
+          supportsGearLight={currentDeviceSupportsGearLight}
+          supportsPowerOnStart={currentDeviceSupportsPowerOnStart}
+          supportsSmartStartStop={currentDeviceSupportsSmartStartStop}
+          supportsWiFiSmartStartStopStandbySpeed={currentDeviceSupportsWiFiSmartStartStopStandbySpeed}
+          supportsScreen={currentDeviceSupportsScreen}
+          smartStartStopOptions={smartStartStopOptions}
+          wifiSmartStartStopStandbySpeedOptions={wifiSmartStartStopStandbySpeedOptions}
+          onGearLightChange={handleGearLightChange}
+          onPowerOnStartChange={handlePowerOnStartChange}
+          onSmartStartStopChange={handleSmartStartStopChange}
+          onWiFiSmartStartStopStandbySpeedChange={handleWiFiSmartStartStopStandbySpeedChange}
+          lightingControls={currentDeviceSupportsLighting ? (
+            <DeviceLightingControls
+              config={config}
+              onConfigChange={onConfigChange}
+              isConnected={isConnected}
+              supportsBrightness={currentDeviceSupportsBrightness}
+            />
+          ) : undefined}
+        >
+          <DeviceConnectionSection
+            config={config}
+            availableDeviceProfiles={availableDeviceProfiles}
+            activeDeviceProfileId={activeDeviceProfileId}
+            activeDeviceProfileIdsByTransport={activeDeviceProfileIdsByTransport}
+            connectedDeviceProfile={connectedDeviceProfile}
+            connectedDeviceTransport={connectedDeviceTransport}
+            onConfigChange={onConfigChange}
+            onActiveDeviceProfileIdChange={setActiveDeviceProfileId}
+            refreshDeviceConfig={refreshDeviceConfig}
+            loadDeviceProfiles={loadDeviceProfiles}
+            refreshConnectedDeviceContext={refreshConnectedDeviceContext}
+          />
+        </DeviceFeaturePanel>
+        {isConnected && isBlackSharkDevice && currentDeviceSupportsScreenImageTransfer && (
+          <Section
+            title={t('controlPanel.device.groups.imageTransfer')}
+            icon={Monitor}
+          >
+            <div className="px-5 py-4">
+              <DeviceImageTransferControls
+                isConnected={isConnected}
+                transport={connectedDeviceTransport}
+                canTransfer={currentDeviceSupportsScreenImageTransfer}
+              />
+            </div>
+          </Section>
+        )}
+      </>
     ),
     fan: (
       <FanControlSection

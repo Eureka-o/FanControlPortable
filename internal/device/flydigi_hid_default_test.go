@@ -93,9 +93,9 @@ func TestNativeAutoConnectCandidatesKeepUserNativeProfilesBeforeBuiltInFallbacks
 		userBLE.ID,
 		types.FlyDigiBS1ProfileID,
 		types.BlackSharkBRB02ProfileID,
+		types.BlackSharkBRB02USBProfileID,
 		userHID.ID,
 		types.LegacyRPMProfileID,
-		types.BlackSharkBRB02HIDProfileID,
 	}
 	if len(gotIDs) != len(wantIDs) {
 		t.Fatalf("candidate IDs = %#v, want %#v", gotIDs, wantIDs)
@@ -103,6 +103,18 @@ func TestNativeAutoConnectCandidatesKeepUserNativeProfilesBeforeBuiltInFallbacks
 	for i := range wantIDs {
 		if gotIDs[i] != wantIDs[i] {
 			t.Fatalf("candidate IDs = %#v, want %#v", gotIDs, wantIDs)
+		}
+	}
+}
+
+func TestNativeAutoConnectCandidatesDropLegacyBlackSharkHID(t *testing.T) {
+	legacy := types.LegacyRPMProfileForTransport(types.DeviceTransportHID)
+	legacy.ID = legacyBlackSharkHIDProfileID
+	legacy.BuiltIn = false
+
+	for _, profile := range nativeAutoConnectCandidates([]types.DeviceProfile{legacy}) {
+		if profile.ID == legacyBlackSharkHIDProfileID {
+			t.Fatalf("legacy Black Shark HID profile was retained: %#v", profile)
 		}
 	}
 }
@@ -127,8 +139,8 @@ func TestNativeAutoConnectCandidatesKeepHIDPreferenceBehindBLE(t *testing.T) {
 		t.Fatalf("HID candidate index = %d, want it after at least one BLE candidate", hidIndex)
 	}
 	for _, candidate := range candidates[:hidIndex] {
-		if candidate.Transport != types.DeviceTransportBLE {
-			t.Fatalf("candidate before HID has transport %q, want BLE group", candidate.Transport)
+		if candidate.Transport != types.DeviceTransportBLE && candidate.Transport != types.DeviceTransportUSB {
+			t.Fatalf("candidate before HID has transport %q, want BLE/USB native group", candidate.Transport)
 		}
 	}
 }

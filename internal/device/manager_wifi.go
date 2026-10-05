@@ -117,6 +117,9 @@ func (m *Manager) Connect() (bool, map[string]string) {
 	if m.shouldUseLegacyHIDLocked() {
 		return m.connectLegacyHIDLocked()
 	}
+	if m.shouldUseBlackSharkUSBLocked() {
+		return m.connectBlackSharkUSBLocked()
+	}
 	if strings.TrimSpace(m.deviceTransport) == "" {
 		return false, nil
 	}
@@ -171,7 +174,7 @@ func (m *Manager) disconnectWithGeneration(notify bool, expected uint64) bool {
 	if !(compatibilityRuntime{}).disconnectLocked(m) {
 		if m.deviceType == types.DeviceTransportBLE {
 			m.disconnectBLELocked()
-		} else if m.deviceType == types.DeviceTransportHID {
+		} else if m.deviceType == types.DeviceTransportHID || m.deviceType == types.DeviceTransportUSB {
 			m.disconnectFlyDigiHIDLocked()
 		} else {
 			m.disconnectWiFiLocked()
@@ -206,8 +209,8 @@ func (m *Manager) GetProductID() uint16 {
 func (m *Manager) GetModelName() string {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	if m.deviceType == types.DeviceTransportHID {
-		if m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID {
+	if m.deviceType == types.DeviceTransportHID || m.deviceType == types.DeviceTransportUSB {
+		if isBlackSharkProfileID(m.activeProfile.ID) {
 			return types.BlackSharkBRB02DisplayName
 		}
 		return flyDigiHIDModelName(m.productID)
@@ -277,8 +280,8 @@ func (m *Manager) SetTargetSpeed(value int, unit string) bool {
 		return written
 	}
 	if types.IsRPMSpeedUnit(unit) {
-		if m.deviceType == types.DeviceTransportHID {
-			if m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID {
+		if m.deviceType == types.DeviceTransportHID || m.deviceType == types.DeviceTransportUSB {
+			if isBlackSharkProfileID(m.activeProfile.ID) {
 				return m.setBlackSharkHIDTargetSpeedLocked(types.NewRPMSpeed(value))
 			}
 			return m.setFlyDigiHIDTargetSpeedLocked(types.NewRPMSpeed(value))
@@ -312,8 +315,8 @@ func (m *Manager) EnterAutoMode() error {
 	if !m.isConnected {
 		return fmt.Errorf("设备未连接")
 	}
-	if m.deviceType == types.DeviceTransportHID {
-		if m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID {
+	if m.deviceType == types.DeviceTransportHID || m.deviceType == types.DeviceTransportUSB {
+		if isBlackSharkProfileID(m.activeProfile.ID) {
 			return fmt.Errorf("黑鲨 HID 不支持飞智实时模式命令")
 		}
 		return m.writeFlyDigiHIDFrameLocked(deviceproto.CmdEnterRealtimeRPM, nil, hidControlReportLen)
@@ -333,9 +336,9 @@ func (m *Manager) SetManualGearRPM(gear, level string, rpm int) bool {
 	m.mutex.RLock()
 	unit := types.NormalizeFanSpeedUnit(m.activeProfile.SpeedUnit)
 	m.mutex.RUnlock()
-	if m.GetDeviceType() == types.DeviceTransportHID {
+	if m.GetDeviceType() == types.DeviceTransportHID || m.GetDeviceType() == types.DeviceTransportUSB {
 		m.mutex.RLock()
-		blackShark := m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID
+		blackShark := isBlackSharkProfileID(m.activeProfile.ID)
 		m.mutex.RUnlock()
 		if blackShark {
 			return m.SetTargetSpeed(rpm, unit)
@@ -349,9 +352,9 @@ func (m *Manager) SetManualGearRPM(gear, level string, rpm int) bool {
 }
 
 func (m *Manager) SetGearLight(enabled bool) bool {
-	if m.GetDeviceType() == types.DeviceTransportHID {
+	if m.GetDeviceType() == types.DeviceTransportHID || m.GetDeviceType() == types.DeviceTransportUSB {
 		m.mutex.RLock()
-		blackShark := m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID
+		blackShark := isBlackSharkProfileID(m.activeProfile.ID)
 		m.mutex.RUnlock()
 		if blackShark {
 			return m.setBlackSharkHIDRGBEnabled(enabled)
@@ -382,7 +385,7 @@ func (m *Manager) SetPowerOnStart(enabled bool) bool {
 	if m.IsBS1() {
 		return m.setFlyDigiBS1PowerOnStart(enabled)
 	}
-	if m.GetDeviceType() == types.DeviceTransportHID {
+	if m.GetDeviceType() == types.DeviceTransportHID || m.GetDeviceType() == types.DeviceTransportUSB {
 		return m.setFlyDigiHIDPowerOnStart(enabled)
 	}
 	return false
@@ -419,9 +422,9 @@ func (m *Manager) SetWiFiSmartStartStopStandbySpeed(percent int) bool {
 }
 
 func (m *Manager) SetBrightness(percentage int) bool {
-	if m.GetDeviceType() == types.DeviceTransportHID {
+	if m.GetDeviceType() == types.DeviceTransportHID || m.GetDeviceType() == types.DeviceTransportUSB {
 		m.mutex.RLock()
-		blackShark := m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID
+		blackShark := isBlackSharkProfileID(m.activeProfile.ID)
 		m.mutex.RUnlock()
 		if blackShark {
 			return false
@@ -432,9 +435,9 @@ func (m *Manager) SetBrightness(percentage int) bool {
 }
 
 func (m *Manager) SetLightStrip(cfg types.LightStripConfig) error {
-	if m.GetDeviceType() == types.DeviceTransportHID {
+	if m.GetDeviceType() == types.DeviceTransportHID || m.GetDeviceType() == types.DeviceTransportUSB {
 		m.mutex.RLock()
-		blackShark := m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID
+		blackShark := isBlackSharkProfileID(m.activeProfile.ID)
 		m.mutex.RUnlock()
 		if blackShark {
 			return m.setBlackSharkHIDLighting(cfg)
@@ -454,9 +457,9 @@ func (m *Manager) SetLightStrip(cfg types.LightStripConfig) error {
 }
 
 func (m *Manager) SetRGBOff() bool {
-	if m.GetDeviceType() == types.DeviceTransportHID {
+	if m.GetDeviceType() == types.DeviceTransportHID || m.GetDeviceType() == types.DeviceTransportUSB {
 		m.mutex.RLock()
-		blackShark := m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID
+		blackShark := isBlackSharkProfileID(m.activeProfile.ID)
 		m.mutex.RUnlock()
 		if blackShark {
 			return m.setBlackSharkHIDRGBEnabled(false)
@@ -476,9 +479,9 @@ func (m *Manager) QueryDeviceSettings() (types.DeviceSettings, error) {
 	model := m.activeProfileDisplayNameLocked(wifiOnlyModelName)
 	m.mutex.RUnlock()
 
-	if source == types.DeviceTransportHID {
+	if source == types.DeviceTransportHID || source == types.DeviceTransportUSB {
 		m.mutex.RLock()
-		blackShark := m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID
+		blackShark := isBlackSharkProfileID(m.activeProfile.ID)
 		m.mutex.RUnlock()
 		if blackShark {
 			return m.queryBlackSharkHIDDeviceSettings()
@@ -571,7 +574,7 @@ func (m *Manager) SendDebugCommand(input string, waitMs int) (types.DeviceDebugC
 		waitMs = 5000
 	}
 
-	if m.GetDeviceType() == types.DeviceTransportHID {
+	if m.GetDeviceType() == types.DeviceTransportHID || m.GetDeviceType() == types.DeviceTransportUSB {
 		return m.sendFlyDigiHIDDebugCommand(input, waitMs)
 	}
 

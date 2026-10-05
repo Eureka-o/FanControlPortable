@@ -49,7 +49,7 @@ func (m *Manager) connectedInfoLocked() map[string]string {
 	if m.deviceType == types.DeviceTransportBLE {
 		return m.bleConnectedInfoLocked()
 	}
-	if m.deviceType == types.DeviceTransportHID {
+	if m.deviceType == types.DeviceTransportHID || m.deviceType == types.DeviceTransportUSB {
 		path := ""
 		if m.flyDigiHID != nil {
 			path = m.flyDigiHID.path

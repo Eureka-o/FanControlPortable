@@ -27,6 +27,33 @@ export namespace guiapp {
 
 }
 
+export namespace ipc {
+
+	export class TransferDeviceImageParams {
+	    dataBase64: string;
+	    fileName?: string;
+	    mimeType?: string;
+	    format?: string;
+	    width?: number;
+	    height?: number;
+
+	    static createFrom(source: any = {}) {
+	        return new TransferDeviceImageParams(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.dataBase64 = source["dataBase64"];
+	        this.fileName = source["fileName"];
+	        this.mimeType = source["mimeType"];
+	        this.format = source["format"];
+	        this.width = source["width"];
+	        this.height = source["height"];
+	    }
+	}
+
+}
+
 export namespace theme {
 
 	export class Meta {
@@ -444,6 +471,7 @@ export namespace types {
 	    supportsLighting: boolean;
 	    supportsBrightness: boolean;
 	    supportsScreen: boolean;
+	    supportsScreenImageTransfer: boolean;
 	    supportsPowerOnStart: boolean;
 	    supportsSmartStartStop: boolean;
 	    supportsSoftwareSmartStartStop: boolean;
@@ -469,6 +497,7 @@ export namespace types {
 	        this.supportsLighting = source["supportsLighting"];
 	        this.supportsBrightness = source["supportsBrightness"];
 	        this.supportsScreen = source["supportsScreen"];
+	        this.supportsScreenImageTransfer = source["supportsScreenImageTransfer"];
 	        this.supportsPowerOnStart = source["supportsPowerOnStart"];
 	        this.supportsSmartStartStop = source["supportsSmartStartStop"];
 	        this.supportsSoftwareSmartStartStop = source["supportsSoftwareSmartStartStop"];

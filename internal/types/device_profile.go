@@ -10,6 +10,7 @@ const (
 	DefaultWiFiPercentProfileID         = "builtin.wifi.percent"
 	DefaultWiFiPercentTemplateProfileID = "template.wifi.percent"
 	LegacyRPMProfileID                  = "builtin.legacy.rpm"
+	legacyBlackSharkHIDProfileID        = "builtin.blackshark.brb02.hid.rpm"
 )
 
 type DeviceSpeedRange struct {
@@ -35,6 +36,7 @@ type DeviceCapabilities struct {
 	SupportsLighting               bool             `json:"supportsLighting"`
 	SupportsBrightness             bool             `json:"supportsBrightness"`
 	SupportsScreen                 bool             `json:"supportsScreen"`
+	SupportsScreenImageTransfer    bool             `json:"supportsScreenImageTransfer"`
 	SupportsPowerOnStart           bool             `json:"supportsPowerOnStart"`
 	SupportsSmartStartStop         bool             `json:"supportsSmartStartStop"`
 	SupportsSoftwareSmartStartStop bool             `json:"supportsSoftwareSmartStartStop"`
@@ -640,7 +642,7 @@ func upsertBuiltInProfileForTransport(cfg *AppConfig, transport string) (string,
 	transport = NormalizeDeviceTransport(transport)
 	profile, ok := builtInDeviceProfileForTransport(cfg.FanControlDeviceIp, transport)
 	if !ok {
-		if transport == DeviceTransportBLE || transport == DeviceTransportHID {
+		if transport == DeviceTransportBLE || transport == DeviceTransportHID || transport == DeviceTransportUSB {
 			profile = LegacyRPMProfileForTransport(transport)
 		} else {
 			return "", false
@@ -675,6 +677,10 @@ func NormalizeDeviceProfileConfig(cfg *AppConfig) bool {
 	for _, profile := range cfg.DeviceProfiles {
 		profile = NormalizeDeviceProfile(profile, cfg.FanControlDeviceIp)
 		if profile.ID == LegacyRPMProfileID {
+			changed = true
+			continue
+		}
+		if profile.ID == legacyBlackSharkHIDProfileID {
 			changed = true
 			continue
 		}

@@ -34,6 +34,7 @@ var (
 
 type flyDigiHIDDevice struct {
 	handle    windows.Handle
+	usb       *blackSharkUSBDevice
 	path      string
 	vendorID  uint16
 	productID uint16
@@ -213,6 +214,11 @@ func (d *flyDigiHIDDevice) Close() error {
 	if d == nil {
 		return nil
 	}
+	if d.usb != nil {
+		err := d.usb.close()
+		d.usb = nil
+		return err
+	}
 	if d.handle == 0 || d.handle == windows.InvalidHandle {
 		return nil
 	}
@@ -222,10 +228,19 @@ func (d *flyDigiHIDDevice) Close() error {
 }
 
 func (d *flyDigiHIDDevice) SetNonblock(bool) error {
+	if d != nil && d.usb != nil {
+		return nil
+	}
 	return nil
 }
 
 func (d *flyDigiHIDDevice) WriteReport(report []byte, timeout time.Duration) error {
+	if d != nil && d.usb != nil {
+		if len(report) != blackSharkHIDReportLen {
+			return fmt.Errorf("黑鲨 USB report length must be %d, got %d", blackSharkHIDReportLen, len(report))
+		}
+		return d.usb.transfer(blackSharkUSBOutEndpoint, report, uint32(timeout/time.Millisecond))
+	}
 	if d == nil || d.handle == 0 || d.handle == windows.InvalidHandle {
 		return fmt.Errorf("hid device is not open")
 	}
@@ -295,6 +310,13 @@ func (d *flyDigiHIDDevice) setOutputReport(report []byte) error {
 }
 
 func (d *flyDigiHIDDevice) ReadReport(timeout time.Duration) ([]byte, error) {
+	if d != nil && d.usb != nil {
+		buf := make([]byte, blackSharkHIDReportLen)
+		if err := d.usb.transfer(blackSharkUSBInEndpoint, buf, uint32(timeout/time.Millisecond)); err != nil {
+			return nil, err
+		}
+		return buf, nil
+	}
 	if d == nil || d.handle == 0 || d.handle == windows.InvalidHandle {
 		return nil, fmt.Errorf("hid device is not open")
 	}

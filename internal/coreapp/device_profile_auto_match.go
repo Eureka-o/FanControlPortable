@@ -20,7 +20,7 @@ func connectedFlyDigiProfileID(deviceInfo map[string]string) string {
 		}
 	}
 
-	if transport == types.DeviceTransportHID {
+	if transport == types.DeviceTransportHID || transport == types.DeviceTransportUSB {
 		if productID, ok := parseHexUint16(deviceInfo["productId"]); ok {
 			if id := types.FlyDigiProfileIDForHIDProductID(productID); id != "" {
 				return id
@@ -28,7 +28,7 @@ func connectedFlyDigiProfileID(deviceInfo map[string]string) string {
 		}
 	}
 
-	if transport == types.DeviceTransportBLE || transport == types.DeviceTransportHID {
+	if transport == types.DeviceTransportBLE || transport == types.DeviceTransportHID || transport == types.DeviceTransportUSB {
 		return types.FlyDigiProfileIDForModel(deviceInfo["model"])
 	}
 	return ""

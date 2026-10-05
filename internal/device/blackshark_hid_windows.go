@@ -3,6 +3,7 @@
 package device
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -13,10 +14,10 @@ import (
 
 const blackSharkHIDReportLen = 65
 
-func (m *Manager) connectBlackSharkHIDLocked() (bool, map[string]string) {
-	dev, err := openHIDDevice(types.BlackSharkHIDVendorID, []uint16{types.BlackSharkBRB02HIDProductID})
+func (m *Manager) connectBlackSharkUSBLocked() (bool, map[string]string) {
+	dev, err := openBlackSharkUSBTransportDevice()
 	if err != nil {
-		m.logWarn("黑鲨 HID 设备连接失败: %v", err)
+		m.logWarn("黑鲨 USB 设备连接失败: %v", err)
 		m.isConnected = false
 		m.deviceType = ""
 		m.productID = 0
@@ -24,14 +25,14 @@ func (m *Manager) connectBlackSharkHIDLocked() (bool, map[string]string) {
 		m.currentFanData.Store(nil)
 		return false, nil
 	}
-
 	m.flyDigiHID = dev
 	m.productID = dev.productID
-	m.deviceType = types.DeviceTransportHID
+	m.deviceType = types.DeviceTransportUSB
+	m.activeProfile = types.BlackSharkBRB02USBProfile()
 	generation := m.connectionGen.Add(1)
 	ready := m.startFlyDigiHIDReaderLocked(dev, generation)
 	if !waitForFlyDigiHIDReady(ready, flyDigiHIDReadyTimeout) {
-		m.logWarn("黑鲨 HID 已打开，但在 %s 内未收到状态帧", flyDigiHIDReadyTimeout)
+		m.logWarn("黑鲨 USB 已打开，但在 %s 内未收到状态帧", flyDigiHIDReadyTimeout)
 		m.closeFlyDigiHIDLocked()
 		m.isConnected = false
 		m.deviceType = ""
@@ -41,7 +42,9 @@ func (m *Manager) connectBlackSharkHIDLocked() (bool, map[string]string) {
 	}
 	m.isConnected = true
 	info := m.blackSharkHIDInfoLocked(dev.path)
-	m.logInfo("黑鲨 HID 设备连接成功: %s", info["product"])
+	info["transport"] = types.DeviceTransportUSB
+	info["profileId"] = types.BlackSharkBRB02USBProfileID
+	m.logInfo("黑鲨 USB 设备连接成功: %s", info["product"])
 	return true, info
 }
 
@@ -51,10 +54,10 @@ func (m *Manager) blackSharkHIDInfoLocked(path string) map[string]string {
 		"product":      types.BlackSharkBRB02DisplayName,
 		"serial":       path,
 		"model":        types.BlackSharkBRB02DisplayName,
-		"transport":    types.DeviceTransportHID,
+		"transport":    types.DeviceTransportUSB,
 		"endpoint":     path,
 		"productId":    fmt.Sprintf("0x%04X", types.BlackSharkBRB02HIDProductID),
-		"profileId":    types.BlackSharkBRB02HIDProfileID,
+		"profileId":    types.BlackSharkBRB02USBProfileID,
 	}
 }
 
@@ -96,6 +99,7 @@ func (m *Manager) handleBlackSharkHIDRX(generation uint64, raw []byte) bool {
 	if fanData == nil || m.connectionGen.Load() != generation {
 		return false
 	}
+	fanData.Transport = m.deviceType
 	m.currentFanData.Store(fanData)
 	callback := m.onFanDataUpdate
 	if callback != nil {
@@ -115,16 +119,71 @@ func blackSharkHIDReport(frame []byte) []byte {
 }
 
 func (m *Manager) writeBlackSharkHIDFrameLocked(frame []byte) error {
+	return m.writeBlackSharkHIDFrameContextLocked(context.Background(), frame)
+}
+
+func (m *Manager) writeBlackSharkHIDFrameContextLocked(ctx context.Context, frame []byte) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if m.writesBlocked.Load() {
 		return fmt.Errorf("device writes are blocked during system suspend")
 	}
-	if m.flyDigiHID == nil {
+	if !m.isConnected || m.flyDigiHID == nil {
 		return fmt.Errorf("黑鲨 HID 设备未连接")
 	}
+	if len(frame) == 0 || len(frame) > blackSharkHIDReportLen {
+		return fmt.Errorf("黑鲨 HID 帧长度无效: %d", len(frame))
+	}
 	report := blackSharkHIDReport(frame)
-	m.recordDebugFrame("tx", types.DeviceTransportHID, report)
-	return retryDeviceSend("Black Shark HID command", func() error {
+	m.recordDebugFrame("tx", m.deviceType, report)
+	return retryDeviceSendContext(ctx, "Black Shark HID command", func() error {
 		return m.flyDigiHID.WriteReport(report, 800*time.Millisecond)
+	})
+}
+
+func (m *Manager) writeBlackSharkUSBImageFrameContextLocked(ctx context.Context, frame []byte) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if m.writesBlocked.Load() {
+		return fmt.Errorf("device writes are blocked during system suspend")
+	}
+	if !m.isConnected || m.deviceType != types.DeviceTransportUSB ||
+		m.activeProfile.ID != types.BlackSharkBRB02USBProfileID ||
+		m.productID != types.BlackSharkBRB02HIDProductID || m.flyDigiHID == nil || m.flyDigiHID.usb == nil {
+		return fmt.Errorf("黑鲨 USB 设备未连接")
+	}
+	report, err := blackSharkUSBImageReport(frame)
+	if err != nil {
+		return err
+	}
+	m.recordDebugFrame("tx", types.DeviceTransportUSB, report)
+	return retryDeviceSendContext(ctx, "Black Shark USB image frame", func() error {
+		return m.flyDigiHID.usb.transfer(blackSharkUSBOutEndpoint, report, 800)
+	})
+}
+
+// SendBlackSharkImage uploads one complete RGB565 image over the BRB02 USB bulk endpoint.
+func (m *Manager) SendBlackSharkImage(ctx context.Context, rgb565 []byte) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	frames, err := deviceproto.BuildBlackSharkImageUpload(rgb565)
+	if err != nil {
+		return err
+	}
+
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if m.activeProfile.ID != types.BlackSharkBRB02USBProfileID ||
+		m.deviceType != types.DeviceTransportUSB ||
+		m.productID != types.BlackSharkBRB02HIDProductID ||
+		!m.isConnected || m.flyDigiHID == nil || m.flyDigiHID.usb == nil {
+		return fmt.Errorf("黑鲨 USB 设备未连接，图片传输仅支持 libusb 有线连接")
+	}
+	return sendBlackSharkImageFrames(ctx, frames, func(frame []byte) error {
+		return m.writeBlackSharkUSBImageFrameContextLocked(ctx, frame)
 	})
 }
 
@@ -150,7 +209,7 @@ func (m *Manager) setBlackSharkHIDTargetSpeedLocked(speed types.FanSpeedValue) b
 	}
 	m.currentFanData.Store(&types.FanData{
 		CurrentRPM: uint16(current), TargetRPM: uint16(rpm),
-		WorkMode: "自动模式(实时转速)", Transport: types.DeviceTransportHID,
+		WorkMode: "自动模式(实时转速)", Transport: m.deviceType,
 		SpeedUnit: types.FanSpeedUnitRPM,
 	})
 	return true
@@ -191,7 +250,7 @@ func (m *Manager) setBlackSharkHIDLighting(cfg types.LightStripConfig) error {
 func (m *Manager) queryBlackSharkHIDDeviceSettings() (types.DeviceSettings, error) {
 	settings := types.DeviceSettings{
 		Available: m.IsConnected(),
-		Source:    types.DeviceTransportHID,
+		Source:    m.deviceType,
 		ReadAt:    time.Now().Format("2006-01-02 15:04:05"),
 		Model:     types.BlackSharkBRB02DisplayName,
 	}

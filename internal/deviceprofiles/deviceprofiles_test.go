@@ -266,6 +266,16 @@ func TestValidateBLEProfileAllowsDiscoveryWithoutFixedService(t *testing.T) {
 	}
 }
 
+func TestValidateBlackSharkUSBProfileUsesNativeRPMValidation(t *testing.T) {
+	profile, err := NormalizeAndValidate(types.BlackSharkBRB02USBProfile(), "")
+	if err != nil {
+		t.Fatalf("Black Shark USB profile returned error: %v", err)
+	}
+	if profile.Transport != types.DeviceTransportUSB || profile.SpeedUnit != types.FanSpeedUnitRPM {
+		t.Fatalf("Black Shark USB profile transport/unit = %q/%q, want usb/rpm", profile.Transport, profile.SpeedUnit)
+	}
+}
+
 func TestPrepareRuntimeProfileCanonicalizesBuiltInProfile(t *testing.T) {
 	profile := types.DefaultWiFiPercentProfile("10.0.0.42")
 	profile.SpeedUnit = types.FanSpeedUnitRPM

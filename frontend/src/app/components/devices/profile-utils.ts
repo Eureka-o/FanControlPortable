@@ -2,7 +2,7 @@
 
 import { types } from '../../../../wailsjs/go/models';
 
-export type DeviceTransport = 'wifi' | 'ble' | 'serial' | 'hid';
+export type DeviceTransport = 'wifi' | 'ble' | 'serial' | 'hid' | 'usb';
 export type DeviceSpeedUnit = 'percent' | 'rpm';
 
 export interface DeviceCustomCommandDraft {
@@ -66,6 +66,8 @@ export function normalizeTransport(value?: string): DeviceTransport {
       return 'serial';
     case 'hid':
       return 'hid';
+    case 'usb':
+      return 'usb';
     default:
       return 'wifi';
   }
@@ -306,15 +308,15 @@ export function buildProfileFromDraft(draft: DeviceProfileDraft): types.DevicePr
   const supportsReadState =
     transport === 'wifi'
       ? Boolean(draft.stateEndpoint.trim())
-      : transport === 'ble'
-        ? Boolean(draft.bleNotifyCharacteristic.trim())
-        : transport === 'hid' || Boolean(draft.readStateCommand.trim());
+    : transport === 'ble'
+      ? Boolean(draft.bleNotifyCharacteristic.trim())
+      : (transport === 'hid' || transport === 'usb') || Boolean(draft.readStateCommand.trim());
   const supportsSetSpeed =
     transport === 'wifi'
       ? Boolean(draft.speedEndpoint.trim())
       : transport === 'ble'
         ? Boolean(draft.bleWriteCharacteristic.trim())
-        : transport === 'hid' || Boolean(draft.serialPort.trim()) || Boolean(draft.setSpeedCommand.trim());
+        : (transport === 'hid' || transport === 'usb') || Boolean(draft.serialPort.trim()) || Boolean(draft.setSpeedCommand.trim());
   const supportsPowerOnStart = draft.customCommands.some((command) => command.command.trim() && isPowerOnStartCommand(command.type));
   const supportsSmartStartStop = draft.customCommands.some((command) => command.command.trim() && isSmartStartStopCommand(command.type));
 
@@ -401,6 +403,8 @@ export function summarizeConnection(profile: types.DeviceProfile) {
       return [connection.serialPort, connection.serialBaudRate ? `${connection.serialBaudRate}` : ''].filter(Boolean).join(' / ') || 'COM';
     case 'hid':
       return 'HID/RPM';
+    case 'usb':
+      return 'USB/RPM';
     default:
       return [connection.endpoint, connection.speedEndpoint].filter(Boolean).join(' / ') || 'WiFi';
   }

@@ -3,6 +3,7 @@ export const FAN_SPEED_UNIT_RPM = 'rpm';
 export const DEVICE_TRANSPORT_WIFI = 'wifi';
 export const DEVICE_TRANSPORT_BLE = 'ble';
 export const DEVICE_TRANSPORT_HID = 'hid';
+export const DEVICE_TRANSPORT_USB = 'usb';
 export const DEFAULT_RPM_SPEED_MAX = 4000;
 
 export type FanSpeedUnit = typeof FAN_SPEED_UNIT_PERCENT | typeof FAN_SPEED_UNIT_RPM;
@@ -47,7 +48,7 @@ function normalizeDeviceTransport(transport?: string) {
 
 function isNativeDeviceTransport(transport?: string) {
   const normalized = normalizeDeviceTransport(transport);
-  return normalized === DEVICE_TRANSPORT_BLE || normalized === DEVICE_TRANSPORT_HID;
+  return normalized === DEVICE_TRANSPORT_BLE || normalized === DEVICE_TRANSPORT_HID || normalized === DEVICE_TRANSPORT_USB;
 }
 
 function getRuntimeDeviceProfile(runtimeProfile?: DeviceProfileCarrier | null): DeviceProfileCarrier | undefined {
