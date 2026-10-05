@@ -582,7 +582,7 @@ func rawNativeActiveProfile(cfg *types.AppConfig) (types.DeviceProfile, bool) {
 	if profile, ok := findByID(cfg.ActiveDeviceProfileID); ok {
 		return profile, true
 	}
-	for _, transport := range []string{types.DeviceTransportBLE, types.DeviceTransportHID} {
+	for _, transport := range []string{types.DeviceTransportBLE, types.DeviceTransportUSB, types.DeviceTransportHID} {
 		if profile, ok := findByID(cfg.ActiveDeviceProfileIDsByTransport[transport]); ok {
 			return profile, true
 		}
@@ -592,6 +592,8 @@ func rawNativeActiveProfile(cfg *types.AppConfig) (types.DeviceProfile, bool) {
 		return types.FlyDigiBS1Profile(), true
 	case types.DeviceTransportHID:
 		return types.LegacyRPMProfileForTransport(types.DeviceTransportHID), true
+	case types.DeviceTransportUSB:
+		return types.BlackSharkBRB02USBProfile(), true
 	default:
 		return types.DeviceProfile{}, false
 	}

@@ -494,6 +494,9 @@ Section "$(FC_STR_SECTION_MAIN)" SEC_MAIN
     DetailPrint "$(FC_STR_INSTALLING_CORE)"
     File "/oname=FanControl Core.exe" "${CORE_EXECUTABLE_SOURCE}"
 
+    # Black Shark WinUSB backend runtime (libusb is kept beside the app).
+    File /nonfatal "..\..\bin\libusb-1.0.dll"
+
     # Copy bridge directory and its contents
     DetailPrint "$(FC_STR_INSTALLING_BRIDGE)"
     SetOutPath $INSTDIR\bridge

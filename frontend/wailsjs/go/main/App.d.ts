@@ -4,6 +4,7 @@ import {types} from '../models';
 import {guiapp} from '../models';
 import {theme} from '../models';
 import {context} from '../models';
+import {ipc} from '../models';
 
 export function AutoScanDevices():Promise<Record<string, any>>;
 
@@ -182,6 +183,8 @@ export function TestBridgeProgram():Promise<types.BridgeTemperatureData>;
 export function TestDeviceProfile(arg1:types.DeviceProfileTestParams):Promise<types.DeviceProfileTestResult>;
 
 export function TestTemperatureReading():Promise<types.TemperatureData>;
+
+export function TransferDeviceImage(arg1:ipc.TransferDeviceImageParams):Promise<void>;
 
 export function UpdateCompletedOnLaunch():Promise<boolean>;
 

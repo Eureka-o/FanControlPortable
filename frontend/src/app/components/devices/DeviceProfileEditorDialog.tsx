@@ -392,7 +392,7 @@ export default function DeviceProfileEditorDialog({
   const handleTransportChange = (transport: DeviceTransport) => {
     setDraft((current) => {
       const next = { ...current, transport };
-      if (transport === 'hid') {
+      if (transport === 'hid' || transport === 'usb') {
         next.speedUnit = 'rpm';
         next.speedMin = 0;
         next.speedMax = 4000;
@@ -401,14 +401,14 @@ export default function DeviceProfileEditorDialog({
         next.endpoint = '';
       } else if (transport === 'ble') {
         next.endpoint = current.transport === 'ble' ? current.endpoint : '';
-        if (current.transport === 'hid') {
+        if (current.transport === 'hid' || current.transport === 'usb') {
           next.speedUnit = 'percent';
           next.speedMin = 0;
           next.speedMax = 100;
           next.speedStep = 1;
           next.tickScale = 10;
         }
-      } else if (current.transport === 'hid') {
+      } else if (current.transport === 'hid' || current.transport === 'usb') {
         next.speedUnit = 'percent';
         next.speedMin = 0;
         next.speedMax = 100;
@@ -543,6 +543,7 @@ export default function DeviceProfileEditorDialog({
                     { value: 'ble', label: t('advancedDevices.transport.ble') },
                     { value: 'serial', label: t('advancedDevices.transport.serial') },
                     { value: 'hid', label: t('advancedDevices.transport.hid') },
+                    { value: 'usb', label: t('advancedDevices.transport.usb') },
                   ]}
                   size="sm"
                 />
@@ -555,7 +556,7 @@ export default function DeviceProfileEditorDialog({
                     { value: 'percent', label: t('advancedDevices.speedUnit.percent') },
                     { value: 'rpm', label: t('advancedDevices.speedUnit.rpm') },
                   ]}
-                  disabled={draft.transport === 'hid'}
+                  disabled={draft.transport === 'hid' || draft.transport === 'usb'}
                   size="sm"
                 />
               </Field>

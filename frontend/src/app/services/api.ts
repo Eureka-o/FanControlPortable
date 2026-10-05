@@ -161,6 +161,15 @@ export interface UpdateProgressPayload {
   maxAttempts?: number;
 }
 
+export interface DeviceImageTransferRequest {
+  dataBase64: string;
+  fileName: string;
+  mimeType: string;
+  format: 'rgb565-be';
+  width: number;
+  height: number;
+}
+
 class ApiService {
   // 设备连接
   async connectDevice(): Promise<boolean> {
@@ -417,6 +426,14 @@ class ApiService {
 
   async setLightStrip(config: types.LightStripConfig): Promise<void> {
     return await SetLightStrip(config);
+  }
+
+  async transferDeviceImage(request: DeviceImageTransferRequest): Promise<unknown> {
+    const transfer = (window as any).go?.main?.App?.TransferDeviceImage;
+    if (typeof transfer !== 'function') {
+      throw new Error('Device image transfer is not available yet');
+    }
+    return await transfer(request);
   }
 
   // Windows自启动相关

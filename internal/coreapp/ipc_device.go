@@ -77,6 +77,16 @@ func (a *CoreApp) handleDeviceIPCRequest(req ipc.Request) (ipc.Response, bool) {
 			return a.errorResponse(err.Error()), true
 		}
 		return a.dataResponse(settings), true
+
+	case ipc.ReqTransferDeviceImage:
+		var params ipc.TransferDeviceImageParams
+		if err := json.Unmarshal(req.Data, &params); err != nil {
+			return a.errorResponse("解析黑鲨屏幕图片参数失败: " + err.Error()), true
+		}
+		if err := a.TransferDeviceImage(params); err != nil {
+			return a.errorResponse(err.Error()), true
+		}
+		return a.successResponse(true), true
 	default:
 		return ipc.Response{}, false
 	}

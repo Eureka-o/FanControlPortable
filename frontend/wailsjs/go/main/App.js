@@ -358,6 +358,10 @@ export function TestTemperatureReading() {
   return window['go']['main']['App']['TestTemperatureReading']();
 }
 
+export function TransferDeviceImage(arg1) {
+  return window['go']['main']['App']['TransferDeviceImage'](arg1);
+}
+
 export function UpdateCompletedOnLaunch() {
   return window['go']['main']['App']['UpdateCompletedOnLaunch']();
 }

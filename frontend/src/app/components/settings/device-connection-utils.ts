@@ -55,7 +55,7 @@ export function isEmptyProfileSelectValue(value: string | number) {
 
 export function isUserVisibleNativeProfile(profile: types.DeviceProfile) {
   const transport = normalizeTransport(profile.transport);
-  return (transport === 'ble' || transport === 'hid') && !profile.builtIn;
+  return (transport === 'ble' || transport === 'hid' || transport === 'usb') && !profile.builtIn;
 }
 
 // WiFi compatibility stays on for upgraded users that already have a legacy IP.

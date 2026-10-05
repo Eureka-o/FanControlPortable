@@ -7,7 +7,7 @@ import (
 )
 
 func connectedDeviceDisplayName(profile types.DeviceProfile, model string, settings *types.DeviceSettings, fallback string) string {
-	if profile.ID == types.BlackSharkBRB02ProfileID || profile.ID == types.BlackSharkBRB02HIDProfileID {
+	if profile.ID == types.BlackSharkBRB02ProfileID || profile.ID == types.BlackSharkBRB02USBProfileID {
 		if displayName := strings.TrimSpace(profile.DisplayName); displayName != "" {
 			return displayName
 		}

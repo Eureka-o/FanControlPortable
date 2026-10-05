@@ -154,7 +154,8 @@
       "wifi": "WiFi",
       "ble": "BLE",
       "serial": "仮想 COM",
-      "hid": "ネイティブ HID"
+      "hid": "ネイティブ HID",
+      "usb": "有線 USB"
     },
     "speedUnit": {
       "percent": "パーセント",
@@ -1067,7 +1068,9 @@
         "smartStartStop": "起停ポリシー",
         "smartStartStopDescription": "現在のデバイス機能に応じて、ファームウェア側の起停動作を表示します。",
         "lighting": "ライト制御",
-        "lightingDescription": "現在のデバイスがライト機能を明示的にサポートする場合のみ表示します。"
+        "lightingDescription": "現在のデバイスがライト機能を明示的にサポートする場合のみ表示します。",
+        "imageTransfer": "画面画像",
+        "imageTransferDescription": "接続中のデバイス画面へ対応画像を送信します。"
       },
       "gearLightTitle": "ギアランプ",
       "gearLightDescription": "デバイス上のギアインジケーターライトを制御します",
@@ -1075,6 +1078,18 @@
       "powerOnStartDescription": "デバイスに電源を入れると自動的に動作します",
       "screenTitle": "スクリーン",
       "screenDescription": "このデバイスはスクリーン機能を持つ設定です。実行時のスクリーン制御は検証済みホワイトリスト後に開放します。",
+      "imageTransfer": {
+        "title": "画面画像",
+        "description": "4 MB 以下の画像を選択します。現在は有線接続のみ転送できます。",
+        "select": "画像を選択",
+        "invalidType": "画像ファイルを選択してください。",
+        "tooLarge": "画像は 4 MB 以下にしてください。",
+        "bleWiredOnly": "画面画像の転送は現在、有線接続でのみ利用できます。",
+        "unavailable": "このデバイスでは画面画像の転送を利用できません。",
+        "progress": "画像を転送中",
+        "success": "画像転送を開始しました。",
+        "failed": "画像転送に失敗しました: {{error}}"
+      },
       "smartStartStopTitle": "スマート起停",
       "smartStartStopDescription": "システム終了後にクーラーを停止するタイミングを選べます",
       "wifiSmartStartStopTitle": "スマート起停",

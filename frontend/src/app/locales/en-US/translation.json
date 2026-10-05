@@ -154,7 +154,8 @@
       "wifi": "WiFi",
       "ble": "BLE",
       "serial": "Virtual COM",
-      "hid": "Native HID"
+      "hid": "Native HID",
+      "usb": "Wired USB"
     },
     "speedUnit": {
       "percent": "Percent",
@@ -1067,7 +1068,9 @@
         "smartStartStop": "Start/stop policy",
         "smartStartStopDescription": "Shows firmware-backed start/stop behavior according to the current device capabilities.",
         "lighting": "Lighting controls",
-        "lightingDescription": "Shown only when the active device explicitly supports lighting."
+        "lightingDescription": "Shown only when the active device explicitly supports lighting.",
+        "imageTransfer": "Screen image",
+        "imageTransferDescription": "Send a supported image to the connected device screen."
       },
       "gearLightTitle": "Gear light",
       "gearLightDescription": "Control the gear indicator light on the device",
@@ -1075,6 +1078,18 @@
       "powerOnStartDescription": "Automatically run when the device receives power",
       "screenTitle": "Screen",
       "screenDescription": "This device marks screen capability. Runtime screen controls will be opened after a verified whitelist is available.",
+      "imageTransfer": {
+        "title": "Screen image",
+        "description": "Choose an image up to 4 MB. Wireless transfer is currently limited to wired devices.",
+        "select": "Choose image",
+        "invalidType": "Choose an image file.",
+        "tooLarge": "The image must be 4 MB or smaller.",
+        "bleWiredOnly": "Screen image transfer is currently available only over a wired connection.",
+        "unavailable": "Screen image transfer is not available for this device.",
+        "progress": "Transferring image",
+        "success": "Image transfer started.",
+        "failed": "Image transfer failed: {{error}}"
+      },
       "smartStartStopTitle": "Smart start/stop",
       "smartStartStopDescription": "Choose when cooling stops after the system shuts down",
       "wifiSmartStartStopTitle": "Smart start/stop",

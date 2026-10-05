@@ -28,10 +28,11 @@ func (m *Manager) shouldUseLegacyHIDLocked() bool {
 	return m.deviceTransport == types.DeviceTransportHID
 }
 
+func (m *Manager) shouldUseBlackSharkUSBLocked() bool {
+	return m.deviceTransport == types.DeviceTransportUSB && isBlackSharkProfileID(m.activeProfile.ID)
+}
+
 func (m *Manager) connectLegacyHIDLocked() (bool, map[string]string) {
-	if m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID {
-		return m.connectBlackSharkHIDLocked()
-	}
 	return m.connectFlyDigiHIDLocked()
 }
 
@@ -77,7 +78,7 @@ func (m *Manager) connectFlyDigiHIDLocked() (bool, map[string]string) {
 }
 
 func (m *Manager) disconnectFlyDigiHIDLocked() bool {
-	if m.deviceType != types.DeviceTransportHID {
+	if m.deviceType != types.DeviceTransportHID && m.deviceType != types.DeviceTransportUSB {
 		return false
 	}
 	m.closeFlyDigiHIDLocked()
@@ -233,8 +234,12 @@ func (m *Manager) handleFlyDigiHIDRX(generation uint64, raw []byte) bool {
 		return false
 	}
 
-	m.recordDebugFrame("rx", types.DeviceTransportHID, raw)
-	if m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID {
+	transport := m.deviceType
+	if transport == "" {
+		transport = types.DeviceTransportHID
+	}
+	m.recordDebugFrame("rx", transport, raw)
+	if isBlackSharkProfileID(m.activeProfile.ID) {
 		return m.handleBlackSharkHIDRX(generation, raw)
 	}
 	if fanData := parseFlyDigiFanData(raw); fanData != nil {
@@ -260,7 +265,7 @@ func (m *Manager) handleFlyDigiHIDRX(generation uint64, raw []byte) bool {
 }
 
 func (m *Manager) flyDigiHIDInfoLocked(productID uint16, path string) map[string]string {
-	if m.activeProfile.ID == types.BlackSharkBRB02HIDProfileID {
+	if isBlackSharkProfileID(m.activeProfile.ID) {
 		return m.blackSharkHIDInfoLocked(path)
 	}
 	displayName := m.activeProfileDisplayNameLocked(flyDigiHIDModelName(productID))

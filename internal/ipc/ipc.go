@@ -46,6 +46,7 @@ const (
 	ReqGetDeviceStatus        RequestType = "GetDeviceStatus"
 	ReqGetCurrentFanData      RequestType = "GetCurrentFanData"
 	ReqRefreshDeviceSettings  RequestType = "RefreshDeviceSettings"
+	ReqTransferDeviceImage    RequestType = "TransferDeviceImage"
 
 	// 配置相关
 	ReqGetConfig                  RequestType = "GetConfig"
@@ -1022,6 +1023,15 @@ type SetAutoStartWithMethodParams struct {
 // SetLightStripParams 设置灯带参数
 type SetLightStripParams struct {
 	Config types.LightStripConfig `json:"config"`
+}
+
+type TransferDeviceImageParams struct {
+	DataBase64 string `json:"dataBase64"`
+	FileName   string `json:"fileName,omitempty"`
+	MimeType   string `json:"mimeType,omitempty"`
+	Format     string `json:"format,omitempty"`
+	Width      int    `json:"width,omitempty"`
+	Height     int    `json:"height,omitempty"`
 }
 
 type BeginNoiseDiagnosticParams struct {

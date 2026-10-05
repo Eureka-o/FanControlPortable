@@ -2,7 +2,7 @@ package types
 
 const (
 	BlackSharkBRB02ProfileID           = "builtin.blackshark.brb02.ble.rpm"
-	BlackSharkBRB02HIDProfileID        = "builtin.blackshark.brb02.hid.rpm"
+	BlackSharkBRB02USBProfileID        = "builtin.blackshark.brb02.usb.rpm"
 	BlackSharkBRB02DisplayName         = "黑鲨（Black Shark）风神 Pro"
 	BlackSharkBRB02Vendor              = "黑鲨（Black Shark）"
 	BlackSharkBRB02HIDVendorID  uint16 = 0xE2B7
@@ -37,16 +37,19 @@ func BlackSharkBRB02Profile() DeviceProfile {
 	}
 }
 
-func BlackSharkBRB02HIDProfile() DeviceProfile {
-	caps := blackSharkBRB02Capabilities(BlackSharkBRB02HIDProfileID, DeviceTransportHID)
+// BlackSharkBRB02USBProfile is the WinUSB/libusb path for the BRB02. It is
+// deliberately separate from the FlyDigi HID transport because the device is
+// WinUSB-bound and exposes bulk endpoints rather than a hidapi interface.
+func BlackSharkBRB02USBProfile() DeviceProfile {
+	caps := blackSharkBRB02Capabilities(BlackSharkBRB02USBProfileID, DeviceTransportUSB)
 	return DeviceProfile{
-		ID:           BlackSharkBRB02HIDProfileID,
+		ID:           BlackSharkBRB02USBProfileID,
 		DisplayName:  BlackSharkBRB02DisplayName,
 		Vendor:       BlackSharkBRB02Vendor,
 		Model:        BlackSharkBRB02DisplayName,
-		Notes:        "Black Shark BRB02 Cooler Pro over HID; VID 0xE2B7, PID 0x7001; fixed RPM control and device-side RGB lighting.",
+		Notes:        "Black Shark BRB02 Cooler Pro over WinUSB/libusb; VID 0xE2B7, PID 0x7001; bulk OUT 0x01 / IN 0x81, 65-byte frames.",
 		BuiltIn:      true,
-		Transport:    DeviceTransportHID,
+		Transport:    DeviceTransportUSB,
 		SpeedUnit:    FanSpeedUnitRPM,
 		SpeedRange:   caps.SpeedRange,
 		Capabilities: caps,
@@ -54,21 +57,25 @@ func BlackSharkBRB02HIDProfile() DeviceProfile {
 }
 
 func blackSharkBRB02Capabilities(profileID, transport string) DeviceCapabilities {
+	// Image transfer is available only through the WinUSB/libusb transport.
+	// The BLE captures do not establish an equivalent image transport.
+	supportsScreenImageTransfer := transport == DeviceTransportUSB
 	return DeviceCapabilities{
-		ProfileID:              profileID,
-		DisplayName:            BlackSharkBRB02DisplayName,
-		Transport:              transport,
-		SpeedUnit:              FanSpeedUnitRPM,
-		SpeedRange:             DeviceSpeedRange{Min: 0, Max: 4000, Step: 1},
-		SupportsReadState:      true,
-		SupportsSetSpeed:       true,
-		SupportsManualGears:    false,
-		SupportsCustomSpeed:    true,
-		SupportsLighting:       true,
-		SupportsBrightness:     true,
-		SupportsGearLight:      true,
-		SupportsScreen:         false,
-		SupportsPowerOnStart:   false,
-		SupportsSmartStartStop: false,
+		ProfileID:                   profileID,
+		DisplayName:                 BlackSharkBRB02DisplayName,
+		Transport:                   transport,
+		SpeedUnit:                   FanSpeedUnitRPM,
+		SpeedRange:                  DeviceSpeedRange{Min: 0, Max: 4000, Step: 1},
+		SupportsReadState:           true,
+		SupportsSetSpeed:            true,
+		SupportsManualGears:         false,
+		SupportsCustomSpeed:         true,
+		SupportsLighting:            true,
+		SupportsBrightness:          true,
+		SupportsGearLight:           true,
+		SupportsScreen:              false,
+		SupportsScreenImageTransfer: supportsScreenImageTransfer,
+		SupportsPowerOnStart:        false,
+		SupportsSmartStartStop:      false,
 	}
 }

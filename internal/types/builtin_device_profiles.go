@@ -9,8 +9,8 @@ func BuiltInDeviceProfileByID(profileID string) (DeviceProfile, bool) {
 	switch strings.TrimSpace(profileID) {
 	case BlackSharkBRB02ProfileID:
 		return BlackSharkBRB02Profile(), true
-	case BlackSharkBRB02HIDProfileID:
-		return BlackSharkBRB02HIDProfile(), true
+	case BlackSharkBRB02USBProfileID:
+		return BlackSharkBRB02USBProfile(), true
 	case DefaultWiFiPercentProfileID:
 		return DefaultWiFiPercentProfile(DefaultFanDeviceIP), true
 	case DefaultWiFiPercentTemplateProfileID:
@@ -24,7 +24,7 @@ func BuiltInDeviceProfiles(endpoint string) []DeviceProfile {
 	profiles := []DeviceProfile{DefaultWiFiPercentProfile(endpoint)}
 	profiles = append(profiles, FlyDigiBuiltInProfiles()...)
 	profiles = append(profiles, BlackSharkBRB02Profile())
-	profiles = append(profiles, BlackSharkBRB02HIDProfile())
+	profiles = append(profiles, BlackSharkBRB02USBProfile())
 	return profiles
 }
 
@@ -37,7 +37,7 @@ func IsBuiltInDeviceProfileID(profileID string) bool {
 		DefaultWiFiPercentTemplateProfileID,
 		LegacyRPMProfileID,
 		BlackSharkBRB02ProfileID,
-		BlackSharkBRB02HIDProfileID:
+		BlackSharkBRB02USBProfileID:
 		return true
 	default:
 		return false
@@ -52,6 +52,8 @@ func builtInDeviceProfileForTransport(endpoint, transport string) (DeviceProfile
 		return FlyDigiBS1Profile(), true
 	case DeviceTransportHID:
 		return FlyDigiBS2Profile(), true
+	case DeviceTransportUSB:
+		return BlackSharkBRB02USBProfile(), true
 	default:
 		return DeviceProfile{}, false
 	}
@@ -70,7 +72,7 @@ func ensureBuiltInDeviceProfiles(cfg *AppConfig) bool {
 		return false
 	}
 	changed := false
-	builtIns := append(FlyDigiBuiltInProfiles(), BlackSharkBRB02Profile(), BlackSharkBRB02HIDProfile())
+	builtIns := append(FlyDigiBuiltInProfiles(), BlackSharkBRB02Profile(), BlackSharkBRB02USBProfile())
 	if cfg.WiFiCompatibilityEnabled {
 		builtIns = append([]DeviceProfile{DefaultWiFiPercentProfile(cfg.FanControlDeviceIp)}, builtIns...)
 	}

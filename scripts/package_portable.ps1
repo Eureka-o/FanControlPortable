@@ -53,7 +53,8 @@ Require-Directory $buildBin
 $requiredFiles = @(
     "FanControl.exe",
     "FanControl Core.exe",
-    "PawnIO_setup.exe"
+    "PawnIO_setup.exe",
+    "libusb-1.0.dll"
 )
 
 foreach ($file in $requiredFiles) {
@@ -72,6 +73,7 @@ New-Item -ItemType Directory -Path $safeOutputDir | Out-Null
 Copy-Item -LiteralPath (Join-Path $buildBin "FanControl.exe") -Destination (Join-Path $safeOutputDir "FanControl.exe")
 Copy-Item -LiteralPath (Join-Path $buildBin "FanControl Core.exe") -Destination (Join-Path $safeOutputDir "FanControl Core.exe")
 Copy-Item -LiteralPath (Join-Path $buildBin "PawnIO_setup.exe") -Destination (Join-Path $safeOutputDir "PawnIO_setup.exe")
+Copy-Item -LiteralPath (Join-Path $buildBin "libusb-1.0.dll") -Destination (Join-Path $safeOutputDir "libusb-1.0.dll")
 Copy-Item -LiteralPath (Join-Path $buildBin "bridge") -Destination (Join-Path $safeOutputDir "bridge") -Recurse
 Copy-Item -LiteralPath (Join-Path $buildBin "themes") -Destination (Join-Path $safeOutputDir "themes") -Recurse
 

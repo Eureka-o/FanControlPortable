@@ -141,7 +141,7 @@ func NormalizeAndValidate(profile types.DeviceProfile, fallbackEndpoint string) 
 	rawTransport := strings.ToLower(strings.TrimSpace(profile.Transport))
 	rawUnit := strings.ToLower(strings.TrimSpace(profile.SpeedUnit))
 	if !isValidTransport(rawTransport) {
-		return types.DeviceProfile{}, fmt.Errorf("device profile transport must be wifi, ble, serial, or hid")
+		return types.DeviceProfile{}, fmt.Errorf("device profile transport must be wifi, ble, serial, hid, or usb")
 	}
 	if !isValidSpeedUnit(rawUnit) {
 		return types.DeviceProfile{}, fmt.Errorf("device profile speed unit must be percent or rpm")
@@ -397,9 +397,9 @@ func validateTransportSettings(profile types.DeviceProfile, fallbackEndpoint str
 		if profile.Connection.SerialStopBits != 0 && profile.Connection.SerialStopBits != 1 && profile.Connection.SerialStopBits != 2 {
 			return fmt.Errorf("serial device profile stop bits must be 1 or 2")
 		}
-	case types.DeviceTransportHID:
+	case types.DeviceTransportHID, types.DeviceTransportUSB:
 		if profile.SpeedUnit != types.FanSpeedUnitRPM {
-			return fmt.Errorf("hid legacy profiles must use rpm speed")
+			return fmt.Errorf("hid/usb native profiles must use rpm speed")
 		}
 	default:
 		return fmt.Errorf("device profile transport is not supported")
@@ -519,7 +519,7 @@ func normalizeEndpointPath(path string) string {
 
 func isValidTransport(transport string) bool {
 	switch transport {
-	case types.DeviceTransportWiFi, types.DeviceTransportBLE, types.DeviceTransportSerial, types.DeviceTransportHID:
+	case types.DeviceTransportWiFi, types.DeviceTransportBLE, types.DeviceTransportSerial, types.DeviceTransportHID, types.DeviceTransportUSB:
 		return true
 	default:
 		return false

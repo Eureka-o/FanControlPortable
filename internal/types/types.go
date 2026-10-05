@@ -61,6 +61,7 @@ const (
 	LearningBiasQuiet                   = "quiet"
 	DeviceTransportWiFi                 = "wifi"
 	DeviceTransportHID                  = "hid"
+	DeviceTransportUSB                  = "usb"
 	DeviceTransportBLE                  = "ble"
 	DeviceTransportSerial               = "serial"
 	FanSpeedUnitPercent                 = "percent"
@@ -92,6 +93,8 @@ func NormalizeDeviceTransport(transport string) string {
 	switch transport {
 	case DeviceTransportHID:
 		return DeviceTransportHID
+	case DeviceTransportUSB:
+		return DeviceTransportUSB
 	case DeviceTransportBLE:
 		return DeviceTransportBLE
 	case DeviceTransportSerial:
@@ -112,7 +115,7 @@ func IsManualCompatibilityDeviceTransport(transport string) bool {
 
 func IsNativeDeviceTransport(transport string) bool {
 	switch NormalizeDeviceTransport(transport) {
-	case DeviceTransportBLE, DeviceTransportHID:
+	case DeviceTransportBLE, DeviceTransportHID, DeviceTransportUSB:
 		return true
 	default:
 		return false
@@ -1106,7 +1109,7 @@ func CloneDefaultManualGearRPMForUnit(unit string) map[string]map[string]int {
 func GetDefaultConfig(isAutoStart bool) AppConfig {
 	defaultCurve := GetDefaultFanCurve()
 	defaultTempSelection := GetDefaultTemperatureSelection()
-	defaultDeviceProfiles := append(FlyDigiBuiltInProfiles(), BlackSharkBRB02Profile(), BlackSharkBRB02HIDProfile())
+	defaultDeviceProfiles := append(FlyDigiBuiltInProfiles(), BlackSharkBRB02Profile(), BlackSharkBRB02USBProfile())
 
 	return AppConfig{
 		DeviceTransport:                   "",

@@ -68,12 +68,14 @@ function transportIcon(transport?: string) {
       return Usb;
     case 'hid':
       return RadioTower;
+    case 'usb':
+      return Usb;
     default:
       return Wifi;
   }
 }
 
-const DEVICE_TRANSPORT_VALUES: DeviceTransport[] = ['wifi', 'ble', 'serial', 'hid'];
+const DEVICE_TRANSPORT_VALUES: DeviceTransport[] = ['wifi', 'ble', 'serial', 'hid', 'usb'];
 const COMPATIBILITY_TRANSPORT_VALUES: DeviceTransport[] = ['wifi', 'serial'];
 
 function isManualCompatibilityTransport(transport?: string) {

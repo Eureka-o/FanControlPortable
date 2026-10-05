@@ -154,7 +154,8 @@
       "wifi": "WiFi",
       "ble": "蓝牙 BLE",
       "serial": "虚拟串口",
-      "hid": "原生 HID"
+      "hid": "原生 HID",
+      "usb": "有线 USB"
     },
     "speedUnit": {
       "percent": "百分比",
@@ -1067,7 +1068,9 @@
         "smartStartStop": "启停策略",
         "smartStartStopDescription": "按当前设备能力显示固件支持的启停策略。",
         "lighting": "灯光控制",
-        "lightingDescription": "只有当前设备明确支持灯光时才会显示。"
+        "lightingDescription": "只有当前设备明确支持灯光时才会显示。",
+        "imageTransfer": "屏幕图片",
+        "imageTransferDescription": "向已连接设备的屏幕发送受支持的图片。"
       },
       "gearLightTitle": "挡位灯",
       "gearLightDescription": "控制设备上的挡位指示灯",
@@ -1075,6 +1078,18 @@
       "powerOnStartDescription": "设备通电后自动运行",
       "screenTitle": "屏幕",
       "screenDescription": "该设备标记了屏幕能力，运行时屏幕控制会在白名单验证后开放。",
+      "imageTransfer": {
+        "title": "屏幕图片",
+        "description": "选择不超过 4 MB 的图片。有线设备才支持当前传输入口。",
+        "select": "选择图片",
+        "invalidType": "请选择图片文件。",
+        "tooLarge": "图片不能超过 4 MB。",
+        "bleWiredOnly": "屏幕图片传输当前仅支持有线连接。",
+        "unavailable": "当前设备暂不支持屏幕图片传输。",
+        "progress": "正在传输图片",
+        "success": "已开始传输图片。",
+        "failed": "图片传输失败：{{error}}"
+      },
       "smartStartStopTitle": "智能启停",
       "smartStartStopDescription": "系统关闭后何时停止散热",
       "wifiSmartStartStopTitle": "智能启停",
