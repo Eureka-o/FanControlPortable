@@ -187,6 +187,27 @@ function EmptyState({ children }: { children: ReactNode }) {
 function CapabilityPills({ profile }: { profile: types.DeviceProfile }) {
   const { t } = useTranslation();
   const caps = profile.capabilities;
+  // displayFeatures 由档案直接给出「这张卡片要展示什么」，是通用能力位之外的第二条来源。
+  const displayFeatureKeys: Record<string, string> = {
+    readState: 'advancedDevices.capabilities.read',
+    setSpeed: 'advancedDevices.capabilities.setSpeed',
+    manualGears: 'fanCurve.manualGear.title',
+    customSpeed: 'controlPanel.fan.customSpeedTitle',
+    gearLight: 'advancedDevices.capabilities.gearLight',
+    lighting: 'advancedDevices.capabilities.lighting',
+    brightness: 'advancedDevices.capabilities.brightness',
+    powerOnStart: 'advancedDevices.capabilities.powerOnStart',
+    smartStartStop: 'advancedDevices.capabilities.smartStartStop',
+  };
+  const declaredLabels: string[] = (Array.isArray((profile as any)?.displayFeatures)
+    ? ((profile as any).displayFeatures as string[])
+    : []
+  )
+    // 未知 id 不显示，不猜文案（与 Go 侧 IsKnownDeviceDisplayFeature 同口径）。
+    .map((id) => displayFeatureKeys[id])
+    .filter(Boolean)
+    .map((key) => t(key));
+
   const items = [
     caps?.supportsReadState ? t('advancedDevices.capabilities.read') : '',
     caps?.supportsSetSpeed ? t('advancedDevices.capabilities.setSpeed') : '',
@@ -200,7 +221,11 @@ function CapabilityPills({ profile }: { profile: types.DeviceProfile }) {
     caps?.supportsPowerOnStart ? t('advancedDevices.capabilities.powerOnStart') : '',
     caps?.supportsSmartStartStop ? t('advancedDevices.capabilities.smartStartStop') : '',
     (caps as any)?.supportsScreen ? t('advancedDevices.capabilities.screen') : '',
-  ].filter(Boolean);
+    ...declaredLabels,
+  ]
+    .filter(Boolean)
+    // 去重：某项可能同时来自能力位与 displayFeatures。
+    .filter((item, index, all) => all.indexOf(item) === index);
 
   if (items.length === 0) {
     return <span className="text-xs text-muted-foreground">{t('advancedDevices.capabilities.none')}</span>;

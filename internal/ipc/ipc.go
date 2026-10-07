@@ -24,9 +24,7 @@ const currentProtocolVersion = appmeta.ProtocolVersion
 var messageCounter uint64
 
 const (
-	// PipeName 命名管道名称
 	PipeName = appmeta.IPCPipeName
-	// PipePath 命名管道完整路径
 	PipePath = `\\.\pipe\` + PipeName
 )
 
@@ -120,6 +118,84 @@ const (
 	ReqGetDeviceDebugFrames   RequestType = "GetDeviceDebugFrames"
 	ReqUpdateGuiResponseTime  RequestType = "UpdateGuiResponseTime"
 
+	// 黑鲨（BlackShark）BRB02 散热器
+	ReqGetBlackSharkInfo             RequestType = "GetBlackSharkInfo"
+	ReqSetBlackSharkLightingEnabled  RequestType = "SetBlackSharkLightingEnabled"
+	ReqSetBlackSharkLcdScreenEnabled RequestType = "SetBlackSharkLcdScreenEnabled"
+	ReqSetBlackSharkOnOffVector      RequestType = "SetBlackSharkOnOffVector"
+	ReqGetBlackSharkRgbLighting      RequestType = "GetBlackSharkRgbLighting"
+	// ReqGetBlackSharkRgbCache 只取"上次读到的那份"灯效状态，一次设备 IO 都不做。
+	ReqGetBlackSharkRgbCache       RequestType = "GetBlackSharkRgbCache"
+	ReqSelectBlackSharkRgbMode     RequestType = "SelectBlackSharkRgbMode"
+	ReqSetBlackSharkRgbModeEffects RequestType = "SetBlackSharkRgbModeEffects"
+	ReqSetBlackSharkRgbModeColor   RequestType = "SetBlackSharkRgbModeColor"
+	// ReqSetBlackSharkRgbColorOption 写「颜色下拉选项」（payload[0] 高半字节，0..4），
+	// 与 SetBlackSharkRgbModeColor（色相→RGB）是两件事。
+	ReqSetBlackSharkRgbColorOption RequestType = "SetBlackSharkRgbColorOption"
+	ReqGetBlackSharkLcdDisplay     RequestType = "GetBlackSharkLcdDisplay"
+	ReqSetBlackSharkLcdDisplay     RequestType = "SetBlackSharkLcdDisplay"
+	ReqGetBlackSharkConfigSnapshot RequestType = "GetBlackSharkConfigSnapshot"
+	ReqRestoreBlackSharkConfig     RequestType = "RestoreBlackSharkConfig"
+	ReqGetSceneRules               RequestType = "GetSceneRules"
+	ReqSetSceneRules               RequestType = "SetSceneRules"
+	ReqListSceneProcesses          RequestType = "ListSceneProcesses"
+	// ReqResetBlackSharkRgb 是官方「灯效页 · 重置」：载荷全是录制下来的常量，不需要参数。
+	ReqResetBlackSharkRgb RequestType = "ResetBlackSharkRgb"
+	// ReqResetBlackSharkCooling 是「一键恢复四档出厂曲线」：主机侧把四个档位的方案曲线都恢复成出厂值，
+	// 设备侧只保证各档是平曲线承载（不逐字节重放官方那 9 条 0x24）。
+	ReqResetBlackSharkCooling RequestType = "ResetBlackSharkCooling"
+	// ReqGetBlackSharkHostEffects 返回主机侧灯效驱动的状态（槽位 6「响应」/ 槽位 7「音频同步」）。
+	// 纯内存读取，不发设备查询：只回答"现在到底在不在推、推了多少帧、失败原因是什么"。
+	ReqGetBlackSharkHostEffects RequestType = "GetBlackSharkHostEffects"
+
+	// ReqCheckBlackSharkFirmwareUpdate 主动检查一次固件版本（读设备 CMD 0x01 + 拉官方版本清单）。
+	// 是本组里唯一做网络请求的命令（清单 6s 超时），也是唯一需要设备在线的版本查询，
+	// 只在用户点「检查更新」时调用，绝不能进轮询。
+	ReqCheckBlackSharkFirmwareUpdate RequestType = "CheckBlackSharkFirmwareUpdate"
+
+	// ReqGetBlackSharkFirmwareStatus 只读已缓存的固件检查结果，一次设备/网络 IO 都不做。
+	// 与上面成对：打开面板时先显示"上次查到的那份"，点「检查更新」才真去查。
+	ReqGetBlackSharkFirmwareStatus RequestType = "GetBlackSharkFirmwareStatus"
+
+	// ReqGetBlackSharkManualGearPresets 返回手动挡位面板要显示的派生转速预设（四档 × 三档，RPM）。
+	//
+	// 由 `deviceproto` 的标定表算出（唯一所有者），前端不再硬编码那 12 个数。
+	ReqGetBlackSharkManualGearPresets RequestType = "GetBlackSharkManualGearPresets"
+
+	// ReqGetBlackSharkCurveTempRange 返回黑鲨曲线 4 个点能被拖到的温度取值域（℃，含两端）。
+	//
+	// 取值域由 deviceproto 拥有（出厂曲线落在 20/40/60/80 只是默认值，不是格点限制）；
+	// 前端据此限制横向拖动，避免在界面里再写一份区间。纯计算、不碰设备。
+	ReqGetBlackSharkCurveTempRange RequestType = "GetBlackSharkCurveTempRange"
+
+	// ReqReportClientIssue 让前端把界面上发生的异常 / 导航 / 卸载上报给核心，落进日志。
+	ReqReportClientIssue RequestType = "ReportClientIssue"
+	// 屏幕/屏保图像（见 docs/官方屏幕屏保逆向结论.md）
+	ReqListScreenPresets  RequestType = "ListScreenPresets"
+	ReqUploadScreenPreset RequestType = "UploadScreenPreset"
+	ReqUploadScreenImage  RequestType = "UploadScreenImage"
+	// ReqCancelScreenImageTransfer 取消进行中的屏幕图片传输（图传弹窗上的"取消"）。
+	// 图传是一次设备独占任务，取消 = 让它的 ctx 结束，不必等十几秒。
+	ReqCancelScreenImageTransfer RequestType = "CancelScreenImageTransfer"
+	ReqGetScreenImageInfo RequestType = "GetScreenImageInfo"
+	// ReqReadScreenImage 从设备读回当前屏上那张图（0xC7 + 反复 0xC8，约 2096 帧）。
+	// 很慢（几十秒），只能由用户显式触发，不要挂进状态刷新。
+	ReqReadScreenImage RequestType = "ReadScreenImage"
+	// ReqReadScreenImageCache 只取"上次读到的那份"，一次设备 IO 都不做。
+	ReqReadScreenImageCache RequestType = "ReadScreenImageCache"
+	ReqScreenPresetThumb    RequestType = "ScreenPresetThumbnail"
+	// ReqPreviewScreenCrop 只画图、不上传：手动裁剪编辑器每动一次滑杆就要重画一次。
+	ReqPreviewScreenCrop RequestType = "PreviewScreenCrop"
+
+	// 历史图片 = 本机屏幕图片缓存（`<安装目录>/screen-images/`，只记我们上传成功过屏的图）。
+	// 三条都是纯本机文件操作；"列"与"删"一次设备 IO 都不做。
+	// ReqListScreenHistory 列出缓存里的历史图片（排除"设备当前那张"，取最新 N 张，带缩略图）。
+	ReqListScreenHistory RequestType = "ListScreenHistory"
+	// ReqUploadScreenHistory 把缓存的画布原样直传上屏（*.bin 即 121552B RGB565 大端，免解码免裁剪）。
+	ReqUploadScreenHistory RequestType = "UploadScreenHistory"
+	// ReqDeleteScreenHistory 删除本机缓存里的一张历史图片（直接删文件，不进回收站）。
+	ReqDeleteScreenHistory RequestType = "DeleteScreenHistory"
+
 	// 系统相关
 	ReqPing              RequestType = "Ping"
 	ReqIsAutoStartLaunch RequestType = "IsAutoStartLaunch"
@@ -169,12 +245,17 @@ const (
 	EventDeviceError              = "device-error"
 	EventDeviceSettingsUpdate     = "device-settings-update"
 	EventConfigUpdate             = "config-update"
-	EventSystemResume             = "system-resume"
-	EventHotkeyTriggered          = "hotkey-triggered"
-	EventLegionPowerModeUpdate    = "legion-power-mode-update"
-	EventLegionFnQSupportUpdate   = "legion-fnq-support-update"
-	EventHealthPing               = "health-ping"
-	EventHeartbeat                = "heartbeat"
+	// 主机侧灯效状态改由服务端推送，界面不再轮询。
+	EventBlackSharkHostEffects  = "blackshark-host-effects"
+	// EventScreenImageTransferProgress 屏幕图片传输进度（载荷 {"sent":n,"total":m}）。
+	// 设备层每 16 帧回调一次，这里不再重复节流。
+	EventScreenImageTransferProgress = "screen-image-transfer-progress"
+	EventSystemResume           = "system-resume"
+	EventHotkeyTriggered        = "hotkey-triggered"
+	EventLegionPowerModeUpdate  = "legion-power-mode-update"
+	EventLegionFnQSupportUpdate = "legion-fnq-support-update"
+	EventHealthPing             = "health-ping"
+	EventHeartbeat              = "heartbeat"
 )
 
 // Server IPC 服务器
@@ -231,7 +312,6 @@ func NewServer(handler RequestHandler, logger types.Logger) *Server {
 
 // Start 启动服务器
 func (s *Server) Start() error {
-	// 创建命名管道监听器
 	cfg := &winio.PipeConfig{
 		SecurityDescriptor: "D:P(A;;GA;;;WD)", // 允许所有用户访问
 	}
@@ -245,7 +325,6 @@ func (s *Server) Start() error {
 	s.running.Store(true)
 	s.logInfo("IPC 服务器已启动: %s", PipePath)
 
-	// 接受连接
 	go s.acceptConnections()
 
 	return nil
@@ -399,7 +478,6 @@ func (s *Server) handleClient(conn net.Conn, state *clientState) {
 			return
 		}
 
-		// 解析请求
 		var req Request
 		if err := json.Unmarshal(line, &req); err != nil {
 			s.logError("解析请求失败: %v", err)
@@ -434,6 +512,9 @@ var highFrequencyEventTypes = map[string]time.Duration{
 	EventFanDataUpdate:            250 * time.Millisecond,
 	EventTemperatureUpdate:        250 * time.Millisecond,
 	EventTemperatureHistoryUpdate: 1000 * time.Millisecond,
+	// 主机侧灯效状态：驱动循环是 204ms，但界面每秒看一次就够了 ⇒ 推之前先节流掉多余的。
+	// `shouldDropEvent` 会自动按这张表丢弃高频事件，不用在驱动里自己数时间。
+	EventBlackSharkHostEffects: 1000 * time.Millisecond,
 }
 
 func isHighFrequencyEvent(eventType string) bool {
@@ -829,6 +910,7 @@ func (c *Client) SendRequestWithTimeoutGeneration(reqType RequestType, data any,
 		c.pendingMutex.Unlock()
 		var netErr net.Error
 		if errors.As(err, &netErr) && netErr.Timeout() {
+			// 写超时说明这条管道已不可用，必须退休当前连接；否则后续请求会复用一个卡住的连接。
 			timeoutErr := fmt.Errorf("%w: request=%s 发送超时", ErrRequestTimeout, reqType)
 			c.disconnectCurrent(conn, generation, timeoutErr)
 			return nil, generation, timeoutErr
@@ -1008,6 +1090,181 @@ type SetIntParams struct {
 	Value int `json:"value"`
 }
 
+// BlackSharkOnOffVectorParams 0x02 的两路开关向量参数。
+type BlackSharkOnOffVectorParams struct {
+	SmartStartStop   bool `json:"smartStartStop"`
+	PowerOnSelfStart bool `json:"powerOnSelfStart"`
+}
+
+// ScreenPresetParams 上传一张内置精选的参数。
+type ScreenPresetParams struct {
+	OfficialPosition int `json:"officialPosition"`
+}
+
+// ScreenImagePathParams 上传一张本地图片的参数（绝对路径 + 可选裁剪框）。
+type ScreenImagePathParams struct {
+	Path    string `json:"path"`
+	Zoom    int    `json:"zoom,omitempty"`
+	OffsetX int    `json:"offsetX,omitempty"`
+	OffsetY int    `json:"offsetY,omitempty"`
+}
+
+// ScreenCropPreview 手动裁剪的预览结果。
+type ScreenCropPreview struct {
+	DataURL   string `json:"dataUrl"`
+	Width     int    `json:"width"`
+	Height    int    `json:"height"`
+	RawWidth  int    `json:"rawWidth"`
+	RawHeight int    `json:"rawHeight"`
+	// SlackX / SlackY 是"该方向上还有多少可平移的余量"（百分比口径下：
+	// 0 表示这个方向已无余量，offset 不会产生任何变化）。界面据此把滑杆置灰。
+	SlackX int `json:"slackX"`
+	SlackY int `json:"slackY"`
+}
+
+// ScreenPresetInfo 一张内置精选的描述（不含缩略图，缩略图另取，避免一次传 1MB+）。
+type ScreenPresetInfo struct {
+	OfficialPosition int    `json:"officialPosition"`
+	AssetIndex       int    `json:"assetIndex"`
+	Name             string `json:"name"`
+}
+
+// ScreenImageInfo 设备当前保存的屏保图像信息（0xC5 回读）。
+type ScreenImageInfo struct {
+	HasImage  bool   `json:"hasImage"`
+	Timestamp uint32 `json:"timestamp"`
+	Size      uint32 `json:"size"`
+	CRC       uint16 `json:"crc"`
+}
+
+// ScreenHistoryItem 是本机屏幕图片缓存（`<安装目录>/screen-images/`）里的一张历史画布。
+//
+// 文件名是那次上屏的 Unix 秒，内容恒为 121552 字节（428×142 RGB565 大端）—— 就是上传时用的那份
+// 字节，所以再传时能原样直发，免解码免裁剪。
+type ScreenHistoryItem struct {
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	UnixTime int64  `json:"unixTime"`
+	Modified string `json:"modified"`
+	Size     int64  `json:"size"`
+	// Thumb 是 `data:image/png;base64,…`；只对"要显示的那几张"生成，避免一次传几百 KB。
+	Thumb string `json:"thumb,omitempty"`
+}
+
+// ScreenHistoryList 是历史画布列表。
+type ScreenHistoryList struct {
+	// Dir 是扫描的目录（界面要如实告诉用户图片来自哪里）。
+	Dir   string             `json:"dir"`
+	Items []ScreenHistoryItem `json:"items"`
+	// Current 是"设备当前正在用的那张"在本机缓存里的对应项（CRC 相同才给），带缩略图。
+	// 界面用它填顶部预览 —— 免得为了看一张自己刚传过的图，还要等几十秒的"从设备读回"。
+	// 对不上（别的程序换过图、或那张已被缓存上限清掉）就是 nil。
+	Current *ScreenHistoryItem `json:"current,omitempty"`
+	// Error 非空表示这一轮没读到（目录不存在 / 没权限），此时 Items 为空：
+	// 这不叫失败，界面按"还没上传过屏保图片"显示即可。
+	Error string `json:"error,omitempty"`
+}
+
+// ScreenHistoryQueryParams 列历史图的入参。
+type ScreenHistoryQueryParams struct {
+	// ExcludeCRC 是"设备当前那张图"的 CRC（取自 0xC5 回读）；命中的那条会被排除
+	// —— 正在用的那张不该出现在"历史"里。0 表示设备上没有图，无需排除。
+	ExcludeCRC uint16 `json:"excludeCrc"`
+	// Limit 是最多返回几张；<=0 时按 2 张处理。
+	Limit int `json:"limit"`
+}
+
+// ScreenHistoryPathParams 是单张历史图操作（上传 / 删除）的入参。
+type ScreenHistoryPathParams struct {
+	Path string `json:"path"`
+}
+
+// ScreenImageReadResult = 从设备读回当前屏图的结果。
+//
+// 与 ScreenImageInfo 分开：那个是 11 字节信息（秒级），这个是整张图（几十秒、约 2096 帧）。
+type ScreenImageReadResult struct {
+	// Ok=false 时看 Error。
+	Ok bool `json:"ok"`
+	// DataURL 是 `data:image/png;base64,…`，供界面直接显示。
+	DataURL string `json:"dataUrl,omitempty"`
+	// Bytes 读回的原始字节数（应为 121552）。
+	Bytes int `json:"bytes"`
+	// CRC 是本机对读回内容算的 CRC（不是设备声称的那个），可与 0xC5 信息帧对照。
+	CRC   uint16 `json:"crc"`
+	Error string `json:"error,omitempty"`
+
+	// FromCache / CachedAtUnix 表示这是上次读回的那一份，不是刚刚读的。
+	FromCache    bool  `json:"fromCache,omitempty"`
+	CachedAtUnix int64 `json:"cachedAtUnix,omitempty"`
+}
+
+// ScreenUploadResult 一次上传的结果。
+type ScreenUploadResult struct {
+	Reports   int    `json:"reports"`
+	Short     int    `json:"short"`
+	Timestamp uint32 `json:"timestamp"`
+	Size      uint32 `json:"size"`
+	CRC       uint16 `json:"crc"`
+	Verified  bool   `json:"verified"`
+}
+
+// SceneRulesParams 情景规则的读写参数。
+//
+// BaselineGear 是没有任何规则匹配时回落到的档位，0 表示不改变。
+type SceneRulesParams struct {
+	Rules        []types.SceneRule `json:"rules"`
+	BaselineGear int               `json:"baselineGear"`
+}
+
+// BlackSharkRgbModeEffectParams 修改某个灯效模式的速度与亮度。
+type BlackSharkRgbModeEffectParams struct {
+	Index      int `json:"index"`
+	Speed      int `json:"speed"`
+	Brightness int `json:"brightness"`
+}
+
+// BlackSharkRgbColorParams 设置某个灯效模式的颜色。
+type BlackSharkRgbColorParams struct {
+	Index       int  `json:"index"`
+	Hue         int  `json:"hue"`
+	StaticColor bool `json:"staticColor"`
+}
+
+// BlackSharkRgbColorOptionParams 设置某个模式的颜色下拉选项（`payload[0]` 高半字节）。
+type BlackSharkRgbColorOptionParams struct {
+	Index  int `json:"index"`
+	Option int `json:"option"`
+}
+
+// BlackSharkLcdDisplayParams LCD 显示参数（CMD 0xC2）的读写参数。
+type BlackSharkLcdDisplayParams struct {
+	Pos   int   `json:"pos"`
+	Items []int `json:"items"`
+	// Options 是可选项的有序 id 列表（顺序 = 官方 UI 的排列顺序）。
+	Options []int `json:"options"`
+	// DefaultItems 是官方「重置屏幕设置」写回的那一组。
+	//
+	// 唯一所有者是 `types.DefaultBlackSharkLcdItems()`（id 0/1/7 = CPU温度/GPU温度/时间）。
+	DefaultItems []int `json:"defaultItems"`
+}
+
+// BlackSharkLcdDisplayResult 下发结果：Saved 表示已存进本机配置，Applied 表示帧已写出。
+// Saved 是本机配置里确定知道的值，Applied 只表示"帧已写出"，设备是否采纳并不确定，两者分开报。
+type BlackSharkLcdDisplayResult struct {
+	Saved   bool   `json:"saved"`
+	Applied bool   `json:"applied"`
+	Pos     int    `json:"pos"`
+	Items   []int  `json:"items"`
+	Error   string `json:"error,omitempty"`
+}
+
+// ClientIssueReport 前端上报的一条"界面上发生的事"（见 ReqReportClientIssue 的注释）。
+type ClientIssueReport struct {
+	Kind    string `json:"kind"`
+	Message string `json:"message"`
+	Detail  string `json:"detail"`
+}
+
 // DeviceDebugCommandParams contains a raw protocol command for the debug panel.
 type DeviceDebugCommandParams struct {
 	Hex    string `json:"hex"`
@@ -1018,6 +1275,11 @@ type DeviceDebugCommandParams struct {
 type SetAutoStartWithMethodParams struct {
 	Enable bool   `json:"enable"`
 	Method string `json:"method"`
+}
+
+// BlackSharkRestoreConfigParams 用一份快照还原设备配置。
+type BlackSharkRestoreConfigParams struct {
+	Snapshot types.BlackSharkConfigSnapshot `json:"snapshot"`
 }
 
 // SetLightStripParams 设置灯带参数

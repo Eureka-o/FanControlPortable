@@ -11,6 +11,8 @@ github.com/bep/debounce v1.2.1/go.mod h1:H8yggRPQKLUhUoqrJC1bO2xNya7vanpDl7xR3IS
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/diegosz/go-wca v0.5.1 h1:R7bTuWeOJ0qYmt/0JtWzbkJRi+0VDqK6+2KAkOx3Y6E=
+github.com/diegosz/go-wca v0.5.1/go.mod h1:f4O7LPuXayVyoBs6XHfm8veVNLmsVkOuIi6JRmdIPMw=
 github.com/ebitengine/purego v0.10.0 h1:QIw4xfpWT6GWTzaW5XEKy3HXoqrJGx1ijYHzTF0/ISU=
 github.com/ebitengine/purego v0.10.0/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
 github.com/esiqveland/notify v0.13.3 h1:QCMw6o1n+6rl+oLUfg8P1IIDSFsDEb2WlXvVvIJbI/o=

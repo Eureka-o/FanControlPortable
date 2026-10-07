@@ -448,3 +448,27 @@ func nativeProfileDisplayName(profile types.DeviceProfile, fallback string) stri
 func formatHIDProductID(productID uint16) string {
 	return fmt.Sprintf("0x%04X", productID)
 }
+
+// IdleBLEScanCooldown 返回自动 BLE 扫描的冷却窗口；距上次扫描不足该窗口时跳过，省掉注定失败的等待。
+
+func IdleBLEScanCooldown() time.Duration { return idleBLEScanCooldown }
+
+func (m *Manager) SeedLastAutoBLEScanAt(at time.Time) {
+	if m == nil || at.IsZero() {
+		return
+	}
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if at.After(m.lastAutoBLEScanAt) {
+		m.lastAutoBLEScanAt = at
+	}
+}
+
+func (m *Manager) LastAutoBLEScanAt() time.Time {
+	if m == nil {
+		return time.Time{}
+	}
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+	return m.lastAutoBLEScanAt
+}

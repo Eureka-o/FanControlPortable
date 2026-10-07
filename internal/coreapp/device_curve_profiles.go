@@ -342,12 +342,18 @@ func loadDeviceFanCurveStateForProfile(cfg *types.AppConfig, profile types.Devic
 		cfg.FanCurveProfilesByDevice = map[string]types.DeviceFanCurveProfilesState{}
 	}
 
+	// 黑鲨「四档 = 四个曲线方案」的一次性迁移必须在这里跑：
+	// 下面的 selectDeviceFanCurveStateForProfile 选到已有 state 时会提前 return，
+	// 到不了 loadDeviceFanCurveStateForKey，迁移若只挂在那边就永远不会执行。
+	upgraded := upgradeBlackSharkGearProfiles(cfg, key, unit)
+
 	if state, ok := selectDeviceFanCurveStateForProfile(*cfg, profile, unit); ok {
 		changed := applyDeviceFanCurveStateForUnit(cfg, state, unit)
 		changed = storeDeviceFanCurveStateForKeyAndUnit(cfg, key, *cfg, unit) || changed
-		return changed
+		// 迁移也改了配置 ⇒ 必须并进返回值，否则调用方不落盘（重启后又变回去）。
+		return changed || upgraded
 	}
-	return loadDeviceFanCurveStateForKey(cfg, key, unit, useCurrentIfMissing)
+	return loadDeviceFanCurveStateForKey(cfg, key, unit, useCurrentIfMissing) || upgraded
 }
 
 func loadDeviceFanCurveStateForKey(cfg *types.AppConfig, key string, unit string, useCurrentIfMissing bool) bool {
@@ -362,20 +368,40 @@ func loadDeviceFanCurveStateForKey(cfg *types.AppConfig, key string, unit string
 	}
 
 	if state, ok := cfg.FanCurveProfilesByDevice[key]; ok && len(state.Profiles) > 0 {
+		// 迁移走同一个 upgradeBlackSharkGearProfiles（单所有者），不在这里再写一遍判据。
+		if upgradeBlackSharkGearProfiles(cfg, key, unit) {
+			state = cfg.FanCurveProfilesByDevice[key]
+		}
 		changed := applyDeviceFanCurveStateForUnit(cfg, state, unit)
 		changed = storeDeviceFanCurveStateForKeyAndUnit(cfg, key, *cfg, unit) || changed
 		return changed
 	}
 
-	state := defaultDeviceFanCurveStateForUnit(unit)
-	if useCurrentIfMissing && (len(cfg.FanCurveProfiles) > 0 || len(cfg.FanCurve) > 0) {
-		state = captureDeviceFanCurveState(*cfg)
-	} else if manualGearRPMMapCompatibleWithUnit(cfg.ManualGearRPM, unit) && !manualGearRPMMapLooksDefaultForUnit(cfg.ManualGearRPM, unit) {
-		state.ManualGearRPM = cloneManualGearRPMMap(cfg.ManualGearRPM)
+	// 黑鲨：默认状态 = 官方四档散热模式（四个曲线方案，各 4 点设备原生曲线）。
+	// 必须排在 useCurrentIfMissing（继承当前曲线）之前判断：黑鲨的曲线本就是四档方案，
+	// 交给「继承当前曲线」会得到错误的单方案默认值。
+	state, blackSharkSeeded := blackSharkDefaultFanCurveState(key)
+	if !blackSharkSeeded {
+		state = defaultDeviceFanCurveStateForUnit(unit)
+		if useCurrentIfMissing && (len(cfg.FanCurveProfiles) > 0 || len(cfg.FanCurve) > 0) {
+			state = captureDeviceFanCurveState(*cfg)
+		} else if manualGearRPMMapCompatibleWithUnit(cfg.ManualGearRPM, unit) && !manualGearRPMMapLooksDefaultForUnit(cfg.ManualGearRPM, unit) {
+			state.ManualGearRPM = cloneManualGearRPMMap(cfg.ManualGearRPM)
+		}
 	}
 	changed := applyDeviceFanCurveStateForUnit(cfg, state, unit)
 	changed = storeDeviceFanCurveStateForKeyAndUnit(cfg, key, *cfg, unit) || changed
 	return changed
+}
+
+// hasBlackSharkGearProfile 报告一组曲线方案里是否已经有四档方案（判据 = ID 前缀）。
+func hasBlackSharkGearProfile(profiles []types.FanCurveProfile) bool {
+	for _, profile := range profiles {
+		if _, ok := types.BlackSharkGearForCurveProfileID(profile.ID); ok {
+			return true
+		}
+	}
+	return false
 }
 
 func loadActiveDeviceFanCurveState(cfg *types.AppConfig, useCurrentIfMissing bool) bool {

@@ -222,9 +222,14 @@ func NormalizeConfigForUnit(cfg *types.AppConfig, unit string) bool {
 		baseCurve = defaultCurveForUnit(unit)
 		changed = true
 	}
-	if extendedCurve, extended := extendCurveRightEdgeForUnit(baseCurve, unit); extended {
-		baseCurve = extendedCurve
-		changed = true
+	// 黑鲨「四档散热模式」方案的曲线是设备侧的 4 点曲线（出厂默认落在 20/40/60/80），
+	// 语义与主机侧那条 21 点控制曲线不同 ⇒ 不做右端延长。
+	blackSharkGearCurve := types.HasBlackSharkGearCurveProfile(cfg.FanCurveProfiles)
+	if !blackSharkGearCurve {
+		if extendedCurve, extended := extendCurveRightEdgeForUnit(baseCurve, unit); extended {
+			baseCurve = extendedCurve
+			changed = true
+		}
 	}
 	if err := cfgpkg.ValidateFanCurveForUnit(baseCurve, unit); err != nil {
 		baseCurve = defaultCurveForUnit(unit)
@@ -257,9 +262,13 @@ func NormalizeConfigForUnit(cfg *types.AppConfig, unit string) bool {
 			changed = true
 		}
 
-		if extendedCurve, extended := extendCurveRightEdgeForUnit(profile.Curve, unit); extended {
-			profile.Curve = extendedCurve
-			changed = true
+		// 同 blackSharkGearCurve：四档方案的曲线是设备原生 4 点，不延长
+		// （否则每个方案都会被补成 10 点）。
+		if !blackSharkGearCurve {
+			if extendedCurve, extended := extendCurveRightEdgeForUnit(profile.Curve, unit); extended {
+				profile.Curve = extendedCurve
+				changed = true
+			}
 		}
 
 		if looksLikePercentCurveInRPMMode(profile.Curve, unit) {

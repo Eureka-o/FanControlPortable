@@ -14,8 +14,16 @@ export function CancelNoiseDiagnostic(arg1) {
   return window['go']['main']['App']['CancelNoiseDiagnostic'](arg1);
 }
 
+export function CancelScreenImageTransfer() {
+  return window['go']['main']['App']['CancelScreenImageTransfer']();
+}
+
 export function CancelUpdateDownload(arg1) {
   return window['go']['main']['App']['CancelUpdateDownload'](arg1);
+}
+
+export function CheckBlackSharkFirmwareUpdate() {
+  return window['go']['main']['App']['CheckBlackSharkFirmwareUpdate']();
 }
 
 export function CheckLatestRelease(arg1) {
@@ -50,6 +58,10 @@ export function DeleteFanCurveProfile(arg1) {
   return window['go']['main']['App']['DeleteFanCurveProfile'](arg1);
 }
 
+export function DeleteScreenHistoryImage(arg1) {
+  return window['go']['main']['App']['DeleteScreenHistoryImage'](arg1);
+}
+
 export function DisconnectDevice() {
   return window['go']['main']['App']['DisconnectDevice']();
 }
@@ -60,6 +72,10 @@ export function DownloadAndInstallUpdate(arg1, arg2, arg3, arg4, arg5) {
 
 export function EndNoiseDiagnostic(arg1) {
   return window['go']['main']['App']['EndNoiseDiagnostic'](arg1);
+}
+
+export function ExportBlackSharkConfigSnapshot() {
+  return window['go']['main']['App']['ExportBlackSharkConfigSnapshot']();
 }
 
 export function ExportDeviceProfiles() {
@@ -92,6 +108,38 @@ export function GetAutoStartMethod() {
 
 export function GetAvailableGears() {
   return window['go']['main']['App']['GetAvailableGears']();
+}
+
+export function GetBlackSharkCurveTempRange() {
+  return window['go']['main']['App']['GetBlackSharkCurveTempRange']();
+}
+
+export function GetBlackSharkFirmwareStatus() {
+  return window['go']['main']['App']['GetBlackSharkFirmwareStatus']();
+}
+
+export function GetBlackSharkHostEffects() {
+  return window['go']['main']['App']['GetBlackSharkHostEffects']();
+}
+
+export function GetBlackSharkInfo() {
+  return window['go']['main']['App']['GetBlackSharkInfo']();
+}
+
+export function GetBlackSharkLcdDisplay() {
+  return window['go']['main']['App']['GetBlackSharkLcdDisplay']();
+}
+
+export function GetBlackSharkManualGearPresets() {
+  return window['go']['main']['App']['GetBlackSharkManualGearPresets']();
+}
+
+export function GetBlackSharkRgbLighting() {
+  return window['go']['main']['App']['GetBlackSharkRgbLighting']();
+}
+
+export function GetBlackSharkRgbLightingCached() {
+  return window['go']['main']['App']['GetBlackSharkRgbLightingCached']();
 }
 
 export function GetBridgeProgramStatus() {
@@ -128,6 +176,18 @@ export function GetFanCurve() {
 
 export function GetFanCurveProfiles() {
   return window['go']['main']['App']['GetFanCurveProfiles']();
+}
+
+export function GetSceneRules() {
+  return window['go']['main']['App']['GetSceneRules']();
+}
+
+export function GetScreenImageCached() {
+  return window['go']['main']['App']['GetScreenImageCached']();
+}
+
+export function GetScreenImageInfo() {
+  return window['go']['main']['App']['GetScreenImageInfo']();
 }
 
 export function GetSupportedDeviceProfiles() {
@@ -174,6 +234,18 @@ export function IsRunningAsAdmin() {
   return window['go']['main']['App']['IsRunningAsAdmin']();
 }
 
+export function ListSceneProcesses() {
+  return window['go']['main']['App']['ListSceneProcesses']();
+}
+
+export function ListScreenHistoryImages(arg1, arg2) {
+  return window['go']['main']['App']['ListScreenHistoryImages'](arg1, arg2);
+}
+
+export function ListScreenPresets() {
+  return window['go']['main']['App']['ListScreenPresets']();
+}
+
 export function ListSerialPorts() {
   return window['go']['main']['App']['ListSerialPorts']();
 }
@@ -198,6 +270,14 @@ export function PauseUpdateDownload() {
   return window['go']['main']['App']['PauseUpdateDownload']();
 }
 
+export function PickScreenImageFile() {
+  return window['go']['main']['App']['PickScreenImageFile']();
+}
+
+export function PreviewScreenImageCrop(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['PreviewScreenImageCrop'](arg1, arg2, arg3, arg4);
+}
+
 export function ProbeBLEGATT(arg1) {
   return window['go']['main']['App']['ProbeBLEGATT'](arg1);
 }
@@ -210,12 +290,28 @@ export function QuitApp() {
   return window['go']['main']['App']['QuitApp']();
 }
 
+export function ReadScreenImageFromDevice() {
+  return window['go']['main']['App']['ReadScreenImageFromDevice']();
+}
+
 export function RefreshDeviceSettings() {
   return window['go']['main']['App']['RefreshDeviceSettings']();
 }
 
 export function ReinstallPawnIO() {
   return window['go']['main']['App']['ReinstallPawnIO']();
+}
+
+export function ReportClientIssue(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ReportClientIssue'](arg1, arg2, arg3);
+}
+
+export function ResetBlackSharkCooling() {
+  return window['go']['main']['App']['ResetBlackSharkCooling']();
+}
+
+export function ResetBlackSharkRgb() {
+  return window['go']['main']['App']['ResetBlackSharkRgb']();
 }
 
 export function ResetLearnedOffsets() {
@@ -228,6 +324,10 @@ export function RestartCore(arg1) {
 
 export function RestartPawnIO() {
   return window['go']['main']['App']['RestartPawnIO']();
+}
+
+export function RestoreBlackSharkConfigFromFile() {
+  return window['go']['main']['App']['RestoreBlackSharkConfigFromFile']();
 }
 
 export function ResumeUpdateDownload() {
@@ -262,6 +362,14 @@ export function ScanWiFiDevices(arg1) {
   return window['go']['main']['App']['ScanWiFiDevices'](arg1);
 }
 
+export function ScreenPresetThumbnail(arg1) {
+  return window['go']['main']['App']['ScreenPresetThumbnail'](arg1);
+}
+
+export function SelectBlackSharkRgbMode(arg1) {
+  return window['go']['main']['App']['SelectBlackSharkRgbMode'](arg1);
+}
+
 export function SendDeviceDebugCommand(arg1, arg2) {
   return window['go']['main']['App']['SendDeviceDebugCommand'](arg1, arg2);
 }
@@ -280,6 +388,34 @@ export function SetAutoControl(arg1) {
 
 export function SetAutoStartWithMethod(arg1, arg2) {
   return window['go']['main']['App']['SetAutoStartWithMethod'](arg1, arg2);
+}
+
+export function SetBlackSharkLcdDisplay(arg1, arg2) {
+  return window['go']['main']['App']['SetBlackSharkLcdDisplay'](arg1, arg2);
+}
+
+export function SetBlackSharkLcdScreenEnabled(arg1) {
+  return window['go']['main']['App']['SetBlackSharkLcdScreenEnabled'](arg1);
+}
+
+export function SetBlackSharkLightingEnabled(arg1) {
+  return window['go']['main']['App']['SetBlackSharkLightingEnabled'](arg1);
+}
+
+export function SetBlackSharkOnOffVector(arg1, arg2) {
+  return window['go']['main']['App']['SetBlackSharkOnOffVector'](arg1, arg2);
+}
+
+export function SetBlackSharkRgbColorOption(arg1, arg2) {
+  return window['go']['main']['App']['SetBlackSharkRgbColorOption'](arg1, arg2);
+}
+
+export function SetBlackSharkRgbModeColor(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetBlackSharkRgbModeColor'](arg1, arg2, arg3);
+}
+
+export function SetBlackSharkRgbModeEffects(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetBlackSharkRgbModeEffects'](arg1, arg2, arg3);
 }
 
 export function SetBrightness(arg1) {
@@ -316,6 +452,10 @@ export function SetNoiseDiagnosticTarget(arg1, arg2) {
 
 export function SetPowerOnStart(arg1) {
   return window['go']['main']['App']['SetPowerOnStart'](arg1);
+}
+
+export function SetSceneRules(arg1) {
+  return window['go']['main']['App']['SetSceneRules'](arg1);
 }
 
 export function SetSmartStartStop(arg1) {
@@ -372,6 +512,18 @@ export function UpdateConfig(arg1) {
 
 export function UpdateGuiResponseTime() {
   return window['go']['main']['App']['UpdateGuiResponseTime']();
+}
+
+export function UploadScreenHistoryImage(arg1) {
+  return window['go']['main']['App']['UploadScreenHistoryImage'](arg1);
+}
+
+export function UploadScreenImageFile(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['UploadScreenImageFile'](arg1, arg2, arg3, arg4);
+}
+
+export function UploadScreenPreset(arg1) {
+  return window['go']['main']['App']['UploadScreenPreset'](arg1);
 }
 
 export function WindowBlurEnabled() {

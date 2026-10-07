@@ -40,7 +40,10 @@ export function normalizeTemperatureSource(source: string) {
   return source === 'cpu' || source === 'gpu' || source === 'max' ? source : 'max';
 }
 
-function translateControlSource(
+/**
+ * 把「温度来源」取值翻成界面文案。
+ */
+export function translateControlSource(
   source: string | null | undefined,
   t: (key: string) => string,
 ) {

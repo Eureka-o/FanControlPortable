@@ -213,7 +213,9 @@ func (a *CoreApp) SetNoiseDiagnosticTarget(sessionID string, value int) (types.N
 	if noiseDiagnosticConnectionChanged(a.deviceManager.IsConnected(), a.deviceManager.ConnectionGeneration(), connectionGeneration) {
 		return types.NoiseDiagnosticTargetResult{}, fmt.Errorf("诊断设备连接已变化")
 	}
-	if !a.setTargetSpeed(deviceValue, unit) {
+	// 降噪诊断按点扫固定转速，属于固定转速意图（blackSharkInverter=false）：
+	// 黑鲨下必须走 form=0，否则会被当成变频处理，扫点互相覆盖且设备停在变频语义。
+	if !a.setTargetSpeedWithMode(deviceValue, unit, false) {
 		return types.NoiseDiagnosticTargetResult{}, fmt.Errorf("目标转速下发失败")
 	}
 	if noiseDiagnosticConnectionChanged(a.deviceManager.IsConnected(), a.deviceManager.ConnectionGeneration(), connectionGeneration) {
@@ -310,7 +312,8 @@ func (a *CoreApp) restoreNoiseDiagnosticState(lease *noiseDiagnosticLease) error
 	unit := a.activeDeviceSpeedUnit(&cfg)
 	if cfg.CustomSpeedEnabled {
 		speed := types.ClampSpeedForUnit(cfg.CustomSpeedRPM, unit)
-		if speed <= 0 || !a.setTargetSpeed(configSpeedToTargetUnit(speed, unit), unit) {
+		// 恢复自定义转速同样是固定转速意图，黑鲨走 form=0。
+		if speed <= 0 || !a.setTargetSpeedWithMode(configSpeedToTargetUnit(speed, unit), unit, false) {
 			return fmt.Errorf("恢复自定义转速失败")
 		}
 		return nil

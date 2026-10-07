@@ -104,6 +104,13 @@ export function Select<T extends string | number>({
 }: SelectProps<T>) {
   const isNumberValue = typeof value === 'number';
 
+  // option.value 为空串会让 Radix Select 抛错、整棵 React 树崩掉，必须先滤掉空串选项。
+  const emptyValueOptions = options.filter((option) => String(option.value) === '');
+  const items = emptyValueOptions.length === 0
+    ? options
+    : options.filter((option) => String(option.value) !== '');
+  const effectivePlaceholder = emptyValueOptions[0]?.label || placeholder;
+
   return (
     <div className={clsx('min-w-[120px]', className)}>
       {label && <Label className="mb-1 block">{label}</Label>}
@@ -115,10 +122,11 @@ export function Select<T extends string | number>({
         <SelectTrigger
           className={clsx(selectTriggerSize[size], '[&>span]:truncate', triggerClassName)}
         >
-          <SelectValue placeholder={placeholder} />
+          {/* value 传空串时 Radix 会显示 placeholder —— 正是"未选择"想要的观感。 */}
+          <SelectValue placeholder={effectivePlaceholder} />
         </SelectTrigger>
         <SelectContent>
-          {options.map((option) => (
+          {items.map((option) => (
             <SelectItem key={String(option.value)} value={String(option.value)} disabled={option.disabled}>
               {option.label}
             </SelectItem>
@@ -210,6 +218,14 @@ interface SliderProps {
   valueFormatter?: (value: number) => string;
   onChangeStart?: () => void;
   onChangeEnd?: () => void;
+  /**
+   * invert：视觉与交互方向反过来（左端 = 最大值）。
+   */
+  invert?: boolean;
+  /**
+   * trackGradient：把一条渐变画到滑杆轨道上（色相条这类"值本身就是颜色"的场景）。
+   */
+  trackGradient?: string;
 }
 
 export const Slider = forwardRef<React.ElementRef<typeof ShadcnSlider>, SliderProps>(
@@ -226,9 +242,23 @@ export const Slider = forwardRef<React.ElementRef<typeof ShadcnSlider>, SliderPr
     valueFormatter = (v) => String(v),
     onChangeStart,
     onChangeEnd,
+    invert = false,
+    trackGradient,
   }, ref) => {
+    // 反向 = 把区间与取值同时取负。底层滑块仍然是标准的"小在左"，
+    // 于是用户看到的就是"大在左"，而对外（value/onChange）始终是原始量纲。
+    const trackMin = invert ? -max : min;
+    const trackMax = invert ? -min : max;
+    const trackValue = invert ? -value : value;
+    // 渐变轨道通过 CSS 变量下发（不需要在调用方写 !important 去覆盖组件内部样式）。
+    const gradientVars = trackGradient
+      ? ({
+          '--fc-slider-track-image': trackGradient,
+          '--fc-slider-range-display': 'none',
+        } as React.CSSProperties)
+      : undefined;
     return (
-      <div data-theme-ui="slider" className={clsx('w-full', className)}>
+      <div data-theme-ui="slider" className={clsx('w-full', className)} style={gradientVars}>
         {(label || showValue) && (
           <div className="mb-2 flex items-center justify-between">
             {label && <span className="text-sm font-medium text-muted-foreground">{label}</span>}
@@ -237,17 +267,21 @@ export const Slider = forwardRef<React.ElementRef<typeof ShadcnSlider>, SliderPr
         )}
         <ShadcnSlider
           ref={ref}
-          min={min}
-          max={max}
+          min={trackMin}
+          max={trackMax}
           step={step}
-          value={[value]}
-          onValueChange={(next) => onChange(next[0] ?? value)}
+          value={[trackValue]}
+          onValueChange={(next) => {
+            const raw = next[0] ?? trackValue;
+            onChange(invert ? -raw : raw);
+          }}
           onPointerDown={onChangeStart}
           onPointerUp={onChangeEnd}
           disabled={disabled}
           className={clsx(
             'w-full',
-            disabled && 'opacity-50'
+            // 置灰时整条（含渐变）与滑块一起变灰，与官方 UI 中"该灯效色相不可调"的呈现一致。
+            disabled && 'opacity-60 grayscale'
           )}
         />
       </div>
@@ -398,6 +432,64 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   }
 );
 Button.displayName = 'Button';
+
+interface ConfirmButtonProps {
+  /** 平时显示的文案。 */
+  label: React.ReactNode;
+  /** 点第一次之后显示的确认文案（危险操作要"两步走"）。 */
+  confirmLabel: React.ReactNode;
+  onConfirm: () => void | Promise<void>;
+  disabled?: boolean;
+  loading?: boolean;
+  variant?: ButtonProps['variant'];
+  className?: string;
+  icon?: React.ReactNode;
+  /** 确认态保持多久后自动取消（毫秒）。 */
+  armMs?: number;
+}
+
+/**
+ * 两步确认按钮：第一次点只进入「待确认」（变红 + 换成确认文案），再点一次才真正执行。
+ */
+export function ConfirmButton({
+  label,
+  confirmLabel,
+  onConfirm,
+  disabled = false,
+  loading = false,
+  variant = 'secondary',
+  className,
+  icon,
+  armMs = 6000,
+}: ConfirmButtonProps) {
+  const [armed, setArmed] = React.useState(false);
+  React.useEffect(() => {
+    if (!armed) return;
+    const id = window.setTimeout(() => setArmed(false), armMs);
+    return () => window.clearTimeout(id);
+  }, [armed, armMs]);
+
+  return (
+    <Button
+      variant={armed ? 'danger' : variant}
+      size="sm"
+      disabled={disabled}
+      loading={loading}
+      className={className}
+      icon={icon}
+      onClick={() => {
+        if (!armed) {
+          setArmed(true);
+          return;
+        }
+        setArmed(false);
+        void onConfirm();
+      }}
+    >
+      {armed ? confirmLabel : label}
+    </Button>
+  );
+}
 
 export {
   Dialog,

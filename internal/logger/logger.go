@@ -25,16 +25,26 @@ type CustomLogger struct {
 	debugLog  *lumberjack.Logger
 }
 
-// NewCustomLogger 创建新的日志记录器
+// NewCustomLogger 创建新的日志记录器（核心服务用：`app_<日期>.log`）。
 func NewCustomLogger(debugMode bool, installDir string) (*CustomLogger, error) {
+	return newLogger(debugMode, installDir, "app", "debug")
+}
+
+// NewPrefixedLogger 与 NewCustomLogger 相同，但主/调试日志文件名带前缀。
+func NewPrefixedLogger(debugMode bool, installDir, prefix string) (*CustomLogger, error) {
+	return newLogger(debugMode, installDir, prefix, prefix+"_debug")
+}
+
+func newLogger(debugMode bool, installDir, appName, debugName string) (*CustomLogger, error) {
 	logDir := defaultLogDir(installDir)
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		return nil, fmt.Errorf("创建日志目录失败: %v", err)
 	}
 
 	// 主日志文件路径
-	logFilePath := filepath.Join(logDir, fmt.Sprintf("app_%s.log", time.Now().Format("2006-01-02")))
-	debugFilePath := filepath.Join(logDir, fmt.Sprintf("debug_%s.log", time.Now().Format("2006-01-02")))
+	day := time.Now().Format("2006-01-02")
+	logFilePath := filepath.Join(logDir, fmt.Sprintf("%s_%s.log", appName, day))
+	debugFilePath := filepath.Join(logDir, fmt.Sprintf("%s_%s.log", debugName, day))
 
 	// 创建日志轮转配置
 	appLogRotate := &lumberjack.Logger{
@@ -218,4 +228,10 @@ func (l *CustomLogger) GetZapLogger() *zap.Logger {
 // GetSugar 获取 sugar logger
 func (l *CustomLogger) GetSugar() *zap.SugaredLogger {
 	return l.sugar
+}
+
+// GetDirectSugar 返回一个 caller 定位正确的 sugar，供直接调用 Infof/Warnf/Errorf 的调用方使用。
+func (l *CustomLogger) GetDirectSugar() *zap.SugaredLogger {
+	// 在自建 logger 上再叠加 -1 的 skip，正好抵消上面那层。
+	return l.logger.WithOptions(zap.AddCallerSkip(-1)).Sugar()
 }

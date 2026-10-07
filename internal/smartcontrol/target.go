@@ -31,14 +31,7 @@ func calculateTargetSpeed(currentTemp int, curve []types.FanCurvePoint, cfg type
 	if len(curve) == 0 {
 		return 0
 	}
-
-	offsets := cfg.LearnedOffsets
-	if !cfg.Learning {
-		offsets = nil
-	} else if biased, updated := constrainOffsetsToLearningBias(offsets, cfg.LearningBias); updated {
-		offsets = biased
-	}
-	effectiveCurve := buildEffectiveCurve(curve, offsets, effectiveOffsetCapForUnit(cfg, unit))
+	effectiveCurve := EffectiveCurveForUnit(curve, cfg, unit)
 	rpm := temperature.CalculateTargetRPM(currentTemp, effectiveCurve)
 	if rpm <= 0 {
 		return 0
@@ -46,6 +39,26 @@ func calculateTargetSpeed(currentTemp int, curve []types.FanCurvePoint, cfg type
 
 	leftMin, rightMax := GetCurveRPMBounds(effectiveCurve)
 	return clampInt(rpm, leftMin, rightMax)
+}
+
+// EffectiveCurveForUnit 由基础曲线与已学偏移合成有效曲线，也是本仓库这套口径的唯一出口
+// （黑鲨把曲线本身写进设备时也复用它，避免在 coreapp 重写一份而漂移）。
+//
+// 调用方必须传入已经换算成 `unit` 形态的曲线（`CalculateTargetSpeedForUnit` 经 `CurveForUnit`
+// 完成换算），这里不再换算，否则 percent 路径会被放大两级。
+// `unit` 只用于选偏移上限（`effectiveOffsetCapForUnit`），其中 `rawPercentUnit` 有独立档位，
+// 因此调用方传入时必须原样保留，不要先经 `NormalizeFanSpeedUnit` 归一。
+//
+// 偏移按曲线点序逐点相加（不是按温度查表），并按「插值依据曲线」的点序分配，所以调用方必须
+// 传依据曲线，否则偏移整体错位。`Learning` 关闭时偏移整体作废，开启时先按 `LearningBias` 约束。
+func EffectiveCurveForUnit(curve []types.FanCurvePoint, cfg types.SmartControlConfig, unit string) []types.FanCurvePoint {
+	offsets := cfg.LearnedOffsets
+	if !cfg.Learning {
+		offsets = nil
+	} else if biased, updated := constrainOffsetsToLearningBias(offsets, cfg.LearningBias); updated {
+		offsets = biased
+	}
+	return buildEffectiveCurve(curve, offsets, effectiveOffsetCapForUnit(cfg, unit))
 }
 
 // buildEffectiveCurve 把基础曲线与学习偏移合成有效曲线。

@@ -2,6 +2,7 @@ package guiapp
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -85,6 +86,13 @@ func (a *App) handleCoreEvent(event ipc.Event) {
 			runtime.EventsEmit(a.ctx, "fan-data-update", fanData)
 		}
 
+	case ipc.EventBlackSharkHostEffects:
+		// 主机侧灯效状态：核心推、界面订阅，取代界面每秒轮询。
+		var hostFx types.BlackSharkHostEffects
+		if err := json.Unmarshal(event.Data, &hostFx); err == nil {
+			runtime.EventsEmit(a.ctx, "blackshark-host-effects", hostFx)
+		}
+
 	case ipc.EventTemperatureUpdate:
 		var temp types.TemperatureData
 		if err := json.Unmarshal(event.Data, &temp); err == nil {
@@ -99,6 +107,17 @@ func (a *App) handleCoreEvent(event ipc.Event) {
 		var point types.TemperatureHistoryPoint
 		if err := json.Unmarshal(event.Data, &point); err == nil {
 			runtime.EventsEmit(a.ctx, "temperature-history-update", point)
+		}
+
+	case ipc.EventScreenImageTransferProgress:
+		// 屏幕图片传输进度：核心推（设备层每 16 帧一次），图传弹窗的进度条订阅它。
+		// 注意这里是个白名单 switch —— 新事件不加分支就会被静默丢掉（前端只会停在 0%）。
+		var progress struct {
+			Sent  int `json:"sent"`
+			Total int `json:"total"`
+		}
+		if err := json.Unmarshal(event.Data, &progress); err == nil {
+			runtime.EventsEmit(a.ctx, "screen-image-transfer-progress", progress)
 		}
 
 	case ipc.EventDeviceConnected:
@@ -180,7 +199,7 @@ func ipcRequestRetryable(reqType ipc.RequestType) bool {
 		ipc.ReqGetTemperature, ipc.ReqGetTemperatureHistory,
 		ipc.ReqTestTemperatureReading, ipc.ReqGetBridgeProgramStatus,
 		ipc.ReqCheckWindowsAutoStart, ipc.ReqIsRunningAsAdmin,
-		ipc.ReqGetAutoStartMethod, ipc.ReqGetDebugInfo,
+		ipc.ReqGetAutoStartMethod, ipc.ReqGetDebugInfo, ipc.ReqGetBlackSharkInfo,
 		ipc.ReqExportDiagnostics, ipc.ReqGetDeviceDebugFrames,
 		ipc.ReqPing, ipc.ReqIsAutoStartLaunch:
 		return true
@@ -230,6 +249,13 @@ func (a *App) sendRequestWithTimeout(reqType ipc.RequestType, data any, timeout 
 	if err == nil {
 		a.emitCoreServiceOK()
 		return resp, nil
+	}
+
+	// 请求超时但连接保持不动：不重连也不重放，因为核心可能仍在执行该请求。
+	if errors.Is(err, ipc.ErrRequestTimeout) {
+		guiLogger.Warnf("IPC 请求超时（连接保持不动，不重连也不重放）: %v", err)
+		a.emitCoreServiceOK() // 连接是好的，别让界面显示"核心服务异常"
+		return nil, err
 	}
 
 	guiLogger.Warnf("IPC 请求失败，尝试重新连接核心服务后重试: %v", err)

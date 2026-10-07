@@ -112,7 +112,7 @@ func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
 	deviceSwitchedToManual := didDeviceSwitchToManualMode(a.lastDeviceMode, currentWorkMode)
 
 	// 检查工作模式变化
-	// 如果开启了"断连保持配置模式"，则忽略设备状态变化，避免误判
+	// 如果开启了「断连保持配置模式」，则忽略设备状态变化，避免误判。
 	if deviceSwitchedToManual &&
 		cfg.AutoControl &&
 		!a.userSetAutoControl &&
@@ -383,7 +383,7 @@ func (a *CoreApp) runReconnectLoopWithWake(
 		if connected {
 			a.logInfo("设备重连成功")
 
-			// 如果开启了断连保持配置模式，重新应用APP配置
+			// 断连保持配置模式下重连成功后要重新应用一次 APP 配置。
 			cfg := a.configManager.Get()
 			if cfg.IgnoreDeviceOnReconnect {
 				a.logInfo("断连保持配置模式已开启，重新应用APP配置")
@@ -475,6 +475,15 @@ func (a *CoreApp) reconnectDevice(ctx context.Context) reconnectAttemptResult {
 					return a.deviceManager.ConnectNativeProfileContext(ctx, profile)
 				},
 				func() (bool, map[string]string) {
+					// 候选表里 BLE 组排在前面，直接走它的话：插着 USB 也要先把两个 BLE 档案
+					// 各扫满 10s 超时，冷启动要 21s。上游 beta 的自动连接里有一步"先按 BRB02
+					// USB 档案直连"（没有这一步它解释不了 0.4–1.0s 连上、且一次 BLE 都不扫）。
+					// 这里照做：先试插着的那台 USB，失败才回落到候选表（BLE 回落路径不变）。
+					// 设备不在时这一步只是一次 libusb 枚举，代价可忽略。
+					// 顺带的仲裁变化（与官方一致）：两者同时可达时，插着的黑鲨 USB 优先于走 BLE 的飞智。
+					if connected, info := a.deviceManager.ConnectNativeProfileContext(ctx, types.BlackSharkBRB02USBProfile()); connected {
+						return connected, info
+					}
 					return a.deviceManager.AutoConnectNativeProfilesContext(ctx, cfg.DeviceProfiles)
 				},
 			)
@@ -568,6 +577,13 @@ func shouldTryDynamicWiFiCompatibility(cfg types.AppConfig) bool {
 
 func (a *CoreApp) maybeRecoverFromSystemResume(source string, gap, expectedInterval time.Duration) bool {
 	if !shouldRecoverFromSystemResumeGap(gap, expectedInterval) {
+		return false
+	}
+	// 本机自己持设备写锁造成的停摆不是系统唤醒 —— 见 selfInflictedMonitorStall。
+	// 这条守卫也覆盖 health-monitor 这个来源（它同样可能撞上屏保上传）。
+	if a.selfInflictedMonitorStall(gap, expectedInterval) {
+		a.logInfo("停摆 %s 由本机设备独占操作（屏保上传/读图）造成，跳过唤醒自愈（来源=%s）",
+			gap.Round(time.Second), source)
 		return false
 	}
 	a.triggerResumeRecovery(source, gap, false)
@@ -876,6 +892,28 @@ func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string,
 		a.logError("sync runtime device curve failed: %v", err)
 	}
 
+	// 连上后延后一拍再记档案并同步设备温控参照源：这两件事必须放在连接流程之外，
+	// 否则 1500ms 的等待会拖住连接响应。
+	rememberID := strings.TrimSpace(deviceInfo["profileId"])
+	rememberTransport := strings.TrimSpace(deviceInfo["transport"])
+	a.safeGo("postConnectSync@"+caller, func() {
+		// 1500ms：连接刚建立时设备侧还在初始化（回读通道也可能刚开），太早发会打空；
+		// 这个节奏与下面 startTemperatureMonitoring 一致。
+		time.Sleep(1500 * time.Millisecond)
+		if rememberID != "" {
+			a.rememberConnectedDeviceProfile(rememberID, rememberTransport)
+		}
+		if a.configManager != nil {
+			a.syncBlackSharkTempSource(a.configManager.Get())
+		}
+		// 接上黑鲨后把"当前档位"施加一次：变频要写曲线（设备侧跟随的唯一输入），
+		// 固定要写 form=0。不做这一步，连接后设备会一直沿用上一次的曲线配置。
+		a.reassertBlackSharkInverterGear("连接后")
+		// 再把"设备侧现状"取一遍落缓存（灯效 + 固件检查，见该函数注释）：
+		// 这样面板一打开就是设备真值，重开软件也能直接读缓存。
+		a.refreshBlackSharkConnectedSnapshot()
+	})
+
 	settings, settingsErr := a.RefreshDeviceSettings()
 	if settingsErr != nil {
 		a.logError("读取设备设置失败: %v", settingsErr)
@@ -907,6 +945,8 @@ func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string,
 
 // DisconnectDevice 断开设备连接
 func (a *CoreApp) DisconnectDevice() {
+	// 正在传输的图传注定失败，先取消掉：调用方不必干等十几秒（登记表的 done 负责善后）。
+	a.cancelAllBlackSharkImageTransfers()
 	a.suppressReconnect()
 	a.lastConnectionWasNative.Store(false)
 
@@ -938,7 +978,8 @@ func (a *CoreApp) reapplyConfigAfterReconnect() {
 		unit := a.activeDeviceSpeedUnit(&cfg)
 		speed := types.ClampSpeedForUnit(cfg.CustomSpeedRPM, unit)
 		a.logInfo("重新应用自定义速度: %d%s", speed, types.FanSpeedDisplaySuffix(unit))
-		if !a.setTargetSpeed(configSpeedToTargetUnit(speed, unit), unit) {
+		// 「自定义速度」= 固定转速意图 ⇒ 黑鲨走 form=0，blackSharkInverter=false。
+		if !a.setTargetSpeedWithMode(configSpeedToTargetUnit(speed, unit), unit, false) {
 			a.logError("重新应用自定义转速失败")
 		}
 	} else {

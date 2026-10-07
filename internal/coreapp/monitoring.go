@@ -149,6 +149,17 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	cfg, cfgRevision := a.configManager.GetWithRevision()
 	updateInterval := monitorOnlySamplingInterval(temperatureMonitorInterval(cfg.TempUpdateRate), a.monitorOnlyActive())
 
+	// 0x07 主机信息推送：节拍归 device 侧的推送循环（官方挂点也在"启动监控"这里）。
+	// 设 1 Hz 并立刻推一帧，免得 LCD 参数页要等到第一个 tick；同值会短路，重复启动安全。
+	if a.deviceManager != nil && a.deviceManager.IsBlackSharkProfileActive() {
+		if err := a.deviceManager.SetBlackSharkHostInfoRefreshInterval(
+			blackSharkSysInfoInterval, a.blackSharkHostInfoPushEntries); err != nil {
+			a.logError("启动 0x07 主机信息推送失败: %v", err)
+		} else if entries := a.blackSharkHostInfoPushEntries(); len(entries) > 0 {
+			a.deviceManager.SendBlackSharkHostInfoFrame(entries)
+		}
+	}
+
 	// 温度采样使用 EMA 平滑。
 	sampleCount := max(cfg.TempSampleCount, 1)
 	tempEMA := 0
@@ -158,6 +169,8 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	recentAvgTemps := make([]int, 0, 24)
 	recentControlTemps := make([]int, 0, 24)
 	risePredictionSamples := make([]smartcontrol.RisePredictionSample, 0, 12)
+	// lastGateReason 记录上一次的闸门判定，用于"判定变化时才记一条日志"（避免刷屏）。
+	lastGateReason := ""
 	// selectionRevision 跟踪上次构建 TemperatureSelection 时的 cfg 版本，
 	// revision 未变时复用 cachedSelection，避免每 tick 重建结构体。
 	cachedSelection := types.TemperatureSelection{
@@ -204,13 +217,13 @@ func (a *CoreApp) startTemperatureMonitoring() {
 
 	// 每个曲线点对应一个稳态采样桶。
 	speedUnit := a.activeDeviceSpeedUnit(&cfg)
-	steadyObserver := newStableObserverForActiveUnit(len(cfg.FanCurve), speedUnit)
+	steadyObserver := newStableObserverForActiveUnit(smartControlCurveLen(&cfg), speedUnit)
 	lastSmartSampleContext := newSmartControlSampleContext(cachedSelection, speedUnit)
 	lastAutoControl := cfg.AutoControl
 	lastSmartTelemetryUsable := false
 	resetSmartControlSampling := func() {
 		risePredictionSamples = risePredictionSamples[:0]
-		steadyObserver = newStableObserverForActiveUnit(len(cfg.FanCurve), speedUnit)
+		steadyObserver = newStableObserverForActiveUnit(smartControlCurveLen(&cfg), speedUnit)
 		lastSmartTelemetryUsable = false
 	}
 	timer := time.NewTimer(updateInterval)
@@ -253,6 +266,17 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			now := time.Now()
 			gap := now.Sub(lastMonitorTick)
 			lastMonitorTick = now
+			// 先排掉"本机自己持设备写锁"造成的超长停摆（屏保上传/读图全程持 m.mutex）。
+			// 这一支的处理与唤醒自愈的重启部分一致，但不拆连接；若不先排掉，
+			// maybeRecoverFromSystemResume 会把上传进行中的这段停摆当成系统睡眠。
+			if a.selfInflictedMonitorStall(gap, updateInterval) {
+				a.logInfo("监控循环停摆 %s 由本机设备独占操作（屏保上传/读图）造成，跳过唤醒自愈并重宣示承载",
+					gap.Round(time.Second))
+				resetSmartControlSampling()
+				lastTargetRPM = -1
+				timer.Reset(updateInterval)
+				continue
+			}
 			if a.maybeRecoverFromSystemResume("temperature-monitor", gap, updateInterval) {
 				resetSmartControlSampling()
 				lastTargetRPM = -1
@@ -327,6 +351,10 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			a.currentTemp = temp
 			a.mutex.Unlock()
 
+			// 黑鲨参照源：cpu/gpu 固定，max 动态取更高项（带迟滞 + 最小间隔）。
+			// 与上面那条推送同频挂在这里，理由相同：主机采样只应有一个来源。
+			a.syncBlackSharkCoolingSourceForMax(cfg, temp.CPUTemp, temp.GPUTemp)
+
 			fanData := a.deviceManager.GetCurrentFanData()
 			historyPoint, recorded := a.tempHistory.Add(temp, fanData)
 
@@ -342,7 +370,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			if cfgRevision != smartCfgRevision {
 				smartChanged := false
 				speedUnit = a.activeDeviceSpeedUnit(&cfg)
-				smartCfg, smartChanged = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, speedUnit)
+				smartCfg, smartChanged = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, a.smartControlCurveForUnit(&cfg, speedUnit), cfg.DebugMode, speedUnit)
 				smartCfgRevision = cfgRevision
 				if smartChanged {
 					updatedCfg, updatedRevision, applied, persistErr := a.commitConfigMutationIfRevision(cfgRevision, func(current *types.AppConfig) {
@@ -388,10 +416,14 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			}
 			if safetyFallbackRecovered {
 				a.forceNextAutoTarget.Store(true)
+				// 变频下"强制下一拍"已经不下发任何东西（曲线已写进设备），
+				// 遥测恢复后必须显式把该档曲线写回设备，否则设备可能还停在安全回退/固定形态。
+				a.reassertBlackSharkInverterGear("温度遥测恢复")
 				a.logInfo("温度遥测已恢复，退出安全转速并恢复正常自动控制")
 			}
 			if cfg.AutoControl && inputReady && !lastAutoControl {
 				a.forceNextAutoTarget.Store(true)
+				a.reassertBlackSharkInverterGear("自动控制刚生效")
 			}
 			safetyFallbackDecisionRecorded := false
 			if applySafetyFallback && controlReady {
@@ -399,10 +431,16 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					a.cancelNoiseDiagnosticLease("温度遥测安全回退")
 				}
 				speedUnit = a.activeDeviceSpeedUnit(&cfg)
-				target := temperatureSafetyFallbackTarget(cfg.FanCurve, speedUnit, fanData)
+				target := temperatureSafetyFallbackTarget(a.smartControlCurveForUnit(&cfg, speedUnit), speedUnit, fanData)
+				// 安全回退也套上升/降温限速：回退本身可能就是一大跳，限速能避免转速突变。
 				target = rampTemperatureSafetyFallbackTarget(target, lastTargetRPM, smartCfg.RampUpLimit, smartCfg.RampDownLimit)
-				if target > 0 && target != lastTargetRPM {
-					writeSucceeded := a.setTargetSpeed(target, speedUnit)
+				if target > 0 {
+					// 安全回退是"重要写入"：先作废还排着队的例行目标，否则那条旧目标随后会把安全值盖掉。
+					if a.deviceManager.IsBlackSharkActive() {
+						a.deviceManager.CancelPendingSpeedPush()
+					}
+					// 必须按固定形态下发（`false`）：变频形态下主机不下发转速，回退会被静默吞掉并假报成功。
+					writeSucceeded := a.setTargetSpeedWithMode(target, speedUnit, false)
 					gateReason := "write-failed"
 					if writeSucceeded {
 						gateReason = "temperature-safety-fallback"
@@ -442,11 +480,16 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				}
 				lastAutoControl = true
 				lastSmartSampleContext = sampleContext
-				controlCurve := smartcontrol.CurveForUnit(cfg.FanCurve, speedUnit)
+				controlCurve := a.smartControlCurveForUnit(&cfg, speedUnit)
 				// 采样窗口变化时重置 EMA，避免阶跃。
 				newSampleCount := max(cfg.TempSampleCount, 1)
 				if newSampleCount != sampleCount {
 					sampleCount = newSampleCount
+					tempEMAReady = false
+				}
+				// 设备独占任务（屏保图传）刚结束：窗口里循环被饿住十几秒，旧 EMA 不能当"上一个采样"
+				// 接着平滑（那等于把空洞折成一个采样步长）—— 与上面"窗口变化"同一处置：丢旧、重新起。
+				if a.reseedTempEMA.Swap(false) {
 					tempEMAReady = false
 				}
 
@@ -504,6 +547,12 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				}
 
 				prevTargetRPM := lastTargetRPM
+				if a.autoPushFailed.Swap(false) && prevTargetRPM > 0 {
+					// 上一拍的异步 Mission 失败了 ⇒ 把去重状态放回"未确认"，逼这一拍重试。
+					lastTargetRPM = -1
+					prevTargetRPM = -1
+					a.logError("智能控温速度下发失败，将在下个周期重试")
+				}
 
 				actualSpeed := 0
 				actualSpeedValid := false
@@ -523,7 +572,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				decision := smartcontrol.EvaluateDecision(smartcontrol.DecisionInput{
 					ControlTemp:           controlTemp,
 					ControlSource:         temp.ControlSource,
-					Curve:                 cfg.FanCurve,
+					Curve:                 controlCurve,
 					Config:                smartCfg,
 					SpeedUnit:             speedUnit,
 					PreviousTarget:        prevTargetRPM,
@@ -573,18 +622,49 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					gateReason = "target-change"
 				}
 				if shouldWrite {
-					writeSucceeded = a.setTargetSpeed(targetRPM, speedUnit)
-					if writeSucceeded {
+					if a.deviceManager.IsBlackSharkActive() {
+						// 黑鲨：例行下发走异步 Mission（对齐官方 StartExecuteAsynchronization），
+						// 不让设备 I/O 占住采集线程。写入闭包必须调 a.setTargetSpeed ——
+						// 只有核心层知道黑鲨的变频/固定分流；设备层的 SetTargetSpeed 只会写 form=0 固定值。
+						// 变频下这个闭包什么都不发（曲线已写进设备、主机只推温度）；
+						// 保留这条异步路径是为了固定模式的写入不阻塞采集。
+						a.deviceManager.PushSpeedAsync(
+							func() bool { return a.setTargetSpeed(targetRPM, speedUnit) },
+							func(ok bool) {
+								if !ok {
+									a.autoPushFailed.Store(true)
+								}
+							},
+						)
 						lastTargetRPM = targetRPM
-						if a.deviceManager.GetDeviceType() == types.DeviceTransportWiFi {
-							lastWiFiOverviewRefresh = now
-						}
 					} else {
-						lastTargetRPM = -1
-						gateReason = "write-failed"
-						a.logError("智能控温速度下发失败，将在下个周期重试: %d%s", displaySpeedForLog(targetRPM, speedUnit), types.FanSpeedDisplaySuffix(speedUnit))
+						// 其它设备：保持原有同步行为不变。
+						writeSucceeded = a.setTargetSpeed(targetRPM, speedUnit)
+						if writeSucceeded {
+							lastTargetRPM = targetRPM
+							if a.deviceManager.GetDeviceType() == types.DeviceTransportWiFi {
+								lastWiFiOverviewRefresh = now
+							}
+						} else {
+							lastTargetRPM = -1
+							gateReason = "write-failed"
+							a.logError("智能控温速度下发失败，将在下个周期重试: %d%s", displaySpeedForLog(targetRPM, speedUnit), types.FanSpeedDisplaySuffix(speedUnit))
+						}
 					}
 				}
+
+				// 诊断（低频）：判定变化时记一条，用于排查黑鲨"目标在动却一直不写"。
+				// 只对黑鲨打，避免给其它设备增加日志噪声。
+				if gateReason != lastGateReason && a.deviceManager.IsBlackSharkActive() {
+					deviceTargetRPM := 0
+					if fanData != nil {
+						deviceTargetRPM = int(fanData.TargetRPM)
+					}
+					a.logInfo("智能控温闸门: %s（目标=%d%s 上次=%d 设备目标=%d 最小变化=%d unit=%s）",
+						gateReason, displaySpeedForLog(targetRPM, speedUnit), types.FanSpeedDisplaySuffix(speedUnit),
+						prevTargetRPM, deviceTargetRPM, smartCfg.MinRPMChange, speedUnit)
+				}
+				lastGateReason = gateReason
 
 				confidence := "basic"
 				if advancedSampleUsable {
@@ -604,7 +684,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					if steady.BucketIdx >= 0 && smartcontrol.AllowsLongTermOffsetLearning(steady, smartCfg) {
 						scopeKey := a.activeDeviceCurveScopeKey(cfg)
 						noiseGain := noiseLearningGainForDevice(cfg, scopeKey, steady.MeanRPM, speedUnit)
-						newOffsets, changed := learnSteadyOffsetForActiveUnit(steady.BucketIdx, steady.MeanTemp, steady.MeanPower, steady.HavePower, steady.LocalEff, steady.HaveEff, cfg.FanCurve, smartCfg.LearnedOffsets, smartCfg, speedUnit, noiseGain)
+						newOffsets, changed := learnSteadyOffsetForActiveUnit(steady.BucketIdx, steady.MeanTemp, steady.MeanPower, steady.HavePower, steady.LocalEff, steady.HaveEff, controlCurve, smartCfg.LearnedOffsets, smartCfg, speedUnit, noiseGain)
 						if changed {
 							nextSmartCfg := smartCfg
 							nextSmartCfg.LearnedOffsets = newOffsets
@@ -707,6 +787,13 @@ func (a *CoreApp) finishTemperatureMonitoring(done chan struct{}) {
 		close(done)
 	}
 	a.monitoringMutex.Unlock()
+
+	// 监控停了就别再空推 0x07（设 0 = 停；不是黑鲨时是空操作）。
+	if a.deviceManager != nil {
+		if err := a.deviceManager.SetBlackSharkHostInfoRefreshInterval(0, nil); err != nil {
+			a.logDebug("停止 0x07 主机信息推送失败: %v", err)
+		}
+	}
 }
 
 func temperatureMonitorInterval(updateRateSeconds int) time.Duration {

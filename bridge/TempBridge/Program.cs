@@ -1194,6 +1194,49 @@ namespace FanControl.TempBridge
             Console.WriteLine("MSR self-test OK");
         }
 
+        /// <summary>
+        /// 追加一条「核心之和」功耗轨（key = cpu/cores-sum），供设置页的功耗传感器下拉手动切换。
+        /// 只是多给一个可选项：auto 的偏好顺序不变（仍优先 Package）。
+        /// </summary>
+        static void AppendCpuCoresSumPowerSensor(System.Collections.Generic.List<PowerSensor> sensors)
+        {
+            if (sensors == null || sensors.Count == 0)
+            {
+                return;
+            }
+
+            double sum = 0;
+            int count = 0;
+            foreach (PowerSensor sensor in sensors)
+            {
+                string name = sensor == null ? string.Empty : (sensor.Name ?? string.Empty);
+                // 每核命名：AMD = "Core #1 (SMU)"，Intel = "CPU Core #1"；聚合轨 "CPU Cores" 不含 "Core #"。
+                if (name.IndexOf("Core #", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+                if (name.IndexOf("Limit", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("Package", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    continue;
+                }
+                sum += sensor.Value;
+                count++;
+            }
+
+            if (count == 0)
+            {
+                return;
+            }
+
+            sensors.Add(new PowerSensor
+            {
+                Key = "cpu/cores-sum",
+                Name = "CPU Cores (sum)",
+                Value = Math.Round(sum, 1),
+            });
+        }
+
         static void RunPowerSensorSelectionSelfTest()
         {
             var sensors = new System.Collections.Generic.List<PowerSensor>
@@ -2019,6 +2062,8 @@ namespace FanControl.TempBridge
                     }
                 }
             }
+
+            AppendCpuCoresSumPowerSensor(cpuPowerSensors);
 
             cpuPowerWatts = SelectPowerWatts(cpuPowerSensors, selection.CpuPowerSensor, new[] { "CPU Package", "Package Power", "CPU PPT", "PPT", "Package" }, false);
 

@@ -51,7 +51,10 @@ func (a *CoreApp) Start() error {
 		configChanged = true
 	}
 	unit = types.DeviceProfileSpeedUnit(&cfg)
-	if normalizedSmart, changed := smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, unit); changed {
+	// 与其它定长点统一：用插值依据（黑鲨四档方案补两端端点 ⇒ 5..6 点）。
+	// 传 cfg.FanCurve（4 点）会让 LearnedOffsets 在这里先被截成 4，
+	// 随后被 syncSmartControlOffsetsForActiveProfile（按有效曲线定长）改回 6 ⇒ 长度翻转。
+	if normalizedSmart, changed := smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, a.smartControlCurveForUnit(&cfg, unit), cfg.DebugMode, unit); changed {
 		cfg.SmartControl = normalizedSmart
 		configChanged = true
 	}
@@ -169,6 +172,17 @@ func (a *CoreApp) Start() error {
 	a.logInfo("启动健康监控")
 	a.safeGo("startHealthMonitoring", func() {
 		a.startHealthMonitoring()
+	})
+
+	// 情景循环：按前台进程自动切换档位/灯效（无规则时零开销）
+	a.safeGo("startSceneLoop", func() {
+		a.startSceneLoop()
+	})
+
+	// 黑鲨主机侧灯效驱动：槽位 6「响应」/ 槽位 7「音频同步」需要主机持续喂数据，
+	// 因此跟着当前生效的灯效槽位自动起停（理由见 blackSharkHostFx）。
+	a.safeGo("startBlackSharkHostFx", func() {
+		a.startBlackSharkHostFx()
 	})
 
 	a.logInfo("=== FanControl Core 启动完成 ===")
@@ -374,6 +388,12 @@ func (a *CoreApp) cleanup() {
 	if a.healthCheckTicker != nil {
 		a.healthCheckTicker.Stop()
 	}
+	if a.sceneTicker != nil {
+		a.sceneTicker.Stop()
+	}
+	// 必须先停主机侧灯效驱动：它会装上全局键鼠钩子并占用系统音频采集，
+	// 进程退出前不卸干净，下次启动就可能装不上钩子。
+	a.stopBlackSharkHostFx()
 
 	select {
 	case a.cleanupChan <- true:
