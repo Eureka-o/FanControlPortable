@@ -91,6 +91,12 @@ func (a *CoreApp) checkDeviceHealth() {
 	) {
 		return
 	}
+	// 设备独占任务（屏幕图片传输）进行中：这段时间读不到设备是**我们自己**造成的，
+	// 不能据此判定设备掉了 —— 跳过本轮，等任务结束（登记表是这件事的唯一所有者）。
+	if a.blackSharkImageTransferActive() {
+		a.logDebug("健康检查: 屏幕图片传输进行中，跳过本轮设备健康检查")
+		return
+	}
 	snapshot := a.deviceRuntimeSnapshot()
 	connected := snapshot.Connected
 

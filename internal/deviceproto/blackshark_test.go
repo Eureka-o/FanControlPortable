@@ -9,14 +9,18 @@ import (
 )
 
 func TestBlackSharkFrameBuildersAndStatusParser(t *testing.T) {
-	if got := BuildBlackSharkGetVersion(); !bytes.Equal(got, []byte{0xA5, 0x03, 0x01, 0xA9}) {
+	// LEN = 4 + 载荷 是本仓库的统一约定（4 字节帧 LEN=4），见 docs/blackshark-brb02-access-notes.md §3.2。
+	if got := BuildBlackSharkGetVersion(); !bytes.Equal(got, []byte{0xA5, 0x04, 0x01, 0xAA}) {
 		t.Fatalf("version frame = % X", got)
 	}
 	if got := BuildBlackSharkSetSpeed(1600); !bytes.Equal(got, []byte{0xA5, 0x09, 0x24, 0x00, 0x00, 0x01, 0x40, 0x06, 0x19}) {
 		t.Fatalf("speed frame = % X", got)
 	}
-	if got := BuildBlackSharkSetSpeed(4500); !bytes.Equal(got, []byte{0xA5, 0x09, 0x24, 0x00, 0x00, 0x01, 0xA0, 0x0F, 0x82}) {
-		t.Fatalf("speed frame should clamp to 4000 RPM, got % X", got)
+	// 上限来自所有者（deviceproto.BlackSharkMaxRPM），不是本文件里再写一份数；
+	// 请求值取一个必然越界的数，才能验到夹紧。
+	want := []byte{0xA5, 0x09, 0x24, 0x00, 0x00, 0x01, byte(BlackSharkMaxRPM & 0xFF), byte(BlackSharkMaxRPM >> 8)}
+	if got := BuildBlackSharkSetSpeed(BlackSharkMaxRPM + 260); len(got) != len(want)+1 || !bytes.Equal(got[:len(want)], want) {
+		t.Fatalf("speed frame should clamp to BlackSharkMaxRPM=%d, got % X", BlackSharkMaxRPM, got)
 	}
 	frame, ok := ParseBlackSharkFrame([]byte{0xA5, 0x07, 0x06, 0xAC, 0x08, 0x00, 0x66})
 	if !ok || !frame.ChecksumOK {
@@ -25,6 +29,60 @@ func TestBlackSharkFrameBuildersAndStatusParser(t *testing.T) {
 	rpm, flag, ok := ParseBlackSharkStatus(frame)
 	if !ok || rpm != 2220 || flag != 0 {
 		t.Fatalf("status = %d/%d/%v", rpm, flag, ok)
+	}
+}
+
+func TestBlackSharkChecksumRuleTableAndLenTolerance(t *testing.T) {
+	// 表驱动：命令码 → 回帧校验规则（唯一所有者 BlackSharkChecksumRules）。
+	if rule, ok := BlackSharkChecksumRuleFor(0x13); !ok || rule != BlackSharkChecksumRuleCRC16 {
+		t.Fatalf("0x13 rule = %q/%v", rule, ok)
+	}
+	if rule, ok := BlackSharkChecksumRuleFor(0x06); !ok || rule != BlackSharkChecksumRuleSum {
+		t.Fatalf("0x06 rule = %q/%v", rule, ok)
+	}
+	if _, ok := BlackSharkChecksumRuleFor(0x7E); ok {
+		t.Fatal("unregistered command should report ok=false")
+	}
+
+	// 实测回帧 `a5 0c 13 03 b8 0b 50 01 19 00 ff 90`：尾字节 0x90 是 CRC16 低字节（字节和会是 0xF3）。
+	reply, ok := ParseBlackSharkFrame([]byte{0xA5, 0x0C, 0x13, 0x03, 0xB8, 0x0B, 0x50, 0x01, 0x19, 0x00, 0xFF, 0x90})
+	if !ok || !reply.ChecksumOK {
+		t.Fatalf("0x13 reply parse = %#v/%v", reply, ok)
+	}
+	if reply.ChecksumMatched != BlackSharkChecksumRuleCRC16 || reply.ChecksumExpected != BlackSharkChecksumRuleCRC16 || reply.ChecksumRuleMismatch() {
+		t.Fatalf("0x13 reply rules = matched %q / expected %q / mismatch %v",
+			reply.ChecksumMatched, reply.ChecksumExpected, reply.ChecksumRuleMismatch())
+	}
+
+	// 0x06 主动上报走字节和，且与表一致。
+	report, ok := ParseBlackSharkFrame([]byte{0xA5, 0x07, 0x06, 0xAC, 0x08, 0x00, 0x66})
+	if !ok || report.ChecksumMatched != BlackSharkChecksumRuleSum || report.ChecksumExpected != BlackSharkChecksumRuleSum {
+		t.Fatalf("0x06 rules = ok %v matched %q expected %q", ok, report.ChecksumMatched, report.ChecksumExpected)
+	}
+
+	// LEN 容忍：LEN 写「总长−1」的短形态也要接住（官方与 DLL 的历史构造如此，固件也接受）。
+	// `A5 03 01 A9`：无载荷查询，LEN=3 而实长 4，尾字节 0xA9 = 前置字节和。
+	short, ok := ParseBlackSharkFrame([]byte{0xA5, 0x03, 0x01, 0xA9})
+	if !ok || short.Length != 4 || short.Command != 0x01 || len(short.Payload) != 0 {
+		t.Fatalf("short form = ok %v length %d command 0x%02X payload % X", ok, short.Length, short.Command, short.Payload)
+	}
+
+	// 同一条 9 字节固定转速帧写成短形态：LEN 记 8（= 总长−1），校验按实长 9 字节成立
+	// （尾字节 0x18 = 前置字节和）。短读时尾字节落在 0x06，两条规则都不命中
+	// （字节和 0x12 / CRC16 0xAD），所以不会被误当成 8 字节帧。
+	lenShort := []byte{0xA5, 0x08, 0x24, 0x00, 0x00, 0x01, 0x40, 0x06, 0x18}
+	parsed, ok := ParseBlackSharkFrame(lenShort)
+	if !ok || parsed.Length != 9 || len(parsed.Payload) != 5 {
+		t.Fatalf("LEN-1 fixed frame = ok %v length %d payload %d", ok, parsed.Length, len(parsed.Payload))
+	}
+
+	// 19 字节曲线形态同理：LEN 写 18，实长 19、15 字节载荷，校验按 19 字节成立。
+	curve := []byte{0xA5, 0x12, 0x24, 0x00, 0x01, 0x01, 0x14, 0xB0, 0x04, 0x28, 0xE8, 0x05,
+		0x3C, 0x56, 0x08, 0x50, 0xC4, 0x0A}
+	curve = append(curve, BlackSharkChecksum(curve))
+	parsed, ok = ParseBlackSharkFrame(curve)
+	if !ok || parsed.Length != 19 || len(parsed.Payload) != 15 {
+		t.Fatalf("LEN-1 curve frame = ok %v length %d payload %d", ok, parsed.Length, len(parsed.Payload))
 	}
 }
 

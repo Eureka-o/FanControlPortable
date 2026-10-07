@@ -1,18 +1,19 @@
 package coreapp
 
 import (
+	"context"
 	"fmt"
+	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
+	"github.com/Eureka-o/FanControlPortable/internal/config"
+	"github.com/Eureka-o/FanControlPortable/internal/curveprofiles"
+	"github.com/Eureka-o/FanControlPortable/internal/deviceproto"
+	"github.com/Eureka-o/FanControlPortable/internal/ipc"
+	"github.com/Eureka-o/FanControlPortable/internal/smartcontrol"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
-
-	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
-	"github.com/Eureka-o/FanControlPortable/internal/config"
-	"github.com/Eureka-o/FanControlPortable/internal/curveprofiles"
-	"github.com/Eureka-o/FanControlPortable/internal/ipc"
-	"github.com/Eureka-o/FanControlPortable/internal/smartcontrol"
-	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 func (a *CoreApp) finishConfigCommit(cfg types.AppConfig, afterCommit func(types.AppConfig)) {
@@ -25,6 +26,12 @@ func (a *CoreApp) finishConfigCommit(cfg types.AppConfig, afterCommit func(types
 }
 
 func (a *CoreApp) commitConfigUpdate(cfg types.AppConfig, afterCommit func(types.AppConfig)) error {
+	// 自动连接 BLE 冷却时间是运行期缓存、不是用户设置：本函数用调用方的**整体快照**覆盖配置，
+	// 某个调用方拿旧快照保存时就会把它清掉（下次启动又白等 10s）。这里只在快照丢了它时补成
+	// 当前生效值，已有值不动 —— 写入方（MutateAndSave）带的是非零新值，不会被这里回退。
+	if cfg.NativeAutoBLEScanUnix == 0 && a.configManager != nil {
+		cfg.NativeAutoBLEScanUnix = a.configManager.Get().NativeAutoBLEScanUnix
+	}
 	if err := a.configManager.Update(cfg); err != nil {
 		return err
 	}
@@ -127,6 +134,9 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 		cfg.ActiveDeviceProfileID = oldCfg.ActiveDeviceProfileID
 	}
 	cfg.LegionFnQSupport = oldCfg.LegionFnQSupport
+	// 同 LegionFnQSupport：这是运行期缓存，不是用户设置 ⇒ 前端的配置更新不该覆盖它。
+	// 漏了这行的话，用户在设置页点一下就会把 BLE 冷却状态清掉 ⇒ 下次启动又白等 10s。
+	cfg.NativeAutoBLEScanUnix = oldCfg.NativeAutoBLEScanUnix
 	cfg.ManualGearLevels = cloneManualGearLevels(oldCfg.ManualGearLevels)
 	cfg.LightStrip, _ = normalizeLightStripConfig(cfg.LightStrip)
 	cfg.ThemeMode = types.NormalizeThemeMode(cfg.ThemeMode)
@@ -168,7 +178,10 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	if idx := curveprofiles.FindIndex(cfg.FanCurveProfiles, cfg.ActiveFanCurveProfileID); idx >= 0 {
 		cfg.FanCurveProfiles[idx].Curve = curveprofiles.CloneCurve(cfg.FanCurve)
 	}
-	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, unit)
+	// 必须传插值依据（黑鲨四档方案会补两端端点 ⇒ 5..6 点），不能传 cfg.FanCurve（4 点）：
+	// 本函数内部按曲线长度给 LearnedOffsets 定长（smartcontrol 的 NormalizeConfigForUnit），
+	// 传 4 会把它截成 4、丢掉 80℃ 那格的已学偏移，与 syncSmartControlOffsetsForDeviceKey 的长度约定冲突。
+	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, a.smartControlCurveForUnit(&cfg, unit), cfg.DebugMode, unit)
 	prepareSmartControlOffsetsForUpdate(&cfg, oldCfg)
 	runtimeDeviceKey := a.activeDeviceCurveScopeKey(cfg)
 	syncSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey)
@@ -186,6 +199,7 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	configConnectionChanged := oldConnectionKey != deviceProfileConnectionKey(cfg)
 	return a.commitConfigUpdate(cfg, func(committed types.AppConfig) {
 		a.syncManualGearLevelMemoryLocked(committed)
+		a.syncBlackSharkTempSource(committed)
 		a.applyHotkeyBindings(committed)
 		a.applyPluginConfig(committed)
 		a.mutex.Unlock()
@@ -260,7 +274,8 @@ func (a *CoreApp) SetFanCurve(curve []types.FanCurvePoint) error {
 	if idx >= 0 {
 		cfg.FanCurveProfiles[idx].Curve = curveprofiles.CloneCurve(cfg.FanCurve)
 	}
-	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode, unit)
+	// 同上面那处：传插值依据（黑鲨四档会补端点），否则 LearnedOffsets 长度会翻转。
+	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, a.smartControlCurveForUnit(&cfg, unit), cfg.DebugMode, unit)
 	runtimeDeviceKey := a.activeDeviceCurveScopeKey(cfg)
 	storeSmartControlOffsetsForDeviceKey(&cfg, runtimeDeviceKey)
 	storeDeviceFanCurveStateForKeyAndUnit(&cfg, runtimeDeviceKey, cfg, unit)
@@ -307,6 +322,9 @@ func (a *CoreApp) SetAutoControl(enabled bool) error {
 		if enabled {
 			a.userSetAutoControl = true
 			a.forceNextAutoTarget.Store(true)
+			// 变频下"强制下一拍"不下发任何东西，开启自动控制时必须显式补写该档曲线
+			// （否则设备可能停在旧的 form=0 形态，而界面以为已在变频）。
+			a.reassertBlackSharkInverterGear("开启自动控制")
 		}
 	})
 	a.mutex.Unlock()
@@ -342,6 +360,9 @@ func (a *CoreApp) applyCurrentGearSetting() error {
 	}
 
 	a.logInfo("应用当前挡位设置: %s %s (%d%s)", setGear, level, rpm, types.FanSpeedDisplaySuffix(unit))
+
+	// 黑鲨由 SetManualGearRPM 内部路由到 SetBlackSharkFixedSpeedForGear（按档位下发固定转速），
+	// 与「点一下挡位」走的是同一条路 —— 开关智能变频时的下发结果因此与手动点挡位完全一致。
 	if !a.deviceManager.SetManualGearRPM(setGear, level, rpm) {
 		return fmt.Errorf("手动挡位下发失败")
 	}
@@ -414,7 +435,8 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 	a.mutex.Unlock()
 
 	if enabled && wasConnected {
-		if !a.setTargetSpeed(configSpeedToTargetUnit(rpm, unit), unit) {
+		// 用户显式设固定转速 ⇒ 固定转速意图（黑鲨走 form=0），不是变频。
+		if !a.setTargetSpeedWithMode(configSpeedToTargetUnit(rpm, unit), unit, false) {
 			return fmt.Errorf("当前设备拒绝自定义速度下发，请确认设备仍已连接并支持 %s 控制", types.FanSpeedDisplaySuffix(unit))
 		}
 	}
@@ -649,17 +671,181 @@ func (a *CoreApp) GetDebugInfo() map[string]any {
 	if a.pluginManager != nil {
 		info["plugins"] = a.pluginManager.Statuses()
 	}
+	// 黑鲨固件版本检查结果（只读缓存，不在此处发起网络或设备查询）。
+	// 结果里始终带 updateMethod="official-tool"，前端据此提示走官方工具升级。
+	if status, ok := a.deviceManager.CachedBlackSharkFirmwareStatus(); ok {
+		info["blackSharkFirmware"] = status
+	}
 	return info
 }
 
-// SetDebugMode 设置调试模式
+// CheckBlackSharkFirmwareUpdate 重新检查黑鲨散热器固件版本。
+// 只做版本比对，不下载固件、不进入 BOOT 模式、不写任何固件数据。
+func (a *CoreApp) CheckBlackSharkFirmwareUpdate() types.BlackSharkFirmwareStatus {
+	status := a.deviceManager.RefreshBlackSharkFirmwareStatus(context.Background())
+	a.rememberBlackSharkFirmwareStatus(status)
+	return status
+}
+
+// rememberBlackSharkFirmwareStatus 把一次**成功**的检查结果写进配置，供重启后直接显示。
+// 失败的结果不落盘：厂商清单拿不到（网络问题）不该把上一次的好结果盖掉。
+func (a *CoreApp) rememberBlackSharkFirmwareStatus(status types.BlackSharkFirmwareStatus) {
+	if a == nil || a.configManager == nil {
+		return
+	}
+	if strings.TrimSpace(status.CurrentVersion) == "" || strings.TrimSpace(status.Error) != "" {
+		return
+	}
+	a.safeGo("rememberBlackSharkFirmwareStatus", func() {
+		if _, err := a.configManager.MutateAndSave(func(cfg *types.AppConfig) {
+			snapshot := status
+			cfg.BlackSharkFirmwareCache = &snapshot
+		}); err != nil {
+			a.logDebug("缓存固件检查结果失败（只是下次要多查一次）: %v", err)
+		}
+	})
+}
+
+// GetBlackSharkFirmwareStatus 读取缓存的固件检查结果，不触发刷新。
+// 设备侧那份缓存只在内存里、重启即失，所以再回落到配置里落盘的那份 ——
+// 面板不必等用户手点一次"检查更新"才有内容。
+func (a *CoreApp) GetBlackSharkFirmwareStatus() types.BlackSharkFirmwareStatus {
+	if a.deviceManager != nil {
+		if status, ok := a.deviceManager.CachedBlackSharkFirmwareStatus(); ok {
+			return status
+		}
+	}
+	if a.configManager != nil {
+		if cached := a.configManager.Get().BlackSharkFirmwareCache; cached != nil {
+			return *cached
+		}
+	}
+	return types.BlackSharkFirmwareStatus{
+		Supported:    false,
+		UpdateMethod: "official-tool",
+	}
+}
+
+// 黑鲨开关类能力：这些方法只在黑鲨设备连接时有效，其他设备返回 false。
+
+// 以下方法把后端已实现的黑鲨能力包装成 CoreApp 方法，否则前端无法通过 Wails 调用。
+
+// blackSharkRgbLighting 聚合灯效页信息：开关状态 + 当前模式 + 全部 8 个模式参数。
+func (a *CoreApp) blackSharkRgbLighting() types.BlackSharkRgbLighting {
+	out := a.readBlackSharkRgbLighting()
+	if len(out.Modes) > 0 {
+		// 读到了 ⇒ 立刻用新的覆盖上次读到的那份。
+		a.rememberBlackSharkRgbCache(out)
+		return out
+	}
+	// 没读到 ⇒ 回落到上次读到的那份，并明确标出来。
+	// 只在读失败时回落：读到新数据时上面已经覆盖，绝不会让旧的盖住新的。
+	if cached, at, ok := a.cachedBlackSharkRgbLighting(); ok {
+		cached.FromCache = true
+		cached.CachedAtUnix = at
+		if cached.Error == "" {
+			cached.Error = out.Error
+		}
+		return cached
+	}
+	return out
+}
+
+// rememberBlackSharkRgbCache 把刚读到的这一份异步落盘。
+func (a *CoreApp) rememberBlackSharkRgbCache(snapshot types.BlackSharkRgbLighting) {
+	if a == nil || a.configManager == nil {
+		return
+	}
+	snapshot.FromCache = false
+	snapshot.CachedAtUnix = 0
+	at := time.Now().Unix()
+	a.safeGo("rememberBlackSharkRgbCache", func() {
+		if _, err := a.configManager.MutateAndSave(func(cfg *types.AppConfig) {
+			copy := snapshot
+			cfg.BlackSharkRgbCache = &copy
+			cfg.BlackSharkRgbCacheAtUnix = at
+		}); err != nil {
+			a.logDebug("缓存灯效状态失败（只是下次要多读一次）: %v", err)
+		}
+	})
+}
+
+// blackSharkRgbCached 只返回本机缓存的那份灯效状态，一次设备 IO 都不做。
+// 打开面板时先把上次读到的那份显示出来。
+func (a *CoreApp) blackSharkRgbCached() types.BlackSharkRgbLighting {
+	cached, at, ok := a.cachedBlackSharkRgbLighting()
+	if !ok {
+		return types.BlackSharkRgbLighting{
+			ColorSettable: true,
+			Error:         "本机还没有缓存过灯效状态，请点「读取灯效」",
+		}
+	}
+	cached.FromCache = true
+	cached.CachedAtUnix = at
+	cached.Error = ""
+	return cached
+}
+
+// cachedBlackSharkRgbLighting 取上次读到的那一份缓存。
+func (a *CoreApp) cachedBlackSharkRgbLighting() (types.BlackSharkRgbLighting, int64, bool) {
+	if a == nil || a.configManager == nil {
+		return types.BlackSharkRgbLighting{}, 0, false
+	}
+	cfg := a.configManager.Get()
+	if cfg.BlackSharkRgbCache == nil || len(cfg.BlackSharkRgbCache.Modes) == 0 {
+		return types.BlackSharkRgbLighting{}, 0, false
+	}
+	return *cfg.BlackSharkRgbCache, cfg.BlackSharkRgbCacheAtUnix, true
+}
+
+// readBlackSharkRgbLighting 真正向设备读一遍灯效状态。
+func (a *CoreApp) readBlackSharkRgbLighting() types.BlackSharkRgbLighting {
+	out := types.BlackSharkRgbLighting{ColorSettable: true}
+	if !a.deviceManager.IsBlackSharkActive() {
+		out.Error = "当前设备不是黑鲨散热器"
+		return out
+	}
+	out.Available = true
+	out.Count = deviceproto.BlackSharkRgbEffectCount
+
+	// 颜色下拉的选项表从 deviceproto 带出（协议事实的唯一所有者），
+	// 前端只负责渲染，不再自己维护一份序号/名字。
+	for _, idx := range deviceproto.BlackSharkRgbColorOptionOrder {
+		out.ColorOptions = append(out.ColorOptions, types.BlackSharkRgbColorOptionView{
+			Index: idx,
+			Name:  deviceproto.BlackSharkRgbColorOptionNames[idx],
+		})
+	}
+
+	switches := a.deviceManager.BlackSharkSwitchStates()
+	out.SwitchEnabled = switches.LightingEnabled
+	out.SwitchKnown = switches.LightingKnown
+
+	if current, ok := a.deviceManager.BlackSharkCurrentRgbMode(); ok {
+		out.CurrentIndex = current.Index
+	}
+	modes, ok := a.deviceManager.BlackSharkRgbModes()
+	if !ok {
+		out.Error = "读取灯效模式参数失败（设备无响应）"
+		return out
+	}
+	for i := range modes {
+		modes[i].Current = modes[i].Known && modes[i].Index == out.CurrentIndex
+	}
+	out.Modes = modes
+	return out
+}
+
+// SetDebugMode 切换调试模式并同步配置与日志级别。
 func (a *CoreApp) SetDebugMode(enabled bool) error {
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
 	cfg.DebugMode = enabled
-	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, cfg.FanCurve, enabled, a.activeDeviceSpeedUnit(&cfg))
+	// 同其它定长点：用插值依据，否则黑鲨下 LearnedOffsets 会被截成 4 点。
+	debugUnit := a.activeDeviceSpeedUnit(&cfg)
+	cfg.SmartControl, _ = smartcontrol.NormalizeConfigForUnit(cfg.SmartControl, a.smartControlCurveForUnit(&cfg, debugUnit), enabled, debugUnit)
 	return a.commitConfigUpdate(cfg, func(types.AppConfig) {
 		a.debugMode = enabled
 		if a.logger != nil {

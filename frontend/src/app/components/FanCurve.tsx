@@ -71,6 +71,8 @@ import {
   getEffectiveManualGearPresets,
   getFlyDigiRuntimeCapability,
   normalizeManualGearRpmMap,
+  // 黑鲨派生值由后端给出（标定表是唯一所有者），取到后注入这里。
+  setBlackSharkGearRpmsFromCore,
   isManualGearAllowedForFlyDigi,
   getManualGearLabel,
   getManualLevelLabel,
@@ -89,6 +91,20 @@ const TIMELINE_EVENT_COLORS: Record<(typeof HISTORY_TIMELINE_EVENT_ORDER)[number
 const FAN_CURVE_TEMP_STEP = 5;
 const DEFAULT_CURVE_LENGTH = ((FAN_CURVE_MAX_TEMP - FAN_CURVE_MIN_TEMP) / FAN_CURVE_TEMP_STEP) + 1;
 const FAN_CURVE_TEMPERATURE_TICKS = Array.from({ length: DEFAULT_CURVE_LENGTH }, (_, i) => FAN_CURVE_MIN_TEMP + i * FAN_CURVE_TEMP_STEP);
+
+// 坐标轴左端定为 0（与纵轴口径一致）；数据网格起点仍是 FAN_CURVE_MIN_TEMP=20。
+const FAN_CURVE_AXIS_MIN_TEMP = 0;
+// 刻度步长沿用 FAN_CURVE_TEMP_STEP=5：起点从 20 移到 0，刻度变为 0,5,…,110（23 个）。
+const FAN_CURVE_AXIS_TEMPERATURE_TICKS = Array.from(
+  { length: (FAN_CURVE_MAX_TEMP - FAN_CURVE_AXIS_MIN_TEMP) / FAN_CURVE_TEMP_STEP + 1 },
+  (_, i) => FAN_CURVE_AXIS_MIN_TEMP + i * FAN_CURVE_TEMP_STEP,
+);
+
+// 纵轴下端定为 0（与横轴口径一致）。
+//
+// 纵轴域的所有者：`YAxis` 与拖拽的 Y 映射都必须用它 —— 两边各写一个数就会漂，
+// 而漂了的表现是"一按下点，点就自己往上跳一段"（拖拽把光标位置按错误的域换算成转速）。
+const FAN_CURVE_AXIS_MIN_SPEED = 0;
 const DEFAULT_FAN_CURVE: types.FanCurvePoint[] = [
   { temperature: 20, rpm: 0 }, { temperature: 25, rpm: 10 }, { temperature: 30, rpm: 18 }, { temperature: 35, rpm: 24 },
   { temperature: 40, rpm: 30 }, { temperature: 45, rpm: 36 }, { temperature: 50, rpm: 42 }, { temperature: 55, rpm: 48 },
@@ -259,6 +275,16 @@ function normalizeFanCurve(curve: types.FanCurvePoint[] | null | undefined, minS
   }, []);
 
   const base = unique.length > 0 ? unique : fallbackCurve;
+
+  // 保留曲线自己的温度格点，不一律重采样到默认网格：黑鲨是设备侧的 4 点曲线，
+  // 出厂默认落在 20/40/60/80（见 deviceproto.BlackSharkFactoryGearConfig），但温度可以拖动，格点不固定。
+  const usesDefaultGrid =
+    base.length === FAN_CURVE_TEMPERATURE_TICKS.length &&
+    base.every((point, index) => point.temperature === FAN_CURVE_TEMPERATURE_TICKS[index]);
+  if (!usesDefaultGrid) {
+    return base.map((point) => ({ temperature: point.temperature, rpm: point.rpm }));
+  }
+
   return FAN_CURVE_TEMPERATURE_TICKS.map((temperature) => ({
     temperature,
     rpm: interpolateCurveSpeed(base, temperature, fallbackCurve, minSpeed, maxSpeed),
@@ -314,6 +340,45 @@ function syncCurveSpeedAtIndex(
     curve: nextCurve,
     changed,
   };
+}
+
+/**
+ * syncCurveTemperatureAtIndex 把第 index 个点横向移到目标温度（℃）。
+ *
+ * 黑鲨那 4 个点的温度是可拖的：出厂默认落在 20/40/60/80，但设备接受取值域内的任意整数温度
+ * （取值域由后端 deviceproto 拥有，经 getBlackSharkCurveTempRange 取回）。
+ *
+ * 与纵向不同，这里不做"推挤邻居"：温度是横轴上的位置，越界直接夹住即可；
+ * 只需保证仍然严格递增（相邻至少差 1 ℃），否则点的先后顺序会翻转、曲线语义就乱了。
+ */
+function syncCurveTemperatureAtIndex(
+  curve: types.FanCurvePoint[],
+  index: number,
+  targetTemperature: number,
+  minTemperature: number,
+  maxTemperature: number,
+) {
+  const currentPoint = curve[index];
+  if (!currentPoint) {
+    return { curve, changed: false };
+  }
+
+  const previous = curve[index - 1];
+  const following = curve[index + 1];
+  const lowerBound = Math.max(minTemperature, previous ? previous.temperature + 1 : minTemperature);
+  const upperBound = Math.min(maxTemperature, following ? following.temperature - 1 : maxTemperature);
+  if (lowerBound > upperBound) {
+    return { curve, changed: false };
+  }
+
+  const normalized = Math.max(lowerBound, Math.min(upperBound, Math.round(targetTemperature)));
+  if (currentPoint.temperature === normalized) {
+    return { curve, changed: false };
+  }
+
+  const nextCurve = [...curve];
+  nextCurve[index] = { ...currentPoint, temperature: normalized };
+  return { curve: nextCurve, changed: true };
 }
 
 interface FanCurveProps {
@@ -411,8 +476,77 @@ const TemperatureIndicator = memo(function TemperatureIndicator({
   );
 });
 
-/* ── Tooltip label helper ── */
+/* ── 曲线两端的延长线（黑鲨 4 点曲线专用） ── */
 
+// 给黑鲨 4 点曲线补两条延长线：首点 → (10℃, 最低转速)，末点 → (100℃, 最高转速)；端点只展示不可拖。
+const CURVE_EXTENSION_MIN_TEMP = 10;
+const CURVE_EXTENSION_MAX_TEMP = 100;
+
+const CurveExtensions = memo(function CurveExtensions({
+  chartRef, anchors, temperatureRange, speedMax, floorSpeed,
+}: {
+  chartRef: React.RefObject<HTMLDivElement | null>;
+  anchors: { temperature: number; rpm: number }[];
+  temperatureRange: { min: number; max: number };
+  speedMax: number;
+  floorSpeed: number;
+}) {
+  const [geom, setGeom] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+
+  useEffect(() => {
+    if (!chartRef.current || anchors.length < 2) { setGeom(null); return; }
+    const update = () => {
+      const grid = chartRef.current?.querySelector('.recharts-cartesian-grid');
+      const container = chartRef.current?.querySelector('.recharts-responsive-container');
+      if (!grid || !container) return;
+      const g = grid.getBoundingClientRect();
+      const c = container.getBoundingClientRect();
+      setGeom({ left: g.left - c.left, top: g.top - c.top, width: g.width, height: g.height });
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [chartRef, anchors, temperatureRange, speedMax, floorSpeed]);
+
+  if (!geom || anchors.length < 2) return null;
+
+  const tempSpan = Math.max(1, temperatureRange.max - temperatureRange.min);
+  const xOf = (temp: number) => geom.left + ((temp - temperatureRange.min) / tempSpan) * geom.width;
+  const yOf = (rpm: number) =>
+    geom.top + (1 - Math.min(1, Math.max(0, rpm / Math.max(1, speedMax)))) * geom.height;
+
+  const first = anchors[0];
+  const last = anchors[anchors.length - 1];
+  // 两个端点的坐标：左/右端温度与两端转速都在这里算一次。
+  const leftEnd = { temperature: CURVE_EXTENSION_MIN_TEMP, rpm: floorSpeed };
+  const rightEnd = { temperature: CURVE_EXTENSION_MAX_TEMP, rpm: speedMax };
+  const stroke = 'var(--chart-primary)';
+  return (
+    <svg className="absolute inset-0 pointer-events-none overflow-visible" style={{ width: '100%', height: '100%' }}>
+      <line
+        x1={xOf(first.temperature)} y1={yOf(first.rpm)}
+        x2={xOf(leftEnd.temperature)} y2={yOf(leftEnd.rpm)}
+        stroke={stroke} strokeWidth={2} strokeDasharray="6 4" opacity={0.55}
+      />
+      <line
+        x1={xOf(last.temperature)} y1={yOf(last.rpm)}
+        x2={xOf(rightEnd.temperature)} y2={yOf(rightEnd.rpm)}
+        stroke={stroke} strokeWidth={2} strokeDasharray="6 4" opacity={0.55}
+      />
+      {/* 两个端点与其他点一样画成点，但置灰、不可拖（纯展示，无事件）。 */}
+      {[leftEnd, rightEnd].map((p) => (
+        <circle
+          key={p.temperature}
+          cx={xOf(p.temperature)} cy={yOf(p.rpm)} r={4}
+          fill="var(--chart-tooltip-bg, var(--card))"
+          stroke="var(--muted-foreground)" strokeWidth={2} opacity={0.9}
+        />
+      ))}
+    </svg>
+  );
+});
+
+/* ── Tooltip label helper ── */
 const ConfigTooltipLabel = memo(function ConfigTooltipLabel({ label, description }: { label: string; description: string }) {
   const { t } = useTranslation();
 
@@ -434,19 +568,21 @@ const ConfigTooltipLabel = memo(function ConfigTooltipLabel({ label, description
 /* ── Draggable chart point ── */
 
 const DraggablePoint = memo(function DraggablePoint({
-  cx, cy, index, speed, unitSuffix, onDragStart, isActive,
+  cx, cy, index, speed, unitSuffix, onDragStart, isActive, allowHorizontal,
 }: {
   cx: number; cy: number; index: number; temperature: number; speed: number; unitSuffix: string;
-  onDragStart: (index: number) => void; isActive: boolean;
+  onDragStart: (index: number) => void; isActive: boolean; allowHorizontal: boolean;
 }) {
   const handleMouseDown = useCallback((e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); onDragStart(index); }, [index, onDragStart]);
   const handleTouchStart = useCallback((e: React.TouchEvent) => { e.preventDefault(); e.stopPropagation(); onDragStart(index); }, [index, onDragStart]);
+  // 黑鲨的点可以左右拖，用四向移动光标；其余曲线仍只上下拖，保持纵向拉伸光标。
+  const cursor = allowHorizontal ? 'move' : 'ns-resize';
 
   return (
     <g>
-      <circle cx={cx} cy={cy} r={isActive ? 14 : 10} fill="transparent" stroke="transparent" style={{ cursor: 'ns-resize' }} onMouseDown={handleMouseDown} onTouchStart={handleTouchStart} />
+      <circle cx={cx} cy={cy} r={isActive ? 14 : 10} fill="transparent" stroke="transparent" style={{ cursor }} onMouseDown={handleMouseDown} onTouchStart={handleTouchStart} />
       <circle cx={cx} cy={cy} r={isActive ? 8 : 6} fill={isActive ? 'var(--chart-primary-active)' : 'var(--chart-primary)'} stroke="var(--card)" strokeWidth={2}
-        style={{ cursor: 'ns-resize', transition: isActive ? 'none' : 'all 0.2s ease', filter: isActive ? 'drop-shadow(0 4px 8px var(--chart-primary-glow))' : 'drop-shadow(0 2px 4px var(--chart-point-shadow))' }}
+        style={{ cursor, transition: isActive ? 'none' : 'all 0.2s ease', filter: isActive ? 'drop-shadow(0 4px 8px var(--chart-primary-glow))' : 'drop-shadow(0 2px 4px var(--chart-point-shadow))' }}
         onMouseDown={handleMouseDown} onTouchStart={handleTouchStart}
       />
       {isActive && (
@@ -464,6 +600,43 @@ const DraggablePoint = memo(function DraggablePoint({
    ═══════════════════════════════════════════════════════════ */
 
 const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, fanData, temperature, runtimeDeviceProfile, runtimeDeviceCapabilities, deviceModel, focusTarget, onFocusHandled, historyOnly = false }: FanCurveProps) {
+  // 是否黑鲨设备：用运行时档案判断（原生 BLE/HID 下配置里的 activeDeviceProfileId 会被清空）。
+  const isBlackSharkDevice = ((runtimeDeviceProfile as { id?: string } | null | undefined)?.id ?? '')
+    .startsWith('builtin.blackshark');
+
+  // 黑鲨曲线那 4 个点能被拖到的温度取值域，同样由后端拥有（纯计算，未连设备也能取）。
+  const [blackSharkCurveTempRange, setBlackSharkCurveTempRange] = useState<{ minTempC: number; maxTempC: number } | null>(null);
+
+  // 黑鲨手动挡位的转速/量程/步进由后端按标定表派生；这里只负责取一次并注入。
+  const [blackSharkRpmsRev, setBlackSharkRpmsRev] = useState(0);
+  useEffect(() => {
+    if (!isBlackSharkDevice) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const payload = await apiService.getBlackSharkManualGearPresets();
+        if (cancelled) return;
+        setBlackSharkGearRpmsFromCore(payload);
+      } catch {
+        if (cancelled) return;
+        setBlackSharkGearRpmsFromCore(null);
+      }
+      try {
+        const range = await apiService.getBlackSharkCurveTempRange();
+        if (!cancelled && typeof range?.minTempC === 'number' && typeof range?.maxTempC === 'number') {
+          setBlackSharkCurveTempRange({ minTempC: range.minTempC, maxTempC: range.maxTempC });
+        }
+      } catch {
+        // 取不到就只允许纵向拖动：宁可退化成原来的行为，也不猜一个区间。
+        if (!cancelled) setBlackSharkCurveTempRange(null);
+      }
+      if (!cancelled) setBlackSharkRpmsRev((v) => v + 1);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isBlackSharkDevice, isConnected]);
+
   const { t } = useTranslation();
   const { locale } = useLocale();
   const [localCurve, setLocalCurve] = useState<types.FanCurvePoint[]>([]);
@@ -525,9 +698,9 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const curveEditorRef = useRef<HTMLDivElement>(null);
   const historyDetailsRef = useRef<HTMLElement>(null);
   const initialFocusTarget = useRef(focusTarget).current;
-  const chartBoundsRef = useRef<{ top: number; bottom: number; left: number; right: number; yMin: number; yMax: number } | null>(null);
+  const chartBoundsRef = useRef<{ top: number; bottom: number; left: number; right: number; yMin: number; yMax: number; xMin: number; xMax: number } | null>(null);
   const dragFrameRef = useRef<number | null>(null);
-  const pendingDragYRef = useRef<number | null>(null);
+  const pendingDragRef = useRef<{ clientX: number; clientY: number } | null>(null);
   const historySeriesItemRefs = useRef<Partial<Record<HistorySeriesKey, HTMLDivElement>>>({});
   const historySeriesDragRef = useRef<{ key: HistorySeriesKey; target?: HistorySeriesKey; placement?: 'before' | 'after' } | null>(null);
   const historySeriesDragCleanupRef = useRef<(() => void) | null>(null);
@@ -557,6 +730,19 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     max: configuredSpeedRange.max,
     ticks: getFanSpeedTicks(configuredSpeedRange.min, configuredSpeedRange.max),
   }), [configuredSpeedRange.max, configuredSpeedRange.min]);
+  // 纵轴从 0 起后不能再用 getFanSpeedTicks(min,max)（从 min=1440 起算）：会出现 0..1440 无刻度、顶部间距不均。
+  const zeroBasedSpeedTicks = useMemo(() => {
+    const max = speedRange.max;
+    if (max <= 0) return [0];
+    const candidates = [100, 200, 250, 300, 400, 500, 600, 800, 1000, 1200, 1500, 2000, 2400, 2500, 3000];
+    const step = candidates.find((c) => max % c === 0 && max / c >= 3 && max / c <= 6)
+      ?? Math.max(1, Math.round(max / 4));
+    const ticks: number[] = [];
+    for (let v = 0; v <= max; v += step) ticks.push(v);
+    if (ticks[ticks.length - 1] !== max) ticks.push(max);
+    return ticks;
+  }, [speedRange.max]);
+
   const defaultCurve = speedUnit === 'rpm' ? DEFAULT_RPM_FAN_CURVE : DEFAULT_FAN_CURVE;
   const {
     points: temperatureHistory,
@@ -586,9 +772,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   ].join(':');
 
   const temperatureRange = useMemo(() => ({
-    min: FAN_CURVE_MIN_TEMP,
+    // 坐标轴起点用 FAN_CURVE_AXIS_MIN_TEMP(0)，数据网格仍从 FAN_CURVE_MIN_TEMP(20) 起，两者刻意分开。
+    min: FAN_CURVE_AXIS_MIN_TEMP,
     max: FAN_CURVE_MAX_TEMP,
-    ticks: FAN_CURVE_TEMPERATURE_TICKS,
+    ticks: FAN_CURVE_AXIS_TEMPERATURE_TICKS,
   }), []);
 
   const syncConfigFromBackend = useCallback(async () => {
@@ -1295,6 +1482,35 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     }
   }, [speedRange]);
 
+  // 黑鲨那 4 个点的温度可以左右拖（取值域来自后端）；取不到范围时退化为只允许纵向拖动。
+  const canDragPointHorizontally = isBlackSharkDevice && blackSharkCurveTempRange !== null;
+
+  const updatePointTemperature = useCallback((index: number, targetTemperature: number) => {
+    if (!blackSharkCurveTempRange) return;
+    let didChange = false;
+
+    setLocalCurve((prev) => {
+      const nextState = syncCurveTemperatureAtIndex(
+        prev,
+        index,
+        targetTemperature,
+        blackSharkCurveTempRange.minTempC,
+        blackSharkCurveTempRange.maxTempC,
+      );
+
+      if (!nextState.changed) {
+        return prev;
+      }
+
+      didChange = true;
+      return nextState.curve;
+    });
+
+    if (didChange) {
+      setEditorSession(markCurveEditorDirty);
+    }
+  }, [blackSharkCurveTempRange]);
+
   const handleDragStart = useCallback((index: number) => {
     setDragIndex(index);
     setIsInteracting(true);
@@ -1302,30 +1518,39 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       const chartArea = chartRef.current.querySelector('.recharts-cartesian-grid');
       if (chartArea) {
         const rect = chartArea.getBoundingClientRect();
-        chartBoundsRef.current = { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, yMin: speedRange.min, yMax: speedRange.max };
+        chartBoundsRef.current = {
+          top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right,
+          // 纵轴域用坐标轴的下端（0），不是 speedRange.min —— 两者不一致时点会跳。
+          yMin: FAN_CURVE_AXIS_MIN_SPEED, yMax: speedRange.max,
+          xMin: temperatureRange.min, xMax: temperatureRange.max,
+        };
       }
     }
-  }, [speedRange]);
+  }, [speedRange, temperatureRange]);
 
-  const handleDrag = useCallback((clientY: number) => {
+  const handleDrag = useCallback((clientX: number, clientY: number) => {
     if (dragIndex === null || !chartBoundsRef.current) return;
     const bounds = chartBoundsRef.current;
     const relativeY = Math.max(0, Math.min(1, (bounds.bottom - clientY) / (bounds.bottom - bounds.top)));
     updatePoint(dragIndex, bounds.yMin + relativeY * (bounds.yMax - bounds.yMin));
-  }, [dragIndex, updatePoint]);
 
-  const scheduleDrag = useCallback((clientY: number) => {
-    pendingDragYRef.current = clientY;
+    if (!canDragPointHorizontally || bounds.right <= bounds.left) return;
+    const relativeX = Math.max(0, Math.min(1, (clientX - bounds.left) / (bounds.right - bounds.left)));
+    updatePointTemperature(dragIndex, bounds.xMin + relativeX * (bounds.xMax - bounds.xMin));
+  }, [canDragPointHorizontally, dragIndex, updatePoint, updatePointTemperature]);
+
+  const scheduleDrag = useCallback((clientX: number, clientY: number) => {
+    pendingDragRef.current = { clientX, clientY };
     if (dragFrameRef.current !== null) {
       return;
     }
 
     dragFrameRef.current = window.requestAnimationFrame(() => {
       dragFrameRef.current = null;
-      const nextClientY = pendingDragYRef.current;
-      pendingDragYRef.current = null;
-      if (nextClientY !== null) {
-        handleDrag(nextClientY);
+      const pending = pendingDragRef.current;
+      pendingDragRef.current = null;
+      if (pending !== null) {
+        handleDrag(pending.clientX, pending.clientY);
       }
     });
   }, [handleDrag]);
@@ -1335,15 +1560,17 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       window.cancelAnimationFrame(dragFrameRef.current);
       dragFrameRef.current = null;
     }
-    pendingDragYRef.current = null;
+    pendingDragRef.current = null;
     setDragIndex(null);
     setTimeout(() => setIsInteracting(false), 100);
   }, []);
 
   useEffect(() => {
     if (dragIndex === null) return;
-    const mm = (e: MouseEvent) => { e.preventDefault(); scheduleDrag(e.clientY); };
-    const tm = (e: TouchEvent) => { if (e.touches.length > 0) scheduleDrag(e.touches[0].clientY); };
+    const mm = (e: MouseEvent) => { e.preventDefault(); scheduleDrag(e.clientX, e.clientY); };
+    const tm = (e: TouchEvent) => {
+      if (e.touches.length > 0) scheduleDrag(e.touches[0].clientX, e.touches[0].clientY);
+    };
     const end = () => handleDragEnd();
     document.addEventListener('mousemove', mm);
     document.addEventListener('mouseup', end);
@@ -1358,7 +1585,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
         window.cancelAnimationFrame(dragFrameRef.current);
         dragFrameRef.current = null;
       }
-      pendingDragYRef.current = null;
+      pendingDragRef.current = null;
     };
   }, [dragIndex, handleDragEnd, scheduleDrag]);
 
@@ -1591,10 +1818,74 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     }
   }, [hasUnsavedChanges, importCode, loadCurveProfiles, persistCurrentCurve, syncConfigFromBackend, t]);
 
-  const resetCurve = useCallback(() => {
+  const resetCurve = useCallback(async () => {
+    // 黑鲨手动模式：重置为黑鲨默认值并下发一次。
+    if (!config.autoControl && isBlackSharkDevice) {
+      // 内联判断能力位：supportsManualGears memo 声明在 resetCurve 之后，引用会踩 TDZ。
+      const manualGearOk = supportsManualGearsFromCapabilities(
+        isConnected && runtimeDeviceCapabilities ? runtimeDeviceCapabilities : runtimeDeviceProfile?.capabilities,
+      );
+      if (!manualGearOk) {
+        toast.error(t('fanCurve.manualGear.unavailable'));
+        return;
+      }
+      try {
+        // 默认值来源与卡片一致（buildDraftFrom(null) 会带黑鲨标记）；内联取默认值与量程以免引用后声明的 memo。
+        const range = getManualGearValueRange(speedUnit, isBlackSharkDevice);
+        const defaults: ManualGearRpmMap = {};
+        getEffectiveManualGearPresets(null, speedUnit, isBlackSharkDevice).forEach((preset) => {
+          defaults[preset.gear] = {};
+          preset.levels.forEach((lv) => { defaults[preset.gear][lv.level] = lv.rpm; });
+        });
+        const normalized = normalizeManualGearRpmMap(defaults, range.min, range.max, speedUnit, isBlackSharkDevice);
+        // 重置覆盖转速值、挡位(标准)与档级(中)三项，并下发一次。
+        const next = types.AppConfig.createFrom({
+          ...config,
+          manualGearRpm: normalized,
+          manualGear: '标准',
+          manualLevel: '中',
+        });
+        await apiService.updateConfig(next);
+        const ok = await apiService.setManualGear('标准', '中');
+        if (!ok) {
+          throw new Error(t('fanCurve.manualGear.unavailable'));
+        }
+        onConfigChange(types.AppConfig.createFrom(await apiService.getConfig()));
+        toast.success(t('fanCurve.manualGear.rpmSaved'));
+      } catch (err) {
+        toast.error(t('fanCurve.manualGear.rpmSaveFailed', { error: getErrorMessage(err) }));
+      }
+      return;
+    }
+
     setLocalCurve(normalizeFanCurve(defaultCurve, speedRange.min, speedRange.max, defaultCurve));
     setEditorSession(markCurveEditorDirty);
-  }, [defaultCurve, speedRange.max, speedRange.min]);
+  }, [config, defaultCurve, isBlackSharkDevice, isConnected, onConfigChange, runtimeDeviceCapabilities, runtimeDeviceProfile, speedRange.max, speedRange.min, speedUnit, t]);
+
+  // 一键把四个档位的曲线恢复成出厂值。
+  const resetCoolingAll = useCallback(async () => {
+    try {
+      if (!(await apiService.resetBlackSharkCooling())) {
+        toast.error(t('controlPanel.blackShark.actionFailed'));
+        return;
+      }
+      // 四个方案曲线都换了，必须重拉方案，否则图表（读的是 localCurve）不会变。
+      await loadCurveProfiles();
+      toast.success(t('fanCurve.actions.coolingResetOk'));
+    } catch (err) {
+      toast.error(t('controlPanel.blackShark.actionFailed') + ' ' + getErrorMessage(err));
+    }
+  }, [loadCurveProfiles, t]);
+
+  // 「重置」按钮：与官方那颗一致 —— 点一次直接执行。
+  // 黑鲨按屏幕走（开变频 → 四档恢复出厂曲线；关变频 → 重置手动挡位转速），其它设备沿用原本的"重置曲线"。
+  const handleResetButton = useCallback(() => {
+    if (isBlackSharkDevice && isConnected && config.autoControl) {
+      void resetCoolingAll();
+      return;
+    }
+    void resetCurve();
+  }, [config.autoControl, isConnected, isBlackSharkDevice, resetCoolingAll, resetCurve]);
 
   /* ── Auto control / smart control handlers ── */
 
@@ -1696,16 +1987,19 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   }, [config]);
 
   const manualGearPresets = useMemo(() => {
-    return getEffectiveManualGearPresets(customGearRpm, speedUnit);
-  }, [customGearRpm, speedUnit]);
+    // 必须带黑鲨标记：否则这张卡片会显示飞智那套默认值（静音1700/标准2400/强劲3000/超频3700）。
+    return getEffectiveManualGearPresets(customGearRpm, speedUnit, isBlackSharkDevice);
+  }, [blackSharkRpmsRev, customGearRpm, isBlackSharkDevice, speedUnit]);
 
   const manualGearDefaultPresets = useMemo(() => {
-    return getManualGearDefaultPresets(speedUnit);
-  }, [speedUnit]);
+    // 黑鲨用自己那套默认值：后端 BlackSharkManualGearPresets() 从标定表派生（1410..4740 等分 12 点 → 四档 × 三档级），前端不硬编码数值。
+    return getManualGearDefaultPresets(speedUnit, isBlackSharkDevice);
+  }, [blackSharkRpmsRev, isBlackSharkDevice, speedUnit]);
 
   const manualGearValueRange = useMemo(() => {
-    return getManualGearValueRange(speedUnit);
-  }, [speedUnit]);
+    // 黑鲨量程来自后端（deviceproto.BlackSharkMinRPM/MaxRPM = 1410..4740），不是通用的 800..4500。
+    return getManualGearValueRange(speedUnit, isBlackSharkDevice);
+  }, [blackSharkRpmsRev, isBlackSharkDevice, speedUnit]);
 
   const supportsManualGears = supportsManualGearsFromCapabilities(
     isConnected && runtimeDeviceCapabilities ? runtimeDeviceCapabilities : runtimeDeviceProfile?.capabilities,
@@ -1784,14 +2078,15 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
 
   const buildDraftFrom = useCallback((source: ManualGearRpmMap | null): ManualGearRpmMap => {
     const base: ManualGearRpmMap = {};
-    getEffectiveManualGearPresets(source, speedUnit).forEach((preset) => {
+    // 必须带黑鲨标记：否则「重置」会恢复成飞智那套默认值。
+    getEffectiveManualGearPresets(source, speedUnit, isBlackSharkDevice).forEach((preset) => {
       base[preset.gear] = {};
       preset.levels.forEach((lv) => {
         base[preset.gear][lv.level] = Math.max(manualGearValueRange.min, Math.min(manualGearValueRange.max, lv.rpm));
       });
     });
     return base;
-  }, [manualGearValueRange.max, manualGearValueRange.min, speedUnit]);
+  }, [blackSharkRpmsRev, isBlackSharkDevice, manualGearValueRange.max, manualGearValueRange.min, speedUnit]);
 
   const openGearEditor = useCallback(() => {
     if (!supportsManualGears) {
@@ -1816,7 +2111,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     }
     setGearRpmSaving(true);
     try {
-      const normalized = normalizeManualGearRpmMap(draftGearRpm, manualGearValueRange.min, manualGearValueRange.max, speedUnit);
+      const normalized = normalizeManualGearRpmMap(draftGearRpm, manualGearValueRange.min, manualGearValueRange.max, speedUnit, isBlackSharkDevice);
       const next = types.AppConfig.createFrom({ ...config, manualGearRpm: normalized });
       await apiService.updateConfig(next);
       const ok = await apiService.setManualGear(next.manualGear || '标准', next.manualLevel || '中');
@@ -1837,8 +2132,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const CustomDot = useCallback((props: any): React.ReactElement<SVGElement> => {
     const { cx, cy, index, payload } = props;
     if (cx === undefined || cy === undefined) return <g />;
-    return <DraggablePoint key={`dot-${index}`} cx={cx} cy={cy} index={index} temperature={payload.temperature} speed={payload.rpm} unitSuffix={speedUnitSuffix} onDragStart={handleDragStart} isActive={dragIndex === index} />;
-  }, [dragIndex, handleDragStart, speedUnitSuffix]);
+    return <DraggablePoint key={`dot-${index}`} cx={cx} cy={cy} index={index} temperature={payload.temperature} speed={payload.rpm} unitSuffix={speedUnitSuffix} onDragStart={handleDragStart} isActive={dragIndex === index} allowHorizontal={canDragPointHorizontally} />;
+  }, [canDragPointHorizontally, dragIndex, handleDragStart, speedUnitSuffix]);
 
   return (
     <div
@@ -1932,7 +2227,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
               </div>
               <div className="flex shrink-0 items-center gap-3">
                 <ToggleSwitch enabled={config.autoControl} onChange={handleAutoControlChange} label={t('fanCurve.actions.smartControl')} size="sm" color="blue" />
-                <Button variant="secondary" size="sm" className="rounded-lg" onClick={resetCurve} icon={<RotateCw className="h-3.5 w-3.5" />}>
+                {/* 「重置」：与官方那颗一致 —— 文案「重置」、点一次就执行、不做二次确认。
+                    黑鲨按屏幕走（开变频 → 四档恢复出厂曲线；关变频 → 重置手动挡位转速），
+                    其它设备仍是重置曲线。 */}
+                <Button variant="secondary" size="sm" className="rounded-lg" onClick={handleResetButton} icon={<RotateCw className="h-3.5 w-3.5" />}>
                   {t('fanCurve.actions.reset')}
                 </Button>
                 <Button variant="primary" size="sm" className="rounded-lg" onClick={saveCurve} disabled={!hasUnsavedChanges} loading={isSaving} icon={<Check className="h-3.5 w-3.5" />}>
@@ -1942,6 +2240,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
             </div>
           </div>
         </motion.div>
+
+        {/* 手动挡位面板直接接入黑鲨：0x24 写 form=value，档位映射 = 飞智 静音/标准/强劲/超频 ↔ 黑鲨 1/2/3/4。 */}
 
         <AnimatePresence>
           {!config.autoControl && isConnected && supportsManualGears && (
@@ -1968,8 +2268,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                     const rememberedLevel = isActiveGear
                       ? (config.manualLevel || '中')
                       : rememberedManualGearLevels[preset.gear];
+                    // 黑鲨那套转速由后端标定表派生；后端还没给到时 levels 会是空数组（见 lib/manualGearPresets），
+                    // 此时必须显示 "--" 并禁用卡片，不能让 activeLevel.rpm 直接把整个页签干崩。
                     const activeLevel = preset.levels.find((l) => l.level === rememberedLevel) ?? preset.levels[0];
-                    const gearAllowed = isManualGearAllowed(preset.gear);
+                    const gearAllowed = isManualGearAllowed(preset.gear) && preset.levels.length > 0;
 
                     return (
                       <button
@@ -1988,7 +2290,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                           {getManualGearLabel(preset.gear)}
                         </div>
                         <div className={clsx('mt-1 text-base font-semibold tabular-nums', preset.colorClass)}>
-                          {activeLevel.rpm}{speedUnitSuffix}
+                          {activeLevel ? `${activeLevel.rpm}${speedUnitSuffix}` : '--'}
                         </div>
                       </button>
                     );
@@ -2094,7 +2396,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                 <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                   <XAxis dataKey="temperature" type="number" domain={[temperatureRange.min, temperatureRange.max]} ticks={temperatureRange.ticks} interval={0} minTickGap={0} tickLine={false} axisLine={{ stroke: 'var(--chart-axis)' }} tick={{ fill: 'var(--chart-tick)', fontSize: 10 }} label={{ value: t('fanCurve.chart.axes.temperature'), position: 'insideBottom', offset: -10, fill: 'var(--chart-tick)', fontSize: 12 }} />
-                  <YAxis type="number" domain={[speedRange.min, speedRange.max]} ticks={speedRange.ticks} tickLine={false} axisLine={{ stroke: 'var(--chart-axis)' }} tick={{ fill: 'var(--chart-tick)', fontSize: 11 }} label={{ value: `速度（${speedUnitSuffix}）`, angle: -90, position: 'insideLeft', fill: 'var(--chart-tick)', fontSize: 12 }} />
+                  {/* 纵轴从 0 起（与其它图表一致）；只是量程显示，不改数据。 */}
+                  <YAxis type="number" domain={[FAN_CURVE_AXIS_MIN_SPEED, speedRange.max]} ticks={zeroBasedSpeedTicks} tickLine={false} axisLine={{ stroke: 'var(--chart-axis)' }} tick={{ fill: 'var(--chart-tick)', fontSize: 11 }} label={{ value: `速度（${speedUnitSuffix}）`, angle: -90, position: 'insideLeft', fill: 'var(--chart-tick)', fontSize: 12 }} />
                   <RechartsTooltip
                     formatter={(value, name) => {
                       const numericValue = Number(value ?? 0);
@@ -2109,6 +2412,15 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                   {showCoupledCurve && <Line type="monotone" dataKey="coupledRpm" stroke="var(--chart-primary)" strokeWidth={2} strokeDasharray="6 4" dot={false} activeDot={false} isAnimationActive={false} />}
                 </LineChart>
               </ResponsiveContainer>
+              {isBlackSharkDevice && chartData.length >= 2 && (
+                <CurveExtensions
+                  chartRef={chartRef}
+                  anchors={chartData}
+                  temperatureRange={temperatureRange}
+                  speedMax={speedRange.max}
+                  floorSpeed={manualGearValueRange.min}
+                />
+              )}
               <TemperatureIndicator temperature={referenceTemp} chartRef={chartRef} temperatureRange={temperatureRange} />
             </div>
           </div>
@@ -3124,3 +3436,4 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
 });
 
 export default FanCurve;
+

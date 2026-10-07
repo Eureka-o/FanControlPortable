@@ -16,15 +16,51 @@ func TestSendBlackSharkImageFramesStopsOnContext(t *testing.T) {
 		count++
 		cancel()
 		return nil
-	})
+	}, nil)
 	if !errors.Is(err, context.Canceled) || count != 1 {
 		t.Fatalf("sendBlackSharkImageFrames() = err %v, count %d; want cancellation after one frame", err, count)
 	}
 }
 
+func TestSendBlackSharkImageFramesCallsHandshakeOnceAfterFirstFrame(t *testing.T) {
+	// afterHandshake 只在该序列的 C4 信息帧之后调一次（序列首帧是开场帧 0x03，故是第 2 帧）；
+	// 它返回错误必须中止后续帧。
+	sent, handshakes := 0, 0
+	frames := [][]byte{{1}, {2}, {3}}
+	if err := sendBlackSharkImageFrames(context.Background(), frames, func([]byte) error {
+		sent++
+		return nil
+	}, func() error {
+		if sent != 1 {
+			t.Fatalf("handshake ran after %d frames, want exactly 1 (C4 必须先发出)", sent)
+		}
+		handshakes++
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if handshakes != 1 || sent != 3 {
+		t.Fatalf("handshakes=%d sent=%d, want 1/3", handshakes, sent)
+	}
+}
+
+func TestSendBlackSharkImageFramesAbortsWhenHandshakeFails(t *testing.T) {
+	// 拿不到 C4 应答就不能继续灌数据（否则每块都会被设备回 0x0C）。
+	sent := 0
+	err := sendBlackSharkImageFrames(context.Background(), [][]byte{{1}, {2}, {3}}, func([]byte) error {
+		sent++
+		return nil
+	}, func() error {
+		return errors.New("no C4 ack")
+	})
+	if err == nil || sent != 1 {
+		t.Fatalf("sendBlackSharkImageFrames() = err %v, sent %d; want abort after the first frame", err, sent)
+	}
+}
+
 func TestSendBlackSharkImageFramesRejectsOversizedFrame(t *testing.T) {
 	frame := make([]byte, blackSharkHIDReportLen+1)
-	if err := sendBlackSharkImageFrames(context.Background(), [][]byte{frame}, func([]byte) error { return nil }); err == nil {
+	if err := sendBlackSharkImageFrames(context.Background(), [][]byte{frame}, func([]byte) error { return nil }, nil); err == nil {
 		t.Fatal("sendBlackSharkImageFrames() accepted oversized frame")
 	}
 }

@@ -3,12 +3,11 @@ package deviceprofileexec
 import (
 	"context"
 	"errors"
+	"github.com/Eureka-o/FanControlPortable/internal/deviceproto"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 	"io"
 	"testing"
 	"time"
-
-	"github.com/Eureka-o/FanControlPortable/internal/deviceproto"
-	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 type fakeBLEConnector struct {
@@ -199,7 +198,7 @@ func TestBLEExecutorFlyDigiBS1SetSpeedDoesNotFakeCurrentRPM(t *testing.T) {
 	}
 }
 
-func TestBLEExecutorBlackSharkSetSpeedClampsTo4000AndUsesRPMModeLabel(t *testing.T) {
+func TestBLEExecutorBlackSharkSetSpeedClampsToMaxRPMAndUsesRPMModeLabel(t *testing.T) {
 	client := &fakeBLEClient{}
 	executor, err := NewBLEExecutor(types.BlackSharkBRB02Profile(), &fakeBLEConnector{client: client})
 	if err != nil {
@@ -207,15 +206,16 @@ func TestBLEExecutorBlackSharkSetSpeedClampsTo4000AndUsesRPMModeLabel(t *testing
 	}
 	defer executor.Close()
 
-	state, err := executor.SetSpeed(nil, types.NewRPMSpeed(4500))
+	// 上限取设备可达区间的所有者，所以这里喂一个必然越界的请求值。
+	state, err := executor.SetSpeed(nil, types.NewRPMSpeed(deviceproto.BlackSharkMaxRPM+260))
 	if err != nil {
 		t.Fatalf("SetSpeed() error = %v", err)
 	}
-	if len(client.writes) != 1 || string(client.writes[0].payload) != string(deviceproto.BuildBlackSharkSetSpeed(4000)) {
-		t.Fatalf("writes = %#v, want one 4000 RPM BlackShark frame", client.writes)
+	if len(client.writes) != 1 || string(client.writes[0].payload) != string(deviceproto.BuildBlackSharkSetSpeed(deviceproto.BlackSharkMaxRPM)) {
+		t.Fatalf("writes = %#v, want one %d RPM BlackShark frame", client.writes, deviceproto.BlackSharkMaxRPM)
 	}
-	if state.TargetRPM != 4000 || state.WorkMode != "auto/realtime RPM mode" || state.CurrentMode != 1 {
-		t.Fatalf("set state = %#v, want 4000 RPM auto mode", state)
+	if state.TargetRPM != deviceproto.BlackSharkMaxRPM || state.WorkMode != "auto/realtime RPM mode" || state.CurrentMode != 1 {
+		t.Fatalf("set state = %#v, want %d RPM auto mode", state, deviceproto.BlackSharkMaxRPM)
 	}
 }
 

@@ -2,10 +2,9 @@
 package types
 
 import (
+	"github.com/Eureka-o/FanControlPortable/internal/deviceproto"
 	"maps"
 	"math"
-
-	"github.com/Eureka-o/FanControlPortable/internal/deviceproto"
 )
 
 // FanCurvePoint 风扇曲线点
@@ -394,19 +393,21 @@ type FanData struct {
 
 // DeviceDebugFrame is a captured low-level device protocol frame.
 type DeviceDebugFrame struct {
-	ID          uint64 `json:"id"`
-	Direction   string `json:"direction"`
-	Transport   string `json:"transport"`
-	Timestamp   string `json:"timestamp"`
-	RawHex      string `json:"rawHex"`
-	FrameHex    string `json:"frameHex"`
-	Command     string `json:"command"`
-	Length      int    `json:"length"`
-	PayloadHex  string `json:"payloadHex"`
-	ChecksumOK  bool   `json:"checksumOk"`
-	Description string `json:"description"`
-	Decoded     string `json:"decoded,omitempty"`
-	Parsed      any    `json:"parsed,omitempty"`
+	ID               uint64 `json:"id"`
+	Direction        string `json:"direction"`
+	Transport        string `json:"transport"`
+	Timestamp        string `json:"timestamp"`
+	RawHex           string `json:"rawHex"`
+	FrameHex         string `json:"frameHex"`
+	Command          string `json:"command"`
+	Length           int    `json:"length"`
+	PayloadHex       string `json:"payloadHex"`
+	ChecksumOK       bool   `json:"checksumOk"`
+	ChecksumRule     string `json:"checksumRule,omitempty"`
+	ChecksumExpected string `json:"checksumExpected,omitempty"`
+	Description      string `json:"description"`
+	Decoded          string `json:"decoded,omitempty"`
+	Parsed           any    `json:"parsed,omitempty"`
 }
 
 // DeviceSettings contains settings read back from the device firmware.
@@ -504,6 +505,9 @@ type TemperatureHistoryPoint struct {
 	FanRPM        int     `json:"fanRpm"`
 	CPUPowerWatts float64 `json:"cpuPowerWatts,omitempty"`
 	GPUPowerWatts float64 `json:"gpuPowerWatts,omitempty"`
+	// GapBeforeSeconds 本点与上一个点之间的空洞秒数（设备独占任务把采样循环饿住时 > 0）。
+	// 图表据此断开折线，而不是把十几秒的空洞画成一条直线。0 = 正常连续采样。
+	GapBeforeSeconds int `json:"gapBeforeSeconds,omitempty"`
 }
 
 // TemperatureHistoryPayload 温度历史返回载荷。
@@ -615,8 +619,12 @@ type SmartControlConfig struct {
 
 // AppConfig 应用配置
 type AppConfig struct {
-	LegionFnQ                         LegionFnQConfig                        `json:"legionFnQ"`
-	LegionFnQSupport                  LegionFnQSupportCache                  `json:"legionFnQSupport"`
+	LegionFnQ        LegionFnQConfig       `json:"legionFnQ"`
+	LegionFnQSupport LegionFnQSupportCache `json:"legionFnQSupport"`
+	// NativeAutoBLEScanUnix 是上一次自动连接真的做过 BLE 扫描的 Unix 秒，0 表示没记录。
+	// 它是 device.Manager.lastAutoBLEScanAt（内存字段）的落盘镜像，用于重启后在冷却窗口内
+	// 跳过注定失败的 BLE 扫描。
+	NativeAutoBLEScanUnix             int64                                  `json:"nativeAutoBLEScanUnix,omitempty"`
 	ActiveDeviceProfileID             string                                 `json:"activeDeviceProfileId"`
 	ActiveDeviceProfileIDsByTransport map[string]string                      `json:"activeDeviceProfileIdsByTransport,omitempty"`
 	DeviceProfiles                    []DeviceProfile                        `json:"deviceProfiles,omitempty"`
@@ -639,43 +647,54 @@ type AppConfig struct {
 	FanCurveProfilesByDevice          map[string]DeviceFanCurveProfilesState `json:"fanCurveProfilesByDevice,omitempty"`
 	NoiseDiagnosticsByDevice          map[string]NoiseDiagnosticResult       `json:"noiseDiagnosticsByDevice,omitempty"`
 	AxisNoiseProfilesByDevice         map[string]AxisNoiseProfile            `json:"axisNoiseProfilesByDevice,omitempty"`
-	ActiveFanCurveProfileID           string                                 `json:"activeFanCurveProfileId"` // 当前激活曲线方案ID
-	GearLight                         bool                                   `json:"gearLight"`               // 挡位灯
-	PowerOnStart                      bool                                   `json:"powerOnStart"`            // 通电自启动
-	PowerSpoofEnabled                 bool                                   `json:"powerSpoofEnabled"`       // 仅前端显示功耗欺骗
-	PowerSpoofPercent                 float64                                `json:"powerSpoofPercent"`       // 旧版显示功耗倍率百分比
-	PowerSpoofOffsetWatts             float64                                `json:"powerSpoofOffsetWatts"`   // 旧版显示功耗固定偏移(W)
-	CPUPowerSpoofPercent              float64                                `json:"cpuPowerSpoofPercent"`
-	CPUPowerSpoofOffsetWatts          float64                                `json:"cpuPowerSpoofOffsetWatts"`
-	GPUPowerSpoofPercent              float64                                `json:"gpuPowerSpoofPercent"`
-	GPUPowerSpoofOffsetWatts          float64                                `json:"gpuPowerSpoofOffsetWatts"`
-	WindowsAutoStart                  bool                                   `json:"windowsAutoStart"`                 // Windows开机自启动
-	MonitorOnly                       bool                                   `json:"monitorOnly"`                      // 仅监控模式（持久配置）
-	ThemeMode                         string                                 `json:"themeMode"`                        // 主题模式: system/light/dark/thrm
-	WindowBlur                        string                                 `json:"windowBlur"`                       // 窗口材质: acrylic/mica/tabbed/off
-	SmartStartStop                    string                                 `json:"smartStartStop"`                   // 智能启停
-	Brightness                        int                                    `json:"brightness"`                       // 亮度
-	TempUpdateRate                    int                                    `json:"tempUpdateRate"`                   // 温度更新频率(秒)
-	TempSampleCount                   int                                    `json:"tempSampleCount"`                  // 温度采样次数(用于平均)
-	HistoryRetentionHours             int                                    `json:"temperatureHistoryRetentionHours"` // 温度历史后台保留时长(小时)
-	TempSource                        string                                 `json:"tempSource"`                       // 控温温度来源: max/cpu/gpu
-	GpuDevice                         string                                 `json:"gpuDevice"`                        // GPU 设备选择: auto 或设备 key
-	CpuSensor                         string                                 `json:"cpuSensor"`                        // CPU 传感器选择: auto 或传感器 key
-	GpuSensor                         string                                 `json:"gpuSensor"`                        // GPU 传感器选择: auto 或传感器 key
-	CpuPowerSensor                    string                                 `json:"cpuPowerSensor"`                   // CPU 功耗传感器选择: auto 或传感器 key
-	GpuPowerSensor                    string                                 `json:"gpuPowerSensor"`                   // GPU 功耗传感器选择: auto 或传感器 key
-	GpuReadMode                       string                                 `json:"gpuReadMode"`
-	GpuLowPowerProtection             bool                                   `json:"gpuLowPowerProtection"`
-	ConfigPath                        string                                 `json:"configPath"`              // 配置文件路径
-	ManualGear                        string                                 `json:"manualGear"`              // 手动挡位设置
-	ManualLevel                       string                                 `json:"manualLevel"`             // 手动挡位级别(低中高)
-	DebugMode                         bool                                   `json:"debugMode"`               // 调试模式
-	GuiMonitoring                     bool                                   `json:"guiMonitoring"`           // GUI监控开关
-	CustomSpeedEnabled                bool                                   `json:"customSpeedEnabled"`      // 自定义转速开关
-	CustomSpeedRPM                    int                                    `json:"customSpeedRPM"`          // 自定义转速值(无上下限)
-	IgnoreDeviceOnReconnect           bool                                   `json:"ignoreDeviceOnReconnect"` // 断连后忽略设备状态(保持APP配置)
-	SmartControl                      SmartControlConfig                     `json:"smartControl"`            // 学习型智能控温配置
-	LightStrip                        LightStripConfig                       `json:"lightStrip"`              // 灯带配置
+	ActiveFanCurveProfileID           string                                 `json:"activeFanCurveProfileId"`      // 当前激活曲线方案ID
+	SceneRules                        []SceneRule                            `json:"sceneRules,omitempty"`         // 情景规则（按前台进程自动施加档位/灯效）
+	SceneBaselineGear                 int                                    `json:"sceneBaselineGear"`            // 无情景匹配时要回落到的档位；0=不改变（显式回落，不用隐式状态）
+	BlackSharkLcdItems                []int                                  `json:"blackSharkLcdItems,omitempty"` // LCD 显示参数（0xC2）：屏上三格显示哪三项，顺序即左右顺序
+	// BlackSharkRgbCache 是上次从设备读到的那份灯效状态：读一次要逐个模式发 0x14，慢；
+	// 不缓存则每次重启界面都是空的、必须再点一次「读取灯效」。
+	BlackSharkRgbCache       *BlackSharkRgbLighting `json:"blackSharkRgbCache,omitempty"`
+	BlackSharkRgbCacheAtUnix int64                  `json:"blackSharkRgbCacheAtUnix,omitempty"`
+	// BlackSharkFirmwareCache 是最近一次成功的固件更新检查结果，落盘供重启后直接显示
+	// （设备侧的检查缓存只在内存里，重启即失；CheckedAt 也用它做"多久没查了"的节流判据）。
+	BlackSharkFirmwareCache *BlackSharkFirmwareStatus `json:"blackSharkFirmwareCache,omitempty"`
+	BlackSharkLcdPos         int                    `json:"blackSharkLcdPos"`      // 0xC2 的 pos 字段（官方取值域 0..3）；目前只标定到 0，越界拒发（见 deviceproto.BlackSharkLcdCalibratedPosMax）
+	GearLight                bool                   `json:"gearLight"`             // 挡位灯
+	PowerOnStart             bool                   `json:"powerOnStart"`          // 通电自启动
+	PowerSpoofEnabled        bool                   `json:"powerSpoofEnabled"`     // 仅前端显示功耗欺骗
+	PowerSpoofPercent        float64                `json:"powerSpoofPercent"`     // 旧版显示功耗倍率百分比
+	PowerSpoofOffsetWatts    float64                `json:"powerSpoofOffsetWatts"` // 旧版显示功耗固定偏移(W)
+	CPUPowerSpoofPercent     float64                `json:"cpuPowerSpoofPercent"`
+	CPUPowerSpoofOffsetWatts float64                `json:"cpuPowerSpoofOffsetWatts"`
+	GPUPowerSpoofPercent     float64                `json:"gpuPowerSpoofPercent"`
+	GPUPowerSpoofOffsetWatts float64                `json:"gpuPowerSpoofOffsetWatts"`
+	WindowsAutoStart         bool                   `json:"windowsAutoStart"`                 // Windows开机自启动
+	MonitorOnly              bool                   `json:"monitorOnly"`                      // 仅监控模式（持久配置）
+	ThemeMode                string                 `json:"themeMode"`                        // 主题模式: system/light/dark/thrm
+	WindowBlur               string                 `json:"windowBlur"`                       // 窗口材质: acrylic/mica/tabbed/off
+	SmartStartStop           string                 `json:"smartStartStop"`                   // 智能启停
+	Brightness               int                    `json:"brightness"`                       // 亮度
+	TempUpdateRate           int                    `json:"tempUpdateRate"`                   // 温度更新频率(秒)
+	TempSampleCount          int                    `json:"tempSampleCount"`                  // 温度采样次数(用于平均)
+	HistoryRetentionHours    int                    `json:"temperatureHistoryRetentionHours"` // 温度历史后台保留时长(小时)
+	TempSource               string                 `json:"tempSource"`                       // 控温温度来源: max/cpu/gpu
+	GpuDevice                string                 `json:"gpuDevice"`                        // GPU 设备选择: auto 或设备 key
+	CpuSensor                string                 `json:"cpuSensor"`                        // CPU 传感器选择: auto 或传感器 key
+	GpuSensor                string                 `json:"gpuSensor"`                        // GPU 传感器选择: auto 或传感器 key
+	CpuPowerSensor           string                 `json:"cpuPowerSensor"`                   // CPU 功耗传感器选择: auto 或传感器 key
+	GpuPowerSensor           string                 `json:"gpuPowerSensor"`                   // GPU 功耗传感器选择: auto 或传感器 key
+	GpuReadMode              string                 `json:"gpuReadMode"`
+	GpuLowPowerProtection    bool                   `json:"gpuLowPowerProtection"`
+	ConfigPath               string                 `json:"configPath"`              // 配置文件路径
+	ManualGear               string                 `json:"manualGear"`              // 手动挡位设置
+	ManualLevel              string                 `json:"manualLevel"`             // 手动挡位级别(低中高)
+	DebugMode                bool                   `json:"debugMode"`               // 调试模式
+	GuiMonitoring            bool                   `json:"guiMonitoring"`           // GUI监控开关
+	CustomSpeedEnabled       bool                   `json:"customSpeedEnabled"`      // 自定义转速开关
+	CustomSpeedRPM           int                    `json:"customSpeedRPM"`          // 自定义转速值(无上下限)
+	IgnoreDeviceOnReconnect  bool                   `json:"ignoreDeviceOnReconnect"` // 断连后忽略设备状态(保持APP配置)
+	SmartControl             SmartControlConfig     `json:"smartControl"`            // 学习型智能控温配置
+	LightStrip               LightStripConfig       `json:"lightStrip"`              // 灯带配置
 }
 
 // GetDefaultLightStripConfig 获取默认灯带配置

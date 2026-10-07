@@ -4,13 +4,12 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"github.com/Eureka-o/FanControlPortable/internal/deviceproto"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 	"io"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/Eureka-o/FanControlPortable/internal/deviceproto"
-	"github.com/Eureka-o/FanControlPortable/internal/types"
 	"tinygo.org/x/bluetooth"
 )
 
@@ -321,8 +320,8 @@ func (e *BLEExecutor) setBlackSharkSpeed(ctx context.Context, speed types.FanSpe
 	if rpm < 0 {
 		rpm = 0
 	}
-	if rpm > 4000 {
-		rpm = 4000
+	if rpm > deviceproto.BlackSharkMaxRPM {
+		rpm = deviceproto.BlackSharkMaxRPM
 	}
 	if err := e.writeRawLocked(ctx, deviceproto.BuildBlackSharkSetSpeed(rpm)); err != nil {
 		return nil, err

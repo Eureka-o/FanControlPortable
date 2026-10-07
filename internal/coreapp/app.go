@@ -18,6 +18,7 @@ import (
 	"github.com/Eureka-o/FanControlPortable/internal/logger"
 	"github.com/Eureka-o/FanControlPortable/internal/notifier"
 	"github.com/Eureka-o/FanControlPortable/internal/plugins"
+	"github.com/Eureka-o/FanControlPortable/internal/scene"
 	"github.com/Eureka-o/FanControlPortable/internal/smartcontrol"
 	"github.com/Eureka-o/FanControlPortable/internal/temperature"
 	"github.com/Eureka-o/FanControlPortable/internal/tray"
@@ -80,12 +81,34 @@ type CoreApp struct {
 	suspendGeneration                atomic.Uint64
 	wifiStandbyApplied               atomic.Bool
 	forceNextAutoTarget              atomic.Bool
-	lastResumeRecoveryUnix           int64
-	lastHealthReconnectUnix          int64
-	healthConsecutiveFailureCount    int32
-	connectionFlights                *connectionFlightRecorder
-	smartControlDecisionMu           sync.RWMutex
-	smartControlDecision             smartcontrol.Decision
+	// reseedTempEMA 表示"温度 EMA 需要重播种"：设备独占任务（屏保图传）把采样循环饿住十几秒，
+	// 窗口后的第一拍不能拿窗口前的 EMA 当上一个采样 —— 否则等于把十几秒的空洞当成一个采样步长。
+	// 由图传登记表的 done() 置位，监控循环在下一拍消费。
+	reseedTempEMA atomic.Bool
+	// autoPushFailed 记录"上一拍异步下发的 Mission 失败了"，下一拍据此强制重试。
+	autoPushFailed atomic.Bool
+	// blackSharkSourceWritten 是最近一次写下去的冷却参照源（-1 = 未知；0 = CPU；1 = GPU）。
+	// 它记的是写过的值，不是设备真值（真值以 `0x23` / `0x25` 为准，见 currentConfigSourceLocked）；
+	// 存在的唯一目的 = "没变就一个字节都不发"（max 模式每拍都会重新评估，不节流会一直写 0x22）。
+	blackSharkSourceWritten atomic.Int32
+	// blackSharkSourceLastAt 是上次切换参照源的时刻（UnixNano），用于 max 的最小间隔。
+	blackSharkSourceLastAt atomic.Int64
+	// bulkDeviceOpEndUnix 是最近一次「设备独占批量操作」（屏保上传 / 读图）结束的 UnixNano。
+	// 这类操作会持设备写锁几十秒、把温度监控循环饿住；靠它把那段停摆归因到本机，
+	// 而不是误判成系统睡眠（误判会在上传进行中拆掉连接，让整轮上传连环失败）。
+	bulkDeviceOpEndUnix           atomic.Int64
+	// blackSharkImageTransfers 是"正在进行的黑鲨图传"登记表（key = 传输 id）。
+	// 与上游同形：coreapp 侧持有登记与取消，device 层只管帧序列与进度（见
+	// docs/blackshark-brb02-access-notes.md §4.3.2）。它同时是"当前有没有设备独占任务在飞"
+	// 的唯一所有者 —— 健康检查与运行态都读它，不再各自维护判据。
+	blackSharkImageTransferMu sync.Mutex
+	blackSharkImageTransfers  map[uint64]context.CancelFunc
+	lastResumeRecoveryUnix        int64
+	lastHealthReconnectUnix       int64
+	healthConsecutiveFailureCount int32
+	connectionFlights             *connectionFlightRecorder
+	smartControlDecisionMu        sync.RWMutex
+	smartControlDecision          smartcontrol.Decision
 
 	powerNotifyStop func()
 	hidNotifyStop   func()
@@ -94,8 +117,21 @@ type CoreApp struct {
 	guiLastResponse   int64
 	guiMonitorEnabled bool
 	healthCheckTicker *time.Ticker
-	cleanupChan       chan bool
-	quitChan          chan bool
+	// 系统信息推送（0x07）：给散热器 LCD 送主机指标，1Hz 节流
+
+	// 黑鲨主机侧灯效驱动（槽位 6「响应」→ 键鼠钩子；槽位 7「音频同步」→ 音频采集）。
+	// 只在该灯效生效时运行，详见 blackSharkHostFx。
+	btHostFx *blackSharkHostFx
+
+	// 情景（按前台进程自动切换档位/灯效）
+	sceneTicker *time.Ticker
+	sceneEngine scene.Engine
+	// sceneRevision 记住上次判定所用的配置版本号。
+	// 引擎内部记的是规则索引；规则表被改后同一个索引会指向另一条规则，
+	// 引擎会误判成没有变化从而不做任何事，用 revision 变化强制 Reset。
+	sceneRevision uint64
+	cleanupChan   chan bool
+	quitChan      chan bool
 
 	mutex                 sync.RWMutex
 	manualGearLevelMemory map[string]string
@@ -120,6 +156,26 @@ func systemResumeDetectionThreshold(expectedInterval time.Duration) time.Duratio
 
 func shouldRecoverFromSystemResumeGap(gap, expectedInterval time.Duration) bool {
 	return gap >= systemResumeDetectionThreshold(expectedInterval)
+}
+
+// noteBulkDeviceOperation 记录一次「设备独占批量操作」（屏保上传 / 读图）刚刚结束。
+// 调用方是唯一知道这次操作何时收手的人；监控循环只消费这个时刻。
+func (a *CoreApp) noteBulkDeviceOperation() {
+	a.bulkDeviceOpEndUnix.Store(time.Now().UnixNano())
+}
+
+// selfInflictedMonitorStall 报告这段"够长到会被当成系统唤醒"的 gap，是不是本机自己造成的
+// —— 屏保上传/读图全程持设备写锁（`m.mutex`），监控循环会卡在那把锁上几十秒。
+//
+// 必须区分：设备会在 4KB 边界停发 `0xC6`，一次上传可能要重传几次、耗时远超 20s 的
+// 唤醒阈值；不排除它，`maybeRecoverFromSystemResume` 就会按"系统唤醒"处理，
+// 在上传进行中把连接拆掉，随后 `0xC4`/`0xC5` 连环失败。
+func (a *CoreApp) selfInflictedMonitorStall(gap, expectedInterval time.Duration) bool {
+	if !shouldRecoverFromSystemResumeGap(gap, expectedInterval) {
+		return false
+	}
+	end := a.bulkDeviceOpEndUnix.Load()
+	return end != 0 && end >= time.Now().Add(-gap).UnixNano()
 }
 
 func copyFileIfMissing(src, dst string) error {
