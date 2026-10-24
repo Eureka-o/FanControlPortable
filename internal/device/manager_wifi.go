@@ -4,16 +4,15 @@ package device
 
 import (
 	"fmt"
+	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
+	"github.com/Eureka-o/FanControlPortable/internal/deviceprofileexec"
+	"github.com/Eureka-o/FanControlPortable/internal/deviceproto"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
-	"github.com/Eureka-o/FanControlPortable/internal/deviceprofileexec"
-	"github.com/Eureka-o/FanControlPortable/internal/deviceproto"
-	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 const (
@@ -52,6 +51,38 @@ type Manager struct {
 	writesBlocked     atomic.Bool
 	connectionGen     atomic.Uint64
 	lastAutoBLEScanAt time.Time
+
+	// ---- 黑鲨（BlackShark）BRB02 相关状态 ----
+	// 设备句柄、读协程与它的两条接收通道、链路状态（承载缓存 / 待切档位 / 等待序号 /
+	// 异步下发 Mission）都收在唯一 owner `link` 里，见 blackshark_link.go；别处一律通过 m.link 引用。
+	link blackSharkLink
+	// blackSharkActiveRgbSlot 是最近一次确认生效的灯效槽位（1..8），0 = 未知。
+	blackSharkActiveRgbSlot atomic.Int32
+	// 智能启停 / 通电自启向量（0x02）的最近一次下发值，0x03 读回失败时作兜底。
+	blackSharkOnOffCmd atomic.Pointer[deviceproto.BlackSharkOnOffVector]
+	// 官方固件版本清单缓存（只做版本检查，本工具不刷写固件）。
+	blackSharkManifest atomic.Pointer[blackSharkManifestCache]
+	// 固件版本检查结果缓存，供 GetDebugInfo 这类热路径无阻塞读取。
+	blackSharkFirmware atomic.Pointer[types.BlackSharkFirmwareStatus]
+	// blackSharkCurveTargetRPM / blackSharkCurveWorkMode 是"曲线跟随"形态下要显示的两个**主机侧**字段
+	// （本机按当前温度算出的曲线目标 + 工作模式文案）。
+	//
+	// 为什么不直接放进 types.FanData：状态帧与 BLE 通知会**按帧重建** FanData，字段放在里面会被每帧
+	// 清零，界面读数就会在"曲线目标"与旧值（最后一次固定写入）之间反复跳。用原子量而不是 m.mutex：
+	// 收帧路径的契约是"持锁与不持锁两种上下文都能调用"（见 blackSharkHandleRXLocked）。
+	blackSharkCurveTargetRPM atomic.Uint32
+	blackSharkCurveWorkMode  atomic.Pointer[string]
+
+	// 主机侧调速「上次发下去的目标转速」（0 = 还没发过 / 已作废）。
+	// 用途：偏差小于死区就不再发帧 —— 0x24 高频重写会扰动设备，逐拍重复有害无益。
+	// 模式切换/快照还原/重置曲线后由 ResetBlackSharkSpeedWriteState 归零。
+	blackSharkLastPushedRPM atomic.Int32
+	// 节奏化写入状态（官方行为：apply 仪式只进受控态发一次，之后只发提交帧）：
+	// blackSharkFixedRitualDone = 本段受控态内是否已发过完整 apply 仪式；
+	// blackSharkLastFixedWriteNanos = 上次实际写出（仪式或提交帧）的时刻，用于最小写入间隔。
+	// 与 blackSharkLastPushedRPM 同一作废时机（ResetBlackSharkSpeedWriteState）。
+	blackSharkFixedRitualDone    atomic.Bool
+	blackSharkLastFixedWriteNano atomic.Int64
 
 	onFanDataUpdate func(data *types.FanData)
 	onDisconnect    func()
@@ -280,10 +311,12 @@ func (m *Manager) SetTargetSpeed(value int, unit string) bool {
 		return written
 	}
 	if types.IsRPMSpeedUnit(unit) {
+		// 黑鲨不分传输：转速写入经 blackSharkFrameBackendLocked 选后端（BLE 优先、USB 兜底），
+		// BLE 与 USB 共用同一条主机侧调速实现；执行器侧的固定档位路径不经此处。
+		if isBlackSharkProfileID(m.activeProfile.ID) {
+			return m.setBlackSharkHIDTargetSpeedLocked(types.NewRPMSpeed(value))
+		}
 		if m.deviceType == types.DeviceTransportHID || m.deviceType == types.DeviceTransportUSB {
-			if isBlackSharkProfileID(m.activeProfile.ID) {
-				return m.setBlackSharkHIDTargetSpeedLocked(types.NewRPMSpeed(value))
-			}
 			return m.setFlyDigiHIDTargetSpeedLocked(types.NewRPMSpeed(value))
 		}
 		if m.deviceType == types.DeviceTransportBLE {
@@ -623,5 +656,21 @@ func (m *Manager) logWarn(format string, v ...any) {
 func (m *Manager) logDebug(format string, v ...any) {
 	if m.logger != nil {
 		m.logger.Debug(format, v...)
+	}
+}
+
+// PushSpeedAsync 提交一次异步速度下发：队列里只保留最新目标，由唯一 worker 串行执行。
+func (m *Manager) PushSpeedAsync(write func() bool, done func(ok bool)) {
+	m.link.pushMu.Lock()
+	m.link.pushEpoch++
+	req := &speedPushRequest{write: write, done: done, epoch: m.link.pushEpoch}
+	m.link.pushPending = req
+	start := !m.link.pushRunning
+	if start {
+		m.link.pushRunning = true
+	}
+	m.link.pushMu.Unlock()
+	if start {
+		go m.link.speedPushWorker()
 	}
 }
