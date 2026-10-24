@@ -91,6 +91,12 @@ func (a *CoreApp) checkDeviceHealth() {
 	) {
 		return
 	}
+	// 设备独占任务（屏幕图片传输）进行中：这段时间读不到设备是**本机自己**造成的，
+	// 不能据此判定设备掉了 —— 跳过本轮，等任务结束（登记表是这件事的唯一所有者）。
+	if a.blackSharkImageTransferActive() {
+		a.logDebug("健康检查: 屏幕图片传输进行中，跳过本轮设备健康检查")
+		return
+	}
 	snapshot := a.deviceRuntimeSnapshot()
 	connected := snapshot.Connected
 
@@ -127,6 +133,7 @@ func (a *CoreApp) checkDeviceHealth() {
 
 	if healthOK {
 		atomic.StoreInt32(&a.healthConsecutiveFailureCount, 0)
+		a.maybeTakeOverBlackSharkUSB()
 		return
 	}
 
@@ -146,6 +153,47 @@ func (a *CoreApp) checkDeviceHealth() {
 
 func shouldSkipDeviceHealthCheck(systemSuspended, resumeRecoveryRunning, reconnectInProgress bool) bool {
 	return systemSuspended || resumeRecoveryRunning || reconnectInProgress
+}
+
+// blackSharkUSBTakeoverProbeInterval 是"USB 接管"轮询兜底的最小间隔。
+// 健康检查本身 30 s 一拍，这里再留一档冷却，避免 USB 在但连不上时反复触发重连。
+const blackSharkUSBTakeoverProbeInterval = 2 * time.Minute
+
+// blackSharkShouldTakeOverUSB 报告"此刻该不该为了 USB 切换传输"。
+//
+// 只有"已连接且正走 BLE"才需要接管：没连上时该走的是启动/重连路径，而那条路本来就 USB 优先，
+// 这里再插一脚只会多一次重连。
+func (a *CoreApp) blackSharkShouldTakeOverUSB() bool {
+	if a == nil || a.deviceManager == nil {
+		return false
+	}
+	if a.stopping.Load() || a.systemSuspended.Load() || a.reconnectInProgress.Load() {
+		return false
+	}
+	if !a.deviceManager.IsConnected() {
+		return false
+	}
+	return a.deviceManager.ActiveProfile().ID == types.BlackSharkBRB02ProfileID
+}
+
+// maybeTakeOverBlackSharkUSB 是 USB 到达事件的**兜底**：通知可能没送到（或被系统丢弃），
+// 且"设备一直插着、而我们在注册通知之前就连上了 BLE"只有它能覆盖。
+// 主路径是 onBlackSharkUSBArrival（事件级，立即切）。
+func (a *CoreApp) maybeTakeOverBlackSharkUSB() {
+	if !a.blackSharkShouldTakeOverUSB() {
+		return
+	}
+	now := time.Now()
+	last := atomic.LoadInt64(&a.lastBlackSharkUSBProbeUnix)
+	if last != 0 && now.Sub(time.Unix(0, last)) < blackSharkUSBTakeoverProbeInterval {
+		return
+	}
+	atomic.StoreInt64(&a.lastBlackSharkUSBProbeUnix, now.UnixNano())
+	if !a.deviceManager.BlackSharkUSBInterfacePresent() {
+		return
+	}
+	a.logInfo("黑鲨：检测到 USB 接口，重连以切到 USB（当前走 BLE）")
+	a.requestReconnect("blackshark-usb-takeover", []time.Duration{0})
 }
 
 func (a *CoreApp) shouldRunHealthReconnect(now time.Time) bool {

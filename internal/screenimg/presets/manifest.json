@@ -1,0 +1,90 @@
+{
+  "source": "BlackSharkEquipmentBox.exe",
+  "note": "\u7f16\u53f7 = \u7d20\u6750\u5728 rcc \u6570\u636e\u6bb5\u91cc\u7684\u51fa\u73b0\u987a\u5e8f\uff0c\u4e0d\u662f\u5b98\u65b9\u8d44\u6e90\u540d\u7684 StaticImg \u5e8f\u53f7\u3002\u4e24\u8005\u5e76\u4e0d\u4e00\u81f4\uff1a\u5728\u5b98\u65b9 UI \u70b9\u300c\u9884\u8bbe\u4e00\u300d\u4e0a\u4f20\u7684\u56fe CRC \u662f 0x94CE\uff08\u6570\u636e\u6bb5\u7b2c 6 \u5f20\uff09\uff0c\u300c\u9884\u8bbe\u4e8c\u300d\u662f 0xA4C1\uff08\u7b2c 3 \u5f20\uff09\uff0c\u800c\u5b98\u65b9 UI \u5b57\u7b26\u4e32\u8868\u628a StaticImg1 \u914d\u300c\u9884\u8bbe\u4e00\u300d\uff0c\u56e0\u6b64\u8d44\u6e90\u540d\u987a\u5e8f\u662f\u6570\u636e\u6bb5\u987a\u5e8f\u7684\u4e00\u4e2a\u7f6e\u6362\u3002\u5df2\u6838\u5bf9\u7684\u5bf9\u5e94\u5173\u7cfb\u89c1 measured_ui_mapping\u3002",
+  "asset_home": "internal/screenimg/presets/\uff08go:embed \u7684\u526f\u672c\uff09",
+  "measured_ui_mapping": {
+    "\u9884\u8bbe\u4e00": 6,
+    "\u9884\u8bbe\u4e8c": 3,
+    "\u9884\u8bbe\u4e09": 1,
+    "\u9884\u8bbe\u56db": 9,
+    "\u9884\u8bbe\u4e94": 7,
+    "\u9884\u8bbe\u516d": 5,
+    "\u9884\u8bbe\u4e03": 2,
+    "\u9884\u8bbe\u516b": 10,
+    "\u9884\u8bbe\u4e5d": 8,
+    "\u9884\u8bbe\u5341": 4
+  },
+  "note_on_field_0_4": "\u4fe1\u606f\u8f7d\u8377 [0..3] \u662f u32 \u5c0f\u7aef Unix \u65f6\u95f4\u6233\uff08\u79d2\uff09\uff0c\u4e0d\u662f\u9b54\u6570\u3002\u8be5\u503c\u4e0e\u5b98\u65b9\u843d\u76d8\u7684\u4e34\u65f6\u6587\u4ef6\u540d <unix\u79d2>.bin \u9010\u5b57\u8282\u76f8\u7b49\u3002",
+  "presets": [
+    {
+      "preset": 1,
+      "file": "preset_01.png",
+      "bytes": 31880,
+      "data_offset": 38976240,
+      "md5": "df5c713ae64356f2f06b6fef203e04b0"
+    },
+    {
+      "preset": 2,
+      "file": "preset_02.png",
+      "bytes": 90748,
+      "data_offset": 39008124,
+      "md5": "f136fd6488bdb6f08abf555635b8db68"
+    },
+    {
+      "preset": 3,
+      "file": "preset_03.png",
+      "bytes": 36796,
+      "data_offset": 39098876,
+      "md5": "188815021333f01c27a56b68693d0e3e"
+    },
+    {
+      "preset": 4,
+      "file": "preset_04.png",
+      "bytes": 64912,
+      "data_offset": 39135676,
+      "md5": "905538cd8d6fac2d4d560211960bf8be"
+    },
+    {
+      "preset": 5,
+      "file": "preset_05.png",
+      "bytes": 105531,
+      "data_offset": 39200592,
+      "md5": "9bf4c4c19c507ab6730bc7f5f95cab0d"
+    },
+    {
+      "preset": 6,
+      "file": "preset_06.png",
+      "bytes": 137105,
+      "data_offset": 39306127,
+      "md5": "6cd611254a43c25e87eb24ffe8b03069"
+    },
+    {
+      "preset": 7,
+      "file": "preset_07.png",
+      "bytes": 103875,
+      "data_offset": 39443236,
+      "md5": "70800c557a9801befe586bf492d0ef37"
+    },
+    {
+      "preset": 8,
+      "file": "preset_08.png",
+      "bytes": 109469,
+      "data_offset": 39547115,
+      "md5": "88960969042fc951ae2d40d853b338d0"
+    },
+    {
+      "preset": 9,
+      "file": "preset_09.png",
+      "bytes": 100654,
+      "data_offset": 39656588,
+      "md5": "8aae90a14adb7ec3cc8385d506327e97"
+    },
+    {
+      "preset": 10,
+      "file": "preset_10.png",
+      "bytes": 89057,
+      "data_offset": 39757246,
+      "md5": "1d193a35473cd434da1841f27f2e7800"
+    }
+  ]
+}

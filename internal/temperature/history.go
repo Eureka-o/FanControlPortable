@@ -189,6 +189,18 @@ func (r *HistoryRecorder) Add(temp types.TemperatureData, fanData *types.FanData
 	}
 
 	// 未填满前用 append 惰性扩展切片；填满后覆写最旧的槽位（环形语义不变）。
+	// 与上一拍的间隔明显大于采样间隔 ⇒ 中间是空洞（设备独占任务会把采样循环饿住十几秒）。
+	// 标在点上，供图表断开折线用：否则那十几秒会被画成一条直线，看上去像连续采样。
+	// 阈值取 max(3×采样间隔, 5s)：既不会把抖动误判成空洞，也不放过真正的停摆。
+	if r.lastSampleAt > 0 {
+		gapThreshold := 3 * r.sampleInterval
+		if gapThreshold < 5*time.Second {
+			gapThreshold = 5 * time.Second
+		}
+		if gapMillis := timestamp - r.lastSampleAt; time.Duration(gapMillis)*time.Millisecond >= gapThreshold {
+			point.GapBeforeSeconds = int(gapMillis / 1000)
+		}
+	}
 	if !r.filled {
 		r.points = append(r.points, point)
 		if len(r.points) == r.capacity {
