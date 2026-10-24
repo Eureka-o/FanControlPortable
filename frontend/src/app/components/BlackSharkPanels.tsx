@@ -1402,7 +1402,7 @@ export function ScreenPanel() {
   // 只由用户显式触发。
   const readDeviceImage = useCallback(async () => {
     if (!canTransferImages) {
-      toast.info('黑鲨图片传输仅限 USB 有线模式');
+      toast.info(t('controlPanel.screen.bleWiredOnly'));
       return;
     }
     setReadingImg(true);
@@ -1571,7 +1571,7 @@ export function ScreenPanel() {
   // 选图后进入裁剪。取消选择时不做处理。
   const pickForCrop = useCallback(async () => {
     if (!canTransferImages) {
-      toast.info('黑鲨图片传输仅限 USB 有线模式');
+      toast.info(t('controlPanel.screen.bleWiredOnly'));
       return;
     }
     const path = await apiService.pickScreenImageFile();

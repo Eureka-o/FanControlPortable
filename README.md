@@ -37,8 +37,8 @@ FlyDigi and Black Shark devices are matched through built-in profiles first. The
 
 ## 下载文件 / Downloads
 
-- `FanControl-2.9.0-beta-amd64-installer.exe`：安装版，升级时保留已有配置 / Installer; preserves existing configuration during upgrades.
-- `FanControl-2.9.0-beta-portable.zip`：便携版，解压后运行 `FanControl.exe` / Portable package; extract and run `FanControl.exe`.
+- `FanControl-2.9.0-amd64-installer.exe`：安装版，升级时保留已有配置 / Installer; preserves existing configuration during upgrades.
+- `FanControl-2.9.0-portable.zip`：便携版，解压后运行 `FanControl.exe` / Portable package; extract and run `FanControl.exe`.
 
 首次启动时如 Windows 弹出权限确认，请选择允许。软件可能需要管理员权限读取硬件温度或安装温度读取组件。
 
@@ -63,12 +63,13 @@ When Windows asks for permission on first launch, allow it. Administrator access
 
 ## 最新版本 / Latest version
 
-当前构建版本：`2.9.0-beta` / Current build: `2.9.0-beta`
+当前构建版本：`2.9.0` / Current build: `2.9.0`
 
-- WiFi 兼容模式可选择优先连接 WiFi，未找到 WiFi 设备时再继续扫描 BLE/HID / WiFi compatibility mode can prefer WiFi before falling back to BLE/HID scanning.
-- 改善 Windows Explorer 重启和通知区域重建后的托盘图标恢复 / Improve tray icon recovery after Windows Explorer or notification-area restarts.
-- 温度遥测短暂异常时，自动控温会逐步进入安全转速，避免风扇瞬间拉高 / Ramp toward a safe speed when telemetry briefly becomes invalid, avoiding sudden fan spikes.
-- 黑鲨风神 Pro 增加 USB 有线控制和屏幕图片上传，BLE 保留设备控制 / Add USB wired control and screen image upload for Black Shark Fengshen Pro while retaining BLE control.
+- 黑鲨风神 Pro 支持 BLE 与 USB 有线原生连接，曲线页提供设备专属 RPM 曲线和四档散热方案 / Black Shark Fengshen Pro now supports native BLE and USB wired connections with device-scoped RPM curves and four cooling profiles.
+- 黑鲨 USB 有线模式支持屏幕图片上传、裁剪和历史图重传；BLE 可控制设备但不支持图传 / Black Shark USB mode supports screen image upload, cropping, and history re-upload; BLE keeps device control without image transfer.
+- 黑鲨专属设置加入灯效、屏幕参数和主机侧/设备侧变频控制，转速上限按设备标定到 4000 RPM / Black Shark settings add lighting, screen parameters, host/device variable-speed control, and a calibrated 4000 RPM ceiling.
+- 优化 BLE/USB 设备连接、重连、挂起恢复和连接状态同步，减少设备已连接但不可控制的中间状态 / Improved BLE/USB connection, reconnect, resume, and state synchronization to reduce unusable intermediate states.
+- 改善 Explorer 重启、电源状态切换和启动竞态下的托盘图标恢复，并保留既有仅监控、主题和历史曲线功能 / Improved tray recovery across Explorer restarts, power-state changes, and startup races while retaining monitor-only mode, themes, and history charts.
 
 完整记录请查看 [GitHub Releases](https://github.com/Eureka-o/FanControlPortable/releases) 或 `docs/release-notes/`。
 
