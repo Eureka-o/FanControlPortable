@@ -154,6 +154,7 @@ func (m *Manager) tryLoadFromPathLocked(configPath string) bool {
 	applyMissingWindowBlurDefaults(&config, rawConfig)
 	applyMissingTemperatureDefaults(&config, rawConfig)
 	normalizeSpeedConfig(&config)
+	normalizeBlackSharkConfig(&config)
 
 	m.config = config
 	return true
@@ -265,6 +266,7 @@ func applyLegacyPortableSettings(cfg *types.AppConfig, legacy legacyPortableSett
 	}
 
 	normalizeSpeedConfig(cfg)
+	normalizeBlackSharkConfig(cfg)
 }
 
 func parseLegacyFanCurve(raw string, minSpeed int) []types.FanCurvePoint {
@@ -855,6 +857,15 @@ func preserveNativeLearningOffsetsBeforeCompatibilityMigration(cfg *types.AppCon
 		return true
 	}
 	return false
+}
+
+// normalizeBlackSharkConfig 归一化黑鲨相关配置（目前只有 LCD 显示参数）。
+func normalizeBlackSharkConfig(cfg *types.AppConfig) {
+	items, _ := types.NormalizeBlackSharkLcdItems(cfg.BlackSharkLcdItems)
+	cfg.BlackSharkLcdItems = items
+	if cfg.BlackSharkLcdPos < 0 || cfg.BlackSharkLcdPos > types.BlackSharkLcdPosMax {
+		cfg.BlackSharkLcdPos = 0
+	}
 }
 
 func normalizeSpeedConfig(cfg *types.AppConfig) {

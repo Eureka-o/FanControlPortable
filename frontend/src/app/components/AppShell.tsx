@@ -337,10 +337,12 @@ function StatusBadges({
       (config as any).deviceTransport ||
       "",
   ).toLowerCase();
+  // 传输方式 → 图标。native 的四种传输都要显式列出：漏掉哪个就会落到兜底的 Wifi 图标上
+  // （黑鲨走 USB 时曾被显示成 WiFi）。
   const ConnectedIcon =
     transport === "ble"
       ? Bluetooth
-      : transport === "hid" || transport === "serial"
+      : transport === "usb" || transport === "hid" || transport === "serial"
         ? Usb
         : Wifi;
 

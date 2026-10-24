@@ -3,12 +3,11 @@ package deviceprofileexec
 import (
 	"context"
 	"errors"
+	"github.com/Eureka-o/FanControlPortable/internal/deviceproto"
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 	"io"
 	"testing"
 	"time"
-
-	"github.com/Eureka-o/FanControlPortable/internal/deviceproto"
-	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 type fakeBLEConnector struct {
@@ -199,7 +198,7 @@ func TestBLEExecutorFlyDigiBS1SetSpeedDoesNotFakeCurrentRPM(t *testing.T) {
 	}
 }
 
-func TestBLEExecutorBlackSharkSetSpeedClampsTo4000AndUsesRPMModeLabel(t *testing.T) {
+func TestBLEExecutorBlackSharkSetSpeedClampsToMaxRPMAndUsesRPMModeLabel(t *testing.T) {
 	client := &fakeBLEClient{}
 	executor, err := NewBLEExecutor(types.BlackSharkBRB02Profile(), &fakeBLEConnector{client: client})
 	if err != nil {
@@ -207,15 +206,32 @@ func TestBLEExecutorBlackSharkSetSpeedClampsTo4000AndUsesRPMModeLabel(t *testing
 	}
 	defer executor.Close()
 
-	state, err := executor.SetSpeed(nil, types.NewRPMSpeed(4500))
+	// 上限取设备可达区间的所有者，所以这里喂一个必然越界的请求值。
+	state, err := executor.SetSpeed(nil, types.NewRPMSpeed(deviceproto.BlackSharkMaxRPM+260))
 	if err != nil {
 		t.Fatalf("SetSpeed() error = %v", err)
 	}
-	if len(client.writes) != 1 || string(client.writes[0].payload) != string(deviceproto.BuildBlackSharkSetSpeed(4000)) {
-		t.Fatalf("writes = %#v, want one 4000 RPM BlackShark frame", client.writes)
+	// 官方 apply 仪式三帧：0x24[FF 暂存] → 0x08 00 → 0x24[真实值]，sp 取标定换算后的值
+	// （与 Manager 主路同源）。
+	setpoint := deviceproto.BlackSharkSetpointForRPM(deviceproto.BlackSharkMaxRPM)
+	staging := []byte{deviceproto.BlackSharkFixedStagingSource, deviceproto.BlackSharkFormValue, 1,
+		byte(setpoint & 0xFF), byte(setpoint >> 8)}
+	payload, err := deviceproto.EncodeBlackSharkFixedSpeedPayload(1, uint16(setpoint), 0)
+	if err != nil {
+		t.Fatalf("encode payload: %v", err)
 	}
-	if state.TargetRPM != 4000 || state.WorkMode != "auto/realtime RPM mode" || state.CurrentMode != 1 {
-		t.Fatalf("set state = %#v, want 4000 RPM auto mode", state)
+	wantStaging := deviceproto.BuildBlackSharkFrame(deviceproto.BlackSharkCmdSetSpeed, staging...)
+	wantGate := deviceproto.BuildBlackSharkFrame(deviceproto.BlackSharkCmdSetSceneMode, 0x00)
+	want := deviceproto.BuildBlackSharkFrame(deviceproto.BlackSharkCmdSetSpeed, payload...)
+	if len(client.writes) != 3 ||
+		string(client.writes[0].payload) != string(wantStaging) ||
+		string(client.writes[1].payload) != string(wantGate) ||
+		string(client.writes[2].payload) != string(want) {
+		t.Fatalf("writes = %#v, want apply ritual for %d RPM: staging % X / gate % X / real % X",
+			client.writes, deviceproto.BlackSharkMaxRPM, wantStaging, wantGate, want)
+	}
+	if state.TargetRPM != deviceproto.BlackSharkMaxRPM || state.WorkMode != "auto/realtime RPM mode" || state.CurrentMode != 1 {
+		t.Fatalf("set state = %#v, want %d RPM auto mode", state, deviceproto.BlackSharkMaxRPM)
 	}
 }
 
@@ -428,5 +444,159 @@ func TestBLEExecutorRateLimitsSpeedSends(t *testing.T) {
 	}
 	if slept != 120*time.Millisecond {
 		t.Fatalf("slept = %v, want 120ms", slept)
+	}
+}
+
+func TestResolveBLEMinSendInterval(t *testing.T) {
+	t.Run("档案未设置时回落到 100ms", func(t *testing.T) {
+		if got := resolveBLEMinSendInterval(0); got != 100*time.Millisecond {
+			t.Fatalf("默认间隔 = %v, want 100ms（这是既有行为，不许改）", got)
+		}
+		// 档案显式给了值就尊重档案。
+		if got := resolveBLEMinSendInterval(120); got != 120*time.Millisecond {
+			t.Fatalf("档案值被无视: %v", got)
+		}
+	})
+
+	t.Run("档案声明负数表示显式取消", func(t *testing.T) {
+		for _, v := range []int{-1, -100} {
+			if got := resolveBLEMinSendInterval(v); got != 0 {
+				t.Fatalf("档案值 %d 应表示不节流, got %v", v, got)
+			}
+		}
+	})
+}
+
+func TestBLEDiscoveryAttemptsFor(t *testing.T) {
+	if got := bleDiscoveryAttemptsFor(types.BlackSharkBRB02Profile()); got != bleDiscoveryRetryAttempts {
+		t.Fatalf("黑鲨 BLE 档案应重试 %d 次, got %d", bleDiscoveryRetryAttempts, got)
+	}
+	if got := bleDiscoveryAttemptsFor(types.BlackSharkBRB02USBProfile()); got != 1 {
+		t.Fatalf("黑鲨 USB 档案不该走 BLE 重试, got %d", got)
+	}
+	for _, profile := range []types.DeviceProfile{
+		types.FlyDigiBS1Profile(),
+		{ID: "some.other.ble.profile", Transport: types.DeviceTransportBLE},
+	} {
+		if got := bleDiscoveryAttemptsFor(profile); got != 1 {
+			t.Fatalf("非黑鲨档案 %q 应保持上游的一次枚举, got %d", profile.ID, got)
+		}
+	}
+}
+
+func TestBLEDiscoveryRetryWindowCoversDeviceWarmup(t *testing.T) {
+	var window time.Duration
+	for attempt := 1; attempt < bleDiscoveryRetryAttempts; attempt++ {
+		window += time.Duration(attempt) * bleDiscoveryRetryBackoff
+	}
+	if window < 6*time.Second {
+		t.Fatalf("重试窗口 %v 覆盖不了实测的设备预热 6s", window)
+	}
+}
+
+func TestBLEExecutorBlackSharkWriteFailureStreakTreatsRepeatedFailuresAsLinkDeath(t *testing.T) {
+	failed := &fakeBLEClient{writeErr: io.ErrClosedPipe}
+	connector := &fakeBLEConnector{client: failed}
+	executor, err := NewBLEExecutor(types.BlackSharkBRB02Profile(), connector)
+	if err != nil {
+		t.Fatalf("NewBLEExecutor() error = %v", err)
+	}
+	defer executor.Close()
+
+	lost := 0
+	executor.SetConnectionLostCallback(func() { lost++ })
+
+	if _, err := executor.Open(nil); err == nil {
+		t.Fatalf("Open() must fail while the link refuses writes")
+	}
+	for i := 0; i < bleWriteFailureStreakLimit; i++ {
+		_, _ = executor.SetSpeed(nil, types.NewRPMSpeed(1800))
+	}
+
+	if !failed.closed {
+		t.Fatalf("client must be closed after %d consecutive write failures", bleWriteFailureStreakLimit)
+	}
+	if lost == 0 {
+		t.Fatalf("connectionLost callback must fire after the streak limit")
+	}
+	// 判死后计数复位 ⇒ 后续失败重新累积（这是"连续"语义，不是"全局累计"）：
+	// 本轮的 failed client 被判死清掉后，ensureOpenLocked 用同一个替身重连，
+	// 于是又开始积累新的 streak。这里只要求它**小于**上限（即没有在判死后继续叠加到误判）。
+	if executor.writeFailureStreak >= bleWriteFailureStreakLimit {
+		t.Fatalf("streak must reset on firing, got %d", executor.writeFailureStreak)
+	}
+}
+
+func TestBLEExecutorBlackSharkWriteSuccessResetsFailureStreak(t *testing.T) {
+	// 抖动不该断链：失败 < 上限之后只要有一次成功，计数必须清零。
+	// 用 limit-1 次失败 + 1 次成功交替，验证永远不会判死（否则健康连接会被误杀）。
+	client := &fakeBLEClient{}
+	executor, err := NewBLEExecutor(types.BlackSharkBRB02Profile(), &fakeBLEConnector{client: client})
+	if err != nil {
+		t.Fatalf("NewBLEExecutor() error = %v", err)
+	}
+	defer executor.Close()
+
+	lost := 0
+	executor.SetConnectionLostCallback(func() { lost++ })
+
+	for round := 0; round < 5; round++ {
+		for i := 0; i < bleWriteFailureStreakLimit-1; i++ {
+			client.writeErr = io.ErrClosedPipe
+			_, _ = executor.SetSpeed(nil, types.NewRPMSpeed(1800))
+		}
+		client.writeErr = nil
+		if _, err := executor.SetSpeed(nil, types.NewRPMSpeed(1800)); err != nil {
+			t.Fatalf("successful write must succeed, got %v", err)
+		}
+	}
+
+	if lost != 0 || client.closed {
+		t.Fatalf("interleaved successes must keep the link alive (lost=%d closed=%v)", lost, client.closed)
+	}
+	if !executor.IsConnected() {
+		t.Fatalf("IsConnected() must stay true while writes keep succeeding")
+	}
+}
+
+func TestBLEExecutorFlyDigiBS1DoesNotUseWriteFailureStreakDetection(t *testing.T) {
+	// 飞智 BS1 有 3s 心跳做断链发现，不该被这条黑鲨专用判据改变语义。
+	// 这里只要证明"判据不作用于 BS1"即可 —— 单次写失败它会走自己的重连路径。
+	if !types.IsBlackSharkDeviceProfileID(types.BlackSharkBRB02Profile().ID) {
+		t.Fatalf("test assumes the BlackShark profile id is the black-shark-scoped owner")
+	}
+	client := &fakeBLEClient{}
+	executor, err := NewBLEExecutor(types.FlyDigiBS1Profile(), &fakeBLEConnector{client: client})
+	if err != nil {
+		t.Fatalf("NewBLEExecutor() error = %v", err)
+	}
+	defer executor.Close()
+	if executor.shouldDetectWriteFailureStreak() {
+		t.Fatalf("write-failure streak detection must be black-shark scoped, not applied to BS1")
+	}
+}
+
+func TestBLEExecutorBlackSharkWriteFailureStreakDoesNotDeadlock(t *testing.T) {
+	// 回归护栏（sync.Mutex 不可重入）：判定路径跑在 writeRawLocked **持锁期间**，
+	// 若它回头再取 e.mutex（例如直接调 notifyConnectionLost），这里会永久挂死。
+	client := &fakeBLEClient{writeErr: io.ErrClosedPipe}
+	executor, err := NewBLEExecutor(types.BlackSharkBRB02Profile(), &fakeBLEConnector{client: client})
+	if err != nil {
+		t.Fatalf("NewBLEExecutor() error = %v", err)
+	}
+	defer executor.Close()
+	executor.SetConnectionLostCallback(func() {})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < bleWriteFailureStreakLimit; i++ {
+			_, _ = executor.SetSpeed(nil, types.NewRPMSpeed(1800))
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("write-failure streak detection deadlocked (re-entrant lock?)")
 	}
 }

@@ -159,7 +159,9 @@ func syncSmartControlOffsetsForDeviceKey(cfg *types.AppConfig, deviceKey string)
 	}
 	ensureLearnedOffsetsByProfile(cfg)
 	changed := migrateLegacyLearningOffsetsToDeviceKey(cfg, deviceKey)
-	expectedLen := len(cfg.FanCurve)
+	// 长度必须取插值依据的长度：黑鲨四档方案补了两端端点，共 5..6 点，
+	// 不是 len(cfg.FanCurve) 的 4 点，否则学习桶下标会越界（见 smartControlCurveLen）。
+	expectedLen := smartControlCurveLen(cfg)
 	loaded, ok := cfg.SmartControl.LearnedOffsetsByProfile[key]
 	if !ok {
 		if len(cfg.SmartControl.LearnedOffsetsByProfile) == 0 && cfg.SmartControl.LearnedOffsets != nil {

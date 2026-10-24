@@ -109,6 +109,22 @@ func (m *Manager) AutoConnectNativeProfilesContext(ctx context.Context, profiles
 	)
 	bleScanRecorded := false
 
+	// Reconnecting a Black Shark cooler: probe its WinUSB path FIRST. The
+	// libusb open attempt costs milliseconds, while the BLE candidates burn a
+	// full 10s discovery scan each when the device is not advertising — long
+	// enough to trip the GUI's 10s Connect budget, which recycles the shared
+	// IPC pipe and kills any in-flight scan request. Non-blackshark reconnects
+	// and fresh installs keep the established candidate order below (the USB
+	// probe after the loop) so their arbitration is unchanged.
+	// previousProfile 为空 (启动首次重连) 时同样前置探测: 否则黑鲨 USB 用户每次
+	// 启动都要先等 10-20s 的 BLE 空扫描, 期间 GUI 手动连接会排队并超时。
+	if previousProfile.ID == "" || isBlackSharkProfileID(previousProfile.ID) {
+		m.configureProfileLocked(types.BlackSharkBRB02USBProfile(), previousEndpoint)
+		if success, info := m.connectBlackSharkUSBLocked(); success {
+			return true, info
+		}
+	}
+
 	for _, profile := range candidates {
 		if ctx.Err() != nil {
 			m.configureProfileLocked(previousProfile, previousEndpoint)
@@ -133,12 +149,6 @@ func (m *Manager) AutoConnectNativeProfilesContext(ctx context.Context, profiles
 				return true, info
 			}
 		}
-	}
-	// Probe the optional Black Shark WinUSB path after the established native
-	// candidate order so existing BLE/HID arbitration remains unchanged.
-	m.configureProfileLocked(types.BlackSharkBRB02USBProfile(), previousEndpoint)
-	if success, info := m.connectBlackSharkUSBLocked(); success {
-		return true, info
 	}
 	if skipBLE {
 		m.logDebug("automatic BLE discovery is cooling down; HID candidates remained eligible")
@@ -447,4 +457,28 @@ func nativeProfileDisplayName(profile types.DeviceProfile, fallback string) stri
 
 func formatHIDProductID(productID uint16) string {
 	return fmt.Sprintf("0x%04X", productID)
+}
+
+// IdleBLEScanCooldown 返回自动 BLE 扫描的冷却窗口；距上次扫描不足该窗口时跳过，省掉注定失败的等待。
+
+func IdleBLEScanCooldown() time.Duration { return idleBLEScanCooldown }
+
+func (m *Manager) SeedLastAutoBLEScanAt(at time.Time) {
+	if m == nil || at.IsZero() {
+		return
+	}
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if at.After(m.lastAutoBLEScanAt) {
+		m.lastAutoBLEScanAt = at
+	}
+}
+
+func (m *Manager) LastAutoBLEScanAt() time.Time {
+	if m == nil {
+		return time.Time{}
+	}
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+	return m.lastAutoBLEScanAt
 }

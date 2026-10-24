@@ -24,6 +24,7 @@ import {
   getFanSpeedUnit,
   readCurrentFanSpeed,
 } from '../lib/fan-speed';
+import { BlackSharkPanel, ScenePanel, ScreenPanel } from './BlackSharkPanels';
 import DeviceDebugPanel from './DeviceDebugPanel';
 import { normalizeTransport } from './devices/profile-utils';
 import {
@@ -47,6 +48,7 @@ interface ControlPanelProps {
   config: types.AppConfig;
   onConfigChange: (config: types.AppConfig) => void;
   isConnected: boolean;
+  monitorOnlyActive?: boolean;
   fanData: types.FanData | null;
   temperature: types.TemperatureData | null;
   runtimeDeviceProfile?: types.DeviceProfile | null;
@@ -106,6 +108,7 @@ export default function ControlPanel({
   config,
   onConfigChange,
   isConnected,
+  monitorOnlyActive = false,
   fanData,
   temperature,
   runtimeDeviceProfile,
@@ -179,16 +182,25 @@ export default function ControlPanel({
   const currentDeviceSupportsCustomSpeed = currentDeviceCapabilities
     ? currentDeviceCapabilities.supportsCustomSpeed || currentDeviceCapabilities.supportsSetSpeed
     : true;
-  const currentDeviceSupportsLighting = !!currentDeviceCapabilities?.supportsLighting;
-  const currentDeviceSupportsGearLight = !!(currentDeviceCapabilities as any)?.supportsGearLight;
-  const currentDeviceSupportsBrightness = !!((currentDeviceCapabilities as any)?.supportsBrightness || currentDeviceSupportsLighting);
+  // 黑鲨专属控制区的判据取设备档案 id 前缀 `builtin.blackshark.brb02.`（isBlackSharkDevice）：
+  // 黑鲨有 BLE 与 USB 两条档案，都带此前缀；钉死具体档案 id 则另一条命中不到。
+
+  const currentDeviceSupportsLighting = isConnected && !monitorOnlyActive && !!currentDeviceCapabilities?.supportsLighting;
+  const currentDeviceSupportsGearLight = isConnected && !monitorOnlyActive && !!(currentDeviceCapabilities as any)?.supportsGearLight;
+  const currentDeviceSupportsBrightness = isConnected && !monitorOnlyActive && !!((currentDeviceCapabilities as any)?.supportsBrightness || currentDeviceSupportsLighting);
   const currentDeviceSupportsPowerOnStart = !!currentDeviceCapabilities?.supportsPowerOnStart;
   const currentDeviceSupportsSmartStartStop = !!currentDeviceCapabilities?.supportsSmartStartStop;
   const currentDeviceSupportsWiFiSmartStartStopStandbySpeed = currentDeviceSupportsSmartStartStop && connectedDeviceTransport === 'wifi';
-  const currentDeviceSupportsScreen = !!(currentDeviceCapabilities as any)?.supportsScreen;
-  const currentDeviceSupportsScreenImageTransfer = !!(currentDeviceCapabilities as any)?.supportsScreenImageTransfer;
+  const currentDeviceSupportsScreenImageTransfer = isConnected && (
+    !!(runtimeDeviceCapabilities as any)?.supportsScreenImageTransfer
+    || !!(effectiveDeviceProfile?.capabilities as any)?.supportsScreenImageTransfer
+  );
   const isBlackSharkDevice = isConnected
-    && (runtimeDeviceProfile?.id || '').startsWith('builtin.blackshark.brb02.');
+    && (runtimeDeviceProfile?.id || effectiveDeviceProfile?.id || '').startsWith('builtin.blackshark.brb02.');
+
+  // 黑鲨的屏幕图片由它自己的「屏幕」页提供；上游那个通用图传入口对黑鲨不渲染
+  // （灯效同理，已由档案的能力位关掉：黑鲨不声明灯效/亮度能力）。
+  const showDeviceImageTransfer = isConnected && !isBlackSharkDevice && currentDeviceSupportsScreenImageTransfer;
   const overviewConnectionName = isConnected
     ? (connectedDeviceProfile ? profileLabel(connectedDeviceProfile) : connectedDeviceTransport.toUpperCase() || '--')
     : t('controlPanel.system.deviceConnection.connectedDevicesEmpty');
@@ -376,7 +388,6 @@ export default function ControlPanel({
           supportsPowerOnStart={currentDeviceSupportsPowerOnStart}
           supportsSmartStartStop={currentDeviceSupportsSmartStartStop}
           supportsWiFiSmartStartStopStandbySpeed={currentDeviceSupportsWiFiSmartStartStopStandbySpeed}
-          supportsScreen={currentDeviceSupportsScreen}
           smartStartStopOptions={smartStartStopOptions}
           wifiSmartStartStopStandbySpeedOptions={wifiSmartStartStopStandbySpeedOptions}
           onGearLightChange={handleGearLightChange}
@@ -406,7 +417,7 @@ export default function ControlPanel({
             refreshConnectedDeviceContext={refreshConnectedDeviceContext}
           />
         </DeviceFeaturePanel>
-        {isConnected && isBlackSharkDevice && currentDeviceSupportsScreenImageTransfer && (
+        {showDeviceImageTransfer && (
           <Section
             title={t('controlPanel.device.groups.imageTransfer')}
             icon={Monitor}
@@ -423,6 +434,7 @@ export default function ControlPanel({
       </>
     ),
     fan: (
+      // 黑鲨也走同一套 FanControlSection；四档散热曲线与「曲线」页重复，不再单列。
       <FanControlSection
         config={config}
         onConfigChange={onConfigChange}
@@ -580,6 +592,14 @@ export default function ControlPanel({
             {t('controlPanel.offline.message')}
           </div>
         )}
+
+        {isBlackSharkDevice && <BlackSharkPanel />}
+
+        {/* 情景：按前台进程自动切换档位/灯效，只对黑鲨有意义。 */}
+        {isBlackSharkDevice && <ScenePanel />}
+
+        {/* 屏幕/屏保图像：十张官方精选 + 本地上传。同样只对黑鲨有意义 */}
+        {isBlackSharkDevice && <ScreenPanel />}
 
         <DeviceDebugPanel
           config={config}

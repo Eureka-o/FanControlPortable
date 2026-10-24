@@ -3,6 +3,8 @@ package coreapp
 import (
 	"sync"
 	"time"
+
+	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
 const defaultConnectionFlightCapacity = 64
@@ -108,12 +110,61 @@ func (r *connectionFlightRecorder) markSuccessfulWrite() {
 	r.mu.Unlock()
 }
 
+// setTargetSpeed 是唯一的「下发目标转速」入口（智能控温 / 安全回退 / 手动 / 自定义都汇到它）。
+// 黑鲨的变频/固定分流见 setTargetSpeedWithMode。
 func (a *CoreApp) setTargetSpeed(value int, unit string) bool {
+	return a.setTargetSpeedWithMode(value, unit, a.autoControlActive())
+}
+
+// setTargetSpeedWithMode 见 setTargetSpeed 的说明；blackSharkInverter 表示变频意图。
+//
+// 黑鲨变频有两种实现方（见 SetBlackSharkHostVariableSpeed）：
+//
+//   - 设备侧跟随（默认）：曲线形状已写进设备（见 applyBlackSharkGear），之后主机只推温度（`0x07`），
+//     设备自己按曲线变速。这条分支一个字节都不发；返回 true 表示"按设计处理完毕"，并刻意不
+//     markSuccessfulWrite：这里没有设备写入，"连接存活"不该由它刷新（避免假绿）。
+//   - 主机侧调速：主机按目标转速向设备发 form=0 固定值帧（上游同款，见设备层
+//     `setBlackSharkHIDTargetSpeedLocked`），偏差由闸门日志的实测转速持续观测。
+func (a *CoreApp) setTargetSpeedWithMode(value int, unit string, blackSharkInverter bool) bool {
+	// 黑鲨（RPM 域）：变频/固定两条路都在这里分流。
+	if a.deviceManager != nil && types.IsBlackSharkDeviceProfileID(a.deviceManager.ActiveProfile().ID) &&
+		types.IsRPMSpeedUnit(unit) {
+		if blackSharkInverter {
+			if a.blackSharkHostControlsSpeed() {
+				// 主机侧调速：这一拍真的要写设备 ⇒ 成功时记一次写入（与其它设备同口径）。
+				ok := a.deviceManager.SetTargetSpeed(value, unit)
+				if ok {
+					a.connectionFlights.markSuccessfulWrite()
+				}
+				return ok
+			}
+			// 设备侧跟随：一个字节都不发（曲线已写进设备，主机只推温度）。
+			return true
+		}
+		// 固定：写到当前档 —— 设备层原本把 gear 写死成 1，与当前档位无关。
+		if gear := a.activeBlackSharkGear(); gear >= 1 {
+			ok := a.deviceManager.SetBlackSharkFixedSpeedForGear(gear, value)
+			if ok {
+				a.connectionFlights.markSuccessfulWrite()
+			}
+			return ok
+		}
+		// 拿不到当前档（当前方案不是黑鲨四档）⇒ 交回通用路径，避免静默不发。
+	}
 	ok := a.deviceManager.SetTargetSpeed(value, unit)
 	if ok {
 		a.connectionFlights.markSuccessfulWrite()
 	}
 	return ok
+}
+
+// autoControlActive 报告智能控温此刻是否生效，即变频意图的判据。
+func (a *CoreApp) autoControlActive() bool {
+	if a == nil || a.configManager == nil {
+		return false
+	}
+	cfg := a.configManager.Get()
+	return cfg.AutoControl && !cfg.CustomSpeedEnabled
 }
 
 func (r *connectionFlightRecorder) snapshot(input connectionFlightSnapshotInput) connectionFlightSnapshot {

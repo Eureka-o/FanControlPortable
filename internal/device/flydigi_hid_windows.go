@@ -24,6 +24,16 @@ const (
 
 var errFlyDigiHIDTimeout = errors.New("hid read timeout")
 
+// hidReaderLogLabel picks the device label for reader-loop log lines: the
+// Black Shark USB transport reuses this reader, and its log lines must not
+// claim to be FlyDigi.
+func (m *Manager) hidReaderLogLabel() string {
+	if isBlackSharkProfileID(m.activeProfile.ID) {
+		return "黑鲨 USB"
+	}
+	return "飞智 HID"
+}
+
 func (m *Manager) shouldUseLegacyHIDLocked() bool {
 	return m.deviceTransport == types.DeviceTransportHID
 }
@@ -32,6 +42,8 @@ func (m *Manager) shouldUseBlackSharkUSBLocked() bool {
 	return m.deviceTransport == types.DeviceTransportUSB && isBlackSharkProfileID(m.activeProfile.ID)
 }
 
+// connectLegacyHIDLocked 走「通用 HID 档案」的连接路径，现在只剩飞智一族：
+// 黑鲨旧的 HID 档案不再接入，连入时会被 isLegacyBlackSharkHIDProfileID 直接拒掉。
 func (m *Manager) connectLegacyHIDLocked() (bool, map[string]string) {
 	return m.connectFlyDigiHIDLocked()
 }
@@ -90,6 +102,10 @@ func (m *Manager) disconnectFlyDigiHIDLocked() bool {
 }
 
 func (m *Manager) closeFlyDigiHIDLocked() {
+	if m.blackSharkHostInfoRefreshStop != nil {
+		close(m.blackSharkHostInfoRefreshStop)
+		m.blackSharkHostInfoRefreshStop = nil
+	}
 	if m.flyDigiHID == nil {
 		return
 	}
@@ -135,7 +151,7 @@ func (m *Manager) stopFlyDigiHIDReaderLocked() {
 	select {
 	case <-done:
 	case <-time.After(800 * time.Millisecond):
-		m.logWarn("FlyDigi HID reader stop timed out")
+		m.logWarn("%s reader stop timed out", m.hidReaderLogLabel())
 	}
 }
 
@@ -144,13 +160,14 @@ func (m *Manager) readFlyDigiHIDLoop(dev *flyDigiHIDDevice, generation uint64, s
 	if dev == nil {
 		return
 	}
+	label := m.hidReaderLogLabel()
 	defer func() {
 		if err := dev.Close(); err != nil {
-			m.logWarn("FlyDigi HID close after reader exit failed: %v", err)
+			m.logWarn("%s close after reader exit failed: %v", label, err)
 		}
 	}()
 	if err := dev.SetNonblock(true); err != nil {
-		m.logWarn("设置飞智 HID 非阻塞读取失败: %v", err)
+		m.logWarn("设置 %s 非阻塞读取失败: %v", label, err)
 	}
 
 	consecutiveErrors := 0
@@ -169,9 +186,9 @@ func (m *Manager) readFlyDigiHIDLoop(dev *flyDigiHIDDevice, generation uint64, s
 			if errors.Is(err, errFlyDigiHIDTimeout) {
 				continue
 			}
-			m.logWarn("FlyDigi HID read failed (%d/%d): %v", consecutiveErrors, flyDigiHIDMaxConsecutiveReadErrors, err)
+			m.logWarn("%s read failed (%d/%d): %v", label, consecutiveErrors, flyDigiHIDMaxConsecutiveReadErrors, err)
 			if shouldStop {
-				m.logWarn("FlyDigi HID read failed too many times, triggering reconnect")
+				m.logWarn("%s read failed too many times, triggering reconnect", label)
 				m.handleFlyDigiHIDReaderFailure(dev)
 				return
 			}
@@ -240,7 +257,7 @@ func (m *Manager) handleFlyDigiHIDRX(generation uint64, raw []byte) bool {
 	}
 	m.recordDebugFrame("rx", transport, raw)
 	if isBlackSharkProfileID(m.activeProfile.ID) {
-		return m.handleBlackSharkHIDRX(generation, raw)
+		return m.handleBlackSharkHIDRX(generation, raw, m.link.blackSharkResp)
 	}
 	if fanData := parseFlyDigiFanData(raw); fanData != nil {
 		if m.connectionGen.Load() != generation {

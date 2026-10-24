@@ -11,6 +11,7 @@ const (
 	DefaultWiFiPercentTemplateProfileID = "template.wifi.percent"
 	LegacyRPMProfileID                  = "builtin.legacy.rpm"
 	legacyBlackSharkHIDProfileID        = "builtin.blackshark.brb02.hid.rpm"
+	legacyBlackSharkWiFiProfileID       = "builtin.blackshark.brb02.wifi"
 )
 
 type DeviceSpeedRange struct {
@@ -198,6 +199,37 @@ type DeviceProfile struct {
 	ResponseParsers []DeviceResponseParser   `json:"responseParsers,omitempty"`
 	SpeedMap        []DeviceSpeedMapPoint    `json:"speedMap,omitempty"`
 	Capabilities    DeviceCapabilities       `json:"capabilities"`
+
+	// DisplayFeatures 是设备库卡片上要展示的能力标签（同一能力在专属面板里提供、
+	// 而不走通用界面时，用它把这些能力如实写出来）。
+	DisplayFeatures []string `json:"displayFeatures,omitempty"`
+}
+
+// 设备库卡片可展示的能力标签 ID。
+const (
+	DeviceDisplayFeatureReadState      = "readState"
+	DeviceDisplayFeatureSetSpeed       = "setSpeed"
+	DeviceDisplayFeatureManualGears    = "manualGears"
+	DeviceDisplayFeatureCustomSpeed    = "customSpeed"
+	DeviceDisplayFeatureGearLight      = "gearLight"
+	DeviceDisplayFeatureLighting       = "lighting"
+	DeviceDisplayFeatureBrightness     = "brightness"
+	DeviceDisplayFeaturePowerOnStart   = "powerOnStart"
+	DeviceDisplayFeatureSmartStartStop = "smartStartStop"
+)
+
+// IsKnownDeviceDisplayFeature 判断是否为已知的展示标签 ID。
+func IsKnownDeviceDisplayFeature(id string) bool {
+	switch id {
+	case DeviceDisplayFeatureReadState, DeviceDisplayFeatureSetSpeed,
+		DeviceDisplayFeatureManualGears, DeviceDisplayFeatureCustomSpeed,
+		DeviceDisplayFeatureGearLight, DeviceDisplayFeatureLighting,
+		DeviceDisplayFeatureBrightness, DeviceDisplayFeaturePowerOnStart,
+		DeviceDisplayFeatureSmartStartStop:
+		return true
+	default:
+		return false
+	}
 }
 
 func DefaultPercentSpeedRange() DeviceSpeedRange {
@@ -346,7 +378,7 @@ func NormalizeDeviceCapabilities(caps DeviceCapabilities) DeviceCapabilities {
 }
 
 func (caps DeviceCapabilities) AllowsGearLight() bool {
-	return caps.SupportsGearLight || caps.SupportsLighting
+	return caps.SupportsGearLight
 }
 
 func (caps DeviceCapabilities) AllowsBrightness() bool {
@@ -560,12 +592,18 @@ func firstDeviceProfileIDForTransport(profiles []DeviceProfile, transport string
 	if !IsManualCompatibilityDeviceTransport(transport) {
 		return ""
 	}
+	first := ""
 	for _, profile := range profiles {
 		if profile.ID != "" && NormalizeDeviceTransport(profile.Transport) == transport {
-			return profile.ID
+			if first == "" {
+				first = profile.ID
+			}
+			if transport == DeviceTransportWiFi && profile.ID == DefaultWiFiPercentProfileID {
+				return profile.ID
+			}
 		}
 	}
-	return ""
+	return first
 }
 
 func activeDeviceProfileIDFromTransportMap(profiles []DeviceProfile, activeIDs map[string]string, transport string) string {
@@ -681,6 +719,18 @@ func NormalizeDeviceProfileConfig(cfg *AppConfig) bool {
 			continue
 		}
 		if profile.ID == legacyBlackSharkHIDProfileID {
+			changed = true
+			continue
+		}
+		if profile.ID == legacyBlackSharkWiFiProfileID {
+			changed = true
+			continue
+		}
+		// 已退役的黑鲨 HID 档案（风神 PRO）在老配置里以内置条目（BuiltIn=true）存着，这里只剪这一类。
+		// 不剪的话它会被当成普通档案留在设备列表，选中后 transport=HID ⇒ 走飞智的 HID 打开路径
+		//（未知档案会去试全部飞智 PID）。判据带 `BuiltIn` 是为了不误伤用户自造的同名档案
+		//（见 TestEnsureBuiltInDeviceProfilesLeavesUserProfileAlone）。
+		if profile.ID == BlackSharkFengShenProProfileID && profile.BuiltIn {
 			changed = true
 			continue
 		}

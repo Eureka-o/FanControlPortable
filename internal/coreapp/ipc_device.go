@@ -87,6 +87,7 @@ func (a *CoreApp) handleDeviceIPCRequest(req ipc.Request) (ipc.Response, bool) {
 			return a.errorResponse(err.Error()), true
 		}
 		return a.successResponse(true), true
+
 	default:
 		return ipc.Response{}, false
 	}

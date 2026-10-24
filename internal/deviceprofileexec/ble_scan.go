@@ -197,7 +197,7 @@ func scanBLEAdvertisements(
 		case <-scanDone:
 		}
 	}()
-	err := scan(func(info types.BLEDeviceInfo) {
+	report := func(info types.BLEDeviceInfo) {
 		if strings.TrimSpace(info.Address) == "" {
 			return
 		}
@@ -209,7 +209,27 @@ func scanBLEAdvertisements(
 		if matched {
 			requestStop()
 		}
-	})
+	}
+	err := scan(report)
+	if err != nil && ctx.Err() == nil {
+		select {
+		case <-stopRequested:
+			// Intentional stop: handled below.
+		default:
+			// Windows may fail to start the advertisement watcher with
+			// ERROR_INVALID_FUNCTION while the radio is settling after a
+			// disconnect. Release a possibly stuck watcher (StopScan is a safe
+			// no-op when idle) and retry the scan once.
+			_ = stop()
+			timer := time.NewTimer(150 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+			case <-timer.C:
+				err = scan(report)
+			}
+		}
+	}
 	close(scanDone)
 	if err != nil {
 		select {

@@ -14,6 +14,7 @@ interface DeviceLightingControlsProps {
   onConfigChange: (config: types.AppConfig) => void;
   isConnected: boolean;
   supportsBrightness: boolean;
+  nativeBlackSharkModes?: boolean;
 }
 
 const LIGHT_MODE_OPTIONS = [
@@ -24,6 +25,20 @@ const LIGHT_MODE_OPTIONS = [
   { value: 'rotation', labelKey: 'controlPanel.options.lightMode.rotation.label', descriptionKey: 'controlPanel.options.lightMode.rotation.description' },
   { value: 'flowing', labelKey: 'controlPanel.options.lightMode.flowing.label', descriptionKey: 'controlPanel.options.lightMode.flowing.description' },
   { value: 'breathing', labelKey: 'controlPanel.options.lightMode.breathing.label', descriptionKey: 'controlPanel.options.lightMode.breathing.description' },
+];
+
+// 黑鲨 BRB02 原生模式 (LIGHTING.md §4): 02=彩色循环 03=呼吸 04=常亮 05=闪烁
+// 06=刷新 08=响应 11=彩色流动; 0x07 音频同步需要配套 0x15 电平流, 与官方 UI 一样不提供。
+// 彩色循环/彩色流动忽略 RGB; 其余取单色。
+const BLACKSHARK_LIGHT_MODE_OPTIONS = [
+  { value: 'off', labelKey: 'controlPanel.options.lightMode.off.label', descriptionKey: 'controlPanel.options.lightMode.off.description' },
+  { value: 'blackshark_color_flow', labelKey: 'controlPanel.options.lightMode.blackshark_color_flow.label', descriptionKey: 'controlPanel.options.lightMode.blackshark_color_flow.description' },
+  { value: 'blackshark_color_cycle', labelKey: 'controlPanel.options.lightMode.blackshark_color_cycle.label', descriptionKey: 'controlPanel.options.lightMode.blackshark_color_cycle.description' },
+  { value: 'blackshark_breathing', labelKey: 'controlPanel.options.lightMode.blackshark_breathing.label', descriptionKey: 'controlPanel.options.lightMode.blackshark_breathing.description' },
+  { value: 'blackshark_static', labelKey: 'controlPanel.options.lightMode.blackshark_static.label', descriptionKey: 'controlPanel.options.lightMode.blackshark_static.description' },
+  { value: 'blackshark_flashing', labelKey: 'controlPanel.options.lightMode.blackshark_flashing.label', descriptionKey: 'controlPanel.options.lightMode.blackshark_flashing.description' },
+  { value: 'blackshark_refresh', labelKey: 'controlPanel.options.lightMode.blackshark_refresh.label', descriptionKey: 'controlPanel.options.lightMode.blackshark_refresh.description' },
+  { value: 'blackshark_response', labelKey: 'controlPanel.options.lightMode.blackshark_response.label', descriptionKey: 'controlPanel.options.lightMode.blackshark_response.description' },
 ];
 
 const LIGHT_SPEED_OPTIONS = [
@@ -51,28 +66,48 @@ function getDefaultLightStripConfig(): types.LightStripConfig {
   });
 }
 
-function normalizeLightMode(mode: unknown): string {
-  const migratedModes: Record<string, string> = {
-    blackshark_breathing: 'breathing',
-    blackshark_static: 'static_single',
-    blackshark_flashing: 'flowing',
-    blackshark_refresh: 'flowing',
-    blackshark_response: 'breathing',
-    blackshark_color_cycle: 'rotation',
-    blackshark_color_flow: 'flowing',
-  };
+// 通用名 -> 黑鲨原生模式 (与 Backend blackSharkLightingMode 的同语义映射一致,
+// 使 UI 展示与设备实际播放的效果一致; 旧版把这些模式错迁到不相关的通用名)。
+const BLACKSHARK_MODE_ALIASES: Record<string, string> = {
+  smart_temp: 'blackshark_breathing',
+  static_single: 'blackshark_static',
+  static_multi: 'blackshark_color_cycle',
+  rotation: 'blackshark_color_cycle',
+  flowing: 'blackshark_color_flow',
+  breathing: 'blackshark_breathing',
+};
+
+// 黑鲨模式 -> 通用近似名 (仅当配置从黑鲨设备切到飞智等通用设备时兜底)。
+const GENERIC_MODE_ALIASES: Record<string, string> = {
+  blackshark_breathing: 'breathing',
+  blackshark_static: 'static_single',
+  blackshark_flashing: 'breathing',
+  blackshark_refresh: 'flowing',
+  blackshark_response: 'breathing',
+  blackshark_color_cycle: 'rotation',
+  blackshark_color_flow: 'flowing',
+};
+
+function normalizeLightMode(mode: unknown, blacksharkModes: boolean): string {
   const rawMode = typeof mode === 'string' ? mode : '';
-  const normalized = migratedModes[rawMode] || rawMode;
-  return LIGHT_MODE_OPTIONS.some((option) => option.value === normalized) ? normalized : 'smart_temp';
+  const options = blacksharkModes ? BLACKSHARK_LIGHT_MODE_OPTIONS : LIGHT_MODE_OPTIONS;
+  const fallback = blacksharkModes ? 'blackshark_breathing' : 'smart_temp';
+  let normalized = rawMode;
+  if (blacksharkModes) {
+    normalized = BLACKSHARK_MODE_ALIASES[rawMode] || rawMode;
+  } else {
+    normalized = GENERIC_MODE_ALIASES[rawMode] || rawMode;
+  }
+  return options.some((option) => option.value === normalized) ? normalized : fallback;
 }
 
-function normalizeLightStripConfig(config: types.AppConfig): types.LightStripConfig {
+function normalizeLightStripConfig(config: types.AppConfig, blacksharkModes: boolean): types.LightStripConfig {
   const defaults = getDefaultLightStripConfig();
   const raw = (config as any).lightStrip;
   if (!raw) return defaults;
 
   const normalized = types.LightStripConfig.createFrom({
-    mode: normalizeLightMode(raw.mode),
+    mode: normalizeLightMode(raw.mode, blacksharkModes),
     speed: raw.speed || defaults.speed,
     brightness: typeof raw.brightness === 'number' ? Math.max(0, Math.min(100, raw.brightness)) : defaults.brightness,
     colors: Array.isArray(raw.colors) && raw.colors.length > 0 ? raw.colors : defaults.colors,
@@ -111,6 +146,15 @@ function getRequiredColorCount(mode: string): number {
       return 0;
     case 'static_multi':
       return 3;
+    case 'blackshark_color_flow':
+    case 'blackshark_color_cycle':
+      return 0;
+    case 'blackshark_static':
+    case 'blackshark_breathing':
+    case 'blackshark_flashing':
+    case 'blackshark_refresh':
+    case 'blackshark_response':
+      return 1;
     default:
       return 3;
   }
@@ -125,15 +169,20 @@ export default function DeviceLightingControls({
   onConfigChange,
   isConnected,
   supportsBrightness,
+  nativeBlackSharkModes,
 }: DeviceLightingControlsProps) {
   const { t } = useTranslation();
   const { locale } = useLocale();
   const [loading, setLoading] = useState(false);
-  const [lightStripConfig, setLightStripConfig] = useState<types.LightStripConfig>(() => normalizeLightStripConfig(config));
+  const [lightStripConfig, setLightStripConfig] = useState<types.LightStripConfig>(
+    () => normalizeLightStripConfig(config, Boolean(nativeBlackSharkModes)),
+  );
 
   const lightModeOptions = useMemo(
-    () => LIGHT_MODE_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey), description: t(item.descriptionKey) })),
-    [locale, t],
+    () => (nativeBlackSharkModes ? BLACKSHARK_LIGHT_MODE_OPTIONS : LIGHT_MODE_OPTIONS).map(
+      (item) => ({ value: item.value, label: t(item.labelKey), description: t(item.descriptionKey) }),
+    ),
+    [locale, t, nativeBlackSharkModes],
   );
   const lightSpeedOptions = useMemo(
     () => LIGHT_SPEED_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey) })),
@@ -146,8 +195,8 @@ export default function DeviceLightingControls({
   const requiredColorCount = getRequiredColorCount(lightStripConfig.mode);
 
   useEffect(() => {
-    setLightStripConfig(normalizeLightStripConfig(config));
-  }, [config]);
+    setLightStripConfig(normalizeLightStripConfig(config, Boolean(nativeBlackSharkModes)));
+  }, [config, nativeBlackSharkModes]);
 
   const updateDraft = useCallback((patch: Partial<types.LightStripConfig>) => {
     setLightStripConfig((prev) => types.LightStripConfig.createFrom({
@@ -198,7 +247,9 @@ export default function DeviceLightingControls({
           options={lightSpeedOptions}
           size="sm"
           label={t('controlPanel.light.animationSpeed')}
-          disabled={['off', 'smart_temp', 'static_single', 'static_multi'].includes(lightStripConfig.mode)}
+          disabled={nativeBlackSharkModes
+            ? ['off', 'blackshark_static'].includes(lightStripConfig.mode)
+            : ['off', 'smart_temp', 'static_single', 'static_multi'].includes(lightStripConfig.mode)}
         />
       </div>
 
@@ -211,11 +262,11 @@ export default function DeviceLightingControls({
           onChange={(value) => updateDraft({ brightness: value })}
           label={t('controlPanel.light.brightness')}
           valueFormatter={(value) => `${value}%`}
-          disabled={lightStripConfig.mode === 'off' || lightStripConfig.mode === 'smart_temp'}
+          disabled={lightStripConfig.mode === 'off' || (!nativeBlackSharkModes && lightStripConfig.mode === 'smart_temp')}
         />
       )}
 
-      {lightStripConfig.mode === 'smart_temp' && (
+      {!nativeBlackSharkModes && lightStripConfig.mode === 'smart_temp' && (
         <div className="rounded-lg border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
           {t('controlPanel.light.smartTempWarning')}
         </div>

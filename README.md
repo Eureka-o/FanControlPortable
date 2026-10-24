@@ -1,137 +1,128 @@
 # FanControl
 
-FanControl 是面向 Windows 的多设备散热控制工具，用于连接和控制外置散热器、风扇控制器和 DIY 主控。它支持 WiFi、HID、BLE 与虚拟串口/COM 等连接方式，可以读取 CPU/GPU 温度与功耗，按风扇曲线或手动挡位调节转速，并提供设备扫描、设备档案、托盘后台运行、主题系统和配置继承等能力。
+FanControl 是面向 Windows 的多设备散热控制工具，用于连接和控制外置散热器、风扇控制器和 DIY 主控。它支持设备扫描、风扇曲线、手动转速、托盘后台运行、主题系统和配置继承。
 
-FanControl is a Windows fan-control tool for external coolers, fan controllers and DIY controller boards. It supports WiFi, HID, BLE and virtual serial/COM transports, with device profiles, fan curves, manual gears, tray mode, themes and configuration migration.
+FanControl is a Windows tool for controlling external coolers, fan controllers, and DIY boards. It provides device discovery, fan curves, manual speed control, tray operation, themes, and configuration migration.
 
-当前版本已内置 **Slim压风散热器Pro** 与多款飞智（FlyDigi）BS 系列设备档案；WiFi 与虚拟串口/COM 设备也可以通过兼容模式手动添加或扫描发现。
+当前版本内置 Slim 压风散热器 Pro、飞智（FlyDigi）BS 系列和黑鲨（Black Shark）风神 Pro 的设备档案。WiFi 与虚拟串口/COM 仍可通过兼容模式手动配置；黑鲨风神 Pro 仅支持 USB 有线和 BLE。
 
-The current version includes built-in profiles for **Slim压风散热器Pro**, multiple FlyDigi BS-series devices, and **黑鲨（Black Shark）风神 Pro**. WiFi and virtual serial/COM devices can also be added manually or discovered through compatibility mode.
+The current build includes profiles for Slim 压风散热器 Pro, FlyDigi BS-series devices, and Black Shark Fengshen Pro. WiFi and virtual serial/COM remain available through compatibility mode; Black Shark Fengshen Pro supports USB wired and BLE only.
 
-[下载最新版](https://github.com/Eureka-o/FanControlPortable/releases/latest)
+[下载最新版 / Download latest](https://github.com/Eureka-o/FanControlPortable/releases/latest)
 
-## 适用范围
+## 适用范围 / Scope
 
-- 系统 / System：Windows 10 / Windows 11 64 位。
-- 内置设备 / Built-in devices：Slim压风散热器Pro、飞智（FlyDigi）BS1、BS2、BS2PRO、BS3、BS3PRO。
-- 连接方式 / Transports：WiFi、HID、BLE、虚拟串口/COM；飞智 BLE/HID 设备走原生自动识别通道。
-- 兼容模式 / Compatibility mode：面向 DIY 主控、WiFi 设备和虚拟串口/COM 设备，支持手动添加地址、动态 IP 兼容和扫描发现。
-- 主题系统 / Theme system：内置基础主题和高级主题，也支持导入/编辑第三方主题资源。
+- 系统 / System：Windows 10 或 Windows 11（64 位） / Windows 10 or Windows 11 (64-bit).
+- 内置设备 / Built-in devices：Slim 压风散热器 Pro、飞智（FlyDigi）BS1/BS2/BS2PRO/BS3/BS3PRO、黑鲨（Black Shark）风神 Pro。
+- 兼容设备 / Compatibility devices：WiFi 与虚拟串口/COM 设备可手动添加地址或扫描发现 / WiFi and virtual serial/COM devices can be added manually or discovered by scanning.
+- 主题 / Themes：内置基础主题和高级主题，也支持导入第三方主题 / Built-in basic and advanced themes, with support for imported third-party themes.
 
-## 已适配设备
+## 已适配设备 / Supported devices
 
-FanControl 现在以内置设备档案的方式支持多种设备。不同设备会使用不同的连接方式和控制能力，切换设备后软件会按设备档案加载对应的控制单位、曲线和可用功能。
+设备切换后，FanControl 会按设备档案加载对应的连接方式、转速单位、曲线和可用功能。
 
-| 设备 | 连接方式 | 控制单位 | 当前支持 |
+FanControl loads the matching transport, speed unit, curves, and capabilities from the selected device profile.
+
+| 设备 / Device | 连接方式 / Transport | 控制单位 / Unit | 当前支持 / Supported features |
 | --- | --- | --- | --- |
-| Slim压风散热器Pro | WiFi | 百分比 | 速度读取、速度下发、曲线控制、查找 IP、动态 IP 兼容、新固件智能启停 |
-| 飞智（FlyDigi）BS1 | BLE | RPM | 速度读取、RPM 下发、手动挡位、通电自启 |
-| 飞智（FlyDigi）BS2 | HID | RPM | 速度读取、RPM 下发、手动挡位、挡位灯、灯光、亮度、通电自启、智能启停 |
-| 飞智（FlyDigi）BS2PRO | HID | RPM | 速度读取、RPM 下发、手动挡位、挡位灯、灯光、亮度、通电自启、智能启停 |
-| 飞智（FlyDigi）BS3 | HID | RPM | 速度读取、RPM 下发、手动挡位、挡位灯、灯光、亮度、通电自启、智能启停 |
-| 飞智（FlyDigi）BS3PRO | HID | RPM | 速度读取、RPM 下发、手动挡位、挡位灯、灯光、亮度、通电自启、智能启停 |
+| Slim 压风散热器 Pro | WiFi | 百分比 / Percent | 速度读取与下发、曲线控制、IP 查找、动态 IP 兼容、智能启停 / Speed read/write, curve control, IP discovery, dynamic-IP compatibility, smart start/stop |
+| 飞智（FlyDigi）BS1 | BLE | RPM | 速度读取与下发、手动挡位、通电自启 / Speed read/write, manual gears, power-on start |
+| 飞智（FlyDigi）BS2 / BS2PRO / BS3 / BS3PRO | HID | RPM | 速度读取与下发、手动挡位、挡位灯、灯光、亮度、通电自启、智能启停 / Speed read/write, manual gears, gear indicator, lighting, brightness, power-on start, smart start/stop |
+| 黑鲨（Black Shark）风神 Pro | BLE | RPM | 速度读取与下发、灯光、亮度；BLE 不支持图传 / Speed read/write, lighting, brightness; image transfer is unavailable over BLE |
+| 黑鲨（Black Shark）风神 Pro | USB 有线 / USB wired | RPM | 速度读取与下发、灯光、亮度、屏幕图片上传 / Speed read/write, lighting, brightness, screen image upload |
 
-飞智设备会优先按内置档案自动匹配。设置页点击「扫描设备」后会按内置档案扫描 HID/BLE 设备；如果开启兼容模式，也会同时扫描 WiFi 和虚拟串口/COM 兼容设备。BLE/HID 不需要在高级设备页选择或启用；WiFi 和虚拟串口/COM 仍保留手动添加和兼容扫描入口。
+飞智和黑鲨设备会优先通过内置档案自动匹配。点击设置页的「扫描设备」后，软件会扫描原生 HID/BLE/USB 设备；开启兼容模式后，还会扫描 WiFi 和虚拟串口/COM 设备。
 
-部分飞智功能仍需要更多真实设备反馈，尤其是不同批次设备的灯光、智能启停和状态回读表现。如果设备能连接但转速或功能状态不正常，建议导出诊断日志并反馈设备型号、连接方式和复现步骤。
+FlyDigi and Black Shark devices are matched through built-in profiles first. The device scanner checks native HID/BLE/USB devices; compatibility mode additionally scans WiFi and virtual serial/COM devices.
 
-## 下载哪个文件
+## 下载文件 / Downloads
 
-- `FanControl-2.9.0-beta-amd64-installer.exe`：2.9.0-beta 安装包，升级时会保留已有配置。
-- `FanControl-2.9.0-beta-portable.zip`：2.9.0-beta 便携包，解压到固定文件夹后运行 `FanControl.exe`。
+- `FanControl-2.9.0-beta-amd64-installer.exe`：安装版，升级时保留已有配置 / Installer; preserves existing configuration during upgrades.
+- `FanControl-2.9.0-beta-portable.zip`：便携版，解压后运行 `FanControl.exe` / Portable package; extract and run `FanControl.exe`.
 
-首次启动时如果 Windows 弹出权限确认，请选择允许。软件需要管理员权限读取硬件温度，并可能安装或调用温度读取所需的辅助组件。
+首次启动时如 Windows 弹出权限确认，请选择允许。软件可能需要管理员权限读取硬件温度或安装温度读取组件。
 
-## 第一次使用
+When Windows asks for permission on first launch, allow it. Administrator access may be required for hardware telemetry or temperature bridge installation.
 
-1. 确认电脑和散热器已经通电；如果使用 WiFi 设备，请确认电脑和散热器处在同一个网络环境中。
-2. 打开 FanControl，进入设置页的「设备连接」区域。
-3. 点击「扫描设备」。软件会扫描内置 HID/BLE 设备；开启兼容模式后，也会扫描 WiFi 和虚拟串口/COM 设备。
-4. 在「已发现设备」中选择要连接的设备。WiFi 设备也可以使用「手动添加地址」，常见默认地址为 `192.168.137.2`，也支持 `127.0.0.1:18080` 这种带端口的写法。
-5. 连接成功后，回到主页查看温度、当前风速、目标风速和控制模式。
+## 第一次使用 / First use
 
-连接成功后，可以使用自动曲线控制，也可以切换到手动速度进行固定百分比控制。
+1. 确认设备已经通电 / Make sure the device is powered on.
+2. 打开 FanControl，进入设置页的「设备连接」/ Open FanControl and go to **Device Connection** in Settings.
+3. 点击「扫描设备」/ Select **Scan Devices**.
+4. 在发现列表中选择设备；WiFi 和虚拟串口/COM 设备也可以手动添加地址 / Select a discovered device; WiFi and virtual serial/COM devices can also be added by address.
+5. 回到主页查看温度、功耗、当前转速和目标转速 / Return to the home page to view temperature, power, current speed, and target speed.
 
-## 主要功能
+## 主要功能 / Features
 
-- 实时查看 CPU/GPU 温度、功耗和散热器风速 / Real-time CPU/GPU temperature, power and fan status.
-- 自动模式下按风扇曲线调节速度，也可以手动设定固定速度 / Curve-based auto control with manual fixed-speed control.
-- 曲线方案和学习结果按设备独立保存，切换设备后会自动加载对应曲线 / Device-scoped curves and learning data.
-- 百分比控制和学习机制支持 `0.1%` 内部精度，并在发包时按设备能力取整 / Internal `0.1%` precision for percent control and learning.
-- 统一的设备扫描与连接入口，支持 HID/BLE、WiFi 和虚拟串口/COM 按兼容模式一起发现和连接 / Unified device discovery for HID/BLE, WiFi and virtual serial/COM devices.
-- 支持 WiFi 查找 IP、动态 IP 兼容、温升预判 Beta 和 WiFi 智能启停 Beta / WiFi IP discovery, dynamic IP compatibility, temperature-rise prediction Beta and WiFi smart start/stop Beta.
-- 最小化到系统托盘后后台运行，托盘中可查看温度、功耗和风扇状态 / Background tray mode with temperature, power and fan status.
-- 安装版和便携版都会尽量保留已有配置 / Installer and portable builds both preserve existing configuration where possible.
+- 实时查看 CPU/GPU 温度、功耗和散热器转速 / View CPU/GPU temperature, power, and cooler speed in real time.
+- 按曲线自动调节，也可以手动设定固定转速 / Use curve-based automatic control or set a fixed manual speed.
+- 曲线方案、手动挡位和学习结果按设备独立保存 / Keep curves, manual gears, and learning data scoped to each device.
+- 统一的原生设备扫描与兼容设备入口 / Use one discovery flow for native and compatibility devices.
+- 最小化到托盘后继续后台运行 / Continue running in the system tray when minimized.
+- 安装版和便携版升级时尽量保留配置、历史数据和主题 / Preserve configuration, history, and themes across installer or portable upgrades where possible.
 
-## 最新版本
+## 最新版本 / Latest version
 
-当前构建版本：`2.9.0-beta`
+当前构建版本：`2.9.0-beta` / Current build: `2.9.0-beta`
 
-- WiFi 兼容模式支持可选的 WiFi 优先连接，未找到 WiFi 设备时再继续扫描 BLE/HID。
-- 改善 Windows Explorer 重启和通知区域重建后的托盘图标恢复。
-- 温度遥测短暂异常时，自动控温会按升速限幅逐步进入安全转速，避免风扇瞬间拉高。
-- 可直接覆盖安装旧版本，已有配置和历史数据会继续保留。
+- WiFi 兼容模式可选择优先连接 WiFi，未找到 WiFi 设备时再继续扫描 BLE/HID / WiFi compatibility mode can prefer WiFi before falling back to BLE/HID scanning.
+- 改善 Windows Explorer 重启和通知区域重建后的托盘图标恢复 / Improve tray icon recovery after Windows Explorer or notification-area restarts.
+- 温度遥测短暂异常时，自动控温会逐步进入安全转速，避免风扇瞬间拉高 / Ramp toward a safe speed when telemetry briefly becomes invalid, avoiding sudden fan spikes.
+- 黑鲨风神 Pro 增加 USB 有线控制和屏幕图片上传，BLE 保留设备控制 / Add USB wired control and screen image upload for Black Shark Fengshen Pro while retaining BLE control.
 
-完整更新记录请查看 [GitHub Releases](https://github.com/Eureka-o/FanControlPortable/releases) 或 `docs/release-notes/`。
+完整记录请查看 [GitHub Releases](https://github.com/Eureka-o/FanControlPortable/releases) 或 `docs/release-notes/`。
 
-## 升级与配置继承
+See [GitHub Releases](https://github.com/Eureka-o/FanControlPortable/releases) or `docs/release-notes/` for the complete changelog.
 
-- 从 2.0 / 2.1 / 2.2 升级到新版时，会继续保留 WiFi IP、风扇曲线、启用曲线方案、学习数据、用户设备、设备档案、主题、托盘设置和开机启动设置。
-- 如果旧版本曾把主题留在用户目录，新版会尽量整理回软件目录；同名主题以安装包内置版本为准。
-- 如果旧版本把配置放在安装目录根部的 `config.json`，新版会在启动时迁移到当前的 `config/config.json`。
-- 便携版更新时，请先从托盘退出 FanControl，再解压新版覆盖旧文件夹；不要删除原来的 `config` 目录。
-- 仓库和更新地址仍然是 `Eureka-o/FanControlPortable`，用户可见软件名保持为 `FanControl`。
+## 升级与配置继承 / Upgrade and migration
 
-## 使用提示
+- 升级会保留 WiFi IP、风扇曲线、启用方案、学习数据、设备档案、主题、托盘设置和开机启动设置 / Upgrades preserve WiFi IPs, fan curves, active profiles, learning data, device profiles, themes, tray settings, and autostart settings.
+- 便携版更新前请退出 FanControl，再解压新版覆盖旧文件夹；不要删除 `config` 目录 / Before updating a portable build, exit FanControl and extract the new package over the old folder; keep the `config` directory.
+- 关闭窗口不等于退出软件；需要完全退出时，请使用托盘菜单中的「退出」/ Closing the window leaves FanControl in the tray; use the tray **Exit** command to quit completely.
 
-- 关闭窗口不等于退出软件。FanControl 会继续留在系统托盘中运行；需要完全退出时，请右键托盘图标并选择退出。
-- 如果同时使用其他硬件监控或风扇控制软件，遇到温度读取异常时可以先临时关闭它们再重试。
-- 高级设备页适合已经了解主控协议的用户。原始调试命令可能影响设备状态，请只在确认命令含义后发送。
-- WiFi 和虚拟串口/COM 的通用档案能力已经具备基础运行时，不同 DIY 设备仍需要按主控协议填写正确字段；BLE/HID 设备请使用设置页的「扫描设备」自动遍历。
+## 常见问题 / FAQ
 
-## 常见问题
+### 设备连接不上 / Device cannot connect
 
-### 设备连接不上
+- 确认设备已通电，并检查连接方式是否正确 / Make sure the device is powered on and the transport is correct.
+- 黑鲨风神 Pro 使用 USB 有线或 BLE；USB 图传只在有线模式可用 / Black Shark Fengshen Pro uses USB wired or BLE; USB image transfer is wired-only.
+- WiFi 兼容设备需确认电脑和设备处于同一网络 / WiFi compatibility devices require the computer and device to be on the same network.
+- 如果修改过 WiFi 设备网络设置，请重新填写 IP 地址 / Re-enter the IP address after changing a WiFi device's network settings.
 
-- 确认散热器已通电，并且电脑和散热器处于同一网络。
-- 检查设置页中的设备 IP 地址是否正确。
-- 如果修改过散热器网络设置，请重新填写新的 IP 地址。
-- 可以在浏览器中打开 `http://设备地址/api/data` 做简单确认；能看到返回内容通常说明网络连通。
+### 温度为空或一直是 0 / Temperature is empty or zero
 
-### 温度为空或一直是 0
+- 以管理员身份重新启动 FanControl / Restart FanControl as administrator.
+- 允许安装器安装或更新温度读取组件 / Allow the installer to install or update the temperature bridge.
+- 临时关闭其他硬件监控软件后再试 / Temporarily close other hardware monitoring software and retry.
 
-- 以管理员身份重新启动 FanControl。
-- 安装器提示安装或更新温度读取组件时，请允许。
-- 临时关闭其他硬件监控软件后再试一次。
-- 如果便携版缺少 `bridge` 目录，请重新下载并完整解压便携包。
+## 反馈 / Feedback
 
-### 风速没有按预期变化
+请在 GitHub 提交 issue，或发送邮件至 `1989005183@qq.com`；也可以加入 QQ 交流群 `928338191` 反馈设备适配和使用问题。
 
-- 确认设备已经连接成功。
-- 检查当前是自动模式还是手动模式。
-- 手动模式会固定在你设定的百分比速度；自动模式会按风扇曲线计算目标速度。
-- 速度下发后设备状态可能需要几秒钟刷新。
+Open an issue on GitHub, email `1989005183@qq.com`, or join QQ group `928338191` for device compatibility and usage feedback.
 
-## 反馈
-
-如果遇到问题，可以在 GitHub 提交 issue，发送邮件到 `1989005183@qq.com`，也可以加入 QQ 交流群 `928338191` 反馈设备适配和使用问题。
-
-## 支持项目
+## 支持项目 / Support
 
 如果 FanControl 对你有帮助，欢迎自愿赞助支持后续开发。
 
-| 微信 | 支付宝 |
-| --- | --- |
-| <img src="docs/assets/sponsor-wechat.jpg" width="220" alt="微信赞助码"> | <img src="docs/assets/sponsor-alipay.jpg" width="220" alt="支付宝赞助码"> |
+If FanControl is useful to you, voluntary sponsorship is appreciated.
 
-## 致谢
+| 微信 / WeChat | 支付宝 / Alipay |
+| --- | --- |
+| <img src="docs/assets/sponsor-wechat.jpg" width="220" alt="微信赞助码 / WeChat sponsorship"> | <img src="docs/assets/sponsor-alipay.jpg" width="220" alt="支付宝赞助码 / Alipay sponsorship"> |
+
+## 致谢 / Acknowledgements
 
 FanControl 基于 [TIANLI0/THRM](https://github.com/TIANLI0/THRM) 的开源工作进行改造和适配。感谢原作者提供的桌面端框架、托盘后台机制、温度读取思路、风扇曲线交互和安装器基础。
 
-## 许可
+FanControl is adapted from the open-source work of [TIANLI0/THRM](https://github.com/TIANLI0/THRM). Thanks to the original authors for the desktop framework, tray architecture, telemetry approach, fan-curve interaction, and installer foundation.
 
-本项目使用 MIT License，详见 [LICENSE](LICENSE)。
+## 许可 / License
 
-## 免责声明
+本项目使用 MIT License，详见 [LICENSE](LICENSE)。 / This project is licensed under the MIT License; see [LICENSE](LICENSE).
+
+## 免责声明 / Disclaimer
 
 FanControl 是第三方开源软件。请根据设备状态合理设置风扇速度，因使用本软件产生的风险由用户自行承担。
+
+FanControl is third-party open-source software. Set fan speeds responsibly according to device conditions; use of the software is at your own risk.

@@ -101,7 +101,6 @@ func EnsureCoreServiceRunning() bool {
 	if monitorOnlySession.Load() {
 		cmd.Args = append(cmd.Args, "--monitor-only-session")
 	}
-
 	if err := cmd.Start(); err != nil {
 		mainLogger.Errorf("启动核心服务失败: %v", err)
 		return false

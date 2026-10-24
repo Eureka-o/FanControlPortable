@@ -89,6 +89,8 @@ func TestNativeAutoConnectCandidatesKeepUserNativeProfilesBeforeBuiltInFallbacks
 	for _, profile := range candidates {
 		gotIDs = append(gotIDs, profile.ID)
 	}
+	// 内置回退档案按注册顺序排在用户档案之后：
+	// HID 组依次为 legacy RPM、BlackShark 风神PRO；BLE 组为 BS1。
 	wantIDs := []string{
 		userBLE.ID,
 		types.FlyDigiBS1ProfileID,
