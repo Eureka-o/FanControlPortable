@@ -58,6 +58,7 @@ export default function DeviceDebugPanel({ config, isConnected, onConfigChange }
 
   const debugCommandByte = useMemo(() => parseDebugCommandByte(debugCommandInput), [debugCommandInput]);
   const isDangerousDebugCommand = debugCommandByte !== null && DANGEROUS_DEBUG_COMMANDS.has(debugCommandByte);
+  const blackSharkFirmware = debugInfo?.blackSharkFirmware;
 
   const toggleDebugMode = useCallback(async () => {
     try {
@@ -160,6 +161,47 @@ export default function DeviceDebugPanel({ config, isConnected, onConfigChange }
               </div>
             )}
 
+            {blackSharkFirmware && (
+              <div className="rounded-xl border border-border/70 bg-background px-3 py-3 text-[11px] leading-relaxed">
+                <div className="flex items-start gap-1.5 text-amber-600 dark:text-amber-400">
+                  <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0" />
+                  <div className="space-y-1">
+                    {blackSharkFirmware.belowMinVersion ? (
+                      <div className="font-semibold">
+                        {t('controlPanel.debug.blackSharkFirmwareBelowMinimum', {
+                          current: blackSharkFirmware.currentVersion ?? '?',
+                          min: blackSharkFirmware.minVersion ?? '?',
+                        })}
+                      </div>
+                    ) : blackSharkFirmware.updateAvailable ? (
+                      <div className="font-semibold">
+                        {t('controlPanel.debug.blackSharkFirmwareUpdateAvailable', {
+                          current: blackSharkFirmware.currentVersion ?? '?',
+                          latest: blackSharkFirmware.latestVersion ?? '?',
+                        })}
+                      </div>
+                    ) : blackSharkFirmware.error ? (
+                      <div>
+                        {t('controlPanel.debug.blackSharkFirmwareCheckFailed', {
+                          error: blackSharkFirmware.error,
+                        })}
+                      </div>
+                    ) : blackSharkFirmware.currentVersion ? (
+                      <div>
+                        {t('controlPanel.debug.blackSharkFirmwareUpToDate', {
+                          version: blackSharkFirmware.currentVersion,
+                        })}
+                      </div>
+                    ) : null}
+                    {/* 本工具只检查版本：固件刷写由官方工具完成 */}
+                    <div className="font-medium text-foreground/70">
+                      {t('controlPanel.debug.blackSharkFirmwareOfficialOnly')}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="rounded-xl border border-border/70 bg-background px-3 py-3">
               <div className="flex gap-2">
                 <input
@@ -202,7 +244,7 @@ export default function DeviceDebugPanel({ config, isConnected, onConfigChange }
                   <div>TX {debugCommandResult.rawHex}</div>
                   {(debugCommandResult.frames || []).map((frame) => (
                     <div key={frame.id} className={frame.direction === 'rx' ? 'text-emerald-600 dark:text-emerald-400' : 'text-sky-600 dark:text-sky-400'}>
-                      <div>{frame.direction.toUpperCase()} {frame.command || '--'} {frame.frameHex || frame.rawHex} {frame.checksumOk ? 'OK' : 'BAD'}</div>
+                      <div>{frame.direction.toUpperCase()} {frame.command || '--'} {frame.frameHex || frame.rawHex} {frame.checksumOk ? 'OK' : 'BAD'}{frame.checksumRule ? `(${frame.checksumRule}${frame.checksumExpected && frame.checksumExpected !== frame.checksumRule ? '≠' + frame.checksumExpected : ''})` : ''}</div>
                       {frame.decoded && <div className="pl-4 text-foreground/80">{renderDebugFrameSummary(frame)}</div>}
                     </div>
                   ))}

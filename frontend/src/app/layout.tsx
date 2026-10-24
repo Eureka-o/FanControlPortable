@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import SystemThemeSync from "./components/SystemThemeSync";
+import FrontendDiagnostics from "./components/FrontendDiagnostics";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BRAND } from "./lib/brand";
@@ -32,6 +33,9 @@ export default function RootLayout({
       <body>
         <AppI18nProvider>
           <SystemThemeSync />
+          {/* 前端「留痕」层：异常 / 导航 / 卸载上报到核心日志。
+              挂在最外层，保证任何页签出的问题都能留下证据。 */}
+          <FrontendDiagnostics />
           <TooltipProvider delayDuration={180}>
             {children}
             <Toaster richColors closeButton position="top-right" />

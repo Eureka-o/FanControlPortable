@@ -153,15 +153,8 @@ func (m *Manager) tryLoadFromPathLocked(configPath string) bool {
 	applyMissingThemeDefaults(&config, rawConfig)
 	applyMissingWindowBlurDefaults(&config, rawConfig)
 	applyMissingTemperatureDefaults(&config, rawConfig)
-	if _, ok := rawConfig["blackSharkScreenItems"]; !ok {
-		config.BlackSharkScreenItems = types.GetDefaultBlackSharkScreenItems()
-	}
-	config.BlackSharkScreenItems = types.NormalizeBlackSharkScreenItems(config.BlackSharkScreenItems)
-	if _, ok := rawConfig["blackSharkScreenRefreshIntervalMs"]; !ok {
-		config.BlackSharkScreenRefreshIntervalMs = types.BlackSharkScreenRefreshDefaultMs
-	}
-	config.BlackSharkScreenRefreshIntervalMs = types.NormalizeBlackSharkScreenRefreshIntervalMs(config.BlackSharkScreenRefreshIntervalMs)
 	normalizeSpeedConfig(&config)
+	normalizeBlackSharkConfig(&config)
 
 	m.config = config
 	return true
@@ -273,6 +266,7 @@ func applyLegacyPortableSettings(cfg *types.AppConfig, legacy legacyPortableSett
 	}
 
 	normalizeSpeedConfig(cfg)
+	normalizeBlackSharkConfig(cfg)
 }
 
 func parseLegacyFanCurve(raw string, minSpeed int) []types.FanCurvePoint {
@@ -834,7 +828,6 @@ func cloneAppConfig(input types.AppConfig) types.AppConfig {
 	input.FanCurveProfilesByDevice = cloneDeviceCurveStatesExact(input.FanCurveProfilesByDevice)
 	input.NoiseDiagnosticsByDevice = cloneNoiseDiagnosticsExact(input.NoiseDiagnosticsByDevice)
 	input.AxisNoiseProfilesByDevice = cloneAxisNoiseProfilesExact(input.AxisNoiseProfilesByDevice)
-	input.BlackSharkScreenItems = append([]string(nil), input.BlackSharkScreenItems...)
 	input.SmartControl = cloneSmartControlConfig(input.SmartControl)
 	if input.LightStrip.Colors != nil {
 		input.LightStrip.Colors = append([]types.RGBColor{}, input.LightStrip.Colors...)
@@ -864,6 +857,15 @@ func preserveNativeLearningOffsetsBeforeCompatibilityMigration(cfg *types.AppCon
 		return true
 	}
 	return false
+}
+
+// normalizeBlackSharkConfig 归一化黑鲨相关配置（目前只有 LCD 显示参数）。
+func normalizeBlackSharkConfig(cfg *types.AppConfig) {
+	items, _ := types.NormalizeBlackSharkLcdItems(cfg.BlackSharkLcdItems)
+	cfg.BlackSharkLcdItems = items
+	if cfg.BlackSharkLcdPos < 0 || cfg.BlackSharkLcdPos > types.BlackSharkLcdPosMax {
+		cfg.BlackSharkLcdPos = 0
+	}
 }
 
 func normalizeSpeedConfig(cfg *types.AppConfig) {

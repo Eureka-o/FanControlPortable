@@ -39,6 +39,14 @@ var bluetoothLEInterfaceGUID = windows.GUID{
 	Data4: [8]byte{0xad, 0xd0, 0x91, 0xf4, 0x1c, 0x67, 0xb5, 0x92},
 }
 
+// GUID_DEVINTERFACE_USB_DEVICE from usbiodef.h；每个 USB 设备都会挂上它，与绑定哪个驱动无关。
+var usbDeviceInterfaceGUID = windows.GUID{
+	Data1: 0xa5dcbf10,
+	Data2: 0x6530,
+	Data3: 0x11d2,
+	Data4: [8]byte{0x90, 0x1f, 0x00, 0xc0, 0x4f, 0xb9, 0x51, 0xed},
+}
+
 type hidNotifyFilter struct {
 	cbSize     uint32
 	flags      uint32
@@ -76,6 +84,15 @@ func RegisterBluetoothLEInterfaceArrivalNotifications(onArrival func(string)) (f
 	)
 }
 
+// RegisterUSBDeviceInterfaceArrivalNotifications 注册"有 USB 设备接口到达"的通知。
+//
+// 比 HID 那条粗：它不按 VID/PID 过滤（设备路径里未必带得上），凡是 USB 设备到达都回调一次。
+// 需要它的原因：走 WinUSB（批量端点）的设备**不会**触发 GUID_DEVINTERFACE_HID，
+// 而这类设备恰恰是"插上就该切过去"的那一类。真伪判断交给调用方自己的存在性探针。
+func RegisterUSBDeviceInterfaceArrivalNotifications(onArrival func(string)) (func(), error) {
+	return registerInterfaceArrivalNotifications(usbDeviceInterfaceGUID, nil, onArrival)
+}
+
 func registerInterfaceArrivalNotifications(classGUID windows.GUID, matches func(string) bool, onArrival func(string)) (func(), error) {
 	if err := procCMRegisterNotification.Find(); err != nil {
 		return nil, fmt.Errorf("device interface notifications are unavailable: %w", err)
@@ -88,7 +105,7 @@ func registerInterfaceArrivalNotifications(classGUID windows.GUID, matches func(
 			return 0
 		}
 		path := hidInterfacePath(eventData, uintptr(eventDataSize))
-		if path != "" && n.matches != nil && n.matches(path) && n.onArrival != nil {
+		if notifyShouldFire(path, n.matches) && n.onArrival != nil {
 			go n.onArrival(path)
 		}
 		return 0
@@ -136,6 +153,15 @@ func matchesHIDInterfacePath(path string, identifiers []string) bool {
 		}
 	}
 	return false
+}
+
+// notifyShouldFire 决定一条到达事件要不要交给回调：路径为空则丢弃；
+// matches 为 nil 表示"不按路径过滤"（USB 那条），由调用方自己再判。
+func notifyShouldFire(path string, matches func(string) bool) bool {
+	if path == "" {
+		return false
+	}
+	return matches == nil || matches(path)
 }
 
 func matchesBluetoothLEInterfacePath(path string) bool {
