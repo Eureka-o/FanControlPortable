@@ -16,6 +16,6 @@
   "layer": "advanced",
   "contract": "fancontrol/v1",
   "author": "FanControl User",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "基于小八 Plus 技术路线的高级主题模板，包含插画、贴纸、字体、页面背景、卡片透明、hover 动效和 FanControl 专属主题钩子。"
 }

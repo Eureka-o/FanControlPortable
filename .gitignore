@@ -32,6 +32,9 @@ MEMORY_INDEX.md
 SKILL_ROUTER_MEMORY.md
 .codegraph/
 
+# Agent/IDE scratch (not part of the product)
+.workbuddy/
+
 # IDE/user files
 .vs/
 *.user

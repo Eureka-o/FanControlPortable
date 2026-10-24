@@ -128,6 +128,16 @@ func (a *CoreApp) handleSystemIPCRequest(req ipc.Request) (ipc.Response, bool) {
 
 	case ipc.ReqIsAutoStartLaunch:
 		return a.dataResponse(a.isAutoStartLaunch), true
+
+	// 前端上报界面上发生的事（异常 / 导航 / 卸载），见 ipc.ReqReportClientIssue 的注释。
+	case ipc.ReqReportClientIssue:
+		var p ipc.ClientIssueReport
+		if err := json.Unmarshal(req.Data, &p); err != nil {
+			return a.errorResponse("解析参数失败: " + err.Error()), true
+		}
+		a.logInfo("[前端] %s | %s | %s", p.Kind, p.Message, p.Detail)
+		return a.dataResponse(true), true
+
 	default:
 		return ipc.Response{}, false
 	}

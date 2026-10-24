@@ -106,7 +106,10 @@ test('shows only history and never normalizes or saves a curve while disconnecte
   assert.match(source, /setCurveDraftDirty\(isConnected && hasUnsavedChanges\)/);
   assert.match(source, /if \(!isConnected \|\| isSaving\) return false;/);
   assert.match(source, /if \(!isConnected\) return;\s*if \(\(!isInitialized \|\| !hasUnsavedChanges\)/);
-  assert.match(source, /if \(!isConnected\) return;\s*loadCurveProfiles\(\)\.catch/);
+  // `loadCurveProfiles` 的调用处在**黑鲨**下放开（离线也要取 —— 后端是纯 config 读，
+  //   黑鲨要在连接瞬间就画出四条预设）；**非黑鲨保持原语义**（"不影响别的品牌"的收敛结果）。
+  //   所以这里的判据是 `!isConnected && !isBlackSharkDevice`。
+  assert.match(source, /if \(!isConnected && !isBlackSharkDevice\) return;\s*loadCurveProfiles\(\)\.catch/);
 });
 
 test('uses normal curve navigation and keeps history ownership outside page mounts', () => {

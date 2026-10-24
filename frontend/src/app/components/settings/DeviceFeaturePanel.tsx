@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Clock3, Lightbulb, Monitor, Power, RotateCw, Sparkles, Zap } from 'lucide-react';
+import { Clock3, Lightbulb, Power, RotateCw, Sparkles, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { types } from '../../../../wailsjs/go/models';
@@ -49,7 +49,6 @@ export default function DeviceFeaturePanel({
   supportsPowerOnStart,
   supportsSmartStartStop,
   supportsWiFiSmartStartStopStandbySpeed,
-  supportsScreen,
   lightingControls,
   smartStartStopOptions,
   wifiSmartStartStopStandbySpeedOptions,
@@ -68,7 +67,6 @@ export default function DeviceFeaturePanel({
   supportsPowerOnStart: boolean;
   supportsSmartStartStop: boolean;
   supportsWiFiSmartStartStopStandbySpeed: boolean;
-  supportsScreen: boolean;
   lightingControls?: ReactNode;
   smartStartStopOptions: SelectOption<string>[];
   wifiSmartStartStopStandbySpeedOptions: SelectOption<number>[];
@@ -79,7 +77,7 @@ export default function DeviceFeaturePanel({
   children?: ReactNode;
 }) {
   const { t } = useTranslation();
-  const hasBasicFeatures = supportsGearLight || supportsPowerOnStart || supportsScreen;
+  const hasBasicFeatures = supportsGearLight || supportsPowerOnStart;
   const hasSmartStartStopFeatures = supportsSmartStartStop;
   const deviceName = deviceProfile?.displayName || deviceProfile?.model || t('deviceStatus.device.unknown');
 
@@ -143,14 +141,6 @@ export default function DeviceFeaturePanel({
             </SettingRow>
           )}
 
-          {supportsScreen && (
-            <SettingRow
-              icon={<Monitor className="h-4 w-4" />}
-              title={t('controlPanel.device.screenTitle')}
-              description={t('controlPanel.device.screenDescription')}
-              disabled
-            />
-          )}
         </>
       )}
 
