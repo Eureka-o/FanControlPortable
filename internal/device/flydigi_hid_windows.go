@@ -32,6 +32,8 @@ func (m *Manager) shouldUseBlackSharkUSBLocked() bool {
 	return m.deviceTransport == types.DeviceTransportUSB && isBlackSharkProfileID(m.activeProfile.ID)
 }
 
+// connectLegacyHIDLocked 走「通用 HID 档案」的连接路径，现在只剩飞智一族：
+// 黑鲨旧的 HID 档案不再接入，连入时会被 isLegacyBlackSharkHIDProfileID 直接拒掉。
 func (m *Manager) connectLegacyHIDLocked() (bool, map[string]string) {
 	return m.connectFlyDigiHIDLocked()
 }
@@ -240,7 +242,7 @@ func (m *Manager) handleFlyDigiHIDRX(generation uint64, raw []byte) bool {
 	}
 	m.recordDebugFrame("rx", transport, raw)
 	if isBlackSharkProfileID(m.activeProfile.ID) {
-		return m.handleBlackSharkHIDRX(generation, raw)
+		return m.handleBlackSharkHIDRX(generation, raw, m.link.blackSharkResp)
 	}
 	if fanData := parseFlyDigiFanData(raw); fanData != nil {
 		if m.connectionGen.Load() != generation {

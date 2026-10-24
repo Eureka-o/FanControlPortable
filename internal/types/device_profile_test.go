@@ -136,13 +136,20 @@ func TestBlackSharkBRB02ProfileDeclaresNativeLighting(t *testing.T) {
 	if profile.DisplayName != BlackSharkBRB02DisplayName || profile.Vendor != BlackSharkBRB02Vendor {
 		t.Fatalf("Black Shark identity = %q/%q", profile.DisplayName, profile.Vendor)
 	}
-	if profile.Model != BlackSharkBRB02DisplayName || profile.SpeedRange.Max != 4000 || profile.Capabilities.SpeedRange.Max != 4000 {
+	// 量程必须等于所有者给的值：档案里不许再写一份数（写成 0..4000 会与标定表和界面预设自相矛盾）。
+	if profile.Model != BlackSharkBRB02DisplayName ||
+		profile.SpeedRange.Min != BlackSharkHIDMinRPM || profile.SpeedRange.Max != BlackSharkHIDMaxRPM ||
+		profile.Capabilities.SpeedRange.Min != BlackSharkHIDMinRPM || profile.Capabilities.SpeedRange.Max != BlackSharkHIDMaxRPM {
 		t.Fatalf("Black Shark public model/speed range = %q/%#v/%#v", profile.Model, profile.SpeedRange, profile.Capabilities.SpeedRange)
 	}
 	if profile.Connection.BLENameFilter != "BS BRB02 Cooler Pro" || profile.Connection.BLEWriteCharacteristic != "ae41" || profile.Connection.BLENotifyCharacteristic != "ae04" {
 		t.Fatalf("Black Shark BLE connection = %#v", profile.Connection)
 	}
-	if !profile.Capabilities.SupportsLighting || !profile.Capabilities.SupportsBrightness || profile.Capabilities.SupportsManualGears {
+	// 灯效 / 亮度 / 挡位灯一律不声明：声明了会把上游那套通用面板点亮成黑鲨的第二份界面，
+	// 黑鲨这些功能由本工具自己的页面提供（灯效页）。声明为 false 也让灯带配置下发与
+	// 挡位灯管理对黑鲨整体关闭。
+	if profile.Capabilities.SupportsLighting || profile.Capabilities.SupportsBrightness ||
+		profile.Capabilities.SupportsGearLight || profile.Capabilities.SupportsManualGears {
 		t.Fatalf("Black Shark capabilities = %#v", profile.Capabilities)
 	}
 }
@@ -657,4 +664,132 @@ func TestNormalizeDeviceProfileConfigRestoresBuiltInWiFiWhenCompatibilityEnabled
 	if active := ActiveDeviceProfile(&cfg); active.ID != DefaultWiFiPercentProfileID || active.Transport != DeviceTransportWiFi {
 		t.Fatalf("active WiFi profile = %#v", active)
 	}
+}
+
+// 黑鲨：卡片标签与能力位。
+
+// 卡片标签必须如实列出黑鲨在专属面板里已有的能力，顺序也参与断言。
+func TestBlackSharkCardShowsItsRealFeatures(t *testing.T) {
+	profile := BlackSharkFengShenProProfile()
+	want := []string{
+		DeviceDisplayFeatureReadState,
+		DeviceDisplayFeatureSetSpeed,
+		DeviceDisplayFeatureManualGears,
+		DeviceDisplayFeatureCustomSpeed,
+		DeviceDisplayFeatureLighting,
+		DeviceDisplayFeatureBrightness,
+		DeviceDisplayFeaturePowerOnStart,
+		DeviceDisplayFeatureSmartStartStop,
+	}
+	if len(profile.DisplayFeatures) != len(want) {
+		t.Fatalf("黑鲨卡片标签 %d 个，应为 %d 个：%v",
+			len(profile.DisplayFeatures), len(want), profile.DisplayFeatures)
+	}
+	for i, id := range want {
+		if profile.DisplayFeatures[i] != id {
+			t.Fatalf("第 %d 个标签 = %q，应为 %q（顺序也参与断言，避免顺手漏掉一项）",
+				i, profile.DisplayFeatures[i], id)
+		}
+		if !IsKnownDeviceDisplayFeature(id) {
+			t.Fatalf("标签 %q 不在已知集合里 —— 前端会静默不显示，等于少个标签", id)
+		}
+	}
+}
+
+// 黑鲨的能力位必须保持"通用界面不可用"：一旦置真，核心会改走飞智那条协议路径。
+func TestBlackSharkCapabilitiesStayOffSoCoreNeverSendsFlyDigiFrames(t *testing.T) {
+	caps := BlackSharkFengShenProProfile().Capabilities
+	for name, on := range map[string]bool{
+		"SupportsLighting":       caps.SupportsLighting,
+		"SupportsBrightness":     caps.SupportsBrightness,
+		"SupportsGearLight":      caps.SupportsGearLight,
+		"SupportsScreen":         caps.SupportsScreen,
+		"SupportsPowerOnStart":   caps.SupportsPowerOnStart,
+		"SupportsSmartStartStop": caps.SupportsSmartStartStop,
+		"SupportsManualGears":    caps.SupportsManualGears,
+	} {
+		if on {
+			t.Fatalf("黑鲨的 %s 被点成 true —— 它会让核心走飞智那条协议路径。"+
+				"卡片标签请改用 DisplayFeatures", name)
+		}
+	}
+	if caps.AllowsLightStrip() {
+		t.Fatal("AllowsLightStrip() 为真 ⇒ 核心会向黑鲨下发飞智灯带指令")
+	}
+	if caps.AllowsGearLight() {
+		t.Fatal("AllowsGearLight() 为真 ⇒ 核心会向黑鲨下发飞智挡位灯指令")
+	}
+	if !caps.SupportsReadState || !caps.SupportsSetSpeed || !caps.SupportsCustomSpeed {
+		t.Fatalf("黑鲨的速度能力不该被削：%#v", caps)
+	}
+}
+
+// 内置档案必须能按需刷新：旧配置存的是过期副本，源码改了要跟得上。
+func TestEnsureBuiltInDeviceProfilesRefreshesStaleBuiltInMetadata(t *testing.T) {
+	cfg := GetDefaultConfig(false)
+	// 先让配置落到稳定态，再单独验"刷新"这一条契约。
+	// 不要拿 NormalizeDeviceProfileConfig 的返回值当判据：它还管着别的事。
+	for i := 0; i < 4 && NormalizeDeviceProfileConfig(&cfg); i++ {
+	}
+	var idx = -1
+	for i := range cfg.DeviceProfiles {
+		// 黑鲨内置档案由 BLE / USB 两条注册（见 builtin_device_profiles.go），这里找 USB 那条。
+		if cfg.DeviceProfiles[i].ID == BlackSharkBRB02USBProfileID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		t.Fatal("稳定态下仍没有黑鲨档案")
+	}
+	if ensureBuiltInDeviceProfiles(&cfg) {
+		t.Fatal("刚刚稳定下来的配置不该再被判为需要补全")
+	}
+
+	// 造一份"老版本"：内置档案在，但元数据与源码不一致
+	cfg.DeviceProfiles[idx].DisplayFeatures = nil
+	cfg.DeviceProfiles[idx].DisplayName = "旧名字"
+	cfg.DeviceProfiles[idx].BuiltIn = true
+
+	if !ensureBuiltInDeviceProfiles(&cfg) {
+		t.Fatal("存的是陈旧内置档案，应当报告 changed=true")
+	}
+	fresh := cfg.DeviceProfiles[idx]
+	if len(fresh.DisplayFeatures) == 0 {
+		t.Fatal("陈旧的内置档案没有被刷新（DisplayFeatures 仍为空）")
+	}
+	// 刷新源是 USB 档案（见 builtin_device_profiles.go），所以这里比的是它的显示名；
+	// 上一步已证明"旧名字"确实被刷成了源的值。
+	if fresh.DisplayName != BlackSharkBRB02DisplayName {
+		t.Fatalf("DisplayName 没被刷新: %q", fresh.DisplayName)
+	}
+
+	// 再跑一次：已经一致了，就不该再报 changed（否则每次启动都写一遍配置）
+	if ensureBuiltInDeviceProfiles(&cfg) {
+		t.Fatal("元数据已经一致，不该再报告 changed —— 那会导致每次启动都写配置文件")
+	}
+}
+
+// 用户自造的同名档案不能被内置版本覆盖掉。
+func TestEnsureBuiltInDeviceProfilesLeavesUserProfileAlone(t *testing.T) {
+	cfg := GetDefaultConfig(false)
+	cfg.DeviceProfiles = append(cfg.DeviceProfiles, DeviceProfile{
+		ID:           BlackSharkFengShenProProfileID,
+		DisplayName:  "我自己改的",
+		Transport:    DeviceTransportHID,
+		SpeedUnit:    FanSpeedUnitRPM,
+		Capabilities: DeviceCapabilities{SupportsSetSpeed: true},
+		BuiltIn:      false, // 用户自造
+	})
+	NormalizeDeviceProfileConfig(&cfg)
+	for i := range cfg.DeviceProfiles {
+		p := cfg.DeviceProfiles[i]
+		if p.ID == BlackSharkFengShenProProfileID {
+			if p.DisplayName != "我自己改的" {
+				t.Fatalf("用户自造的同名档案被内置版本覆盖了: %q", p.DisplayName)
+			}
+			return
+		}
+	}
+	t.Fatal("用户档案不见了")
 }

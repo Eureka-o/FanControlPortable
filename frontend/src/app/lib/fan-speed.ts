@@ -312,8 +312,10 @@ export function readTargetFanSpeed(
   if ((config || runtimeProfile) && !isFanDataForConfiguredDevice(data as SpeedCarrier, config, runtimeProfile)) {
     return undefined;
   }
+  const curveTarget =
+    typeof data.curveTargetRpm === 'number' && data.curveTargetRpm > 0 ? data.curveTargetRpm : undefined;
   return sanitizeFanSpeed(
-    firstFiniteNumber(data.targetRpm, data.targetRPM, data.TargetRPM, data.wifiTargetSpeed, data.targetSpeed),
+    firstFiniteNumber(curveTarget, data.targetRpm, data.targetRPM, data.TargetRPM, data.wifiTargetSpeed, data.targetSpeed),
     unit,
   );
 }

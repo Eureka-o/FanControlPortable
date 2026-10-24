@@ -555,10 +555,25 @@ func TestLoadUpgradeConfigPreservesDeviceProfilesAndLearningState(t *testing.T) 
 	if loadedSerial.Connection.SerialPort != "COM42" || loadedSerial.Connection.SerialBaudRate != 57600 {
 		t.Fatalf("serial profile connection not preserved: %#v", loadedSerial.Connection)
 	}
-	for _, id := range []string{types.FlyDigiBS1ProfileID, types.FlyDigiBS2ProfileID, types.FlyDigiBS2PROProfileID, types.FlyDigiBS3ProfileID, types.FlyDigiBS3PROProfileID} {
+	for _, id := range []string{
+		types.FlyDigiBS1ProfileID,
+		types.FlyDigiBS2ProfileID,
+		types.FlyDigiBS2PROProfileID,
+		types.FlyDigiBS3ProfileID,
+		types.FlyDigiBS3PROProfileID,
+		// 黑鲨档案也必须入库：升级时应补入设备库，否则设备列表里就没有这一项。
+		// 在册的是 BLE 与 USB 两条；HID 档案（BlackSharkFengShenProProfileID）不再注册，
+		// 由下面的反向断言守住。
+		types.BlackSharkBRB02ProfileID,
+		types.BlackSharkBRB02USBProfileID,
+	} {
 		if _, ok := findDeviceProfileForTest(loaded.DeviceProfiles, id); !ok {
-			t.Fatalf("FlyDigi built-in profile %q should be appended during upgrade: %#v", id, loaded.DeviceProfiles)
+			t.Fatalf("built-in profile %q should be appended during upgrade: %#v", id, loaded.DeviceProfiles)
 		}
+	}
+	// 反向断言：退役的 HID 档案不许再被补进设备库（否则界面上会多出一个连不上的设备）。
+	if _, ok := findDeviceProfileForTest(loaded.DeviceProfiles, types.BlackSharkFengShenProProfileID); ok {
+		t.Fatalf("retired black shark HID profile should not be appended: %#v", loaded.DeviceProfiles)
 	}
 	if profile, ok := findDeviceProfileForTest(loaded.DeviceProfiles, types.LegacyRPMProfileID); ok {
 		t.Fatalf("legacy RPM profile should not be exposed as a saved device after upgrade: %#v", profile)

@@ -14,3 +14,7 @@ func RegisterHIDInterfaceArrivalNotifications(uint16, []uint16, func(string)) (f
 func RegisterBluetoothLEInterfaceArrivalNotifications(func(string)) (func(), error) {
 	return func() {}, nil
 }
+
+func RegisterUSBDeviceInterfaceArrivalNotifications(func(string)) (func(), error) {
+	return func() {}, nil
+}

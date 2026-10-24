@@ -59,14 +59,7 @@ func builtInDeviceProfileForTransport(endpoint, transport string) (DeviceProfile
 	}
 }
 
-// ensureBuiltInDeviceProfiles 补全用户配置中缺失的内置档案。
-//
-// 不再用 reflect.DeepEqual 做深层比较并覆盖已有档案,原因:
-// 1. 内置档案的内容由源码保证,用户修改 Connection/Capability 等字段是有意行为。
-// 2. reflect.DeepEqual 在 Capability 含指针时开销大,且指针稳定性不可控。
-// 3. 每次 Load 配置都遍历所有内置档案做深层比较,后台常驻时增加启动延迟。
-//
-// 策略:仅在内置档案 ID 完全缺失时才追加;已有则保留用户版本。
+// ensureBuiltInDeviceProfiles 补全并按需刷新用户配置里的内置档案。
 func ensureBuiltInDeviceProfiles(cfg *AppConfig) bool {
 	if cfg == nil {
 		return false
@@ -78,17 +71,50 @@ func ensureBuiltInDeviceProfiles(cfg *AppConfig) bool {
 	}
 	for _, builtIn := range builtIns {
 		builtIn = NormalizeDeviceProfile(builtIn, cfg.FanControlDeviceIp)
-		found := false
+		idx := -1
 		for i := range cfg.DeviceProfiles {
 			if cfg.DeviceProfiles[i].ID == builtIn.ID {
-				found = true
+				idx = i
 				break
 			}
 		}
-		if !found {
+		if idx < 0 {
 			cfg.DeviceProfiles = append(cfg.DeviceProfiles, builtIn)
 			changed = true
+			continue
 		}
+		if !cfg.DeviceProfiles[idx].BuiltIn {
+			// 用户自造的同名档案，不碰。
+			continue
+		}
+		if builtInProfileMetadataEqual(cfg.DeviceProfiles[idx], builtIn) {
+			continue
+		}
+		cfg.DeviceProfiles[idx] = builtIn
+		changed = true
 	}
 	return changed
+}
+
+// builtInProfileMetadataEqual 只比对内置元数据（不比对用户可编辑的连接/命令等字段）。
+func builtInProfileMetadataEqual(stored, source DeviceProfile) bool {
+	if stored.DisplayName != source.DisplayName ||
+		stored.Vendor != source.Vendor ||
+		stored.Model != source.Model ||
+		stored.Notes != source.Notes ||
+		stored.Transport != source.Transport ||
+		stored.SpeedUnit != source.SpeedUnit ||
+		stored.SpeedRange != source.SpeedRange ||
+		stored.Capabilities != source.Capabilities {
+		return false
+	}
+	if len(stored.DisplayFeatures) != len(source.DisplayFeatures) {
+		return false
+	}
+	for i := range stored.DisplayFeatures {
+		if stored.DisplayFeatures[i] != source.DisplayFeatures[i] {
+			return false
+		}
+	}
+	return true
 }

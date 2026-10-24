@@ -81,6 +81,7 @@ func (m *Manager) connectBLEWithContextLocked(ctx context.Context) (bool, map[st
 	m.isConnected = true
 	m.deviceType = types.DeviceTransportBLE
 	m.productID = 0
+	m.applyBlackSharkCurveTargetDisplay(fanData)
 	m.currentFanData.Store(fanData)
 	if m.onFanDataUpdate != nil {
 		go m.onFanDataUpdate(fanData)
@@ -140,11 +141,15 @@ func (m *Manager) onBLENotification(expectedGeneration uint64, data *types.FanDa
 		m.mutex.Unlock()
 		return
 	}
-	m.currentFanData.Store(data)
+	// 通知载荷里没有那两个主机侧显示字段（曲线目标 / 工作模式文案），而 FanData 是每帧重建的 ⇒
+	// 落库前补上；先复制一份，别改 executor 那边持有的对象。
+	local := *data
+	m.applyBlackSharkCurveTargetDisplay(&local)
+	m.currentFanData.Store(&local)
 	callback := m.onFanDataUpdate
 	m.mutex.Unlock()
 	if callback != nil {
-		callback(data)
+		callback(&local)
 	}
 }
 
@@ -205,6 +210,8 @@ func (m *Manager) RefreshBLEState() bool {
 	}
 	var callback func(data *types.FanData)
 	if refreshBLEStateWithChangeDetection(m.currentFanData.Load(), fanData) {
+		// 刷新来的状态里同样没有那两个主机侧显示字段 ⇒ 落库前补上。
+		m.applyBlackSharkCurveTargetDisplay(fanData)
 		m.currentFanData.Store(fanData)
 		callback = m.onFanDataUpdate
 	}
@@ -274,6 +281,7 @@ func (m *Manager) setBLETargetSpeedWithContextLocked(ctx context.Context, speed 
 	if next.TargetRPM == 0 {
 		next.TargetRPM = uint16(speedValueForFanData(speed))
 	}
+	m.applyBlackSharkCurveTargetDisplay(next)
 	m.currentFanData.Store(next)
 
 	if m.onFanDataUpdate != nil {
