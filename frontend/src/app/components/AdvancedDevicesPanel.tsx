@@ -194,7 +194,7 @@ function CapabilityPills({ profile }: { profile: types.DeviceProfile }) {
     caps?.supportsCustomSpeed ? t('controlPanel.fan.customSpeedTitle') : '',
     caps?.supportsDebugFrames ? t('advancedDevices.capabilities.debugFrames') : '',
     caps?.supportsRawCommands ? t('advancedDevices.capabilities.raw') : '',
-    ((caps as any)?.supportsGearLight || caps?.supportsLighting) ? t('advancedDevices.capabilities.gearLight') : '',
+    (caps as any)?.supportsGearLight ? t('advancedDevices.capabilities.gearLight') : '',
     caps?.supportsLighting ? t('advancedDevices.capabilities.lighting') : '',
     ((caps as any)?.supportsBrightness || caps?.supportsLighting) ? t('advancedDevices.capabilities.brightness') : '',
     caps?.supportsPowerOnStart ? t('advancedDevices.capabilities.powerOnStart') : '',
@@ -251,7 +251,7 @@ function ProfileRow({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <div className="truncate text-sm font-semibold text-foreground">{displayName}</div>
-            {active && <Badge variant="success">{t('advancedDevices.status.active')}</Badge>}
+            {active && isManualCompatibilityTransport(profile.transport) && <Badge variant="success">{t('advancedDevices.status.active')}</Badge>}
             {profile.builtIn ? <Badge variant="info">{builtInLabel}</Badge> : <Badge>{t('advancedDevices.status.user')}</Badge>}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -1016,7 +1016,8 @@ export default function AdvancedDevicesPanel({ config, isConnected, onConfigChan
               key={profile.id}
               profile={profile}
               context="template"
-              selectable={false}
+              active={isManualCompatibilityTransport(profile.transport) && profile.id === (activeIdsByTransport[normalizeTransport(profile.transport)] || activeId)}
+              selectable={isManualCompatibilityTransport(profile.transport)}
               onSelect={handleSelectProfile}
             />
           ))
@@ -1056,7 +1057,7 @@ export default function AdvancedDevicesPanel({ config, isConnected, onConfigChan
                   key={profile.id}
                   profile={profile}
                   context="device"
-                  active={profile.id === (activeIdsByTransport[normalizeTransport(profile.transport)] || activeId)}
+                  active={isManualCompatibilityTransport(profile.transport) && profile.id === (activeIdsByTransport[normalizeTransport(profile.transport)] || activeId)}
                   selectable={isManualCompatibilityTransport(profile.transport)}
                   onSelect={handleSelectProfile}
                   onEdit={handleEditProfile}

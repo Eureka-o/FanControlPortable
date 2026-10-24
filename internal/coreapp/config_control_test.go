@@ -69,6 +69,23 @@ func TestPersistConfigMutationCommitsNarrowChange(t *testing.T) {
 	}
 }
 
+func TestMonitorOnlyRejectsLightingControls(t *testing.T) {
+	app := &CoreApp{}
+	app.monitorOnly.Store(true)
+	if app.SetGearLight(true) {
+		t.Fatal("SetGearLight() succeeded in monitor-only mode")
+	}
+	if app.SetBrightness(50) {
+		t.Fatal("SetBrightness() succeeded in monitor-only mode")
+	}
+	if err := app.SetLightStrip(types.GetDefaultLightStripConfig()); err == nil {
+		t.Fatal("SetLightStrip() succeeded in monitor-only mode")
+	}
+	if err := app.applyConfiguredLightStrip(); err != nil {
+		t.Fatalf("applyConfiguredLightStrip() in monitor-only mode = %v, want nil", err)
+	}
+}
+
 func TestSetCustomSpeedKeepsConfigWhenPersistenceFails(t *testing.T) {
 	blockedPath := filepath.Join(t.TempDir(), "blocked")
 	if err := os.WriteFile(blockedPath, []byte("not a directory"), 0644); err != nil {

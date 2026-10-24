@@ -157,6 +157,12 @@ func (a *App) handleCoreEvent(event ipc.Event) {
 		json.Unmarshal(event.Data, &timestamp)
 		runtime.EventsEmit(a.ctx, "heartbeat", timestamp)
 
+	case ipc.EventDeviceImageTransferProgress:
+		var progress ipc.DeviceImageTransferProgress
+		if err := json.Unmarshal(event.Data, &progress); err == nil {
+			runtime.EventsEmit(a.ctx, "device-image-transfer-progress", progress)
+		}
+
 	case "show-window":
 		a.ShowWindow()
 

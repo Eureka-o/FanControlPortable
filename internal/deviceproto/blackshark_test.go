@@ -18,6 +18,10 @@ func TestBlackSharkFrameBuildersAndStatusParser(t *testing.T) {
 	if got := BuildBlackSharkSetSpeed(4500); !bytes.Equal(got, []byte{0xA5, 0x09, 0x24, 0x00, 0x00, 0x01, 0xA0, 0x0F, 0x82}) {
 		t.Fatalf("speed frame should clamp to 4000 RPM, got % X", got)
 	}
+	// 0x22 控制源=01 会话开场帧:官方会话的第一帧,缺了它设备不推状态帧。
+	if got := BuildBlackSharkSessionOpen(); !bytes.Equal(got, []byte{0xA5, 0x04, 0x22, 0x01, 0xCC}) {
+		t.Fatalf("session open frame = % X, want A5 04 22 01 CC", got)
+	}
 	frame, ok := ParseBlackSharkFrame([]byte{0xA5, 0x07, 0x06, 0xAC, 0x08, 0x00, 0x66})
 	if !ok || !frame.ChecksumOK {
 		t.Fatalf("status frame parse = %#v/%v", frame, ok)
@@ -44,6 +48,29 @@ func TestBlackSharkCaptured07FrameIsKeptOpaque(t *testing.T) {
 	// the checksum byte; short commands in this package use the legacy form.
 	if got := buildBlackSharkFrameWithLength(0x1A, frame.Command, frame.Payload...); !bytes.Equal(got, raw) {
 		t.Fatalf("captured 0x07 frame serialization = % X, want % X", got, raw)
+	}
+}
+
+func TestBlackSharkHostInfoFrameMatchesOfficialCapture(t *testing.T) {
+	// PROTOCOL §5 cap6 首帧 (官方实机 0x07 推送): 7 项 = CPU 温 78 / GPU 温 43 /
+	// GPU 功 17 / 未知 0 / 常量 74 / GPU 热点 54 / 时钟 1108 (18:28)。
+	entries := []BlackSharkHostInfoEntry{
+		{0x00, 78}, {0x01, 43}, {0x02, 17}, {0x03, 0}, {0x05, 74}, {0x06, 54}, {0x07, 1108},
+	}
+	got := BuildBlackSharkHostInfo(entries)
+	want := []byte{
+		0xA5, 0x1A, 0x07, 0x07,
+		0x00, 0x4E, 0x00,
+		0x01, 0x2B, 0x00,
+		0x02, 0x11, 0x00,
+		0x03, 0x00, 0x00,
+		0x05, 0x4A, 0x00,
+		0x06, 0x36, 0x00,
+		0x07, 0x54, 0x04,
+		0x47,
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("host info frame = % X, want % X", got, want)
 	}
 }
 

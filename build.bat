@@ -48,7 +48,7 @@ if "!FANCONTROL_CGO_COMPILER_BIN!"=="" (
 if not "!FANCONTROL_CGO_COMPILER_BIN!"=="" (
     set "PATH=!FANCONTROL_CGO_COMPILER_BIN!;!PATH!"
     set "CGO_ENABLED=1"
-    set "CC=gcc"
+    set "CC=!FANCONTROL_CGO_COMPILER_BIN!\gcc.exe"
     echo Using cgo compiler: !FANCONTROL_CGO_COMPILER_BIN!\gcc.exe
 ) else (
     echo WARNING: No MinGW gcc found; FlyDigi HIDAPI backend will not be compiled.
@@ -135,6 +135,8 @@ for %%F in (
     "!BUILD_BIN!\FanControlPortable-amd64-installer.exe"
     "!BUILD_BIN!\FanControlPortable-*-installer.exe"
     "!BUILD_BIN!\FanControlPortable-windows-portable.zip"
+    "!BUILD_BIN!\FanControl-*-amd64-installer*.exe"
+    "!BUILD_BIN!\FanControl-*-portable.zip"
     "!BUILD_BIN!\BS2PRO-Controller-v*.exe"
     "!BUILD_BIN!\BS2PRO-Controller-*-installer.exe"
     "!BUILD_BIN!\BS2PRO-Controller-amd64-installer.zip"

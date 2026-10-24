@@ -1,13 +1,14 @@
 package types
 
 const (
-	BlackSharkBRB02ProfileID           = "builtin.blackshark.brb02.ble.rpm"
-	BlackSharkBRB02USBProfileID        = "builtin.blackshark.brb02.usb.rpm"
-	BlackSharkBRB02DisplayName         = "黑鲨（Black Shark）风神 Pro"
-	BlackSharkBRB02Vendor              = "黑鲨（Black Shark）"
-	BlackSharkBRB02HIDVendorID  uint16 = 0xE2B7
-	BlackSharkHIDVendorID       uint16 = BlackSharkBRB02HIDVendorID
-	BlackSharkBRB02HIDProductID uint16 = 0x7001
+	BlackSharkBRB02ProfileID            = "builtin.blackshark.brb02.ble.rpm"
+	BlackSharkBRB02USBProfileID         = "builtin.blackshark.brb02.usb.rpm"
+	BlackSharkBRB02WiFiProfileID        = "builtin.blackshark.brb02.wifi"
+	BlackSharkBRB02DisplayName          = "黑鲨（Black Shark）风神 Pro"
+	BlackSharkBRB02Vendor               = "黑鲨（Black Shark）"
+	BlackSharkBRB02HIDVendorID   uint16 = 0xE2B7
+	BlackSharkHIDVendorID        uint16 = BlackSharkBRB02HIDVendorID
+	BlackSharkBRB02HIDProductID  uint16 = 0x7001
 )
 
 func BlackSharkBRB02Profile() DeviceProfile {
@@ -56,24 +57,53 @@ func BlackSharkBRB02USBProfile() DeviceProfile {
 	}
 }
 
+// BlackSharkBRB02WiFiProfile is the local mock endpoint used to preview the
+// wired Black Shark feature set without requiring hardware.
+func BlackSharkBRB02WiFiProfile() DeviceProfile {
+	caps := blackSharkBRB02Capabilities(BlackSharkBRB02WiFiProfileID, DeviceTransportWiFi)
+	caps.SupportsScreenImageTransfer = true
+	return DeviceProfile{
+		ID:          BlackSharkBRB02WiFiProfileID,
+		DisplayName: BlackSharkBRB02DisplayName,
+		Vendor:      BlackSharkBRB02Vendor,
+		Model:       BlackSharkBRB02DisplayName,
+		Notes:       "Black Shark BRB02 Cooler Pro WiFi preview device; endpoint is local mock only.",
+		BuiltIn:     true,
+		Transport:   DeviceTransportWiFi,
+		SpeedUnit:   FanSpeedUnitRPM,
+		SpeedRange:  caps.SpeedRange,
+		Connection: DeviceConnectionSettings{
+			Endpoint:      "http://127.0.0.1:18080",
+			StateEndpoint: "/api/data",
+			SpeedEndpoint: "/api/speed",
+			HTTPMethod:    "POST",
+		},
+		Capabilities: caps,
+	}
+}
+
 func blackSharkBRB02Capabilities(profileID, transport string) DeviceCapabilities {
-	// Image transfer is available only through the WinUSB/libusb transport.
-	// The BLE captures do not establish an equivalent image transport.
+	// The WiFi profile exposes the wired feature set for the local frontend
+	// preview; real hardware image transfer remains gated to WinUSB/libusb.
 	supportsScreenImageTransfer := transport == DeviceTransportUSB
+	supportsScreen := transport == DeviceTransportUSB || transport == DeviceTransportWiFi
 	return DeviceCapabilities{
-		ProfileID:                   profileID,
-		DisplayName:                 BlackSharkBRB02DisplayName,
-		Transport:                   transport,
-		SpeedUnit:                   FanSpeedUnitRPM,
-		SpeedRange:                  DeviceSpeedRange{Min: 0, Max: 4000, Step: 1},
-		SupportsReadState:           true,
-		SupportsSetSpeed:            true,
-		SupportsManualGears:         false,
-		SupportsCustomSpeed:         true,
-		SupportsLighting:            true,
-		SupportsBrightness:          true,
-		SupportsGearLight:           true,
-		SupportsScreen:              false,
+		ProfileID:           profileID,
+		DisplayName:         BlackSharkBRB02DisplayName,
+		Transport:           transport,
+		SpeedUnit:           FanSpeedUnitRPM,
+		SpeedRange:          DeviceSpeedRange{Min: 0, Max: 4000, Step: 1},
+		SupportsReadState:   true,
+		SupportsSetSpeed:    true,
+		SupportsManualGears: false,
+		SupportsCustomSpeed: true,
+		SupportsLighting:    true,
+		SupportsBrightness:  true,
+		// BRB02 has an RGB fan ring, not a separate per-gear indicator light.
+		// Keep the ring under the native lighting controls instead of exposing
+		// FlyDigi's unrelated gear-light capability.
+		SupportsGearLight:           false,
+		SupportsScreen:              supportsScreen,
 		SupportsScreenImageTransfer: supportsScreenImageTransfer,
 		SupportsPowerOnStart:        false,
 		SupportsSmartStartStop:      false,

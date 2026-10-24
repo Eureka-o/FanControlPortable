@@ -74,7 +74,13 @@ func (m *Manager) connectBLEWithContextLocked(ctx context.Context) (bool, map[st
 
 	fanData, err := m.readBLEStateWithContextLocked(ctx)
 	if err != nil {
-		m.logError("BLE controller connection failed: %v", err)
+		if m.activeProfile.ID == types.BlackSharkBRB02ProfileID {
+			// BRB02 只在配对模式下广播(长按按键 3-5 秒);重连失败多半是设备已退出
+			// 广播,继续重试也不会出现在扫描结果里。
+			m.logError("BLE controller connection failed: %v (黑鲨 BRB02 未在广播:请长按设备按键 3-5 秒重新进入配对模式后重试)", err)
+		} else {
+			m.logError("BLE controller connection failed: %v", err)
+		}
 		return false, nil
 	}
 

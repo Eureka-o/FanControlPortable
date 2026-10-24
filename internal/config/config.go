@@ -153,6 +153,14 @@ func (m *Manager) tryLoadFromPathLocked(configPath string) bool {
 	applyMissingThemeDefaults(&config, rawConfig)
 	applyMissingWindowBlurDefaults(&config, rawConfig)
 	applyMissingTemperatureDefaults(&config, rawConfig)
+	if _, ok := rawConfig["blackSharkScreenItems"]; !ok {
+		config.BlackSharkScreenItems = types.GetDefaultBlackSharkScreenItems()
+	}
+	config.BlackSharkScreenItems = types.NormalizeBlackSharkScreenItems(config.BlackSharkScreenItems)
+	if _, ok := rawConfig["blackSharkScreenRefreshIntervalMs"]; !ok {
+		config.BlackSharkScreenRefreshIntervalMs = types.BlackSharkScreenRefreshDefaultMs
+	}
+	config.BlackSharkScreenRefreshIntervalMs = types.NormalizeBlackSharkScreenRefreshIntervalMs(config.BlackSharkScreenRefreshIntervalMs)
 	normalizeSpeedConfig(&config)
 
 	m.config = config
@@ -826,6 +834,7 @@ func cloneAppConfig(input types.AppConfig) types.AppConfig {
 	input.FanCurveProfilesByDevice = cloneDeviceCurveStatesExact(input.FanCurveProfilesByDevice)
 	input.NoiseDiagnosticsByDevice = cloneNoiseDiagnosticsExact(input.NoiseDiagnosticsByDevice)
 	input.AxisNoiseProfilesByDevice = cloneAxisNoiseProfilesExact(input.AxisNoiseProfilesByDevice)
+	input.BlackSharkScreenItems = append([]string(nil), input.BlackSharkScreenItems...)
 	input.SmartControl = cloneSmartControlConfig(input.SmartControl)
 	if input.LightStrip.Colors != nil {
 		input.LightStrip.Colors = append([]types.RGBColor{}, input.LightStrip.Colors...)

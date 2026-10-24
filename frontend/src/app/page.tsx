@@ -26,7 +26,7 @@ function getErrorMessage(error: unknown) {
   return String(error ?? 'Unknown error');
 }
 
-export default function Home() {
+function LiveHome() {
   useAppBootstrap();
   const { t } = useTranslation();
   const [diagnosticsExporting, setDiagnosticsExporting] = useState(false);
@@ -177,6 +177,7 @@ export default function Home() {
             config={safeConfig}
             onConfigChange={setConfig}
             isConnected={view.isConnected}
+            monitorOnlyActive={view.monitorOnlyActive}
             fanData={view.fanData}
             temperature={displayTemperature}
             runtimeDeviceProfile={view.runtimeDeviceProfile}
@@ -218,4 +219,8 @@ export default function Home() {
       </Dialog>
     </>
   );
+}
+
+export default function Home() {
+  return <LiveHome />;
 }

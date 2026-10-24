@@ -3,7 +3,12 @@
 package device
 
 import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -52,6 +57,13 @@ type Manager struct {
 	writesBlocked     atomic.Bool
 	connectionGen     atomic.Uint64
 	lastAutoBLEScanAt time.Time
+	// blackSharkImageACK 在图传期间由读循环转发设备应答(0xC4/0xC6/0xC5)。
+	// 读循环是 IN 端点的唯一读者,用原子指针在互斥锁外交接,避免与 7ms 写节拍争锁。
+	blackSharkImageACK atomic.Pointer[blackSharkImageACKStream]
+	// blackSharkHostInfoFrame 是 coreapp 喂入的最新 0x07 参数页快照;
+	// 参数刷新循环只重复发送这份快照，不改变传感器采样频率。
+	blackSharkHostInfoFrame       atomic.Pointer[[]byte]
+	blackSharkHostInfoRefreshStop chan struct{}
 
 	onFanDataUpdate func(data *types.FanData)
 	onDisconnect    func()
@@ -264,6 +276,9 @@ func (m *Manager) SetPercentSpeed(percent int) bool {
 
 func (m *Manager) SetTargetSpeed(value int, unit string) bool {
 	unit = types.NormalizeFanSpeedUnit(unit)
+	if types.IsRPMSpeedUnit(unit) && m.isBlackSharkWiFiConnected() {
+		return m.setBlackSharkWiFiTargetRPM(context.Background(), value)
+	}
 
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
@@ -352,6 +367,9 @@ func (m *Manager) SetManualGearRPM(gear, level string, rpm int) bool {
 }
 
 func (m *Manager) SetGearLight(enabled bool) bool {
+	if m.isBlackSharkWiFiConnected() {
+		return m.postBlackSharkWiFiJSON(context.Background(), "/api/gear-light", map[string]any{"enabled": enabled}) == nil
+	}
 	if m.GetDeviceType() == types.DeviceTransportHID || m.GetDeviceType() == types.DeviceTransportUSB {
 		m.mutex.RLock()
 		blackShark := isBlackSharkProfileID(m.activeProfile.ID)
@@ -422,6 +440,12 @@ func (m *Manager) SetWiFiSmartStartStopStandbySpeed(percent int) bool {
 }
 
 func (m *Manager) SetBrightness(percentage int) bool {
+	if m.isBlackSharkWiFiConnected() {
+		if percentage < 0 || percentage > 100 {
+			return false
+		}
+		return m.postBlackSharkWiFiJSON(context.Background(), "/api/brightness", map[string]any{"brightness": percentage}) == nil
+	}
 	if m.GetDeviceType() == types.DeviceTransportHID || m.GetDeviceType() == types.DeviceTransportUSB {
 		m.mutex.RLock()
 		blackShark := isBlackSharkProfileID(m.activeProfile.ID)
@@ -435,6 +459,9 @@ func (m *Manager) SetBrightness(percentage int) bool {
 }
 
 func (m *Manager) SetLightStrip(cfg types.LightStripConfig) error {
+	if m.isBlackSharkWiFiConnected() {
+		return m.postBlackSharkWiFiJSON(context.Background(), "/api/lighting", cfg)
+	}
 	if m.GetDeviceType() == types.DeviceTransportHID || m.GetDeviceType() == types.DeviceTransportUSB {
 		m.mutex.RLock()
 		blackShark := isBlackSharkProfileID(m.activeProfile.ID)
@@ -457,6 +484,9 @@ func (m *Manager) SetLightStrip(cfg types.LightStripConfig) error {
 }
 
 func (m *Manager) SetRGBOff() bool {
+	if m.isBlackSharkWiFiConnected() {
+		return m.postBlackSharkWiFiJSON(context.Background(), "/api/rgb-off", map[string]any{}) == nil
+	}
 	if m.GetDeviceType() == types.DeviceTransportHID || m.GetDeviceType() == types.DeviceTransportUSB {
 		m.mutex.RLock()
 		blackShark := isBlackSharkProfileID(m.activeProfile.ID)
@@ -467,6 +497,193 @@ func (m *Manager) SetRGBOff() bool {
 		return m.setFlyDigiHIDRGBOff()
 	}
 	return false
+}
+
+const maxBlackSharkWiFiImageBytes = 4 * 1024 * 1024
+
+// isBlackSharkWiFiConnected keeps the mock-only routes out of ordinary WiFi
+// profiles and out of the disconnected state.
+func (m *Manager) isBlackSharkWiFiConnected() bool {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+	return m.isConnected && m.deviceType == types.DeviceTransportWiFi &&
+		m.activeProfile.ID == types.BlackSharkBRB02WiFiProfileID
+}
+
+func (m *Manager) postBlackSharkWiFiJSON(ctx context.Context, path string, payload any) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	m.mutex.RLock()
+	endpoint := m.wifiEndpoint
+	client := m.wifiHTTPClient
+	connected := m.isConnected && m.deviceType == types.DeviceTransportWiFi &&
+		m.activeProfile.ID == types.BlackSharkBRB02WiFiProfileID
+	m.mutex.RUnlock()
+	if !connected {
+		return fmt.Errorf("黑鲨 WiFi 设备未连接")
+	}
+	if client == nil {
+		client = newWiFiHTTPClient()
+	}
+	base, err := normalizeWiFiEndpoint(endpoint)
+	if err != nil {
+		return err
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	return retryDeviceSendContext(ctx, "Black Shark WiFi command", func() error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+path, bytes.NewReader(body))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			message, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			if len(message) > 0 {
+				return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(message)))
+			}
+			return fmt.Errorf("HTTP %d", resp.StatusCode)
+		}
+		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		return nil
+	})
+}
+
+func (m *Manager) setBlackSharkWiFiTargetRPM(ctx context.Context, value int) bool {
+	if value < 0 || value > 4000 {
+		return false
+	}
+	if err := m.postBlackSharkWiFiJSON(ctx, "/api/speed", map[string]any{"rpm": value, "targetRpm": value}); err != nil {
+		m.logError("设置黑鲨 WiFi 转速失败: %v", err)
+		return false
+	}
+	m.mutex.Lock()
+	current := m.currentFanData.Load()
+	next := &types.FanData{CurrentRPM: uint16(value), TargetRPM: uint16(value), Transport: types.DeviceTransportWiFi, SpeedUnit: types.FanSpeedUnitRPM}
+	if current != nil {
+		*next = *current
+		next.TargetRPM = uint16(value)
+		next.CurrentRPM = uint16(value)
+		next.Transport = types.DeviceTransportWiFi
+		next.SpeedUnit = types.FanSpeedUnitRPM
+	}
+	m.currentFanData.Store(next)
+	callback := m.onFanDataUpdate
+	m.mutex.Unlock()
+	if callback != nil {
+		go callback(next)
+	}
+	return true
+}
+
+func (m *Manager) SendBlackSharkWiFiHostInfoFrame() error {
+	if !m.isBlackSharkWiFiConnected() {
+		return fmt.Errorf("黑鲨 WiFi 设备未连接")
+	}
+	frame := m.blackSharkHostInfoFrame.Load()
+	if frame == nil || len(*frame) == 0 {
+		return fmt.Errorf("黑鲨屏幕参数尚未准备好")
+	}
+	return m.postBlackSharkWiFiJSON(context.Background(), "/api/screen/parameters", map[string]any{
+		"frameBase64": base64.StdEncoding.EncodeToString(*frame),
+	})
+}
+
+func (m *Manager) SetBlackSharkWiFiHostInfoRefreshInterval(intervalMs int) error {
+	intervalMs = types.NormalizeBlackSharkScreenRefreshIntervalMs(intervalMs)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if !m.isConnected || m.deviceType != types.DeviceTransportWiFi || m.activeProfile.ID != types.BlackSharkBRB02WiFiProfileID {
+		return fmt.Errorf("黑鲨 WiFi 设备未连接")
+	}
+	if m.blackSharkHostInfoRefreshStop != nil {
+		close(m.blackSharkHostInfoRefreshStop)
+		m.blackSharkHostInfoRefreshStop = nil
+	}
+	if intervalMs == 0 {
+		return nil
+	}
+	stop := make(chan struct{})
+	m.blackSharkHostInfoRefreshStop = stop
+	go m.blackSharkWiFiHostInfoRefreshLoop(time.Duration(intervalMs)*time.Millisecond, stop)
+	return nil
+}
+
+func (m *Manager) blackSharkWiFiHostInfoRefreshLoop(interval time.Duration, stop <-chan struct{}) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			if err := m.SendBlackSharkWiFiHostInfoFrame(); err != nil {
+				m.logDebug("黑鲨 WiFi 参数页刷新失败: %v", err)
+			}
+		}
+	}
+}
+
+// SendBlackSharkWiFiMockImage uploads RGB565 bytes to the local mock device.
+// It is intentionally separate from the USB/libusb image protocol.
+func (m *Manager) SendBlackSharkWiFiMockImage(ctx context.Context, rgb565 []byte, progress func(stage string, completed, total int)) error {
+	if len(rgb565) == 0 || len(rgb565) > maxBlackSharkWiFiImageBytes {
+		return fmt.Errorf("黑鲨 WiFi 图像数据大小无效: %d", len(rgb565))
+	}
+	if !m.isBlackSharkWiFiConnected() {
+		return fmt.Errorf("黑鲨 WiFi 设备未连接")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	total := len(rgb565)
+	if progress != nil {
+		progress("preparing", 0, total)
+	}
+	m.mutex.RLock()
+	endpoint := m.wifiEndpoint
+	client := m.wifiHTTPClient
+	m.mutex.RUnlock()
+	if client == nil {
+		client = newWiFiHTTPClient()
+	}
+	base, err := normalizeWiFiEndpoint(endpoint)
+	if err != nil {
+		return err
+	}
+	if progress != nil {
+		progress("uploading", 0, total)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/screen/image", bytes.NewReader(rgb565))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		message, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if len(message) > 0 {
+			return fmt.Errorf("黑鲨 WiFi 图传 HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(message)))
+		}
+		return fmt.Errorf("黑鲨 WiFi 图传 HTTP %d", resp.StatusCode)
+	}
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	if progress != nil {
+		progress("completed", total, total)
+	}
+	return nil
 }
 
 func (m *Manager) QueryDeviceSettings() (types.DeviceSettings, error) {

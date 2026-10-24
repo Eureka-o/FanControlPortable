@@ -61,6 +61,31 @@ func TestApplyMissingTemperatureDefaultsMigratesLegacyPowerSpoofPair(t *testing.
 	}
 }
 
+func TestLoadMissingBlackSharkScreenItemsDefaultsToAll(t *testing.T) {
+	installDir := t.TempDir()
+	configDir := filepath.Join(installDir, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config.json"), []byte(`{"debugMode":true}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded := NewManager(installDir, nil).Load(false)
+	want := types.GetDefaultBlackSharkScreenItems()
+	if len(loaded.BlackSharkScreenItems) != len(want) {
+		t.Fatalf("BlackSharkScreenItems = %#v, want %#v", loaded.BlackSharkScreenItems, want)
+	}
+	for i := range want {
+		if loaded.BlackSharkScreenItems[i] != want[i] {
+			t.Fatalf("BlackSharkScreenItems = %#v, want %#v", loaded.BlackSharkScreenItems, want)
+		}
+	}
+	if loaded.BlackSharkScreenRefreshIntervalMs != types.BlackSharkScreenRefreshDefaultMs {
+		t.Fatalf("BlackSharkScreenRefreshIntervalMs = %d, want default %d", loaded.BlackSharkScreenRefreshIntervalMs, types.BlackSharkScreenRefreshDefaultMs)
+	}
+}
+
 func TestUpdateKeepsCurrentConfigWhenPersistenceFails(t *testing.T) {
 	blockedPath := filepath.Join(t.TempDir(), "blocked")
 	if err := os.WriteFile(blockedPath, []byte("not a directory"), 0644); err != nil {

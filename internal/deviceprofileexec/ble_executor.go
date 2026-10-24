@@ -606,10 +606,14 @@ func (e *BLEExecutor) ensureOpenLocked(ctx context.Context) error {
 	}
 	client, err := connect(connectProfile)
 	if err != nil && cachedAddress != "" {
-		// Windows can assign a new address after a device reset; fall back to
-		// the normal profile scan after invalidating only this runtime hint.
+		// Windows can assign a new address after a device reset, and a cached
+		// endpoint keeps failing while the device is gone from the radio view.
+		// Clear the endpoint so the retry actually re-scans by the profile's
+		// name/UUID filters instead of repeating the identical direct connect.
 		e.lastAddress = ""
-		client, err = connect(e.profile)
+		retryProfile := e.profile
+		retryProfile.Connection.Endpoint = ""
+		client, err = connect(retryProfile)
 	}
 	if err != nil {
 		return err
@@ -951,7 +955,16 @@ func (c *realBLEClient) WriteBLECommand(ctx context.Context, payload []byte, wit
 	} else {
 		n, err = c.writeChar.WriteWithoutResponse(payload)
 		if err != nil {
+			// Some write-only characteristics reject write-without-response but
+			// accept write-with-response; retry once. When both fail (e.g. the
+			// link just dropped), report the ORIGINAL error — the BRB02 AE41
+			// characteristic has no write property, so the retry would otherwise
+			// mask the real transport failure with "write not supported".
+			original := err
 			n, err = c.writeChar.Write(payload)
+			if err != nil {
+				n, err = 0, original
+			}
 		}
 	}
 	if err == nil && n != len(payload) {

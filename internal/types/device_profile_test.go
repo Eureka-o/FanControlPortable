@@ -111,6 +111,7 @@ func TestBuiltInDeviceProfilesIncludeFlyDigiProfiles(t *testing.T) {
 		FlyDigiBS3PROProfileID,
 		BlackSharkBRB02ProfileID,
 		BlackSharkBRB02USBProfileID,
+		BlackSharkBRB02WiFiProfileID,
 	}
 	for _, id := range expectedIDs {
 		found := false
@@ -167,11 +168,12 @@ func TestBlackSharkBuiltInLookupAndTransportFiltering(t *testing.T) {
 		}
 	}
 	profiles := BuiltInDeviceProfiles("")
-	for _, transport := range []string{DeviceTransportBLE, DeviceTransportUSB} {
+	for _, transport := range []string{DeviceTransportBLE, DeviceTransportUSB, DeviceTransportWiFi} {
 		found := false
 		for _, profile := range profiles {
 			if profile.ID == BlackSharkBRB02ProfileID && transport == DeviceTransportBLE ||
-				profile.ID == BlackSharkBRB02USBProfileID && transport == DeviceTransportUSB {
+				profile.ID == BlackSharkBRB02USBProfileID && transport == DeviceTransportUSB ||
+				profile.ID == BlackSharkBRB02WiFiProfileID && transport == DeviceTransportWiFi {
 				if NormalizeDeviceTransport(profile.Transport) == transport {
 					found = true
 				}
@@ -191,7 +193,7 @@ func TestEnsureBuiltInDeviceProfilesSeedsBlackSharkTransportsOnce(t *testing.T) 
 	if ensureBuiltInDeviceProfiles(cfg) {
 		t.Fatal("seeding an already-normalized profile list should not change config")
 	}
-	for _, id := range []string{BlackSharkBRB02ProfileID, BlackSharkBRB02USBProfileID} {
+	for _, id := range []string{BlackSharkBRB02ProfileID, BlackSharkBRB02USBProfileID, BlackSharkBRB02WiFiProfileID} {
 		count := 0
 		for _, profile := range cfg.DeviceProfiles {
 			if profile.ID == id {
@@ -201,6 +203,9 @@ func TestEnsureBuiltInDeviceProfilesSeedsBlackSharkTransportsOnce(t *testing.T) 
 		if count != 1 {
 			t.Fatalf("seeded profile %q count = %d, want exactly one", id, count)
 		}
+	}
+	if ensureBuiltInDeviceProfiles(cfg) {
+		t.Fatal("seeding all built-in profiles twice should not change config")
 	}
 }
 
@@ -241,7 +246,7 @@ func TestDefaultConfigDoesNotPersistWiFiWithoutCompatibility(t *testing.T) {
 		t.Fatalf("default compatibility identity = %q/%q, want empty", cfg.DeviceTransport, cfg.ActiveDeviceProfileID)
 	}
 	for _, profile := range cfg.DeviceProfiles {
-		if NormalizeDeviceTransport(profile.Transport) == DeviceTransportWiFi {
+		if NormalizeDeviceTransport(profile.Transport) == DeviceTransportWiFi && profile.ID != BlackSharkBRB02WiFiProfileID {
 			t.Fatalf("default config persisted WiFi profile %#v", profile)
 		}
 	}

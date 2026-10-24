@@ -27,6 +27,8 @@ const (
 	// trayShellRestartReannounceAttempts covers the short race between a stable
 	// TrayNotifyWnd and Explorer accepting the first NIM_ADD.
 	trayShellRestartReannounceAttempts = 3
+	trayAutoStartRecoveryDelay         = 2 * time.Second
+	trayAutoStartRecoveryRetryDelay    = 8 * time.Second
 	trayReadyRecoveryDelay             = 75 * time.Second
 	trayRestartThrottle                = 45 * time.Second
 	maxSystrayInstances                = 200
@@ -388,6 +390,36 @@ func (m *Manager) onTrayReady() {
 
 	// 监控 Explorer/通知区域重建；必要时补发 TaskbarCreated，让 systray 执行 NIM_ADD。
 	go m.startShellRestartMonitor(instanceDone)
+	if m.isAutoStartLaunch() {
+		go m.startAutoStartTrayRecovery(instanceDone)
+	}
+}
+
+func (m *Manager) startAutoStartTrayRecovery(instanceDone <-chan struct{}) {
+	for _, delay := range []time.Duration{trayAutoStartRecoveryDelay, trayAutoStartRecoveryRetryDelay} {
+		timer := time.NewTimer(delay)
+		select {
+		case <-timer.C:
+		case <-instanceDone:
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return
+		case <-m.done:
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return
+		}
+
+		if atomic.LoadInt32(&m.readyState) == 0 || !isShellReady() {
+			continue
+		}
+		if !postTaskbarCreated() {
+			m.logDebug("自启动托盘补注册消息发送失败")
+		}
+		m.refreshTrayIcon()
+	}
 }
 
 // setupIcon 设置托盘图标
@@ -1028,7 +1060,15 @@ func (m *Manager) Quit() {
 // 主要用于系统从休眠/睡眠唤醒、或 Explorer 重启后，及时恢复通知区域图标，
 // 避免出现图标丢失或显示异常。仅在托盘就绪时生效。
 func (m *Manager) RefreshIcon() {
-	if atomic.LoadInt32(&m.readyState) == 0 || atomic.LoadInt32(&m.initialized) == 0 {
+	if atomic.LoadInt32(&m.initialized) == 0 {
+		return
+	}
+	if atomic.LoadInt32(&m.readyState) == 0 {
+		// 电源恢复或 Explorer 重建期间，systray 可能已经退出但监督协程
+		// 尚未完成下一轮注册；主动刷新不能在这里静默丢失。
+		if isShellReady() {
+			m.requestTrayRestart("主动刷新时托盘未就绪")
+		}
 		return
 	}
 	m.refreshTrayIcon()

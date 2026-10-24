@@ -346,7 +346,7 @@ func NormalizeDeviceCapabilities(caps DeviceCapabilities) DeviceCapabilities {
 }
 
 func (caps DeviceCapabilities) AllowsGearLight() bool {
-	return caps.SupportsGearLight || caps.SupportsLighting
+	return caps.SupportsGearLight
 }
 
 func (caps DeviceCapabilities) AllowsBrightness() bool {
@@ -560,12 +560,18 @@ func firstDeviceProfileIDForTransport(profiles []DeviceProfile, transport string
 	if !IsManualCompatibilityDeviceTransport(transport) {
 		return ""
 	}
+	first := ""
 	for _, profile := range profiles {
 		if profile.ID != "" && NormalizeDeviceTransport(profile.Transport) == transport {
-			return profile.ID
+			if first == "" {
+				first = profile.ID
+			}
+			if transport == DeviceTransportWiFi && profile.ID == DefaultWiFiPercentProfileID {
+				return profile.ID
+			}
 		}
 	}
-	return ""
+	return first
 }
 
 func activeDeviceProfileIDFromTransportMap(profiles []DeviceProfile, activeIDs map[string]string, transport string) string {

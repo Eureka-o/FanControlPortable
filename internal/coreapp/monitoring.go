@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Eureka-o/FanControlPortable/internal/bridge"
+	"github.com/Eureka-o/FanControlPortable/internal/deviceproto"
 	"github.com/Eureka-o/FanControlPortable/internal/ipc"
 	"github.com/Eureka-o/FanControlPortable/internal/smartcontrol"
 	"github.com/Eureka-o/FanControlPortable/internal/types"
@@ -326,6 +327,16 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			temp = mergeTemperatureHardwareMetadata(previousTemp, temp)
 			a.currentTemp = temp
 			a.mutex.Unlock()
+
+			// 黑鲨风神 Pro (USB/WiFi mock): 只更新内存中的最新 0x07 参数页快照；
+			// 设备管理器按前端选择的间隔重复发送，不改变这里的传感器采样频率。
+			if a.deviceManager != nil {
+				profileID := a.deviceManager.ActiveProfile().ID
+				if profileID == types.BlackSharkBRB02USBProfileID || profileID == types.BlackSharkBRB02WiFiProfileID {
+					a.deviceManager.SetBlackSharkHostInfoFrame(
+						deviceproto.BuildBlackSharkHostInfo(blackSharkHostInfoEntries(cfg, temp, now)))
+				}
+			}
 
 			fanData := a.deviceManager.GetCurrentFanData()
 			historyPoint, recorded := a.tempHistory.Add(temp, fanData)

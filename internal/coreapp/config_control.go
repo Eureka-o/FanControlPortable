@@ -115,6 +115,15 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	oldCfg := a.configManager.Get()
 	monitorOnlyChanged := oldCfg.MonitorOnly != cfg.MonitorOnly
 	cfg.HistoryRetentionHours = types.NormalizeTemperatureHistoryRetentionHours(oldCfg.HistoryRetentionHours)
+	if cfg.BlackSharkScreenItems == nil {
+		cfg.BlackSharkScreenItems = oldCfg.BlackSharkScreenItems
+		if cfg.BlackSharkScreenItems == nil {
+			cfg.BlackSharkScreenItems = types.GetDefaultBlackSharkScreenItems()
+		}
+	} else {
+		cfg.BlackSharkScreenItems = types.NormalizeBlackSharkScreenItems(cfg.BlackSharkScreenItems)
+	}
+	cfg.BlackSharkScreenRefreshIntervalMs = types.NormalizeBlackSharkScreenRefreshIntervalMs(cfg.BlackSharkScreenRefreshIntervalMs)
 	oldConnectionKey := deviceProfileConnectionKey(oldCfg)
 	if len(cfg.FanCurveProfiles) == 0 && len(oldCfg.FanCurveProfiles) > 0 {
 		cfg.FanCurveProfiles = curveprofiles.CloneProfiles(oldCfg.FanCurveProfiles)
@@ -230,7 +239,8 @@ func (a *CoreApp) SetTemperatureHistoryRetentionHours(hours int) error {
 	a.mutex.Lock()
 	cfg := a.configManager.Get()
 	cfg.HistoryRetentionHours = hours
-	err := a.configManager.Update(cfg)
+	var err error
+	err = a.configManager.Update(cfg)
 	committed := a.configManager.Get()
 	a.mutex.Unlock()
 	if err != nil {
@@ -439,6 +449,9 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 
 // SetGearLight 设置挡位灯
 func (a *CoreApp) SetGearLight(enabled bool) bool {
+	if a.monitorOnlyActive() || a.deviceManager == nil || !a.deviceManager.IsConnected() {
+		return false
+	}
 	if !a.activeDeviceCapabilities().AllowsGearLight() {
 		return false
 	}
@@ -518,6 +531,9 @@ func (a *CoreApp) SetWiFiSmartStartStopStandbySpeed(percent int) bool {
 
 // SetBrightness 设置亮度
 func (a *CoreApp) SetBrightness(percentage int) bool {
+	if a.monitorOnlyActive() || a.deviceManager == nil || !a.deviceManager.IsConnected() {
+		return false
+	}
 	if !a.activeDeviceCapabilities().AllowsBrightness() {
 		return false
 	}
@@ -536,6 +552,9 @@ func (a *CoreApp) SetBrightness(percentage int) bool {
 
 // SetLightStrip 设置灯带
 func (a *CoreApp) SetLightStrip(lightCfg types.LightStripConfig) error {
+	if a.monitorOnlyActive() || a.deviceManager == nil || !a.deviceManager.IsConnected() {
+		return fmt.Errorf("灯光控制在仅监控模式或未连接设备时不可用")
+	}
 	if !a.activeDeviceCapabilities().AllowsLightStrip() {
 		return fmt.Errorf("active device does not support lighting")
 	}
@@ -560,6 +579,9 @@ func (a *CoreApp) SetLightStrip(lightCfg types.LightStripConfig) error {
 }
 
 func (a *CoreApp) applyConfiguredLightStrip() error {
+	if a.monitorOnlyActive() || a.deviceManager == nil || !a.deviceManager.IsConnected() {
+		return nil
+	}
 	if !a.activeDeviceCapabilities().AllowsLightStrip() {
 		return nil
 	}
