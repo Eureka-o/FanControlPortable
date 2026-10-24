@@ -79,6 +79,62 @@ const (
 	MaxTemperatureHistoryRetentionHours     = 24
 )
 
+const (
+	BlackSharkScreenItemCPUTemperature = "cpuTemperature"
+	BlackSharkScreenItemGPUTemperature = "gpuTemperature"
+	BlackSharkScreenItemGPUPower       = "gpuPower"
+	BlackSharkScreenItemTime           = "time"
+	BlackSharkScreenRefreshMinMs       = 125
+	BlackSharkScreenRefreshMaxMs       = 5 * 60 * 1000
+	BlackSharkScreenRefreshDefaultMs   = 1000
+)
+
+var defaultBlackSharkScreenItems = []string{
+	BlackSharkScreenItemCPUTemperature,
+	BlackSharkScreenItemGPUTemperature,
+	BlackSharkScreenItemGPUPower,
+	BlackSharkScreenItemTime,
+}
+
+func GetDefaultBlackSharkScreenItems() []string {
+	return append([]string(nil), defaultBlackSharkScreenItems...)
+}
+
+func NormalizeBlackSharkScreenItems(items []string) []string {
+	allowed := map[string]bool{
+		BlackSharkScreenItemCPUTemperature: true,
+		BlackSharkScreenItemGPUTemperature: true,
+		BlackSharkScreenItemGPUPower:       true,
+		BlackSharkScreenItemTime:           true,
+	}
+	seen := make(map[string]bool, len(items))
+	normalized := make([]string, 0, min(len(items), len(defaultBlackSharkScreenItems)))
+	for _, item := range items {
+		if !allowed[item] || seen[item] {
+			continue
+		}
+		seen[item] = true
+		normalized = append(normalized, item)
+		if len(normalized) == len(defaultBlackSharkScreenItems) {
+			break
+		}
+	}
+	return normalized
+}
+
+func NormalizeBlackSharkScreenRefreshIntervalMs(intervalMs int) int {
+	if intervalMs <= 0 {
+		return 0
+	}
+	if intervalMs < BlackSharkScreenRefreshMinMs {
+		return BlackSharkScreenRefreshMinMs
+	}
+	if intervalMs > BlackSharkScreenRefreshMaxMs {
+		return BlackSharkScreenRefreshMaxMs
+	}
+	return intervalMs
+}
+
 func NormalizeTemperatureHistoryRetentionHours(hours int) int {
 	if hours < DefaultTemperatureHistoryRetentionHours {
 		return DefaultTemperatureHistoryRetentionHours
@@ -666,6 +722,8 @@ type AppConfig struct {
 	GpuPowerSensor                    string                                 `json:"gpuPowerSensor"`                   // GPU 功耗传感器选择: auto 或传感器 key
 	GpuReadMode                       string                                 `json:"gpuReadMode"`
 	GpuLowPowerProtection             bool                                   `json:"gpuLowPowerProtection"`
+	BlackSharkScreenItems             []string                               `json:"blackSharkScreenItems"`
+	BlackSharkScreenRefreshIntervalMs int                                    `json:"blackSharkScreenRefreshIntervalMs"`
 	ConfigPath                        string                                 `json:"configPath"`              // 配置文件路径
 	ManualGear                        string                                 `json:"manualGear"`              // 手动挡位设置
 	ManualLevel                       string                                 `json:"manualLevel"`             // 手动挡位级别(低中高)
@@ -1109,7 +1167,7 @@ func CloneDefaultManualGearRPMForUnit(unit string) map[string]map[string]int {
 func GetDefaultConfig(isAutoStart bool) AppConfig {
 	defaultCurve := GetDefaultFanCurve()
 	defaultTempSelection := GetDefaultTemperatureSelection()
-	defaultDeviceProfiles := append(FlyDigiBuiltInProfiles(), BlackSharkBRB02Profile(), BlackSharkBRB02USBProfile())
+	defaultDeviceProfiles := append(FlyDigiBuiltInProfiles(), BlackSharkBRB02Profile(), BlackSharkBRB02USBProfile(), BlackSharkBRB02WiFiProfile())
 
 	return AppConfig{
 		DeviceTransport:                   "",
@@ -1138,43 +1196,45 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		FanCurveProfiles: []FanCurveProfile{
 			{ID: "default", Name: "默认", Curve: defaultCurve},
 		},
-		ActiveFanCurveProfileID:  "default",
-		GearLight:                true,
-		PowerOnStart:             false,
-		PowerSpoofEnabled:        false,
-		PowerSpoofPercent:        100,
-		PowerSpoofOffsetWatts:    0,
-		CPUPowerSpoofPercent:     100,
-		CPUPowerSpoofOffsetWatts: 0,
-		GPUPowerSpoofPercent:     100,
-		GPUPowerSpoofOffsetWatts: 0,
-		WindowsAutoStart:         false,
-		ThemeMode:                ThemeModeSystem,
-		WindowBlur:               WindowBlurAcrylic,
-		SmartStartStop:           "off",
-		Brightness:               100,
-		TempUpdateRate:           2,
-		TempSampleCount:          1,
-		HistoryRetentionHours:    DefaultTemperatureHistoryRetentionHours,
-		TempSource:               defaultTempSelection.TempSource,
-		GpuDevice:                defaultTempSelection.GpuDevice,
-		CpuSensor:                defaultTempSelection.CpuSensor,
-		GpuSensor:                defaultTempSelection.GpuSensor,
-		CpuPowerSensor:           defaultTempSelection.CpuPowerSensor,
-		GpuPowerSensor:           defaultTempSelection.GpuPowerSensor,
-		GpuReadMode:              defaultTempSelection.GpuReadMode,
-		GpuLowPowerProtection:    defaultTempSelection.GpuLowPowerProtection,
-		ConfigPath:               "",
-		ManualGear:               "标准",
-		ManualLevel:              "中",
-		DebugMode:                false,
-		GuiMonitoring:            true,
-		CustomSpeedEnabled:       false,
-		CustomSpeedRPM:           45,
-		IgnoreDeviceOnReconnect:  true, // 默认开启，防止断连后误判用户手动切换
-		SmartControl:             GetDefaultSmartControlConfig(defaultCurve),
-		LightStrip:               GetDefaultLightStripConfig(),
-		LegionFnQ:                GetDefaultLegionFnQConfig(),
-		LegionFnQSupport:         LegionFnQSupportCache{},
+		ActiveFanCurveProfileID:           "default",
+		GearLight:                         true,
+		PowerOnStart:                      false,
+		PowerSpoofEnabled:                 false,
+		PowerSpoofPercent:                 100,
+		PowerSpoofOffsetWatts:             0,
+		CPUPowerSpoofPercent:              100,
+		CPUPowerSpoofOffsetWatts:          0,
+		GPUPowerSpoofPercent:              100,
+		GPUPowerSpoofOffsetWatts:          0,
+		WindowsAutoStart:                  false,
+		ThemeMode:                         ThemeModeSystem,
+		WindowBlur:                        WindowBlurAcrylic,
+		SmartStartStop:                    "off",
+		Brightness:                        100,
+		TempUpdateRate:                    2,
+		TempSampleCount:                   1,
+		HistoryRetentionHours:             DefaultTemperatureHistoryRetentionHours,
+		TempSource:                        defaultTempSelection.TempSource,
+		GpuDevice:                         defaultTempSelection.GpuDevice,
+		CpuSensor:                         defaultTempSelection.CpuSensor,
+		GpuSensor:                         defaultTempSelection.GpuSensor,
+		CpuPowerSensor:                    defaultTempSelection.CpuPowerSensor,
+		GpuPowerSensor:                    defaultTempSelection.GpuPowerSensor,
+		GpuReadMode:                       defaultTempSelection.GpuReadMode,
+		GpuLowPowerProtection:             defaultTempSelection.GpuLowPowerProtection,
+		BlackSharkScreenItems:             GetDefaultBlackSharkScreenItems(),
+		BlackSharkScreenRefreshIntervalMs: BlackSharkScreenRefreshDefaultMs,
+		ConfigPath:                        "",
+		ManualGear:                        "标准",
+		ManualLevel:                       "中",
+		DebugMode:                         false,
+		GuiMonitoring:                     true,
+		CustomSpeedEnabled:                false,
+		CustomSpeedRPM:                    45,
+		IgnoreDeviceOnReconnect:           true, // 默认开启，防止断连后误判用户手动切换
+		SmartControl:                      GetDefaultSmartControlConfig(defaultCurve),
+		LightStrip:                        GetDefaultLightStripConfig(),
+		LegionFnQ:                         GetDefaultLegionFnQConfig(),
+		LegionFnQSupport:                  LegionFnQSupportCache{},
 	}
 }

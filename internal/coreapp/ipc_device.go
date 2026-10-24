@@ -78,12 +78,34 @@ func (a *CoreApp) handleDeviceIPCRequest(req ipc.Request) (ipc.Response, bool) {
 		}
 		return a.dataResponse(settings), true
 
+	case ipc.ReqSendBlackSharkScreenParameters:
+		if err := a.SendBlackSharkScreenParameters(); err != nil {
+			return a.errorResponse(err.Error()), true
+		}
+		return a.successResponse(true), true
+
+	case ipc.ReqSetBlackSharkScreenRefresh:
+		var params ipc.SetBlackSharkScreenRefreshParams
+		if err := json.Unmarshal(req.Data, &params); err != nil {
+			return a.errorResponse("解析黑鲨参数刷新设置失败: " + err.Error()), true
+		}
+		if err := a.SetBlackSharkScreenRefreshInterval(params.IntervalMs); err != nil {
+			return a.errorResponse(err.Error()), true
+		}
+		return a.successResponse(true), true
+
 	case ipc.ReqTransferDeviceImage:
 		var params ipc.TransferDeviceImageParams
 		if err := json.Unmarshal(req.Data, &params); err != nil {
 			return a.errorResponse("解析黑鲨屏幕图片参数失败: " + err.Error()), true
 		}
 		if err := a.TransferDeviceImage(params); err != nil {
+			return a.errorResponse(err.Error()), true
+		}
+		return a.successResponse(true), true
+
+	case ipc.ReqCancelDeviceImage:
+		if err := a.CancelDeviceImage(); err != nil {
 			return a.errorResponse(err.Error()), true
 		}
 		return a.successResponse(true), true

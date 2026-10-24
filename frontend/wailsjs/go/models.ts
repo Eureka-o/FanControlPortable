@@ -807,6 +807,8 @@ export namespace types {
 	    gpuPowerSensor: string;
 	    gpuReadMode: string;
 	    gpuLowPowerProtection: boolean;
+	    blackSharkScreenItems: string[];
+	    blackSharkScreenRefreshIntervalMs: number;
 	    configPath: string;
 	    manualGear: string;
 	    manualLevel: string;
@@ -875,6 +877,8 @@ export namespace types {
 	        this.gpuPowerSensor = source["gpuPowerSensor"];
 	        this.gpuReadMode = source["gpuReadMode"];
 	        this.gpuLowPowerProtection = source["gpuLowPowerProtection"];
+	        this.blackSharkScreenItems = source["blackSharkScreenItems"];
+	        this.blackSharkScreenRefreshIntervalMs = source["blackSharkScreenRefreshIntervalMs"];
 	        this.configPath = source["configPath"];
 	        this.manualGear = source["manualGear"];
 	        this.manualLevel = source["manualLevel"];

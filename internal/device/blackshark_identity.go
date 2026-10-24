@@ -14,5 +14,6 @@ func isLegacyBlackSharkHIDProfileID(id string) bool {
 
 func isBlackSharkProfileID(id string) bool {
 	return id == types.BlackSharkBRB02ProfileID ||
-		id == types.BlackSharkBRB02USBProfileID
+		id == types.BlackSharkBRB02USBProfileID ||
+		id == types.BlackSharkBRB02WiFiProfileID
 }

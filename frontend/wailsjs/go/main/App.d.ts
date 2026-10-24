@@ -10,6 +10,8 @@ export function AutoScanDevices():Promise<Record<string, any>>;
 
 export function BeginNoiseDiagnostic(arg1:types.NoiseDiagnosticBeginRequest):Promise<types.NoiseDiagnosticSession>;
 
+export function CancelDeviceImage():Promise<void>;
+
 export function CancelNoiseDiagnostic(arg1:string):Promise<void>;
 
 export function CancelUpdateDownload(arg1:string):Promise<void>;
@@ -136,6 +138,8 @@ export function ScanDeviceCandidates(arg1:string):Promise<types.DeviceScanResult
 
 export function ScanWiFiDevices(arg1:string):Promise<types.WiFiDiscoveryResult>;
 
+export function SendBlackSharkScreenParameters():Promise<void>;
+
 export function SendDeviceDebugCommand(arg1:string,arg2:number):Promise<types.DeviceDebugCommandResult>;
 
 export function SetActiveDeviceProfile(arg1:string):Promise<types.DeviceProfile>;
@@ -145,6 +149,8 @@ export function SetActiveFanCurveProfile(arg1:string):Promise<void>;
 export function SetAutoControl(arg1:boolean):Promise<void>;
 
 export function SetAutoStartWithMethod(arg1:boolean,arg2:string):Promise<void>;
+
+export function SetBlackSharkScreenRefreshInterval(arg1:number):Promise<void>;
 
 export function SetBrightness(arg1:number):Promise<boolean>;
 

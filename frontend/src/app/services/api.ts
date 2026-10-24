@@ -170,6 +170,15 @@ export interface DeviceImageTransferRequest {
   height: number;
 }
 
+export interface DeviceImageTransferProgress {
+  active: boolean;
+  stage: string;
+  completed: number;
+  total: number;
+  percent: number;
+  error?: string;
+}
+
 class ApiService {
   // 设备连接
   async connectDevice(): Promise<boolean> {
@@ -220,9 +229,25 @@ class ApiService {
     return await (window as any).go?.main?.App?.RefreshDeviceSettings?.();
   }
 
+	async sendBlackSharkScreenParameters(): Promise<void> {
+		const send = (window as any).go?.main?.App?.SendBlackSharkScreenParameters;
+		if (typeof send !== 'function') {
+			throw new Error('Black Shark screen parameter transfer is not available yet');
+		}
+		await send();
+	}
+
   // 配置管理
   async getConfig(): Promise<types.AppConfig> {
     return await GetConfig();
+  }
+
+  async setBlackSharkScreenRefreshInterval(intervalMs: number): Promise<void> {
+    const setRefresh = (window as any).go?.main?.App?.SetBlackSharkScreenRefreshInterval;
+    if (typeof setRefresh !== 'function') {
+      throw new Error('Black Shark parameter refresh is not available yet');
+    }
+    return await setRefresh(intervalMs);
   }
 
   async getAppVersion(): Promise<string> {
@@ -434,6 +459,18 @@ class ApiService {
       throw new Error('Device image transfer is not available yet');
     }
     return await transfer(request);
+  }
+
+  async cancelDeviceImageTransfer(): Promise<void> {
+    const cancel = (window as any).go?.main?.App?.CancelDeviceImage;
+    if (typeof cancel !== 'function') {
+      throw new Error('Device image transfer cancellation is not available yet');
+    }
+    return await cancel();
+  }
+
+  onDeviceImageTransferProgress(callback: (payload: DeviceImageTransferProgress) => void): () => void {
+    return EventsOn('device-image-transfer-progress', callback);
   }
 
   // Windows自启动相关

@@ -35,18 +35,21 @@ type RequestType string
 
 const (
 	// 设备相关
-	ReqConnect                RequestType = "Connect"
-	ReqAutoScanDevices        RequestType = "AutoScanDevices"
-	ReqScanDeviceCandidates   RequestType = "ScanDeviceCandidates"
-	ReqConnectDeviceCandidate RequestType = "ConnectDeviceCandidate"
-	ReqConnectNativeDevice    RequestType = "ConnectNativeDevice"
-	ReqScanWiFiDevices        RequestType = "ScanWiFiDevices"
-	ReqControlWiFiScan        RequestType = "ControlWiFiScan"
-	ReqDisconnect             RequestType = "Disconnect"
-	ReqGetDeviceStatus        RequestType = "GetDeviceStatus"
-	ReqGetCurrentFanData      RequestType = "GetCurrentFanData"
-	ReqRefreshDeviceSettings  RequestType = "RefreshDeviceSettings"
-	ReqTransferDeviceImage    RequestType = "TransferDeviceImage"
+	ReqConnect                        RequestType = "Connect"
+	ReqAutoScanDevices                RequestType = "AutoScanDevices"
+	ReqScanDeviceCandidates           RequestType = "ScanDeviceCandidates"
+	ReqConnectDeviceCandidate         RequestType = "ConnectDeviceCandidate"
+	ReqConnectNativeDevice            RequestType = "ConnectNativeDevice"
+	ReqScanWiFiDevices                RequestType = "ScanWiFiDevices"
+	ReqControlWiFiScan                RequestType = "ControlWiFiScan"
+	ReqDisconnect                     RequestType = "Disconnect"
+	ReqGetDeviceStatus                RequestType = "GetDeviceStatus"
+	ReqGetCurrentFanData              RequestType = "GetCurrentFanData"
+	ReqRefreshDeviceSettings          RequestType = "RefreshDeviceSettings"
+	ReqSendBlackSharkScreenParameters RequestType = "SendBlackSharkScreenParameters"
+	ReqSetBlackSharkScreenRefresh     RequestType = "SetBlackSharkScreenRefresh"
+	ReqTransferDeviceImage            RequestType = "TransferDeviceImage"
+	ReqCancelDeviceImage              RequestType = "CancelDeviceImage"
 
 	// 配置相关
 	ReqGetConfig                  RequestType = "GetConfig"
@@ -161,20 +164,21 @@ type Event struct {
 
 // EventType 事件类型
 const (
-	EventFanDataUpdate            = "fan-data-update"
-	EventTemperatureUpdate        = "temperature-update"
-	EventTemperatureHistoryUpdate = "temperature-history-update"
-	EventDeviceConnected          = "device-connected"
-	EventDeviceDisconnected       = "device-disconnected"
-	EventDeviceError              = "device-error"
-	EventDeviceSettingsUpdate     = "device-settings-update"
-	EventConfigUpdate             = "config-update"
-	EventSystemResume             = "system-resume"
-	EventHotkeyTriggered          = "hotkey-triggered"
-	EventLegionPowerModeUpdate    = "legion-power-mode-update"
-	EventLegionFnQSupportUpdate   = "legion-fnq-support-update"
-	EventHealthPing               = "health-ping"
-	EventHeartbeat                = "heartbeat"
+	EventFanDataUpdate               = "fan-data-update"
+	EventTemperatureUpdate           = "temperature-update"
+	EventTemperatureHistoryUpdate    = "temperature-history-update"
+	EventDeviceConnected             = "device-connected"
+	EventDeviceDisconnected          = "device-disconnected"
+	EventDeviceError                 = "device-error"
+	EventDeviceSettingsUpdate        = "device-settings-update"
+	EventConfigUpdate                = "config-update"
+	EventSystemResume                = "system-resume"
+	EventHotkeyTriggered             = "hotkey-triggered"
+	EventLegionPowerModeUpdate       = "legion-power-mode-update"
+	EventLegionFnQSupportUpdate      = "legion-fnq-support-update"
+	EventDeviceImageTransferProgress = "device-image-transfer-progress"
+	EventHealthPing                  = "health-ping"
+	EventHeartbeat                   = "heartbeat"
 )
 
 // Server IPC 服务器
@@ -1032,6 +1036,19 @@ type TransferDeviceImageParams struct {
 	Format     string `json:"format,omitempty"`
 	Width      int    `json:"width,omitempty"`
 	Height     int    `json:"height,omitempty"`
+}
+
+type SetBlackSharkScreenRefreshParams struct {
+	IntervalMs int `json:"intervalMs"`
+}
+
+type DeviceImageTransferProgress struct {
+	Active    bool   `json:"active"`
+	Stage     string `json:"stage"`
+	Completed int    `json:"completed"`
+	Total     int    `json:"total"`
+	Percent   int    `json:"percent"`
+	Error     string `json:"error,omitempty"`
 }
 
 type BeginNoiseDiagnosticParams struct {

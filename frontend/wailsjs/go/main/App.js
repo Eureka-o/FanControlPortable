@@ -10,6 +10,10 @@ export function BeginNoiseDiagnostic(arg1) {
   return window['go']['main']['App']['BeginNoiseDiagnostic'](arg1);
 }
 
+export function CancelDeviceImage() {
+  return window['go']['main']['App']['CancelDeviceImage']();
+}
+
 export function CancelNoiseDiagnostic(arg1) {
   return window['go']['main']['App']['CancelNoiseDiagnostic'](arg1);
 }
@@ -262,6 +266,10 @@ export function ScanWiFiDevices(arg1) {
   return window['go']['main']['App']['ScanWiFiDevices'](arg1);
 }
 
+export function SendBlackSharkScreenParameters() {
+  return window['go']['main']['App']['SendBlackSharkScreenParameters']();
+}
+
 export function SendDeviceDebugCommand(arg1, arg2) {
   return window['go']['main']['App']['SendDeviceDebugCommand'](arg1, arg2);
 }
@@ -280,6 +288,10 @@ export function SetAutoControl(arg1) {
 
 export function SetAutoStartWithMethod(arg1, arg2) {
   return window['go']['main']['App']['SetAutoStartWithMethod'](arg1, arg2);
+}
+
+export function SetBlackSharkScreenRefreshInterval(arg1) {
+  return window['go']['main']['App']['SetBlackSharkScreenRefreshInterval'](arg1);
 }
 
 export function SetBrightness(arg1) {

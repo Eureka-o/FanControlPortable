@@ -181,6 +181,9 @@ func (d *flyDigiHIDDevice) ReadReport(timeout time.Duration) ([]byte, error) {
 	if d != nil && d.usb != nil {
 		buf := make([]byte, blackSharkHIDReportLen)
 		if err := d.usb.transfer(blackSharkUSBInEndpoint, buf, uint32(timeout/time.Millisecond)); err != nil {
+			if errors.Is(err, errBlackSharkUSBTimeout) {
+				return nil, errFlyDigiHIDTimeout
+			}
 			return nil, err
 		}
 		return buf, nil

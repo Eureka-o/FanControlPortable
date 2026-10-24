@@ -10,6 +10,8 @@ import (
 const (
 	BlackSharkCmdVersion       byte = 0x01
 	BlackSharkCmdStatusNotify  byte = 0x06
+	BlackSharkCmdHostInfo      byte = 0x07
+	BlackSharkCmdControlSource byte = 0x22
 	BlackSharkCmdSetSpeed      byte = 0x24
 	BlackSharkCmdGetStatus     byte = 0x25
 	BlackSharkCmdRGBEnable     byte = 0x10
@@ -19,6 +21,7 @@ const (
 	BlackSharkCmdImageMetadata byte = 0xC4
 	BlackSharkCmdImageCommit   byte = 0xC5
 	BlackSharkCmdImageBlock    byte = 0xA4
+	BlackSharkCmdImageBlockACK byte = 0xC6
 )
 
 const (
@@ -105,6 +108,39 @@ func ParseBlackSharkFrame(data []byte) (BlackSharkFrame, bool) {
 }
 
 func BuildBlackSharkGetVersion() []byte { return BuildBlackSharkFrame(BlackSharkCmdVersion) }
+
+// BuildBlackSharkSessionOpen builds the 0x22 control-source frame (source=01)
+// that the official app sends at the start of every USB session. Without it
+// the BRB02 stays silent on the IN endpoint: no 500ms status frames arrive and
+// every IN read times out.
+func BuildBlackSharkSessionOpen() []byte {
+	return BuildBlackSharkFrame(BlackSharkCmdControlSource, 0x01)
+}
+
+// BlackSharkHostInfoEntry is one [ID][value16LE] item of the 0x07 host-parameter
+// push. The cooler screen's parameter page is rendered solely from these pushes
+// (protocol §5, official 1-9Hz): without them the page stays blank, and the
+// image-upload handshake is only answered while the screen session is alive.
+//
+// Slot semantics were confirmed on a real screen by the Alp toolbox: 00=CPU temp,
+// 01=GPU temp (the screen's GPU slot renders this item), 02=GPU power, 03=unknown
+// (official sends 0), 05=unknown (official replays a constant 74), 06=GPU hotspot
+// (falls back to GPU temp), 07=minutes-of-day (the screen renders value/60:value%60).
+type BlackSharkHostInfoEntry struct {
+	ID    byte
+	Value uint16
+}
+
+// BuildBlackSharkHostInfo builds the 26-byte 0x07 host-parameter push frame:
+// [A5][1A][07][count] + count×[ID][lo][hi] + [CK].
+func BuildBlackSharkHostInfo(entries []BlackSharkHostInfoEntry) []byte {
+	params := make([]byte, 0, 1+len(entries)*3)
+	params = append(params, byte(len(entries)))
+	for _, entry := range entries {
+		params = append(params, entry.ID, byte(entry.Value), byte(entry.Value>>8))
+	}
+	return buildBlackSharkFrameWithLength(byte(4+len(params)), BlackSharkCmdHostInfo, params...)
+}
 
 func BuildBlackSharkGetStatus() []byte { return BuildBlackSharkFrame(BlackSharkCmdGetStatus) }
 

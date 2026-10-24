@@ -6,13 +6,16 @@ export function useAppBootstrap() {
   const startEventListeners = useAppStore((state) => state.startEventListeners);
 
   useEffect(() => {
-    const stopListening = startEventListeners();
+    let stopListening = () => {};
+    let disposed = false;
+    stopListening = startEventListeners();
     return () => {
+      disposed = true;
       stopListening();
     };
   }, [startEventListeners]);
 
   useEffect(() => {
-    initializeApp();
+    void initializeApp();
   }, [initializeApp]);
 }
