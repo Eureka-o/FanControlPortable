@@ -5,11 +5,11 @@ import (
 	"time"
 )
 
-// BLE 可查看设备状态，但屏幕图片写入仅通过 WinUSB/libusb 有线通路开放。
-func TestBlackSharkScreenImageTransferIsUSBOnly(t *testing.T) {
+// 黑鲨 BLE 与 USB 都支持屏幕图片写入；BLE 只是在传输速度上更慢。
+func TestBlackSharkScreenImageTransferSupportsBothTransports(t *testing.T) {
 	ble := BlackSharkBRB02Profile()
-	if ble.Transport != DeviceTransportBLE || ble.Capabilities.SupportsScreenImageTransfer {
-		t.Fatal("BLE Black Shark profile must not advertise screen image transfer")
+	if ble.Transport != DeviceTransportBLE || !ble.Capabilities.SupportsScreenImageTransfer {
+		t.Fatal("BLE Black Shark profile must advertise screen image transfer")
 	}
 
 	usb := BlackSharkBRB02USBProfile()

@@ -1283,9 +1283,11 @@ export function ScreenPanel() {
   const { t } = useTranslation();
   const isConnected = useAppStore((state) => state.isConnected);
   const runtimeDeviceProfile = useAppStore((state) => state.runtimeDeviceProfile);
+  const isBleTransfer = runtimeDeviceProfile?.transport === 'ble';
   const canTransferImages = isConnected
-    && runtimeDeviceProfile?.id === 'builtin.blackshark.brb02.usb.rpm'
-    && runtimeDeviceProfile.transport === 'usb';
+    && (runtimeDeviceProfile?.id === 'builtin.blackshark.brb02.ble.rpm'
+      || runtimeDeviceProfile?.id === 'builtin.blackshark.brb02.usb.rpm')
+    && (runtimeDeviceProfile.transport === 'ble' || runtimeDeviceProfile.transport === 'usb');
   const [presets, setPresets] = useState<ScreenPresetPayload[]>([]);
   const [thumbs, setThumbs] = useState<Record<number, string>>({});
   const [current, setCurrent] = useState<ScreenImageInfoPayload | null>(null);
@@ -1334,6 +1336,29 @@ export function ScreenPanel() {
   const [cropOffY, setCropOffY] = useState(0);
   const [cropPreview, setCropPreview] = useState<ScreenCropPreviewPayload | null>(null);
   const [cropLoading, setCropLoading] = useState(false);
+  const [bleWarningOpen, setBleWarningOpen] = useState(false);
+  const pendingBleTransferRef = useRef<(() => void | Promise<void>) | null>(null);
+
+  const runImageTransfer = useCallback((action: () => void | Promise<void>) => {
+    if (!isBleTransfer) {
+      void action();
+      return;
+    }
+    pendingBleTransferRef.current = action;
+    setBleWarningOpen(true);
+  }, [isBleTransfer]);
+
+  const confirmBleTransfer = useCallback(() => {
+    const action = pendingBleTransferRef.current;
+    pendingBleTransferRef.current = null;
+    setBleWarningOpen(false);
+    if (action) void action();
+  }, []);
+
+  const cancelBleTransfer = useCallback(() => {
+    pendingBleTransferRef.current = null;
+    setBleWarningOpen(false);
+  }, []);
 
   // 取当前图缩略图：从设备读回的优先，其次内置预设。
   useEffect(() => {
@@ -1776,7 +1801,7 @@ export function ScreenPanel() {
               size="sm"
               loading={busy}
               disabled={!cropPreview || cropLoading}
-              onClick={() => void applyCrop()}
+              onClick={() => runImageTransfer(() => applyCrop())}
             >
               {t('controlPanel.screen.cropApply')}
             </Button>
@@ -1840,7 +1865,7 @@ export function ScreenPanel() {
                           size="sm"
                           loading={readingImg}
                           disabled={busy || !canTransferImages}
-                          onClick={() => void readDeviceImage()}
+                          onClick={() => runImageTransfer(() => readDeviceImage())}
                         >
                           {t('controlPanel.screen.readFromDevice')}
                         </Button>
@@ -1877,7 +1902,7 @@ export function ScreenPanel() {
             key={p.officialPosition}
             type="button"
             disabled={busy || !canTransferImages}
-            onClick={() => void applyPreset(p.officialPosition)}
+            onClick={() => runImageTransfer(() => applyPreset(p.officialPosition))}
             className="group overflow-hidden rounded-md border border-border/70 text-left transition hover:border-foreground/40 disabled:opacity-60"
             title={p.name}
           >
@@ -1933,7 +1958,7 @@ export function ScreenPanel() {
               <button
                 type="button"
                 disabled={busy || !canTransferImages}
-                onClick={() => void applyHistory(item)}
+                onClick={() => runImageTransfer(() => applyHistory(item))}
                 className="block w-full text-left disabled:opacity-60"
                 title={t('controlPanel.screen.historyApply')}
               >
@@ -2007,11 +2032,27 @@ export function ScreenPanel() {
               variant="secondary"
               size="sm"
               className="w-full rounded-lg"
-              onClick={() => {
+            onClick={() => {
                 void apiService.cancelScreenImageTransfer();
               }}
             >
               {t('controlPanel.screen.uploadingCancel')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={bleWarningOpen} onOpenChange={(open) => !open && cancelBleTransfer()}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('controlPanel.screen.bleSlowWarningTitle')}</DialogTitle>
+            <DialogDescription>{t('controlPanel.screen.bleSlowWarningDescription')}</DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={cancelBleTransfer}>
+              {t('controlPanel.screen.bleSlowWarningCancel')}
+            </Button>
+            <Button size="sm" onClick={confirmBleTransfer}>
+              {t('controlPanel.screen.bleSlowWarningContinue')}
             </Button>
           </div>
         </DialogContent>

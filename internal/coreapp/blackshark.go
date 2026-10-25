@@ -1806,8 +1806,10 @@ func (a *CoreApp) TransferDeviceImage(params ipc.TransferDeviceImageParams) erro
 		return fmt.Errorf("黑鲨设备未连接")
 	}
 	profile := a.deviceManager.ActiveProfile()
-	if profile.ID != types.BlackSharkBRB02USBProfileID || types.NormalizeDeviceTransport(profile.Transport) != types.DeviceTransportUSB {
-		return fmt.Errorf("黑鲨屏幕图片传输仅支持 USB 有线模式")
+	transport := types.NormalizeDeviceTransport(profile.Transport)
+	if !types.IsBlackSharkDeviceProfileID(profile.ID) ||
+		(transport != types.DeviceTransportUSB && transport != types.DeviceTransportBLE) {
+		return fmt.Errorf("当前黑鲨连接方式不支持屏幕图片传输")
 	}
 	if !profile.Capabilities.SupportsScreenImageTransfer {
 		return fmt.Errorf("当前设备不支持屏幕图片传输")
@@ -3180,14 +3182,16 @@ func (a *CoreApp) broadcastScreenImageTransferProgress(sent, total int) {
 
 // uploadScreenPayload 走设备层完成上传，并把结果转成 IPC 载荷。
 //
-// 图传只有一条实现：设备层的 SendBlackSharkImageWithProgress（USB 走 libusb 中断端点）。
+// 图传只有一条实现：设备层的 SendBlackSharkImageWithProgress（USB 走 libusb，BLE 走原始帧流）。
 func (a *CoreApp) uploadScreenPayload(payload []byte) (*ipc.ScreenUploadResult, error) {
 	if a.deviceManager == nil {
 		return nil, fmt.Errorf("设备管理器未就绪")
 	}
 	profile := a.deviceManager.ActiveProfile()
-	if profile.ID != types.BlackSharkBRB02USBProfileID || types.NormalizeDeviceTransport(profile.Transport) != types.DeviceTransportUSB {
-		return nil, fmt.Errorf("屏保图像传输仅支持黑鲨 USB 有线模式")
+	transport := types.NormalizeDeviceTransport(profile.Transport)
+	if !types.IsBlackSharkDeviceProfileID(profile.ID) ||
+		(transport != types.DeviceTransportUSB && transport != types.DeviceTransportBLE) {
+		return nil, fmt.Errorf("当前黑鲨连接方式不支持屏保图像传输")
 	}
 	// 登记成一次设备独占任务（上游那套形状）：重复传输会被挡住，断开/挂起时能被取消；
 	// 结束时刻由登记表留痕，监控循环据此把这段停摆归因到本机（见 selfInflictedMonitorStall）。
