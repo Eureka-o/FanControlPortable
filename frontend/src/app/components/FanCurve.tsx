@@ -93,12 +93,12 @@ const FAN_CURVE_TEMP_STEP = 5;
 const DEFAULT_CURVE_LENGTH = ((FAN_CURVE_MAX_TEMP - FAN_CURVE_MIN_TEMP) / FAN_CURVE_TEMP_STEP) + 1;
 const FAN_CURVE_TEMPERATURE_TICKS = Array.from({ length: DEFAULT_CURVE_LENGTH }, (_, i) => FAN_CURVE_MIN_TEMP + i * FAN_CURVE_TEMP_STEP);
 
-// 坐标轴左端定为 0（与纵轴口径一致）；数据网格起点仍是 FAN_CURVE_MIN_TEMP=20。
-const FAN_CURVE_AXIS_MIN_TEMP = 0;
-// 刻度步长沿用 FAN_CURVE_TEMP_STEP=5：起点从 20 移到 0，刻度变为 0,5,…,110（23 个）。
-const FAN_CURVE_AXIS_TEMPERATURE_TICKS = Array.from(
-  { length: (FAN_CURVE_MAX_TEMP - FAN_CURVE_AXIS_MIN_TEMP) / FAN_CURVE_TEMP_STEP + 1 },
-  (_, i) => FAN_CURVE_AXIS_MIN_TEMP + i * FAN_CURVE_TEMP_STEP,
+// 黑鲨四个可拖点的设备工作范围是 10–100℃；飞智及通用曲线仍使用 20–110℃。
+const BLACKSHARK_CURVE_AXIS_MIN_TEMP = 10;
+const BLACKSHARK_CURVE_AXIS_MAX_TEMP = 100;
+const BLACKSHARK_CURVE_AXIS_TEMPERATURE_TICKS = Array.from(
+  { length: (BLACKSHARK_CURVE_AXIS_MAX_TEMP - BLACKSHARK_CURVE_AXIS_MIN_TEMP) / FAN_CURVE_TEMP_STEP + 1 },
+  (_, i) => BLACKSHARK_CURVE_AXIS_MIN_TEMP + i * FAN_CURVE_TEMP_STEP,
 );
 
 // 纵轴下端定为 0（与横轴口径一致）。`YAxis` 与拖拽的 Y 映射都必须用它 ——
@@ -747,6 +747,12 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const zeroBasedSpeedTicks = useMemo(() => {
     const max = speedRange.max;
     if (max <= 0) return [0];
+    if (speedUnit === 'rpm' && !blackSharkGearCurveMode) {
+      const ticks: number[] = [];
+      for (let value = 0; value <= max; value += 1000) ticks.push(value);
+      if (ticks[ticks.length - 1] !== max) ticks.push(max);
+      return ticks;
+    }
     const candidates = [100, 200, 250, 300, 400, 500, 600, 800, 1000, 1200, 1500, 2000, 2400, 2500, 3000];
     const step = candidates.find((c) => max % c === 0 && max / c >= 3 && max / c <= 6)
       ?? Math.max(1, Math.round(max / 4));
@@ -754,7 +760,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     for (let v = 0; v <= max; v += step) ticks.push(v);
     if (ticks[ticks.length - 1] !== max) ticks.push(max);
     return ticks;
-  }, [speedRange.max]);
+  }, [blackSharkGearCurveMode, speedRange.max, speedUnit]);
 
   const defaultCurve = speedUnit === 'rpm' ? DEFAULT_RPM_FAN_CURVE : DEFAULT_FAN_CURVE;
   const {
@@ -785,11 +791,11 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   ].join(':');
 
   const temperatureRange = useMemo(() => ({
-    // 坐标轴起点用 FAN_CURVE_AXIS_MIN_TEMP(0)，数据网格仍从 FAN_CURVE_MIN_TEMP(20) 起，两者刻意分开。
-    min: FAN_CURVE_AXIS_MIN_TEMP,
-    max: FAN_CURVE_MAX_TEMP,
-    ticks: FAN_CURVE_AXIS_TEMPERATURE_TICKS,
-  }), []);
+    // 黑鲨设备侧曲线保留完整 0℃ 轴域；飞智及通用曲线从 20℃ 起，避免出现无意义的空白段。
+    min: blackSharkGearCurveMode ? BLACKSHARK_CURVE_AXIS_MIN_TEMP : FAN_CURVE_MIN_TEMP,
+    max: blackSharkGearCurveMode ? BLACKSHARK_CURVE_AXIS_MAX_TEMP : FAN_CURVE_MAX_TEMP,
+    ticks: blackSharkGearCurveMode ? BLACKSHARK_CURVE_AXIS_TEMPERATURE_TICKS : FAN_CURVE_TEMPERATURE_TICKS,
+  }), [blackSharkGearCurveMode]);
 
   const syncConfigFromBackend = useCallback(async () => {
     try {

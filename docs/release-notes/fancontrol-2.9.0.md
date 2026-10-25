@@ -45,8 +45,8 @@
 ### Compatibility Notes
 
 - **黑鲨连接方式 / Black Shark Transports**
-  黑鲨风神 Pro 正式支持 BLE 与 USB 有线模式；WiFi 调试设备不再作为内置设备注册。
-  Black Shark Fengshen Pro officially supports BLE and USB wired mode; the WiFi debug device is no longer registered as a built-in device.
+  黑鲨风神 Pro 正式支持 BLE 与 USB 有线模式。
+  Black Shark Fengshen Pro officially supports BLE and USB wired mode.
 
 - **覆盖安装 / In-place Upgrade**
   可直接覆盖安装旧版本；设备配置、风扇曲线、学习数据、历史记录、主题、托盘设置和 IP 设置会继续保留。
