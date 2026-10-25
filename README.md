@@ -28,7 +28,7 @@ FanControl loads the matching transport, speed unit, curves, and capabilities fr
 | Slim 压风散热器 Pro | WiFi | 百分比 / Percent | 速度读取与下发、曲线控制、IP 查找、动态 IP 兼容、智能启停 / Speed read/write, curve control, IP discovery, dynamic-IP compatibility, smart start/stop |
 | 飞智（FlyDigi）BS1 | BLE | RPM | 速度读取与下发、手动挡位、通电自启 / Speed read/write, manual gears, power-on start |
 | 飞智（FlyDigi）BS2 / BS2PRO / BS3 / BS3PRO | HID | RPM | 速度读取与下发、手动挡位、挡位灯、灯光、亮度、通电自启、智能启停 / Speed read/write, manual gears, gear indicator, lighting, brightness, power-on start, smart start/stop |
-| 黑鲨（Black Shark）风神 Pro | BLE | RPM | 速度读取与下发、灯光、亮度；BLE 不支持图传 / Speed read/write, lighting, brightness; image transfer is unavailable over BLE |
+| 黑鲨（Black Shark）风神 Pro | BLE | RPM | 速度读取与下发、灯光、亮度、屏幕图片上传（速度较慢） / Speed read/write, lighting, brightness, screen image upload (slower) |
 | 黑鲨（Black Shark）风神 Pro | USB 有线 / USB wired | RPM | 速度读取与下发、灯光、亮度、屏幕图片上传 / Speed read/write, lighting, brightness, screen image upload |
 
 飞智和黑鲨设备会优先通过内置档案自动匹配。点击设置页的「扫描设备」后，软件会扫描原生 HID/BLE/USB 设备；开启兼容模式后，还会扫描 WiFi 和虚拟串口/COM 设备。
@@ -66,7 +66,7 @@ When Windows asks for permission on first launch, allow it. Administrator access
 当前构建版本：`2.9.0` / Current build: `2.9.0`
 
 - 黑鲨风神 Pro 支持 BLE 与 USB 有线原生连接，曲线页提供设备专属 RPM 曲线和四档散热方案 / Black Shark Fengshen Pro now supports native BLE and USB wired connections with device-scoped RPM curves and four cooling profiles.
-- 黑鲨 USB 有线模式支持屏幕图片上传、裁剪和历史图重传；BLE 可控制设备但不支持图传 / Black Shark USB mode supports screen image upload, cropping, and history re-upload; BLE keeps device control without image transfer.
+- 黑鲨 USB 有线与 BLE 模式都支持屏幕图片上传、裁剪和历史图重传；BLE 传输较慢，软件会在开始传输前提醒优先使用有线连接 / Black Shark USB wired and BLE modes support screen image upload, cropping, and history re-upload; BLE is slower and the app recommends wired mode before transfer.
 - 黑鲨专属设置加入灯效、屏幕参数和主机侧/设备侧变频控制，转速上限按设备标定到 4000 RPM / Black Shark settings add lighting, screen parameters, host/device variable-speed control, and a calibrated 4000 RPM ceiling.
 - 优化 BLE/USB 设备连接、重连、挂起恢复和连接状态同步，减少设备已连接但不可控制的中间状态 / Improved BLE/USB connection, reconnect, resume, and state synchronization to reduce unusable intermediate states.
 - 改善 Explorer 重启、电源状态切换和启动竞态下的托盘图标恢复，并保留既有仅监控、主题和历史曲线功能 / Improved tray recovery across Explorer restarts, power-state changes, and startup races while retaining monitor-only mode, themes, and history charts.
@@ -86,7 +86,7 @@ See [GitHub Releases](https://github.com/Eureka-o/FanControlPortable/releases) o
 ### 设备连接不上 / Device cannot connect
 
 - 确认设备已通电，并检查连接方式是否正确 / Make sure the device is powered on and the transport is correct.
-- 黑鲨风神 Pro 使用 USB 有线或 BLE；USB 图传只在有线模式可用 / Black Shark Fengshen Pro uses USB wired or BLE; USB image transfer is wired-only.
+- 黑鲨风神 Pro 使用 USB 有线或 BLE；两种模式都支持图传，但 BLE 速度较慢，建议优先使用 USB 有线连接 / Black Shark Fengshen Pro uses USB wired or BLE; both support image transfer, but BLE is slower and USB wired mode is recommended.
 - WiFi 兼容设备需确认电脑和设备处于同一网络 / WiFi compatibility devices require the computer and device to be on the same network.
 - 如果修改过 WiFi 设备网络设置，请重新填写 IP 地址 / Re-enter the IP address after changing a WiFi device's network settings.
 

@@ -96,7 +96,7 @@ func BlackSharkBRB02USBProfile() DeviceProfile {
 }
 
 func blackSharkBRB02Capabilities(profileID, transport string) DeviceCapabilities {
-	supportsScreenImageTransfer := transport == DeviceTransportUSB
+	supportsScreenImageTransfer := transport == DeviceTransportBLE || transport == DeviceTransportUSB
 	// 灯效、亮度、挡位灯一律不对外声明：它们会把上游那套通用面板（灯光控制卡片 / 挡位灯开关）
 	// 点亮成黑鲨的第二份界面，而黑鲨这些功能由本工具自己的页面提供（灯效页、挡位灯在灯效里）。
 	// 声明为 false 同时让上游那条"把主机侧灯带配置推给设备"的路径（AllowsLightStrip）与

@@ -26,9 +26,9 @@
   支持选择屏幕显示的 CPU、GPU 和时间参数，并可立即应用刷新设置。
   Select CPU, GPU, and time parameters for the device screen and apply refresh settings immediately.
 
-- **USB 图传 / USB Image Transfer**
-  USB 有线模式支持图片预览、裁剪、缩放、上传进度、中断、历史图重传和设备回读；BLE 模式保留控制能力，但不开放图传。
-  USB wired mode supports image preview, crop, zoom, progress, cancel, history re-upload, and device readback. BLE keeps device control but does not expose image transfer.
+- **双通道图传 / Dual-Transport Image Transfer**
+  USB 有线与 BLE 模式都支持图片预览、裁剪、缩放、上传进度、中断、历史图重传和设备回读；BLE 传输速度较慢，开始传输前会提示优先使用有线连接。
+  USB wired and BLE modes support image preview, crop, zoom, progress, cancel, history re-upload, and device readback. BLE is slower, so the app recommends wired mode before starting a transfer.
 
 ## 连接与后台稳定性
 ### Connectivity & Background Stability
