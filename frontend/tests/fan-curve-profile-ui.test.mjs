@@ -31,6 +31,13 @@ test('keeps profile selection, creation, and management in the curve header', ()
   assert.doesNotMatch(source, /data-theme-card="curve-import-export"/);
 });
 
+test('keeps BlackShark four-point axis separate from the FlyDigi curve axis', () => {
+  assert.match(source, /const BLACKSHARK_CURVE_AXIS_MIN_TEMP = 10/);
+  assert.match(source, /const BLACKSHARK_CURVE_AXIS_MAX_TEMP = 100/);
+  assert.match(source, /min: blackSharkGearCurveMode \? BLACKSHARK_CURVE_AXIS_MIN_TEMP : FAN_CURVE_MIN_TEMP/);
+  assert.match(source, /max: blackSharkGearCurveMode \? BLACKSHARK_CURVE_AXIS_MAX_TEMP : FAN_CURVE_MAX_TEMP/);
+});
+
 test('stacks export and import sections in the profile manager', () => {
   assert.match(source, /data-profile-export-section/);
   assert.match(source, /data-profile-import-section/);
