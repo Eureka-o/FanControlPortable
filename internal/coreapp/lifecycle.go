@@ -16,6 +16,54 @@ import (
 	"github.com/Eureka-o/FanControlPortable/internal/version"
 )
 
+func (a *CoreApp) trayConfigSnapshot() types.AppConfig {
+	if a == nil || a.configManager == nil {
+		return types.AppConfig{}
+	}
+	revision := a.configManager.Revision()
+	a.trayConfigMu.Lock()
+	defer a.trayConfigMu.Unlock()
+	if !a.trayConfigReady || revision != a.trayConfigRev {
+		a.refreshTrayConfigLocked()
+	}
+	return a.trayConfig
+}
+
+func (a *CoreApp) refreshTrayConfigLocked() {
+	a.trayConfig, a.trayConfigRev = a.configManager.GetWithRevision()
+	a.trayConfigReady = true
+	a.trayCurveOptions = buildTrayCurveOptions(a.trayConfig.FanCurveProfiles)
+	a.trayActiveCurveID = a.trayConfig.ActiveFanCurveProfileID
+}
+
+func (a *CoreApp) trayCurveOptionsSnapshot() ([]tray.CurveOption, string) {
+	if a == nil || a.configManager == nil {
+		return nil, ""
+	}
+	revision := a.configManager.Revision()
+	a.trayConfigMu.Lock()
+	defer a.trayConfigMu.Unlock()
+	if !a.trayConfigReady || revision != a.trayConfigRev {
+		a.refreshTrayConfigLocked()
+	}
+	return a.trayCurveOptions, a.trayActiveCurveID
+}
+
+func buildTrayCurveOptions(profiles []types.FanCurveProfile) []tray.CurveOption {
+	options := make([]tray.CurveOption, 0, len(profiles))
+	for _, profile := range profiles {
+		if profile.ID == "" {
+			continue
+		}
+		name := strings.TrimSpace(profile.Name)
+		if name == "" {
+			name = "默认"
+		}
+		options = append(options, tray.CurveOption{ID: profile.ID, Name: name})
+	}
+	return options
+}
+
 // Start 启动核心服务
 func (a *CoreApp) Start() error {
 	a.logInfo("=== FanControl Core 启动 ===")
@@ -181,16 +229,16 @@ func (a *CoreApp) Start() error {
 		a.startHealthMonitoring()
 	})
 
-	// 情景循环：按前台进程自动切换档位/灯效（无规则时零开销）
-	a.safeGo("startSceneLoop", func() {
+	// 情景循环只在已有规则时启动；之后新增首条规则会按需启动。
+	if len(cfg.SceneRules) > 0 {
 		a.startSceneLoop()
-	})
+	}
 
 	// 黑鲨主机侧灯效驱动：槽位 6「响应」/ 槽位 7「音频同步」需要主机持续喂数据，
 	// 因此跟着当前生效的灯效槽位自动起停（理由见 blackSharkHostFx）。
-	a.safeGo("startBlackSharkHostFx", func() {
+	if !a.monitorOnlyActive() {
 		a.startBlackSharkHostFx()
-	})
+	}
 
 	a.logInfo("=== FanControl Core 启动完成 ===")
 
@@ -314,24 +362,12 @@ func (a *CoreApp) initSystemTray() {
 			return profile.Name
 		},
 		func() ([]tray.CurveOption, string) {
-			cfg := a.configManager.Get()
-			options := make([]tray.CurveOption, 0, len(cfg.FanCurveProfiles))
-			for _, p := range cfg.FanCurveProfiles {
-				if p.ID == "" {
-					continue
-				}
-				name := p.Name
-				if strings.TrimSpace(name) == "" {
-					name = "默认"
-				}
-				options = append(options, tray.CurveOption{ID: p.ID, Name: name})
-			}
-			return options, cfg.ActiveFanCurveProfileID
+			return a.trayCurveOptionsSnapshot()
 		},
 		func() tray.Status {
 			a.mutex.RLock()
 			defer a.mutex.RUnlock()
-			cfg := a.configManager.Get()
+			cfg := a.trayConfigSnapshot()
 			fanData := a.deviceManager.GetCurrentFanData()
 			var currentRPM uint16
 			speedUnit := a.activeDeviceSpeedUnit(&cfg)
@@ -354,17 +390,7 @@ func (a *CoreApp) initSystemTray() {
 					deviceName = strings.TrimSpace(configProfile.Model)
 				}
 			}
-			curveOptions := make([]tray.CurveOption, 0, len(cfg.FanCurveProfiles))
-			for _, p := range cfg.FanCurveProfiles {
-				if p.ID == "" {
-					continue
-				}
-				name := p.Name
-				if strings.TrimSpace(name) == "" {
-					name = "默认"
-				}
-				curveOptions = append(curveOptions, tray.CurveOption{ID: p.ID, Name: name})
-			}
+			curveOptions, _ := a.trayCurveOptionsSnapshot()
 			cpuPowerWatts := a.currentTemp.CPUPowerWatts
 			gpuPowerWatts := a.currentTemp.GPUPowerWatts
 			if cfg.PowerSpoofEnabled {

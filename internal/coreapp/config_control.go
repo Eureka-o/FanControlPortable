@@ -204,6 +204,9 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 		a.applyPluginConfig(committed)
 		a.mutex.Unlock()
 		locked = false
+		if len(committed.SceneRules) > 0 {
+			a.startSceneLoop()
+		}
 
 		if configConnectionChanged || a.deviceManager == nil {
 			if configConnectionChanged {

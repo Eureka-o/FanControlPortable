@@ -85,6 +85,7 @@ func (m *Manager) connectBLEWithContextLocked(ctx context.Context) (bool, map[st
 	}
 
 	m.isConnected = true
+	delete(m.failedAutoBLEScans, nativeBLEAutoConnectCandidateKey(m.activeProfile))
 	m.deviceType = types.DeviceTransportBLE
 	m.productID = 0
 	m.applyBlackSharkCurveTargetDisplay(fanData)

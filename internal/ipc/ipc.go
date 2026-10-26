@@ -278,6 +278,12 @@ type Server struct {
 	writeTimeout  time.Duration
 	throttleMutex sync.Mutex
 	lastEventEmit map[string]time.Time
+	pendingEvents map[string]*pendingEvent
+}
+
+type pendingEvent struct {
+	payload []byte
+	timer   *time.Timer
 }
 
 type clientState struct {
@@ -316,6 +322,7 @@ func NewServer(handler RequestHandler, logger types.Logger) *Server {
 		logger:        logger,
 		writeTimeout:  10 * time.Second,
 		lastEventEmit: make(map[string]time.Time),
+		pendingEvents: make(map[string]*pendingEvent),
 	}
 }
 
@@ -425,9 +432,15 @@ func (s *Server) writeToClient(state *clientState, data []byte) bool {
 func (s *Server) closeClient(state *clientState) {
 	state.closeOnce.Do(func() {
 		close(state.closed)
+		s.throttleMutex.Lock()
 		s.mutex.Lock()
 		delete(s.clients, state.conn)
+		noClients := len(s.clients) == 0
 		s.mutex.Unlock()
+		if noClients {
+			s.clearPendingEventsLocked()
+		}
+		s.throttleMutex.Unlock()
 		state.conn.Close()
 	})
 }
@@ -522,7 +535,7 @@ var highFrequencyEventTypes = map[string]time.Duration{
 	EventTemperatureUpdate:        250 * time.Millisecond,
 	EventTemperatureHistoryUpdate: 1000 * time.Millisecond,
 	// 主机侧灯效状态：驱动循环是 204ms，但界面每秒看一次就够了 ⇒ 推之前先节流掉多余的。
-	// `shouldDropEvent` 会自动按这张表丢弃高频事件，不用在驱动里自己数时间。
+	// 按这张表合并窗口内更新，窗口结束时补发最新状态。
 	EventBlackSharkHostEffects: 1000 * time.Millisecond,
 }
 
@@ -531,29 +544,48 @@ func isHighFrequencyEvent(eventType string) bool {
 	return ok
 }
 
-func (s *Server) shouldDropEvent(eventType string) bool {
-	threshold, ok := highFrequencyEventTypes[eventType]
-	if !ok {
-		return false
-	}
-	now := time.Now()
+func (s *Server) broadcastHighFrequencyEvent(eventType string, payload []byte, threshold time.Duration) {
 	s.throttleMutex.Lock()
 	defer s.throttleMutex.Unlock()
+	if !s.HasClients() {
+		return
+	}
+	if pending := s.pendingEvents[eventType]; pending != nil {
+		pending.payload = payload
+		return
+	}
+	now := time.Now()
 	last, exists := s.lastEventEmit[eventType]
 	if exists && now.Sub(last) < threshold {
-		return true
+		pending := &pendingEvent{payload: payload}
+		pending.timer = time.AfterFunc(threshold-now.Sub(last), func() {
+			s.throttleMutex.Lock()
+			defer s.throttleMutex.Unlock()
+			if s.pendingEvents[eventType] != pending {
+				return
+			}
+			delete(s.pendingEvents, eventType)
+			s.lastEventEmit[eventType] = time.Now()
+			s.broadcastEventPayload(eventType, pending.payload)
+		})
+		s.pendingEvents[eventType] = pending
+		return
 	}
 	s.lastEventEmit[eventType] = now
-	return false
+	s.broadcastEventPayload(eventType, payload)
+}
+
+func (s *Server) clearPendingEventsLocked() {
+	for _, pending := range s.pendingEvents {
+		pending.timer.Stop()
+	}
+	clear(s.pendingEvents)
+	clear(s.lastEventEmit)
 }
 
 // BroadcastEvent 广播事件给所有客户端
 func (s *Server) BroadcastEvent(eventType string, data any) {
 	if !s.HasClients() {
-		return
-	}
-
-	if s.shouldDropEvent(eventType) {
 		return
 	}
 
@@ -579,7 +611,14 @@ func (s *Server) BroadcastEvent(eventType string, data any) {
 		return
 	}
 	payload := append(eventBytes, '\n')
+	if threshold, ok := highFrequencyEventTypes[eventType]; ok {
+		s.broadcastHighFrequencyEvent(eventType, payload, threshold)
+		return
+	}
+	s.broadcastEventPayload(eventType, payload)
+}
 
+func (s *Server) broadcastEventPayload(eventType string, payload []byte) {
 	s.mutex.RLock()
 	clients := make([]*clientState, 0, len(s.clients))
 	for _, state := range s.clients {
@@ -617,6 +656,8 @@ func (s *Server) Stop() {
 		s.listener.Close()
 	}
 
+	s.throttleMutex.Lock()
+	s.clearPendingEventsLocked()
 	s.mutex.Lock()
 	clients := make([]*clientState, 0, len(s.clients))
 	for _, state := range s.clients {
@@ -624,6 +665,7 @@ func (s *Server) Stop() {
 	}
 	s.clients = make(map[net.Conn]*clientState)
 	s.mutex.Unlock()
+	s.throttleMutex.Unlock()
 	for _, state := range clients {
 		s.closeClient(state)
 	}

@@ -61,8 +61,8 @@ func NewHistoryRecorder(filePath string, capacity int, sampleInterval time.Durat
 		sampleInterval: sampleInterval,
 		enabled:        true,
 		lastFlushAt:    time.Now(),
-		// 惰性分配：起始 len=0，随实际数据增长至 capacity，避免启动即占满约 35KB。
-		points: make([]types.TemperatureHistoryPoint, 0, capacity),
+		// 真正惰性分配：关闭历史或尚未采样时不保留整段容量。
+		points: nil,
 	}
 	recorder.load()
 	return recorder
@@ -117,7 +117,7 @@ func (r *HistoryRecorder) SetRetentionHours(hours int) error {
 	}
 	ordered := r.snapshotPointsLocked()
 	r.capacity = newCapacity
-	r.points = make([]types.TemperatureHistoryPoint, 0, newCapacity)
+	r.points = nil
 	r.next = 0
 	r.filled = false
 	r.applyLoadedPointsLocked(ordered)
@@ -495,7 +495,7 @@ func (r *HistoryRecorder) writeFile(payload []byte) error {
 }
 
 func (r *HistoryRecorder) clearLocked() {
-	r.points = r.points[:0]
+	r.points = nil
 	r.next = 0
 	r.filled = false
 	r.lastSampleAt = 0

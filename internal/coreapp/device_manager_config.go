@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Eureka-o/FanControlPortable/internal/device"
 	"github.com/Eureka-o/FanControlPortable/internal/deviceprofiles"
 	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
@@ -181,6 +180,6 @@ func (a *CoreApp) persistNativeBLEAutoScanCooldown() {
 		a.logDebug("记录 BLE 扫描时间失败（只是下次启动会再扫一次，不影响本次连接）: %v", err)
 		return
 	}
-	a.logInfo("已记录自动连接 BLE 扫描时间 %s —— %s 内重启将跳过 BLE 组（省掉一次注定失败的扫描）",
-		at.Format("15:04:05"), device.IdleBLEScanCooldown())
+	a.logInfo("已记录最近一次自动 BLE 扫描时间 %s —— 兼容旧版配置；设备级失败冷却仅保存在当前运行周期",
+		at.Format("15:04:05"))
 }

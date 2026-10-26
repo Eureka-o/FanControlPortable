@@ -46,3 +46,33 @@ func TestShouldSkipDeviceHealthCheckDuringRecovery(t *testing.T) {
 		})
 	}
 }
+
+func TestHealthTransportBackoffResetsAfterSuccess(t *testing.T) {
+	var app CoreApp
+	base := time.Unix(100, 0)
+
+	app.recordHealthTransportFailure("ble", base, "read failed")
+	if !app.shouldBackoffHealthTransport("ble", base.Add(time.Second)) {
+		t.Fatal("expected BLE health check to enter backoff")
+	}
+	app.recordHealthTransportSuccess("ble", base.Add(healthTransportBackoffBase))
+	if app.shouldBackoffHealthTransport("ble", base.Add(healthTransportBackoffBase).Add(time.Second)) {
+		t.Fatal("expected successful BLE refresh to clear backoff")
+	}
+}
+
+func TestHealthTransportBackoffEscalatesPerTransport(t *testing.T) {
+	var app CoreApp
+	base := time.Unix(100, 0)
+
+	app.recordHealthTransportFailure("wifi", base, "read failed")
+	app.recordHealthTransportFailure("wifi", base.Add(time.Second), "read failed")
+	app.recordHealthTransportFailure("ble", base.Add(time.Second), "read failed")
+
+	if !app.shouldBackoffHealthTransport("wifi", base.Add(31*time.Second)) {
+		t.Fatal("expected WIFI backoff")
+	}
+	if app.shouldBackoffHealthTransport("ble", base.Add(31*time.Second)) {
+		t.Fatal("BLE backoff should not inherit WIFI failure level")
+	}
+}

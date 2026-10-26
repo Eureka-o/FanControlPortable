@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -292,6 +293,88 @@ func TestReconnectTransportUsesCompatibilityFastPathAfterCompatibilitySuccess(t 
 	if !connected || nativeCalls != 0 || compatibilityCalls != 1 {
 		t.Fatalf("connected=%v nativeCalls=%d compatibilityCalls=%d, want compatibility-only reconnect", connected, nativeCalls, compatibilityCalls)
 	}
+}
+
+func TestReconnectTransportPriorityScansNativeAfterWiFiMiss(t *testing.T) {
+	var calls []string
+	connected, info := reconnectTransportWithPriority(
+		true,
+		false,
+		false,
+		func() (bool, map[string]string) {
+			calls = append(calls, "native")
+			return true, map[string]string{"transport": types.DeviceTransportBLE}
+		},
+		func() (bool, map[string]string) {
+			calls = append(calls, "wifi")
+			return true, map[string]string{"transport": types.DeviceTransportWiFi}
+		},
+	)
+	if !connected || info["transport"] != types.DeviceTransportBLE {
+		t.Fatalf("priority reconnect = connected %v info %#v, want BLE", connected, info)
+	}
+	if len(calls) != 1 || calls[0] != "native" {
+		t.Fatalf("priority call order = %#v, want [native] after the WiFi scan missed", calls)
+	}
+}
+
+func TestReconnectTransportPriorityFallsBackToCompatibilityAfterNativeMiss(t *testing.T) {
+	var calls []string
+	connected, info := reconnectTransportWithPriority(
+		true,
+		true,
+		false,
+		func() (bool, map[string]string) {
+			calls = append(calls, "native")
+			return false, nil
+		},
+		func() (bool, map[string]string) {
+			calls = append(calls, "compatibility")
+			return true, map[string]string{"transport": types.DeviceTransportSerial}
+		},
+	)
+	if !connected || info["transport"] != types.DeviceTransportSerial {
+		t.Fatalf("priority reconnect = connected %v info %#v, want compatibility fallback", connected, info)
+	}
+	if !reflect.DeepEqual(calls, []string{"native", "compatibility"}) {
+		t.Fatalf("priority call order = %#v, want [native compatibility]", calls)
+	}
+}
+
+func TestReconnectReasonPriorityKeepsHealthChecksBelowArrival(t *testing.T) {
+	if reconnectReasonPriority("health-check") >= reconnectReasonPriority("ble-interface-arrival") {
+		t.Fatal("health check must not outrank a device arrival")
+	}
+}
+
+func TestHigherReconnectIntentReplacesLowerPriorityGeneration(t *testing.T) {
+	app := &CoreApp{}
+	app.requestReconnect("health-check", []time.Duration{time.Hour})
+	app.requestReconnect("ble-interface-arrival", []time.Duration{time.Hour})
+
+	app.reconnectMutex.Lock()
+	generation := app.reconnectGeneration
+	priority := app.reconnectIntentPriority.Load()
+	app.reconnectMutex.Unlock()
+	if generation != 2 || priority != reconnectReasonPriority("ble-interface-arrival") {
+		t.Fatalf("reconnect generation=%d priority=%d, want generation 2 and arrival priority", generation, priority)
+	}
+	app.cancelReconnect()
+}
+
+func TestLowerPriorityWakeDoesNotPreemptStartupDelay(t *testing.T) {
+	app := &CoreApp{}
+	app.requestReconnect("startup", []time.Duration{time.Hour})
+	app.requestReconnect("health-check", []time.Duration{0})
+
+	app.reconnectMutex.Lock()
+	generation := app.reconnectGeneration
+	priority := app.reconnectIntentPriority.Load()
+	app.reconnectMutex.Unlock()
+	if generation != 1 || priority != reconnectReasonPriority("startup") {
+		t.Fatalf("reconnect generation=%d priority=%d, want startup generation unchanged", generation, priority)
+	}
+	app.cancelReconnect()
 }
 
 func TestConnectCompatibilityRetriesAfterEndpointRecovery(t *testing.T) {

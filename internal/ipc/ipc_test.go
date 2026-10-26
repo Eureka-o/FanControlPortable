@@ -754,6 +754,143 @@ func TestCriticalEventWaitsBrieflyForQueueSpace(t *testing.T) {
 	<-done
 }
 
+func newEventTestClient(t *testing.T, server *Server) *clientState {
+	t.Helper()
+	peer, conn := net.Pipe()
+	t.Cleanup(func() { _ = peer.Close() })
+	state := &clientState{
+		conn:    conn,
+		writeCh: make(chan []byte, clientWriteQueueSize),
+		closed:  make(chan struct{}),
+	}
+	server.mutex.Lock()
+	server.clients[conn] = state
+	server.mutex.Unlock()
+	t.Cleanup(func() { server.closeClient(state) })
+	return state
+}
+
+func readQueuedEvent(t *testing.T, state *clientState) Event {
+	t.Helper()
+	select {
+	case payload := <-state.writeCh:
+		var event Event
+		if err := json.Unmarshal(payload, &event); err != nil {
+			t.Fatal(err)
+		}
+		return event
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for queued event")
+		return Event{}
+	}
+}
+
+func TestHighFrequencyEventsSendLatestPayloadAtWindowEnd(t *testing.T) {
+	server := NewServer(nil, nil)
+	state := newEventTestClient(t, server)
+	for eventType := range highFrequencyEventTypes {
+		server.BroadcastEvent(eventType, 1)
+		event := readQueuedEvent(t, state)
+		if event.Type != eventType || string(event.Data) != "1" {
+			t.Fatalf("first event = %+v; want %s with initial payload", event, eventType)
+		}
+	}
+	for eventType := range highFrequencyEventTypes {
+		data := map[string]int{"value": 2}
+		server.BroadcastEvent(eventType, data)
+		data["value"] = 3
+		server.BroadcastEvent(eventType, data)
+		data["value"] = 4
+	}
+	select {
+	case payload := <-state.writeCh:
+		t.Fatalf("high-frequency event bypassed throttle window: %s", payload)
+	case <-time.After(100 * time.Millisecond):
+	}
+	seen := make(map[string]bool)
+	for range highFrequencyEventTypes {
+		event := readQueuedEvent(t, state)
+		if _, ok := highFrequencyEventTypes[event.Type]; !ok || seen[event.Type] {
+			t.Fatalf("unexpected or duplicate trailing event: %+v", event)
+		}
+		if string(event.Data) != `{"value":3}` {
+			t.Fatalf("trailing payload = %s; want latest value captured at broadcast", event.Data)
+		}
+		seen[event.Type] = true
+	}
+}
+
+func TestCloseClearsPendingEventsBeforeReplacementConnects(t *testing.T) {
+	for _, stopServer := range []bool{false, true} {
+		name := "close-client"
+		if stopServer {
+			name = "stop-server"
+		}
+		t.Run(name, func(t *testing.T) {
+			server := NewServer(nil, nil)
+			state := newEventTestClient(t, server)
+			server.BroadcastEvent(EventFanDataUpdate, 1)
+			_ = readQueuedEvent(t, state)
+			server.BroadcastEvent(EventFanDataUpdate, 2)
+			server.throttleMutex.Lock()
+			pending := server.pendingEvents[EventFanDataUpdate]
+			server.throttleMutex.Unlock()
+			if pending == nil {
+				t.Fatal("throttled event was not retained")
+			}
+			if stopServer {
+				server.Stop()
+			} else {
+				server.closeClient(state)
+			}
+			server.throttleMutex.Lock()
+			cleared := len(server.pendingEvents) == 0 && len(server.lastEventEmit) == 0
+			server.throttleMutex.Unlock()
+			if !cleared {
+				t.Fatal("pending events or throttle window survived connection close")
+			}
+			replacement := newEventTestClient(t, server)
+			server.BroadcastEvent(EventFanDataUpdate, 3)
+			if event := readQueuedEvent(t, replacement); string(event.Data) != "3" {
+				t.Fatalf("replacement received old pending event: %+v", event)
+			}
+			select {
+			case payload := <-replacement.writeCh:
+				t.Fatalf("closed connection replayed pending event: %s", payload)
+			case <-time.After(2 * highFrequencyEventTypes[EventFanDataUpdate]):
+			}
+		})
+	}
+}
+
+func TestClosingOneClientKeepsPendingEventsForRemainingClient(t *testing.T) {
+	server := NewServer(nil, nil)
+	first := newEventTestClient(t, server)
+	second := newEventTestClient(t, server)
+	server.BroadcastEvent(EventFanDataUpdate, 1)
+	_ = readQueuedEvent(t, first)
+	_ = readQueuedEvent(t, second)
+	server.BroadcastEvent(EventFanDataUpdate, 2)
+	server.closeClient(first)
+	if event := readQueuedEvent(t, second); string(event.Data) != "2" {
+		t.Fatalf("remaining client did not receive latest pending event: %+v", event)
+	}
+}
+
+func TestLowFrequencyEventsRemainUnthrottled(t *testing.T) {
+	server := NewServer(nil, nil)
+	state := newEventTestClient(t, server)
+	for value := 1; value <= 3; value++ {
+		server.BroadcastEvent(EventConfigUpdate, value)
+	}
+	for _, want := range []string{"1", "2", "3"} {
+		event := readQueuedEvent(t, state)
+		if event.Type != EventConfigUpdate || string(event.Data) != want {
+			t.Fatalf("critical event = %+v; want config payload %s", event, want)
+		}
+	}
+}
+
 func TestClientWriteTimeoutRetiresConnectionGeneration(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer serverConn.Close()

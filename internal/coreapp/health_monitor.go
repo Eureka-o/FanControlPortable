@@ -13,6 +13,20 @@ const healthReconnectCooldown = 90 * time.Second
 // 传输刷新连续失败阈值：超过此次数才触发断连，避免单次抖动误判。
 const healthConsecutiveFailureThreshold = 3
 
+const (
+	healthTransportBackoffBase = 30 * time.Second
+	healthTransportBackoffMax  = 5 * time.Minute
+)
+
+type healthTransportState struct {
+	lastSuccessfulAt    time.Time
+	lastFailureAt       time.Time
+	consecutiveFailures int
+	backoffLevel        int
+	backoffUntil        time.Time
+	lastError           string
+}
+
 // startHealthMonitoring 启动健康监控
 func (a *CoreApp) startHealthMonitoring() {
 	a.logInfo("启动健康监控系统")
@@ -111,6 +125,11 @@ func (a *CoreApp) checkDeviceHealth() {
 		a.requestReconnect("health-check", []time.Duration{0})
 		return
 	}
+	transport := a.deviceManager.GetDeviceType()
+	if a.shouldBackoffHealthTransport(transport, time.Now()) {
+		a.logDebug("健康检查: %s 传输仍在失败退避期内", transport)
+		return
+	}
 
 	healthOK := true
 	switch a.deviceManager.GetDeviceType() {
@@ -132,10 +151,12 @@ func (a *CoreApp) checkDeviceHealth() {
 	}
 
 	if healthOK {
+		a.recordHealthTransportSuccess(transport, time.Now())
 		atomic.StoreInt32(&a.healthConsecutiveFailureCount, 0)
 		a.maybeTakeOverBlackSharkUSB()
 		return
 	}
+	a.recordHealthTransportFailure(transport, time.Now(), "状态刷新失败")
 
 	// 未通过：累计失败次数，达到阈值才断连。
 	count := atomic.AddInt32(&a.healthConsecutiveFailureCount, 1)
@@ -202,4 +223,48 @@ func (a *CoreApp) shouldRunHealthReconnect(now time.Time) bool {
 		return true
 	}
 	return now.Sub(time.Unix(0, lastUnix)) >= healthReconnectCooldown
+}
+
+func (a *CoreApp) shouldBackoffHealthTransport(transport string, now time.Time) bool {
+	a.healthTransportMu.Lock()
+	defer a.healthTransportMu.Unlock()
+	state, ok := a.healthTransportStates[transport]
+	return ok && now.Before(state.backoffUntil)
+}
+
+func (a *CoreApp) recordHealthTransportFailure(transport string, now time.Time, reason string) {
+	a.healthTransportMu.Lock()
+	defer a.healthTransportMu.Unlock()
+	if a.healthTransportStates == nil {
+		a.healthTransportStates = make(map[string]healthTransportState)
+	}
+	state := a.healthTransportStates[transport]
+	state.consecutiveFailures++
+	state.backoffLevel = state.consecutiveFailures
+	state.lastFailureAt = now
+	state.lastError = reason
+	backoff := healthTransportBackoffBase
+	for level := 1; level < state.backoffLevel && backoff < healthTransportBackoffMax; level++ {
+		backoff *= 2
+	}
+	if backoff > healthTransportBackoffMax {
+		backoff = healthTransportBackoffMax
+	}
+	state.backoffUntil = now.Add(backoff)
+	a.healthTransportStates[transport] = state
+}
+
+func (a *CoreApp) recordHealthTransportSuccess(transport string, now time.Time) {
+	a.healthTransportMu.Lock()
+	defer a.healthTransportMu.Unlock()
+	if a.healthTransportStates == nil {
+		a.healthTransportStates = make(map[string]healthTransportState)
+	}
+	state := a.healthTransportStates[transport]
+	state.lastSuccessfulAt = now
+	state.consecutiveFailures = 0
+	state.backoffLevel = 0
+	state.backoffUntil = time.Time{}
+	state.lastError = ""
+	a.healthTransportStates[transport] = state
 }
