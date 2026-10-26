@@ -140,6 +140,56 @@ namespace FanControl.TempBridge
         }
     }
 
+    class SensorBinding
+    {
+        public ISensor Sensor { get; set; }
+        public string Key { get; set; }
+        public string Name { get; set; }
+
+        public SensorBinding()
+        {
+            Key = string.Empty;
+            Name = string.Empty;
+        }
+    }
+
+    class GpuSensorTopology
+    {
+        public string Key { get; set; }
+        public string Model { get; set; }
+        public string Vendor { get; set; }
+        public HardwareType HardwareType { get; set; }
+        public System.Collections.Generic.List<SensorBinding> Sensors { get; set; }
+        public System.Collections.Generic.List<SensorBinding> PowerSensors { get; set; }
+
+        public GpuSensorTopology()
+        {
+            Key = "auto";
+            Model = string.Empty;
+            Vendor = string.Empty;
+            Sensors = new System.Collections.Generic.List<SensorBinding>();
+            PowerSensors = new System.Collections.Generic.List<SensorBinding>();
+        }
+    }
+
+    class HardwareSensorTopology
+    {
+        public string Signature { get; set; }
+        public string CpuModel { get; set; }
+        public System.Collections.Generic.List<SensorBinding> CpuSensors { get; set; }
+        public System.Collections.Generic.List<SensorBinding> CpuPowerSensors { get; set; }
+        public System.Collections.Generic.List<GpuSensorTopology> Gpus { get; set; }
+
+        public HardwareSensorTopology()
+        {
+            Signature = string.Empty;
+            CpuModel = string.Empty;
+            CpuSensors = new System.Collections.Generic.List<SensorBinding>();
+            CpuPowerSensors = new System.Collections.Generic.List<SensorBinding>();
+            Gpus = new System.Collections.Generic.List<GpuSensorTopology>();
+        }
+    }
+
     public class HardwareProfile
     {
         public int SchemaVersion { get; set; }
@@ -239,6 +289,7 @@ namespace FanControl.TempBridge
         private static string lastHardwareMonitorError = string.Empty;
         private static DateTime lastMemoryTrimUtc = DateTime.MinValue;
         private static bool currentGpuMonitoringEnabled = false;
+        private static HardwareSensorTopology sensorTopology;
         private static readonly object hardwareProfileLock = new object();
         private static HardwareProfile cachedHardwareProfile;
         private static int hardwareProfileSensorReconcileAttempted = 0;
@@ -325,6 +376,7 @@ namespace FanControl.TempBridge
             finally
             {
                 computer?.Close();
+                sensorTopology = null;
                 ResetIntelMsrFallback();
                 if (singleInstanceMutex != null)
                 {
@@ -517,6 +569,7 @@ namespace FanControl.TempBridge
 
         static void InitializeHardwareMonitor(bool includeGpu = false)
         {
+            sensorTopology = null;
             ResetIntelMsrFallback();
             var pawnIoStopwatch = Stopwatch.StartNew();
             string pawnIoMessage = EnsurePawnIoReady();
@@ -533,6 +586,7 @@ namespace FanControl.TempBridge
                     {
                         try { computer.Close(); } catch { }
                         computer = null;
+                        sensorTopology = null;
                     }
 
                     LogInitProgress(string.Format("LibreHardwareMonitor init attempt {0}/{1} (gpu={2})", attempt, MaxInitRetries, includeGpu ? "on" : "off"));
@@ -551,6 +605,7 @@ namespace FanControl.TempBridge
 
                     computer.Open();
                     computer.Accept(new UpdateVisitor());
+                    sensorTopology = BuildSensorTopology(computer, includeGpu);
 
                     bool hasAnyTemperature = HasAnyTemperatureSensor(computer);
                     bool hasCpuTemperature = HasCpuSensor(computer, SensorType.Temperature);
@@ -587,6 +642,7 @@ namespace FanControl.TempBridge
                                     msrMessage));
                                 try { computer.Close(); } catch { }
                                 computer = null;
+                                sensorTopology = null;
                                 ResetIntelMsrFallback();
                                 Thread.Sleep(InitRetryDelayMs);
                                 continue;
@@ -629,6 +685,7 @@ namespace FanControl.TempBridge
                     {
                         computer.Close();
                         computer = null;
+                        sensorTopology = null;
                         Thread.Sleep(InitRetryDelayMs);
                     }
                 }
@@ -640,6 +697,7 @@ namespace FanControl.TempBridge
 
                     try { computer?.Close(); } catch { }
                     computer = null;
+                    sensorTopology = null;
 
                     string intelCpuModel = FindIntelCpuModel(null);
                     if (!string.IsNullOrEmpty(intelCpuModel))
@@ -1277,6 +1335,7 @@ namespace FanControl.TempBridge
                 }
                 catch { }
                 computer = null;
+                sensorTopology = null;
 
                 // Wait briefly after releasing handles. Avoid stopping PawnIO because other tools may share it.
                 Thread.Sleep(250);
@@ -1299,6 +1358,7 @@ namespace FanControl.TempBridge
             }
             catch { }
             computer = null;
+            sensorTopology = null;
             Thread.Sleep(120);
             InitializeHardwareMonitor(includeGpu);
             if (stopwatch.ElapsedMilliseconds >= 250)
@@ -1814,6 +1874,7 @@ namespace FanControl.TempBridge
                 }
                 catch { }
                 computer = null;
+                sensorTopology = null;
 
                 // 2. Ensure PawnIO is running if it is stopped, then wait after handle release.
                 string pawnIoMessage = RestartPawnIoDriver();
@@ -1953,7 +2014,6 @@ namespace FanControl.TempBridge
             var cpuSensors = new System.Collections.Generic.List<TemperatureSensor>();
             var cpuPowerSensors = new System.Collections.Generic.List<PowerSensor>();
             var gpuCandidates = new System.Collections.Generic.List<GpuCandidate>();
-            int gpuIndex = 0;
             bool shouldPollGpu = ShouldPollGpu(selection, out gpuReadState);
 
             try
@@ -1963,39 +2023,31 @@ namespace FanControl.TempBridge
                 if (computer != null)
                 {
                     computer.Accept(new UpdateVisitor());
-
-                    foreach (IHardware hardware in computer.Hardware)
+                    string topologySignature = BuildHardwareTopologySignature(computer);
+                    if (sensorTopology == null || !string.Equals(sensorTopology.Signature, topologySignature, StringComparison.Ordinal))
                     {
-                        if (hardware.HardwareType == HardwareType.Cpu)
+                        sensorTopology = BuildSensorTopology(computer, shouldPollGpu);
+                    }
+
+                    if (sensorTopology != null)
+                    {
+                        cpuModel = sensorTopology.CpuModel;
+                        cpuSensors = ReadTemperatureSensors(sensorTopology.CpuSensors);
+                        cpuPowerSensors = ReadPowerSensors(sensorTopology.CpuPowerSensors);
+                        foreach (GpuSensorTopology gpu in sensorTopology.Gpus)
                         {
-                            if (cpuSensors.Count == 0)
-                            {
-                                cpuModel = hardware.Name ?? string.Empty;
-                                CollectTemperatureSensors(hardware, "cpu", hardware.Name ?? string.Empty, string.Empty, cpuSensors);
-                                CollectPowerSensors(hardware, "cpu", hardware.Name ?? string.Empty, string.Empty, cpuPowerSensors);
-                                cpuPowerWatts = SelectPowerWatts(cpuPowerSensors, selection.CpuPowerSensor, new[] { "CPU Package", "Package Power", "CPU PPT", "PPT", "Package" }, false);
-                            }
-                        }
-                        else if (shouldPollGpu &&
-                                 (hardware.HardwareType == HardwareType.GpuNvidia ||
-                                 hardware.HardwareType == HardwareType.GpuAmd ||
-                                 hardware.HardwareType == HardwareType.GpuIntel))
-                        {
-                            var sensors = new System.Collections.Generic.List<TemperatureSensor>();
-                            var powerSensors = new System.Collections.Generic.List<PowerSensor>();
-                            CollectTemperatureSensors(hardware, "gpu", hardware.Name ?? string.Empty, string.Empty, sensors);
-                            CollectPowerSensors(hardware, "gpu", hardware.Name ?? string.Empty, string.Empty, powerSensors);
+                            var sensors = ReadTemperatureSensors(gpu.Sensors);
+                            var powerSensors = ReadPowerSensors(gpu.PowerSensors);
                             gpuCandidates.Add(new GpuCandidate
                             {
-                                Key = BuildGpuDeviceKey(hardware, gpuIndex),
-                                Model = hardware.Name ?? string.Empty,
-                                Vendor = GetGpuVendor(hardware.HardwareType),
-                                HardwareType = hardware.HardwareType,
+                                Key = gpu.Key,
+                                Model = gpu.Model,
+                                Vendor = gpu.Vendor,
+                                HardwareType = gpu.HardwareType,
                                 Sensors = sensors,
                                 PowerSensors = powerSensors,
                                 PowerWatts = SelectPowerWatts(powerSensors, selection.GpuPowerSensor, new[] { "GPU Power", "Total", "Package", "Board", "Chip" }, true),
                             });
-                            gpuIndex++;
                         }
                     }
                 }
@@ -2385,40 +2437,146 @@ namespace FanControl.TempBridge
             }
         }
 
-            static void CollectTemperatureSensors(IHardware hardware, string devicePrefix, string keyPath, string displayPath, System.Collections.Generic.List<TemperatureSensor> sensors)
+        static HardwareSensorTopology BuildSensorTopology(Computer comp, bool includeGpu)
         {
-                foreach (ISensor sensor in hardware.Sensors)
+            var topology = new HardwareSensorTopology
+            {
+                Signature = BuildHardwareTopologySignature(comp)
+            };
+            int gpuIndex = 0;
+
+            foreach (IHardware hardware in comp.Hardware)
+            {
+                if (hardware.HardwareType == HardwareType.Cpu && topology.CpuSensors.Count == 0)
                 {
-                    if (sensor.SensorType != SensorType.Temperature || !sensor.Value.HasValue)
+                    topology.CpuModel = hardware.Name ?? string.Empty;
+                    CollectSensorBindings(hardware, SensorType.Temperature, "cpu", hardware.Name ?? string.Empty, string.Empty, topology.CpuSensors);
+                    CollectSensorBindings(hardware, SensorType.Power, "cpu", hardware.Name ?? string.Empty, string.Empty, topology.CpuPowerSensors);
+                }
+                else if (includeGpu &&
+                         (hardware.HardwareType == HardwareType.GpuNvidia ||
+                          hardware.HardwareType == HardwareType.GpuAmd ||
+                          hardware.HardwareType == HardwareType.GpuIntel))
+                {
+                    var gpu = new GpuSensorTopology
                     {
-                        continue;
-                    }
+                        Key = BuildGpuDeviceKey(hardware, gpuIndex),
+                        Model = hardware.Name ?? string.Empty,
+                        Vendor = GetGpuVendor(hardware.HardwareType),
+                        HardwareType = hardware.HardwareType
+                    };
+                    CollectSensorBindings(hardware, SensorType.Temperature, "gpu", hardware.Name ?? string.Empty, string.Empty, gpu.Sensors);
+                    CollectSensorBindings(hardware, SensorType.Power, "gpu", hardware.Name ?? string.Empty, string.Empty, gpu.PowerSensors);
+                    topology.Gpus.Add(gpu);
+                    gpuIndex++;
+                }
+            }
 
-                    int temp = (int)Math.Round(sensor.Value.Value);
-                    if (temp <= 0 || temp >= 150)
-                    {
-                        continue;
-                    }
+            return topology;
+        }
 
-                    string sensorPath = string.IsNullOrEmpty(keyPath) ? sensor.Name : keyPath + "/" + sensor.Name;
-                    sensors.Add(new TemperatureSensor
-                    {
-                        Key = devicePrefix + "/" + sensorPath,
-                        Name = string.IsNullOrEmpty(displayPath) ? sensor.Name : displayPath + " / " + sensor.Name,
-                        Value = temp,
-                    });
+        static string BuildHardwareTopologySignature(Computer comp)
+        {
+            var builder = new StringBuilder();
+            foreach (IHardware hardware in comp.Hardware)
+            {
+                AppendHardwareTopologySignature(hardware, builder);
+            }
+            return builder.ToString();
+        }
+
+        static void AppendHardwareTopologySignature(IHardware hardware, StringBuilder builder)
+        {
+            builder.Append((int)hardware.HardwareType)
+                .Append(':')
+                .Append(hardware.Name ?? string.Empty)
+                .Append('|');
+            foreach (IHardware subHardware in hardware.SubHardware)
+            {
+                AppendHardwareTopologySignature(subHardware, builder);
+            }
+        }
+
+        static void CollectSensorBindings(IHardware hardware, SensorType sensorType, string devicePrefix, string keyPath, string displayPath, System.Collections.Generic.List<SensorBinding> bindings)
+        {
+            foreach (ISensor sensor in hardware.Sensors)
+            {
+                if (sensor.SensorType != sensorType)
+                {
+                    continue;
                 }
 
-                foreach (IHardware subHardware in hardware.SubHardware)
+                string sensorPath = string.IsNullOrEmpty(keyPath) ? sensor.Name : keyPath + "/" + sensor.Name;
+                bindings.Add(new SensorBinding
                 {
-                    string subKeyPath = string.IsNullOrEmpty(keyPath)
-                        ? (subHardware.Name ?? string.Empty)
-                        : keyPath + "/" + (subHardware.Name ?? string.Empty);
-                    string subDisplayPath = string.IsNullOrEmpty(displayPath)
-                        ? (subHardware.Name ?? string.Empty)
-                        : displayPath + " / " + (subHardware.Name ?? string.Empty);
-                    CollectTemperatureSensors(subHardware, devicePrefix, subKeyPath, subDisplayPath, sensors);
+                    Sensor = sensor,
+                    Key = devicePrefix + "/" + sensorPath,
+                    Name = string.IsNullOrEmpty(displayPath) ? sensor.Name : displayPath + " / " + sensor.Name
+                });
+            }
+
+            foreach (IHardware subHardware in hardware.SubHardware)
+            {
+                string subKeyPath = string.IsNullOrEmpty(keyPath)
+                    ? (subHardware.Name ?? string.Empty)
+                    : keyPath + "/" + (subHardware.Name ?? string.Empty);
+                string subDisplayPath = string.IsNullOrEmpty(displayPath)
+                    ? (subHardware.Name ?? string.Empty)
+                    : displayPath + " / " + (subHardware.Name ?? string.Empty);
+                CollectSensorBindings(subHardware, sensorType, devicePrefix, subKeyPath, subDisplayPath, bindings);
+            }
+        }
+
+        static System.Collections.Generic.List<TemperatureSensor> ReadTemperatureSensors(System.Collections.Generic.IReadOnlyList<SensorBinding> bindings)
+        {
+            var sensors = new System.Collections.Generic.List<TemperatureSensor>();
+            foreach (SensorBinding binding in bindings)
+            {
+                if (binding.Sensor == null || !binding.Sensor.Value.HasValue)
+                {
+                    continue;
                 }
+
+                int temp = (int)Math.Round(binding.Sensor.Value.Value);
+                if (temp <= 0 || temp >= MaxReasonableTemperature)
+                {
+                    continue;
+                }
+
+                sensors.Add(new TemperatureSensor
+                {
+                    Key = binding.Key,
+                    Name = binding.Name,
+                    Value = temp
+                });
+            }
+            return sensors;
+        }
+
+        static System.Collections.Generic.List<PowerSensor> ReadPowerSensors(System.Collections.Generic.IReadOnlyList<SensorBinding> bindings)
+        {
+            var sensors = new System.Collections.Generic.List<PowerSensor>();
+            foreach (SensorBinding binding in bindings)
+            {
+                if (binding.Sensor == null || !binding.Sensor.Value.HasValue)
+                {
+                    continue;
+                }
+
+                double watts = binding.Sensor.Value.Value;
+                if (watts < 0 || watts > 1000)
+                {
+                    continue;
+                }
+
+                sensors.Add(new PowerSensor
+                {
+                    Key = binding.Key,
+                    Name = binding.Name,
+                    Value = Math.Round(watts, 1)
+                });
+            }
+            return sensors;
         }
 
         static int SelectTemperature(System.Collections.Generic.IReadOnlyList<TemperatureSensor> sensors, string selectedKey, string[] preferredSensorNames)
@@ -2495,41 +2653,6 @@ namespace FanControl.TempBridge
             }
 
             return 0;
-        }
-
-        static void CollectPowerSensors(IHardware hardware, string devicePrefix, string keyPath, string displayPath, System.Collections.Generic.List<PowerSensor> sensors)
-        {
-            foreach (ISensor sensor in hardware.Sensors)
-            {
-                if (sensor.SensorType != SensorType.Power || !sensor.Value.HasValue)
-                {
-                    continue;
-                }
-                double watts = sensor.Value.Value;
-                if (watts < 0 || watts > 1000)
-                {
-                    continue;
-                }
-                string sensorPath = string.IsNullOrEmpty(keyPath) ? sensor.Name : keyPath + "/" + sensor.Name;
-                string name = string.IsNullOrEmpty(displayPath) ? sensor.Name : displayPath + " / " + sensor.Name;
-                sensors.Add(new PowerSensor
-                {
-                    Key = devicePrefix + "/" + sensorPath,
-                    Name = name,
-                    Value = Math.Round(watts, 1),
-                });
-            }
-
-            foreach (IHardware subHardware in hardware.SubHardware)
-            {
-                string subKeyPath = string.IsNullOrEmpty(keyPath)
-                    ? (subHardware.Name ?? string.Empty)
-                    : keyPath + "/" + (subHardware.Name ?? string.Empty);
-                string subDisplayPath = string.IsNullOrEmpty(displayPath)
-                    ? (subHardware.Name ?? string.Empty)
-                    : displayPath + " / " + (subHardware.Name ?? string.Empty);
-                CollectPowerSensors(subHardware, devicePrefix, subKeyPath, subDisplayPath, sensors);
-            }
         }
 
         static GpuCandidate SelectGpuCandidate(System.Collections.Generic.IReadOnlyList<GpuCandidate> candidates, string selectedDeviceKey, string selectedSensorKey, string selectedPowerSensorKey)

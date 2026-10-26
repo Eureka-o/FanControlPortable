@@ -19,17 +19,43 @@ func shouldSkipIdleBLEAutoScan(sinceLastScan time.Duration) bool {
 	return sinceLastScan >= 0 && sinceLastScan < idleBLEScanCooldown
 }
 
-func filterNativeAutoConnectCandidatesForBLECooldown(candidates []types.DeviceProfile, skipBLE bool) []types.DeviceProfile {
-	if !skipBLE {
+func nativeBLEAutoConnectCandidateKey(profile types.DeviceProfile) string {
+	return strings.TrimSpace(profile.ID) + "\x1f" + strings.ToLower(strings.TrimSpace(profile.Connection.Endpoint))
+}
+
+func filterNativeAutoConnectCandidatesForBLECooldown(candidates []types.DeviceProfile, failures map[string]time.Time, now time.Time) []types.DeviceProfile {
+	if len(failures) == 0 {
 		return candidates
 	}
 	filtered := make([]types.DeviceProfile, 0, len(candidates))
 	for _, profile := range candidates {
-		if types.NormalizeDeviceTransport(profile.Transport) != types.DeviceTransportBLE {
-			filtered = append(filtered, profile)
+		if types.NormalizeDeviceTransport(profile.Transport) == types.DeviceTransportBLE {
+			if failedAt, ok := failures[nativeBLEAutoConnectCandidateKey(profile)]; ok && shouldSkipIdleBLEAutoScan(now.Sub(failedAt)) {
+				continue
+			}
 		}
+		filtered = append(filtered, profile)
 	}
 	return filtered
+}
+
+func shouldProbeBlackSharkUSB(previousProfile types.DeviceProfile) bool {
+	return strings.TrimSpace(previousProfile.ID) == "" || isBlackSharkProfileID(previousProfile.ID)
+}
+
+func nativeBLEAutoConnectProfileFromScan(profile types.DeviceProfile, devices []map[string]string, failures map[string]time.Time, now time.Time) (types.DeviceProfile, bool) {
+	for _, device := range devices {
+		candidate := profile
+		candidate.Connection.Endpoint = strings.TrimSpace(device["endpoint"])
+		if candidate.Connection.Endpoint == "" {
+			continue
+		}
+		if failedAt, ok := failures[nativeBLEAutoConnectCandidateKey(candidate)]; ok && shouldSkipIdleBLEAutoScan(now.Sub(failedAt)) {
+			continue
+		}
+		return candidate, true
+	}
+	return types.DeviceProfile{}, false
 }
 
 func (m *Manager) ScanNativeDevices() []map[string]string {
@@ -81,33 +107,37 @@ func (m *Manager) AutoConnectNativeProfilesContext(ctx context.Context, profiles
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	m.mutex.RLock()
+	m.autoNativeMu.Lock()
+	defer m.autoNativeMu.Unlock()
+
+	now := time.Now()
+	m.mutex.Lock()
 	wasConnected := m.isConnected
-	m.mutex.RUnlock()
+	previousProfile := m.activeProfile
+	failures := make(map[string]time.Time, len(m.failedAutoBLEScans))
+	for key, failedAt := range m.failedAutoBLEScans {
+		if !shouldSkipIdleBLEAutoScan(now.Sub(failedAt)) {
+			delete(m.failedAutoBLEScans, key)
+			continue
+		}
+		failures[key] = failedAt
+	}
+	m.mutex.Unlock()
 
 	if wasConnected {
 		m.DisconnectSilently()
 	}
 
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
-	if m.isConnected {
+	if ctx.Err() != nil {
 		return false, nil
 	}
 
-	previousProfile := m.activeProfile
-	previousEndpoint := m.wifiEndpoint
-	sinceLastBLEScan := time.Duration(-1)
-	if !m.lastAutoBLEScanAt.IsZero() {
-		sinceLastBLEScan = time.Since(m.lastAutoBLEScanAt)
-	}
-	skipBLE := shouldSkipIdleBLEAutoScan(sinceLastBLEScan)
+	allCandidates := nativeAutoConnectCandidates(profiles, previousProfile)
 	candidates := filterNativeAutoConnectCandidatesForBLECooldown(
-		nativeAutoConnectCandidates(profiles, previousProfile),
-		skipBLE,
+		allCandidates,
+		failures,
+		now,
 	)
-	bleScanRecorded := false
 
 	// Reconnecting a Black Shark cooler: probe its WinUSB path FIRST. The
 	// libusb open attempt costs milliseconds, while the BLE candidates burn a
@@ -118,44 +148,118 @@ func (m *Manager) AutoConnectNativeProfilesContext(ctx context.Context, profiles
 	// probe after the loop) so their arbitration is unchanged.
 	// previousProfile 为空 (启动首次重连) 时同样前置探测: 否则黑鲨 USB 用户每次
 	// 启动都要先等 10-20s 的 BLE 空扫描, 期间 GUI 手动连接会排队并超时。
-	if previousProfile.ID == "" || isBlackSharkProfileID(previousProfile.ID) {
-		m.configureProfileLocked(types.BlackSharkBRB02USBProfile(), previousEndpoint)
-		if success, info := m.connectBlackSharkUSBLocked(); success {
+	blackSharkUSBProbed := shouldProbeBlackSharkUSB(previousProfile)
+	if blackSharkUSBProbed {
+		if success, info := m.ConnectBlackSharkPreferredNative(ctx); success {
 			return true, info
+		}
+		if ctx.Err() != nil {
+			return false, nil
 		}
 	}
 
 	for _, profile := range candidates {
 		if ctx.Err() != nil {
-			m.configureProfileLocked(previousProfile, previousEndpoint)
 			return false, nil
 		}
-		m.configureProfileLocked(profile, previousEndpoint)
 		switch profile.Transport {
 		case types.DeviceTransportHID:
-			if success, info := m.connectLegacyHIDLocked(); success {
+			if success, info := m.connectNativeProfileContextIfDisconnected(ctx, profile); success {
 				return true, info
 			}
 		case types.DeviceTransportUSB:
-			if success, info := m.connectBlackSharkUSBLocked(); success {
+			if blackSharkUSBProbed && profile.ID == types.BlackSharkBRB02USBProfileID {
+				continue
+			}
+			if success, info := m.connectNativeProfileContextIfDisconnected(ctx, profile); success {
 				return true, info
 			}
 		case types.DeviceTransportBLE:
-			if !bleScanRecorded {
-				m.lastAutoBLEScanAt = time.Now()
-				bleScanRecorded = true
+			key := nativeBLEAutoConnectCandidateKey(profile)
+			bleProfile := profile
+			if strings.TrimSpace(bleProfile.Connection.Endpoint) == "" {
+				devices, err := m.scanNativeBLEDevices(ctx, []types.DeviceProfile{profile})
+				if err != nil {
+					m.logWarn("BLE native scan failed for %s: %v", profile.ID, err)
+				}
+				if len(devices) > 0 {
+					var found bool
+					bleProfile, found = nativeBLEAutoConnectProfileFromScan(profile, devices, failures, now)
+					if !found {
+						continue
+					}
+					key = nativeBLEAutoConnectCandidateKey(bleProfile)
+				}
 			}
-			if success, info := m.connectBLEWithContextLocked(ctx); success {
-				return true, info
+			if strings.TrimSpace(bleProfile.Connection.Endpoint) != "" {
+				if success, info := m.connectNativeProfileContextIfDisconnected(ctx, bleProfile); success {
+					return true, info
+				}
 			}
+			if ctx.Err() != nil {
+				return false, nil
+			}
+			m.mutex.Lock()
+			if m.failedAutoBLEScans == nil {
+				m.failedAutoBLEScans = make(map[string]time.Time)
+			}
+			m.failedAutoBLEScans[key] = time.Now()
+			m.mutex.Unlock()
 		}
 	}
-	if skipBLE {
-		m.logDebug("automatic BLE discovery is cooling down; HID candidates remained eligible")
+	if len(candidates) < len(allCandidates) {
+		m.logDebug("failed automatic BLE candidates are cooling down; other native candidates remained eligible")
 	}
-
-	m.configureProfileLocked(previousProfile, previousEndpoint)
 	return false, nil
+}
+
+// ConnectBlackSharkPreferredNative shares USB-first, paired-BLE-second arbitration
+// between automatic scanning and CoreApp reconnects.
+func (m *Manager) ConnectBlackSharkPreferredNative(ctx context.Context) (bool, map[string]string) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if connected, info := m.connectNativeProfileContextIfDisconnected(ctx, types.BlackSharkBRB02USBProfile()); connected {
+		return true, info
+	}
+	if ctx.Err() != nil {
+		return false, nil
+	}
+	return m.ConnectBlackSharkBLEDirect(ctx)
+}
+
+func (m *Manager) connectNativeProfileContextIfDisconnected(ctx context.Context, profile types.DeviceProfile) (bool, map[string]string) {
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return false, nil
+		}
+	}
+	profile, err := deviceprofiles.PrepareRuntimeProfile(profile, "")
+	if err != nil || !types.IsNativeDeviceTransport(profile.Transport) || isLegacyBlackSharkHIDProfileID(profile.ID) {
+		return false, nil
+	}
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if m.isConnected {
+		return true, m.connectedInfoLocked()
+	}
+	previousProfile := m.activeProfile
+	previousEndpoint := m.wifiEndpoint
+	m.configureProfileLocked(profile, previousEndpoint)
+	var connected bool
+	var info map[string]string
+	switch profile.Transport {
+	case types.DeviceTransportHID:
+		connected, info = m.connectLegacyHIDLocked()
+	case types.DeviceTransportUSB:
+		connected, info = m.connectBlackSharkUSBLocked()
+	case types.DeviceTransportBLE:
+		connected, info = m.connectBLEWithContextLocked(ctx)
+	}
+	if !connected {
+		m.configureProfileLocked(previousProfile, previousEndpoint)
+	}
+	return connected, info
 }
 
 func (m *Manager) ConnectNativeProfile(profile types.DeviceProfile) (bool, map[string]string) {
@@ -178,6 +282,16 @@ func (m *Manager) ConnectNativeProfileContext(ctx context.Context, profile types
 	}
 	if !types.IsNativeDeviceTransport(profile.Transport) {
 		return false, nil
+	}
+	if profile.Transport == types.DeviceTransportBLE && strings.TrimSpace(profile.Connection.Endpoint) == "" {
+		devices, err := m.scanNativeBLEDevices(ctx, []types.DeviceProfile{profile})
+		if err != nil || len(devices) == 0 {
+			return false, nil
+		}
+		profile.Connection.Endpoint = strings.TrimSpace(devices[0]["endpoint"])
+		if profile.Connection.Endpoint == "" {
+			return false, nil
+		}
 	}
 
 	m.mutex.RLock()
@@ -348,6 +462,18 @@ func nativeUSBDeviceInfo(profile types.DeviceProfile, path string) map[string]st
 }
 
 func scanNativeBLEDevices(ctx context.Context, profiles []types.DeviceProfile) ([]map[string]string, error) {
+	return scanNativeBLEDevicesWithScanner(ctx, profiles, deviceprofileexec.DefaultBLEScanner{})
+}
+
+func (m *Manager) scanNativeBLEDevices(ctx context.Context, profiles []types.DeviceProfile) ([]map[string]string, error) {
+	scanner := m.bleScanner
+	if scanner == nil {
+		scanner = deviceprofileexec.DefaultBLEScanner{}
+	}
+	return scanNativeBLEDevicesWithScanner(ctx, profiles, scanner)
+}
+
+func scanNativeBLEDevicesWithScanner(ctx context.Context, profiles []types.DeviceProfile, scanner deviceprofileexec.BLEScanner) ([]map[string]string, error) {
 	bleProfiles := make([]types.DeviceProfile, 0)
 	for _, profile := range profiles {
 		profile = types.NormalizeDeviceProfile(profile, "")
@@ -358,7 +484,7 @@ func scanNativeBLEDevices(ctx context.Context, profiles []types.DeviceProfile) (
 	if len(bleProfiles) == 0 {
 		return nil, nil
 	}
-	bleDevices, err := deviceprofileexec.ScanBLEDevicesWithScanner(ctx, deviceprofileexec.DefaultBLEScanner{}, types.BLEScanParams{
+	bleDevices, err := deviceprofileexec.ScanBLEDevicesWithScanner(ctx, scanner, types.BLEScanParams{
 		OnlyMatched: true,
 		Profiles:    bleProfiles,
 	})
@@ -459,19 +585,20 @@ func formatHIDProductID(productID uint16) string {
 	return fmt.Sprintf("0x%04X", productID)
 }
 
-// IdleBLEScanCooldown 返回自动 BLE 扫描的冷却窗口；距上次扫描不足该窗口时跳过，省掉注定失败的等待。
-
+// IdleBLEScanCooldown is retained for callers that display the legacy setting.
 func IdleBLEScanCooldown() time.Duration { return idleBLEScanCooldown }
 
+// SeedLastAutoBLEScanAt accepts the legacy global timestamp but it no longer
+// participates in per-profile BLE failure backoff.
 func (m *Manager) SeedLastAutoBLEScanAt(at time.Time) {
 	if m == nil || at.IsZero() {
 		return
 	}
 	m.mutex.Lock()
-	defer m.mutex.Unlock()
 	if at.After(m.lastAutoBLEScanAt) {
 		m.lastAutoBLEScanAt = at
 	}
+	m.mutex.Unlock()
 }
 
 func (m *Manager) LastAutoBLEScanAt() time.Time {

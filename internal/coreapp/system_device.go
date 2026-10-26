@@ -202,10 +202,11 @@ func cloneReconnectDelays(delays []time.Duration) []time.Duration {
 }
 
 type reconnectAttemptResult struct {
-	connected   bool
-	deviceInfo  map[string]string
-	disconnect  func()
-	isConnected func() bool
+	connected        bool
+	alreadyConnected bool
+	deviceInfo       map[string]string
+	disconnect       func()
+	isConnected      func() bool
 }
 
 func (a *CoreApp) requestReconnect(reason string, retryDelays []time.Duration) {
@@ -231,10 +232,25 @@ func (a *CoreApp) requestReconnect(reason string, retryDelays []time.Duration) {
 		return
 	}
 	if a.reconnectCancel != nil {
+		currentPriority := a.reconnectIntentPriority.Load()
+		incomingPriority := reconnectReasonPriority(reason)
+		if shouldReplaceReconnectIntent(currentPriority, incomingPriority) {
+			previousCancel := a.reconnectCancel
+			a.reconnectGeneration++
+			generation := a.reconnectGeneration
+			a.reconnectCancel = cancel
+			a.reconnectIntentPriority.Store(incomingPriority)
+			wake := make(chan struct{}, 1)
+			a.reconnectWake = wake
+			a.reconnectMutex.Unlock()
+			previousCancel()
+			a.startReconnectLoop(ctx, cancel, reason, delays, generation, wake)
+			return
+		}
 		wake := a.reconnectWake
 		a.reconnectMutex.Unlock()
 		cancel()
-		if len(retryDelays) == 1 && retryDelays[0] <= 0 && wake != nil {
+		if len(retryDelays) == 1 && retryDelays[0] <= 0 && wake != nil && incomingPriority >= currentPriority {
 			select {
 			case wake <- struct{}{}:
 			default:
@@ -245,11 +261,20 @@ func (a *CoreApp) requestReconnect(reason string, retryDelays []time.Duration) {
 	a.reconnectGeneration++
 	generation := a.reconnectGeneration
 	a.reconnectCancel = cancel
+	a.reconnectIntentPriority.Store(reconnectReasonPriority(reason))
 	wake := make(chan struct{}, 1)
 	a.reconnectWake = wake
 	a.reconnectInProgress.Store(true)
 	a.reconnectMutex.Unlock()
 
+	a.startReconnectLoop(ctx, cancel, reason, delays, generation, wake)
+}
+
+func shouldReplaceReconnectIntent(current, incoming int32) bool {
+	return incoming > current
+}
+
+func (a *CoreApp) startReconnectLoop(ctx context.Context, cancel context.CancelFunc, reason string, delays []time.Duration, generation uint64, wake <-chan struct{}) {
 	a.safeGo("reconnect@"+reason, func() {
 		defer func() {
 			cancel()
@@ -257,12 +282,32 @@ func (a *CoreApp) requestReconnect(reason string, retryDelays []time.Duration) {
 			if a.reconnectGeneration == generation {
 				a.reconnectCancel = nil
 				a.reconnectWake = nil
+				a.reconnectIntentPriority.Store(0)
 				a.reconnectInProgress.Store(false)
 			}
 			a.reconnectMutex.Unlock()
 		}()
 		a.runReconnectLoopWithWake(ctx, reason, delays, generation, wake, a.reconnectDevice)
 	})
+}
+
+func reconnectReasonPriority(reason string) int32 {
+	switch reason {
+	case "monitor-only-disabled":
+		return 100
+	case "blackshark-usb-arrival", "hid-interface-arrival", "ble-interface-arrival":
+		return 90
+	case "system-resume":
+		return 80
+	case "startup":
+		return 70
+	case "device-disconnect":
+		return 30
+	case "health-check":
+		return 10
+	default:
+		return 40
+	}
 }
 
 func (a *CoreApp) cancelReconnect() {
@@ -418,7 +463,7 @@ func (a *CoreApp) completeReconnectAttempt(ctx context.Context, generation uint6
 			!a.systemSuspended.Load()
 		if current && result.connected {
 			connected = result.isConnected == nil || result.isConnected()
-			if connected {
+			if connected && !result.alreadyConnected {
 				a.finishSuccessfulDeviceConnection(result.deviceInfo, caller)
 			}
 		} else if result.connected {
@@ -452,19 +497,33 @@ func waitForReconnectDelayWithWake(ctx context.Context, delay time.Duration, wak
 }
 
 func (a *CoreApp) reconnectDevice(ctx context.Context) reconnectAttemptResult {
-	if a.monitorOnlyActive() {
+	if a.monitorOnlyActive() || ctx.Err() != nil {
 		return reconnectAttemptResult{}
+	}
+	cfg, configRevision := a.configManager.GetWithRevision()
+	types.NormalizeDeviceProfileConfig(&cfg)
+	prioritizeWiFi := shouldPrioritizeWiFiConnection(cfg)
+	if prioritizeWiFi {
+		priorityResult, handled := a.connectWiFiPriorityForReconnect(ctx, cfg, configRevision)
+		if handled {
+			return priorityResult
+		}
 	}
 	a.connectMutex.Lock()
 	defer a.connectMutex.Unlock()
+	if a.deviceManager.IsConnected() {
+		return reconnectAttemptResult{connected: true, alreadyConnected: true, isConnected: a.deviceManager.IsConnected}
+	}
+	if ctx.Err() != nil {
+		return reconnectAttemptResult{}
+	}
 	leavePhase := newDeviceConnectionFlow(a).enterPhase(deviceConnectionPhaseConnecting)
 	defer leavePhase()
 
-	cfg := a.configManager.Get()
-	types.NormalizeDeviceProfileConfig(&cfg)
 	lastConnectionWasNative := a.lastConnectionWasNative.Load()
 	activeProfile := a.deviceManager.ActiveProfile()
-	connected, deviceInfo := reconnectTransport(
+	connected, deviceInfo := reconnectTransportWithPriority(
+		prioritizeWiFi,
 		a.hasSuccessfulConnection.Load(),
 		lastConnectionWasNative,
 		func() (bool, map[string]string) {
@@ -472,22 +531,12 @@ func (a *CoreApp) reconnectDevice(ctx context.Context) reconnectAttemptResult {
 				lastConnectionWasNative,
 				activeProfile,
 				func(profile types.DeviceProfile) (bool, map[string]string) {
+					if shouldTryBlackSharkFirst(profile.ID) {
+						return a.deviceManager.ConnectBlackSharkPreferredNative(ctx)
+					}
 					return a.deviceManager.ConnectNativeProfileContext(ctx, profile)
 				},
 				func() (bool, map[string]string) {
-					if shouldTryBlackSharkFirst(activeProfile.ID) {
-						// 候选表里 BLE 组在前，直接走它会把两个 BLE 档案各扫满 10s（冷启动 21s）。
-						// 上游 beta 有一步"先按 BRB02 USB 档案直连"，照做：先试 USB，失败才回落候选表
-						// （BLE 回落路径不变）。设备不在时只是一次 libusb 枚举。
-						if connected, info := a.deviceManager.ConnectNativeProfileContext(ctx, types.BlackSharkBRB02USBProfile()); connected {
-							return connected, info
-						}
-						// 再试 BLE：设备配对之后空闲时不广播，候选表的名称扫描对它必然失败，
-						// 所以先按 Windows 配对表里的地址直连。地址取不到或连不上就静默回落。
-						if connected, info := a.deviceManager.ConnectBlackSharkBLEDirect(ctx); connected {
-							return connected, info
-						}
-					}
 					return a.deviceManager.AutoConnectNativeProfilesContext(ctx, cfg.DeviceProfiles)
 				},
 			)
@@ -514,6 +563,58 @@ func (a *CoreApp) reconnectDevice(ctx context.Context) reconnectAttemptResult {
 		},
 		isConnected: a.deviceManager.IsConnected,
 	}
+}
+
+func (a *CoreApp) connectWiFiPriorityForReconnect(ctx context.Context, cfg types.AppConfig, configRevision uint64) (reconnectAttemptResult, bool) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil || a.monitorOnlyActive() {
+		return reconnectAttemptResult{}, true
+	}
+	if a.deviceManager.IsConnected() {
+		return reconnectAttemptResult{connected: true, alreadyConnected: true, isConnected: a.deviceManager.IsConnected}, true
+	}
+	leavePhase := newDeviceConnectionFlow(a).enterPhase(deviceConnectionPhaseDiscovering)
+	result := a.scanWiFiDevicesForConfigContext(ctx, cfg, types.WiFiDiscoveryModeNormal)
+	leavePhase()
+	if len(result.Devices) == 0 {
+		if result.Error != "" {
+			a.logDebug("WiFi priority scan did not produce a candidate: %s", result.Error)
+			return reconnectAttemptResult{}, true
+		}
+		return reconnectAttemptResult{}, false
+	}
+	if len(result.Devices) > 1 {
+		a.logInfo("WiFi 优先重连发现多个设备（%d 个），本轮等待选择，不尝试其他传输", len(result.Devices))
+		return reconnectAttemptResult{}, true
+	}
+	a.connectMutex.Lock()
+	defer a.connectMutex.Unlock()
+	if ctx.Err() != nil || a.monitorOnlyActive() {
+		return reconnectAttemptResult{}, true
+	}
+	if a.deviceManager.IsConnected() {
+		return reconnectAttemptResult{connected: true, alreadyConnected: true, isConnected: a.deviceManager.IsConnected}, true
+	}
+	if a.configManager.Revision() != configRevision {
+		return reconnectAttemptResult{}, true
+	}
+	leavePhase = newDeviceConnectionFlow(a).enterPhase(deviceConnectionPhaseConnecting)
+	connected, alreadyConnected, info := a.connectWiFiPriorityCandidate(ctx, cfg, configRevision, result.Devices[0])
+	leavePhase()
+	var disconnect func()
+	if connected && !alreadyConnected {
+		generation := a.deviceManager.ConnectionGeneration()
+		disconnect = func() { a.deviceManager.DisconnectIfConnectionGeneration(generation) }
+	}
+	return reconnectAttemptResult{
+		connected:        connected,
+		alreadyConnected: alreadyConnected,
+		deviceInfo:       info,
+		disconnect:       disconnect,
+		isConnected:      a.deviceManager.IsConnected,
+	}, true
 }
 
 func reconnectNativeTransport(
@@ -548,6 +649,22 @@ func reconnectTransport(
 	tryNative func() (bool, map[string]string),
 	tryCompatibility func() (bool, map[string]string),
 ) (bool, map[string]string) {
+	return reconnectTransportWithPriority(false, hasSuccessfulConnection, lastConnectionWasNative, tryNative, tryCompatibility)
+}
+
+func reconnectTransportWithPriority(
+	wifiPriorityEnabled bool,
+	hasSuccessfulConnection bool,
+	lastConnectionWasNative bool,
+	tryNative func() (bool, map[string]string),
+	tryCompatibility func() (bool, map[string]string),
+) (bool, map[string]string) {
+	if wifiPriorityEnabled {
+		if connected, info := tryNative(); connected {
+			return true, info
+		}
+		return tryCompatibility()
+	}
 	if !hasSuccessfulConnection || lastConnectionWasNative {
 		connected, info := tryNative()
 		if connected || lastConnectionWasNative {
@@ -919,6 +1036,7 @@ func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string,
 
 	newDeviceConnectionFlow(a).setRuntimeConnected()
 	atomic.StoreInt64(&a.lastHealthReconnectUnix, 0)
+	a.recordHealthTransportSuccess(a.deviceManager.GetDeviceType(), time.Now())
 	a.hasSuccessfulConnection.Store(true)
 	a.lastConnectionWasNative.Store(types.IsNativeDeviceTransport(a.deviceManager.GetDeviceType()))
 

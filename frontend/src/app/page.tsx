@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type ComponentProps } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { AlertTriangle } from 'lucide-react';
@@ -16,7 +16,7 @@ import DeviceStatus from './components/DeviceStatus';
 import FanCurve from './components/FanCurve';
 import { useAppBootstrap } from './hooks/useAppBootstrap';
 import { apiService } from './services/api';
-import { useAppStore } from './store/app-store';
+import { selectFanData, selectTemperature, useAppStore } from './store/app-store';
 import { applyPowerSpoofToTemperature } from './lib/power-spoof';
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './components/ui';
 
@@ -24,6 +24,32 @@ function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
   return String(error ?? 'Unknown error');
+}
+
+function useLiveTelemetry(config: types.AppConfig) {
+  const fanData = useAppStore(selectFanData);
+  const rawTemperature = useAppStore(selectTemperature);
+  const temperature = useMemo(
+    () => applyPowerSpoofToTemperature(rawTemperature, config),
+    [config, rawTemperature],
+  );
+  return { fanData, temperature };
+}
+
+function LiveAppShell(props: Omit<ComponentProps<typeof AppShell>, 'fanData' | 'temperature'>) {
+  return <AppShell {...props} {...useLiveTelemetry(props.config)} />;
+}
+
+function LiveDeviceStatus(props: Omit<ComponentProps<typeof DeviceStatus>, 'fanData' | 'temperature'>) {
+  return <DeviceStatus {...props} {...useLiveTelemetry(props.config)} />;
+}
+
+function LiveFanCurve(props: Omit<ComponentProps<typeof FanCurve>, 'fanData' | 'temperature'>) {
+  return <FanCurve {...props} {...useLiveTelemetry(props.config)} />;
+}
+
+function LiveControlPanel(props: Omit<ComponentProps<typeof ControlPanel>, 'fanData' | 'temperature'>) {
+  return <ControlPanel {...props} {...useLiveTelemetry(props.config)} />;
 }
 
 function LiveHome() {
@@ -43,8 +69,6 @@ function LiveHome() {
       runtimeDeviceProfile: state.runtimeDeviceProfile,
       runtimeDeviceCapabilities: state.runtimeDeviceCapabilities,
       config: state.config,
-      fanData: state.fanData,
-      temperature: state.temperature,
       bridgeWarning: state.bridgeWarning,
       coreServiceError: state.coreServiceError,
       isLoading: state.isLoading,
@@ -80,10 +104,6 @@ function LiveHome() {
     () => view.config || new types.AppConfig(),
     [view.config],
   );
-  const displayTemperature = useMemo(
-    () => applyPowerSpoofToTemperature(view.temperature, safeConfig),
-    [safeConfig, view.temperature],
-  );
 
   const exportDiagnostics = useCallback(async () => {
     if (diagnosticsExporting) return;
@@ -101,12 +121,10 @@ function LiveHome() {
   }, [diagnosticsExporting, t]);
 
   const curveContent = (
-    <FanCurve
+    <LiveFanCurve
       config={safeConfig}
       onConfigChange={setConfig}
       isConnected={view.isConnected}
-      fanData={view.fanData}
-      temperature={displayTemperature}
       runtimeDeviceProfile={view.runtimeDeviceProfile}
       runtimeDeviceCapabilities={view.runtimeDeviceCapabilities}
       deviceModel={view.deviceModel}
@@ -117,14 +135,12 @@ function LiveHome() {
 
   const statusContent = (
     <>
-      <DeviceStatus
+      <LiveDeviceStatus
         isConnected={view.isConnected}
         runtimeState={view.deviceRuntimeState}
         deviceProductId={view.deviceProductId}
         deviceModel={view.deviceModel}
         deviceSettings={view.deviceSettings}
-        fanData={view.fanData}
-        temperature={displayTemperature}
         runtimeDeviceProfile={view.runtimeDeviceProfile}
         config={safeConfig}
         coreServiceError={view.coreServiceError}
@@ -155,13 +171,11 @@ function LiveHome() {
 
   return (
     <>
-      <AppShell
+      <LiveAppShell
         activeTab={effectiveActiveTab}
         onTabChange={setActiveTab}
         isConnected={view.isConnected}
         monitorOnlyActive={view.monitorOnlyActive}
-        fanData={view.fanData}
-        temperature={displayTemperature}
         runtimeDeviceProfile={view.runtimeDeviceProfile}
         config={safeConfig}
         autoControl={safeConfig.autoControl}
@@ -173,13 +187,11 @@ function LiveHome() {
         statusContent={statusContent}
         curveContent={curveContent}
         controlContent={
-          <ControlPanel
+          <LiveControlPanel
             config={safeConfig}
             onConfigChange={setConfig}
             isConnected={view.isConnected}
             monitorOnlyActive={view.monitorOnlyActive}
-            fanData={view.fanData}
-            temperature={displayTemperature}
             runtimeDeviceProfile={view.runtimeDeviceProfile}
             runtimeDeviceCapabilities={view.runtimeDeviceCapabilities}
             onDeviceContextRefresh={refreshDeviceContext}

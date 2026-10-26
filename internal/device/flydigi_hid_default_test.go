@@ -89,8 +89,7 @@ func TestNativeAutoConnectCandidatesKeepUserNativeProfilesBeforeBuiltInFallbacks
 	for _, profile := range candidates {
 		gotIDs = append(gotIDs, profile.ID)
 	}
-	// 内置回退档案按注册顺序排在用户档案之后：
-	// HID 组依次为 legacy RPM、BlackShark 风神PRO；BLE 组为 BS1。
+	// 内置回退档案按注册顺序排在用户档案之后；BlackShark 回退只在候选配置包含黑鲨时加入。
 	wantIDs := []string{
 		userBLE.ID,
 		types.FlyDigiBS1ProfileID,
@@ -186,7 +185,10 @@ func TestIdleBLECooldownKeepsHIDCandidates(t *testing.T) {
 		types.FlyDigiBS2PROProfile(),
 	}
 
-	got := filterNativeAutoConnectCandidatesForBLECooldown(candidates, true)
+	now := time.Now()
+	got := filterNativeAutoConnectCandidatesForBLECooldown(candidates, map[string]time.Time{
+		nativeBLEAutoConnectCandidateKey(candidates[0]): now,
+	}, now)
 	if len(got) != 1 {
 		t.Fatalf("filtered candidates = %#v, want one HID candidate", got)
 	}

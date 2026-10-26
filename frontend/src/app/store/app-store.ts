@@ -218,6 +218,12 @@ interface AppStore {
   startEventListeners: () => () => void;
 }
 
+export const selectTemperature = (state: AppStore) => state.temperature;
+export const selectFanData = (state: AppStore) => state.fanData;
+export const selectTemperatureHistoryPoints = (state: AppStore) => (
+  state.temperatureHistoryEnabled ? state.temperatureHistoryPoints : state.sessionHistoryPoints
+);
+
 const deviceSnapshotStateFromStore = (state: AppStore): DeviceSnapshotState => {
 	const snapshot: DeviceSnapshotState = {
 		isConnected: state.isConnected,

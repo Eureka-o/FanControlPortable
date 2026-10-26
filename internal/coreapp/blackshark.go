@@ -1932,7 +1932,8 @@ const (
 
 	// blackSharkHostFxRetryInterval 是启动失败后多久再试一次：一次瞬时失败
 	// （比如默认音频设备正在切换）就会让功能永久不可用，重试间隔给恢复留窗口。
-	blackSharkHostFxRetryInterval = 20 * time.Second
+	blackSharkHostFxRetryInterval    = 20 * time.Second
+	blackSharkHostFxIdlePollInterval = 2 * time.Second
 
 	// blackSharkPressQueueSize 是键鼠事件队列长度：满了就丢，钩子线程绝不能阻塞；
 	// 丢的是极短时间内的重复按下，对灯效观感无影响。
@@ -1990,22 +1991,41 @@ func (a *CoreApp) startBlackSharkHostFx() {
 
 	a.safeGo("blackSharkHostFxLoop", func() {
 		defer close(fx.done)
-		ticker := time.NewTicker(blackSharkHostFxPollInterval)
-		defer ticker.Stop()
+		timer := time.NewTimer(blackSharkHostFxPollInterval)
+		defer timer.Stop()
+		var lastEffects types.BlackSharkHostEffects
+		hasLastEffects := false
+		var lastEffectsBroadcast time.Time
 		for {
 			select {
 			case <-fx.stop:
 				fx.shutdown(a)
 				return
-			case <-ticker.C:
-				fx.tick(a)
-				// 状态由核心推给界面，界面不再轮询：shouldDropEvent 按
-				// highFrequencyEventTypes 的阈值节流，这个 204ms 循环实际只推 ≤1 条/秒。
-				a.broadcastBlackSharkHostEffects()
+			case <-timer.C:
+				tickStarted := time.Now()
+				nextInterval := fx.tick(a)
+				if a.ipcServer != nil && a.ipcServer.HasClients() {
+					effects := a.BlackSharkHostEffects()
+					now := time.Now()
+					if shouldBroadcastBlackSharkHostEffects(hasLastEffects, lastEffects, effects, now, lastEffectsBroadcast) {
+						a.ipcServer.BroadcastEvent(ipc.EventBlackSharkHostEffects, effects)
+						lastEffects = effects
+						hasLastEffects = true
+						lastEffectsBroadcast = now
+					}
+				}
+				timer.Reset(remainingHostFxTickDelay(nextInterval, time.Since(tickStarted)))
 			}
 		}
 	})
 	a.logInfo("黑鲨主机侧灯效驱动已启动（轮询 %s；槽位 6=响应 / 7=音频同步）", blackSharkHostFxPollInterval)
+}
+
+func remainingHostFxTickDelay(interval, elapsed time.Duration) time.Duration {
+	if elapsed >= interval {
+		return 0
+	}
+	return interval - elapsed
 }
 
 // stopBlackSharkHostFx 停掉循环并释放两个驱动（幂等；进程退出时调用）。
@@ -2023,7 +2043,7 @@ func (a *CoreApp) stopBlackSharkHostFx() {
 }
 
 // tick 是每个节拍做一次的事：判当前槽位 → 该起的起、该停的停、该推的推。
-func (fx *blackSharkHostFx) tick(a *CoreApp) {
+func (fx *blackSharkHostFx) tick(a *CoreApp) time.Duration {
 	slot := 0
 	if a.deviceManager != nil && a.deviceManager.IsBlackSharkActive() {
 		slot = a.deviceManager.BlackSharkCurrentRgbSlot()
@@ -2056,6 +2076,20 @@ func (fx *blackSharkHostFx) tick(a *CoreApp) {
 		fx.stopPress(a)
 		fx.stopAudio(a)
 	}
+	if slot == 6 || slot == 7 {
+		return blackSharkHostFxPollInterval
+	}
+	return blackSharkHostFxIdlePollInterval
+}
+
+func shouldBroadcastBlackSharkHostEffects(hasPrevious bool, previous, next types.BlackSharkHostEffects, now, lastBroadcast time.Time) bool {
+	if !hasPrevious || previous.CurrentSlot != next.CurrentSlot ||
+		previous.AudioSyncRunning != next.AudioSyncRunning || previous.AudioError != next.AudioError ||
+		previous.AudioLevel != next.AudioLevel || previous.ReactiveRunning != next.ReactiveRunning ||
+		previous.ReactiveError != next.ReactiveError {
+		return true
+	}
+	return previous != next && (lastBroadcast.IsZero() || now.Sub(lastBroadcast) >= time.Second)
 }
 
 // pushAudio 读一次采样器的主频并（非静音时）下发一帧。
@@ -2310,7 +2344,7 @@ func (a *CoreApp) BlackSharkHostEffects() types.BlackSharkHostEffects {
 
 // broadcastBlackSharkHostEffects 把主机侧灯效状态推给界面（见上面循环处的注释）。
 func (a *CoreApp) broadcastBlackSharkHostEffects() {
-	if a == nil || a.ipcServer == nil {
+	if a == nil || a.ipcServer == nil || !a.ipcServer.HasClients() {
 		return
 	}
 	a.ipcServer.BroadcastEvent(ipc.EventBlackSharkHostEffects, a.BlackSharkHostEffects())
@@ -2354,45 +2388,45 @@ const scenePollInterval = time.Second
 //
 // 与健康监控同样的模式：单独 ticker + safeGo + cleanupChan 退出。
 func (a *CoreApp) startSceneLoop() {
-	a.sceneTicker = time.NewTicker(scenePollInterval)
-
-	a.safeGo("sceneLoop", func() {
-		defer a.sceneTicker.Stop()
-		for {
-			select {
-			case <-a.sceneTicker.C:
-				if a.stopping.Load() {
+	a.sceneLoopOnce.Do(func() {
+		a.sceneTicker = time.NewTicker(scenePollInterval)
+		a.safeGo("sceneLoop", func() {
+			defer a.sceneTicker.Stop()
+			for {
+				select {
+				case <-a.sceneTicker.C:
+					if a.stopping.Load() {
+						return
+					}
+					a.tickScene()
+				case <-a.cleanupChan:
+					a.logInfo("情景循环已停止")
 					return
 				}
-				a.tickScene()
-			case <-a.cleanupChan:
-				a.logInfo("情景循环已停止")
-				return
 			}
-		}
+		})
+		a.logInfo("情景循环已启动（采样周期 %s）", scenePollInterval)
 	})
-
-	a.logInfo("情景循环已启动（采样周期 %s）", scenePollInterval)
 }
 
 // tickScene 采样一次前台进程并（必要时）施加动作。
 func (a *CoreApp) tickScene() {
-	cfg := a.configManager.Get()
-
-	// 没有规则：连前台进程都不必读，零开销。
-	if len(cfg.SceneRules) == 0 {
-		return
-	}
 	// 情景只对黑鲨有意义：它的「效果」就是黑鲨的档位与灯效模式。
 	if a.deviceManager == nil || !a.deviceManager.IsBlackSharkActive() {
 		return
 	}
-
-	// 配置被改过 -> 引擎里记的规则索引已经不可比，强制重新判定一次。
-	if rev := a.configManager.Revision(); rev != a.sceneRevision {
-		a.sceneRevision = rev
+	revision := a.configManager.Revision()
+	if revision != a.sceneRevision {
+		a.sceneConfig, revision = a.configManager.GetWithRevision()
+		a.sceneRevision = revision
 		a.sceneEngine.Reset()
-		a.logDebug("情景：配置已变更（revision=%d），重新判定", rev)
+		a.logDebug("情景：配置已变更（revision=%d），重新判定", revision)
+	}
+	cfg := a.sceneConfig
+
+	// 没有规则：连前台进程都不必读，零开销。
+	if len(cfg.SceneRules) == 0 {
+		return
 	}
 
 	fg, err := scene.GetForegroundProcessName()
@@ -2477,6 +2511,9 @@ func (a *CoreApp) SetSceneRules(rules []types.SceneRule, baseline int) ([]string
 		cfg.SceneBaselineGear = baseline
 	}); err != nil {
 		return issues, err
+	}
+	if len(rules) > 0 {
+		a.startSceneLoop()
 	}
 	// 规则换了：判定循环会在下一拍发现配置版本号变化并自行重置引擎（见 tickScene）。
 	// 这里不要再直接动 sceneEngine —— 它不是并发安全的，而本函数跑在 IPC 线程上。

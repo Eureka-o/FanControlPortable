@@ -1,6 +1,10 @@
 package coreapp
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/Eureka-o/FanControlPortable/internal/config"
@@ -31,6 +35,54 @@ func testSerialDeviceProfile() types.DeviceProfile {
 			SpeedRange:       types.DefaultPercentSpeedRange(),
 			SupportsSetSpeed: true,
 		},
+	}
+}
+
+func TestWiFiPriorityReconnectReturnsFreshConnectionForCoreCompletion(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"speed": 36, "fanSpeed": 36, "wifiTargetSpeed": 42,
+			"wifiControl": true, "controlMode": "wifi", "temperature": 41,
+		})
+	}))
+	defer server.Close()
+
+	profile := types.DefaultWiFiPercentProfile(server.URL)
+	cfg := types.GetDefaultConfig(false)
+	cfg.WiFiCompatibilityEnabled = true
+	cfg.WiFiConnectionPriorityEnabled = true
+	cfg.FanControlDeviceIp = server.URL
+	cfg.DeviceTransport = types.DeviceTransportWiFi
+	cfg.ActiveDeviceProfileID = profile.ID
+	cfg.DeviceProfiles = []types.DeviceProfile{profile}
+	app := newDeviceProfileTestApp(t, cfg)
+	t.Cleanup(app.deviceManager.DisconnectSilently)
+
+	result, handled := app.connectWiFiPriorityForReconnect(context.Background(), app.configManager.Get(), app.configManager.Revision())
+	if !handled || !result.connected || result.alreadyConnected {
+		t.Fatalf("priority reconnect = handled %v result %#v, want fresh WiFi connection for core completion", handled, result)
+	}
+	if result.deviceInfo["transport"] != types.DeviceTransportWiFi || !app.deviceManager.IsConnected() {
+		t.Fatalf("priority reconnect deviceInfo=%#v connected=%v, want connected WiFi", result.deviceInfo, app.deviceManager.IsConnected())
+	}
+}
+
+func TestUpdateConfigStartsSceneLoopWhenAddingFirstRule(t *testing.T) {
+	app := newDeviceProfileTestApp(t, types.GetDefaultConfig(false))
+	app.cleanupChan = make(chan bool)
+	t.Cleanup(func() {
+		if app.sceneTicker != nil {
+			close(app.cleanupChan)
+			app.sceneTicker.Stop()
+		}
+	})
+	cfg := app.configManager.Get()
+	cfg.SceneRules = []types.SceneRule{{Name: "Game"}}
+	if err := app.UpdateConfig(cfg); err != nil {
+		t.Fatalf("UpdateConfig() error = %v", err)
+	}
+	if app.sceneTicker == nil {
+		t.Fatal("adding the first scene rule should start scene polling without restart")
 	}
 }
 

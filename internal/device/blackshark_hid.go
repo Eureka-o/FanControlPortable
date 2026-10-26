@@ -860,7 +860,7 @@ func (m *Manager) ConnectBlackSharkBLEDirect(ctx context.Context) (bool, map[str
 	// PrepareRuntimeProfile 会用内置档案的规范值覆盖除 Connection 以外的字段，
 	// 而 Connection 是明确保留的（端点属于运行期状态）——所以这样把地址传进去是受支持的用法。
 	profile.Connection.Endpoint = address
-	connected, info := m.ConnectNativeProfileContext(ctx, profile)
+	connected, info := m.connectNativeProfileContextIfDisconnected(ctx, profile)
 	if connected {
 		m.logInfo("黑鲨 BLE 已按配对地址直连: %s", address)
 	}

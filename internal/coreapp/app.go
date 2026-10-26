@@ -71,6 +71,7 @@ type CoreApp struct {
 	reconnectCancel                  context.CancelFunc
 	reconnectWake                    chan struct{}
 	reconnectGeneration              uint64
+	reconnectIntentPriority          atomic.Int32
 	autoReconnectSuppressed          atomic.Bool
 	hasSuccessfulConnection          atomic.Bool
 	lastConnectionWasNative          atomic.Bool
@@ -116,6 +117,8 @@ type CoreApp struct {
 	lastResumeRecoveryUnix        int64
 	lastHealthReconnectUnix       int64
 	healthConsecutiveFailureCount int32
+	healthTransportMu             sync.Mutex
+	healthTransportStates         map[string]healthTransportState
 	lastBlackSharkUSBProbeUnix    int64
 	connectionFlights             *connectionFlightRecorder
 	smartControlDecisionMu        sync.RWMutex
@@ -141,9 +144,17 @@ type CoreApp struct {
 	// sceneRevision 记住上次判定所用的配置版本号。
 	// 引擎内部记的是规则索引；规则表被改后同一个索引会指向另一条规则，
 	// 引擎会误判成没有变化从而不做任何事，用 revision 变化强制 Reset。
-	sceneRevision uint64
-	cleanupChan   chan bool
-	quitChan      chan bool
+	sceneRevision     uint64
+	sceneConfig       types.AppConfig
+	sceneLoopOnce     sync.Once
+	trayConfigMu      sync.Mutex
+	trayConfig        types.AppConfig
+	trayConfigRev     uint64
+	trayConfigReady   bool
+	trayCurveOptions  []tray.CurveOption
+	trayActiveCurveID string
+	cleanupChan       chan bool
+	quitChan          chan bool
 
 	mutex                 sync.RWMutex
 	manualGearLevelMemory map[string]string

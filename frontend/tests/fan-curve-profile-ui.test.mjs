@@ -123,7 +123,7 @@ test('uses normal curve navigation and keeps history ownership outside page moun
   assert.match(pageSource, /onOpenCurveEditor=\{\(\) => setActiveTab\('curve'\)\}/);
   assert.match(pageSource, /onOpenHistoryDetails=\{\(\) => openCurveTab\('history-details'\)\}/);
   assert.doesNotMatch(historyHookSource, /apiService|useEffect|useState|useRef|startTransition/);
-  assert.match(historyHookSource, /state\.temperatureHistoryPoints/);
+  assert.match(historyHookSource, /useAppStore\(selectTemperatureHistoryPoints\)/);
   assert.match(historyHookSource, /state\.setTemperatureHistoryEnabled/);
   assert.match(storeSource, /temperatureHistoryInitialized: boolean/);
   assert.match(storeSource, /temperatureHistoryPoints: TemperatureHistoryPoint\[\]/);

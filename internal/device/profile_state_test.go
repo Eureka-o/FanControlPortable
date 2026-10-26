@@ -72,6 +72,9 @@ func TestAutoConnectNativeReconnectsInvalidBLEExecutor(t *testing.T) {
 
 	m := NewManager(nil)
 	m.bleConnector = connector
+	m.bleScanner = deviceprofileexec.BLEScannerFunc(func(context.Context, types.BLEScanParams) ([]types.BLEDeviceInfo, error) {
+		return []types.BLEDeviceInfo{{Address: "AA:BB:CC:DD:EE:04", Name: "FlyDigi BS1"}}, nil
+	})
 	m.bleExecutor = executor
 	m.activeProfile = profile
 	m.deviceTransport = types.DeviceTransportBLE

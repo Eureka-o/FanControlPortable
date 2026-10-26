@@ -65,11 +65,15 @@ func (f deviceConnectionFlow) connectBestScannedDevice() bool {
 		Reason: "auto-scan",
 	})
 	cfg := f.app.configManager.Get()
-	selectionCfg := cfg
 	types.NormalizeDeviceProfileConfig(&cfg)
+	selectionCfg := cfg
 	prioritizeWiFi := shouldPrioritizeWiFiConnection(cfg)
 	if prioritizeWiFi {
 		wifiScan := f.app.scanWiFiDevicesForConfig(cfg, types.WiFiDiscoveryModeNormal)
+		if wifiScan.Error != "" {
+			f.broadcastError(wifiScan.Error)
+			return false
+		}
 		if len(wifiScan.Devices) > 1 {
 			f.broadcastError(fmt.Sprintf("发现多个 WiFi 设备（%d 个），请到设置页选择", len(wifiScan.Devices)))
 			return false
@@ -310,6 +314,8 @@ func (f deviceConnectionFlow) connectCompatibilityCandidate(transport, profileID
 
 	if err := f.app.commitConfigUpdate(nextCfg, nil); err != nil {
 		f.app.logError("保存设备连接配置失败: %v", err)
+		f.app.deviceManager.DisconnectSilently()
+		f.app.configureDeviceManager(oldCfg)
 		f.app.connectionFlights.record(connectionFlightEvent{
 			Stage:      connectionFlightStageError,
 			Reason:     "connection-config-save-failed",

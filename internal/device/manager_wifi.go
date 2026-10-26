@@ -38,6 +38,7 @@ type Manager struct {
 	activeProfile                 types.DeviceProfile
 	wifiExecutor                  *deviceprofileexec.WiFiExecutor
 	bleConnector                  deviceprofileexec.BLEConnector
+	bleScanner                    deviceprofileexec.BLEScanner
 	bleExecutor                   *deviceprofileexec.BLEExecutor
 	serialDialer                  deviceprofileexec.SerialDialer
 	serialExecutor                *deviceprofileexec.SerialExecutor
@@ -45,12 +46,14 @@ type Manager struct {
 	flyDigiHIDStop                chan struct{}
 	flyDigiHIDDone                chan struct{}
 	mutex                         sync.RWMutex
+	autoNativeMu                  sync.Mutex
 	operationControl              deviceOperationControl
 	logger                        types.Logger
 	currentFanData                atomic.Pointer[types.FanData]
 	writesBlocked                 atomic.Bool
 	connectionGen                 atomic.Uint64
-	lastAutoBLEScanAt             time.Time
+	lastAutoBLEScanAt             time.Time // legacy config compatibility; no longer controls candidate cooldowns
+	failedAutoBLEScans            map[string]time.Time
 	blackSharkHostInfoFrame       atomic.Pointer[[]byte]
 	blackSharkHostInfoRefreshStop chan struct{}
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/Eureka-o/FanControlPortable/internal/device"
 	"github.com/Eureka-o/FanControlPortable/internal/deviceprofileexec"
+	"github.com/Eureka-o/FanControlPortable/internal/deviceprofiles"
 	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
@@ -70,6 +71,10 @@ func normalizeDeviceScanMode(mode string) string {
 }
 
 func (a *CoreApp) scanWiFiDevicesForConfig(cfg types.AppConfig, mode string) types.WiFiDiscoveryResult {
+	return a.scanWiFiDevicesForConfigContext(context.Background(), cfg, mode)
+}
+
+func (a *CoreApp) scanWiFiDevicesForConfigContext(ctx context.Context, cfg types.AppConfig, mode string) types.WiFiDiscoveryResult {
 	if !a.wifiScanRunning.CompareAndSwap(false, true) {
 		return types.WiFiDiscoveryResult{
 			Mode:  mode,
@@ -85,7 +90,75 @@ func (a *CoreApp) scanWiFiDevicesForConfig(cfg types.AppConfig, mode string) typ
 	profile := activeWiFiProfile(cfg)
 	params := wifiDiscoveryParamsFromProfile(profile, cfg.FanControlDeviceIp, mode)
 	params.Control = a.wifiScanControl
-	return device.DiscoverWiFiDevices(context.Background(), params)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return device.DiscoverWiFiDevices(ctx, params)
+}
+
+func (a *CoreApp) connectWiFiPriorityCandidate(ctx context.Context, cfg types.AppConfig, configRevision uint64, device types.WiFiDiscoveredDevice) (bool, bool, map[string]string) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	endpoint := strings.TrimSpace(device.Endpoint)
+	if endpoint == "" || ctx.Err() != nil || a.configManager.Revision() != configRevision {
+		return false, false, nil
+	}
+	nextCfg := cfg
+	idx := compatibilityProfileIndex(nextCfg, types.DeviceTransportWiFi, activeWiFiProfile(nextCfg).ID)
+	if idx < 0 {
+		nextCfg.DeviceProfiles = append(nextCfg.DeviceProfiles, types.DefaultWiFiPercentProfile(nextCfg.FanControlDeviceIp))
+		idx = len(nextCfg.DeviceProfiles) - 1
+	}
+	profile, err := deviceprofiles.PrepareRuntimeProfile(nextCfg.DeviceProfiles[idx], nextCfg.FanControlDeviceIp)
+	if err != nil {
+		return false, false, nil
+	}
+	profile.Connection.Endpoint = endpoint
+	nextCfg.DeviceProfiles[idx] = profile
+	nextCfg.FanControlDeviceIp = endpoint
+	nextCfg.ActiveDeviceProfileID = profile.ID
+	nextCfg.DeviceTransport = types.DeviceTransportWiFi
+	if nextCfg.ActiveDeviceProfileIDsByTransport == nil {
+		nextCfg.ActiveDeviceProfileIDsByTransport = make(map[string]string)
+	}
+	nextCfg.ActiveDeviceProfileIDsByTransport[types.DeviceTransportWiFi] = profile.ID
+	nextCfg.WiFiCompatibilityEnabled = true
+	types.NormalizeDeviceProfileConfig(&nextCfg)
+
+	a.configureDeviceManager(nextCfg)
+	connected, info := a.deviceManager.Connect()
+	if !connected {
+		a.configureDeviceManager(a.configManager.Get())
+		return false, false, nil
+	}
+	if info == nil {
+		return true, true, nil
+	}
+	generation := a.deviceManager.ConnectionGeneration()
+	rollback := func() {
+		a.deviceManager.DisconnectIfConnectionGeneration(generation)
+		a.configureDeviceManager(a.configManager.Get())
+	}
+	if ctx.Err() != nil {
+		rollback()
+		return false, false, nil
+	}
+	_, revision, applied, err := a.commitConfigMutationIfRevision(configRevision, func(current *types.AppConfig) {
+		*current = nextCfg
+	}, nil)
+	if err != nil {
+		a.logError("保存 WiFi 优先连接配置失败: %v", err)
+		rollback()
+		return false, false, nil
+	}
+	if !applied && revision != configRevision {
+		a.logInfo("WiFi 优先连接期间配置已变化，取消过期连接结果")
+		rollback()
+		return false, false, nil
+	}
+	a.lastConnectionWasNative.Store(false)
+	return true, false, info
 }
 
 func nativeDeviceCandidate(info map[string]string) types.DeviceCandidate {
