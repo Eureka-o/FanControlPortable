@@ -82,6 +82,31 @@ func extendCurveRightEdgeForUnit(curve []types.FanCurvePoint, unit string) ([]ty
 	return extended, len(extended) != len(curve)
 }
 
+func extendCurveLeftEdgeForUnit(curve []types.FanCurvePoint, unit string) ([]types.FanCurvePoint, bool) {
+	if len(curve) == 0 {
+		return nil, false
+	}
+
+	defaultCurve := defaultCurveForUnit(unit)
+	firstPoint := curve[0]
+	if firstPoint.Temperature <= defaultCurve[0].Temperature {
+		return curve, false
+	}
+
+	extended := make([]types.FanCurvePoint, 0, len(curve)+len(defaultCurve))
+	for _, point := range defaultCurve {
+		if point.Temperature >= firstPoint.Temperature {
+			break
+		}
+		extended = append(extended, types.FanCurvePoint{
+			Temperature: point.Temperature,
+			RPM:         firstPoint.RPM,
+		})
+	}
+	extended = append(extended, curve...)
+	return extended, len(extended) != len(curve)
+}
+
 func extendCurveRightEdge(curve []types.FanCurvePoint) ([]types.FanCurvePoint, bool) {
 	return extendCurveRightEdgeForUnit(curve, types.FanSpeedUnitPercent)
 }
@@ -226,6 +251,10 @@ func NormalizeConfigForUnit(cfg *types.AppConfig, unit string) bool {
 	// 语义与主机侧那条 21 点控制曲线不同 ⇒ 不做右端延长。
 	blackSharkGearCurve := types.HasBlackSharkGearCurveProfile(cfg.FanCurveProfiles)
 	if !blackSharkGearCurve {
+		if extendedCurve, extended := extendCurveLeftEdgeForUnit(baseCurve, unit); extended {
+			baseCurve = extendedCurve
+			changed = true
+		}
 		if extendedCurve, extended := extendCurveRightEdgeForUnit(baseCurve, unit); extended {
 			baseCurve = extendedCurve
 			changed = true
@@ -265,6 +294,10 @@ func NormalizeConfigForUnit(cfg *types.AppConfig, unit string) bool {
 		// 同 blackSharkGearCurve：四档方案的曲线是设备原生 4 点，不延长
 		// （否则每个方案都会被补成 10 点）。
 		if !blackSharkGearCurve {
+			if extendedCurve, extended := extendCurveLeftEdgeForUnit(profile.Curve, unit); extended {
+				profile.Curve = extendedCurve
+				changed = true
+			}
 			if extendedCurve, extended := extendCurveRightEdgeForUnit(profile.Curve, unit); extended {
 				profile.Curve = extendedCurve
 				changed = true

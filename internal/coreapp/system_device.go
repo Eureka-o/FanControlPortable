@@ -3,10 +3,12 @@ package coreapp
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/Eureka-o/FanControlPortable/internal/deviceprofiles"
 	"github.com/Eureka-o/FanControlPortable/internal/ipc"
 	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
@@ -104,7 +106,9 @@ func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
 	if fanData != nil {
 		a.lastSuccessfulDeviceReadAt = time.Now()
 	}
-	cfg := a.configManager.Get()
+	// 读路径用 revision 缓存快照，避免每条设备上报都做一次全量 AppConfig 深拷贝；
+	// 只有下面真正要写配置的分支才取新的可写克隆（见 monitoringConfigSnapshot 的约束）。
+	cfg := a.monitoringConfigSnapshot()
 	currentWorkMode := ""
 	if fanData != nil {
 		currentWorkMode = fanData.WorkMode
@@ -119,9 +123,12 @@ func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
 		!cfg.IgnoreDeviceOnReconnect {
 
 		a.logInfo("检测到设备切换到挡位工作模式，自动关闭智能变频")
-		cfg.AutoControl = false
+		// 写路径必须用新克隆：commitConfigUpdate 会原地把 NativeAutoBLEScanUnix 补进
+		// 传入的 cfg 并把它广播给前端，绝不能把共享的缓存快照交给它。
+		freshCfg := a.configManager.Get()
+		freshCfg.AutoControl = false
 
-		if err := a.commitConfigUpdate(cfg, nil); err != nil {
+		if err := a.commitConfigUpdate(freshCfg, nil); err != nil {
 			a.logError("保存设备手动模式配置失败: %v", err)
 		}
 	} else if deviceSwitchedToManual &&
@@ -207,6 +214,89 @@ type reconnectAttemptResult struct {
 	deviceInfo       map[string]string
 	disconnect       func()
 	isConnected      func() bool
+}
+
+const knownDeviceReconnectAttempts = 3
+
+type successfulDeviceConnection struct {
+	profile           types.DeviceProfile
+	configuredProfile types.DeviceProfile
+	profileKey        string
+	failures          int
+}
+
+func (a *CoreApp) rememberSuccessfulConnection() {
+	profile := a.deviceManager.ActiveProfile()
+	if strings.TrimSpace(profile.ID) == "" {
+		return
+	}
+	cfg := a.configManager.Get()
+	types.NormalizeDeviceProfileConfig(&cfg)
+	idx := deviceprofiles.FindIndex(cfg.DeviceProfiles, profile.ID)
+	if idx < 0 {
+		return
+	}
+	a.lastSuccessfulConnectionMu.Lock()
+	a.lastSuccessfulConnection = &successfulDeviceConnection{
+		profile:           deviceprofiles.CloneProfile(profile),
+		configuredProfile: deviceprofiles.CloneProfile(cfg.DeviceProfiles[idx]),
+		profileKey:        deviceProfileConnectionKeyForProfile(cfg.DeviceProfiles[idx], cfg.FanControlDeviceIp),
+	}
+	a.lastSuccessfulConnectionMu.Unlock()
+}
+
+func (a *CoreApp) reconnectLastSuccessfulDevice(
+	ctx context.Context,
+	cfg types.AppConfig,
+	tryProfile func(types.DeviceProfile) (bool, map[string]string),
+) (bool, map[string]string, bool) {
+	if ctx.Err() != nil || a.monitorOnlyActive() || a.autoReconnectSuppressed.Load() || a.systemSuspended.Load() {
+		return false, nil, true
+	}
+	a.lastSuccessfulConnectionMu.Lock()
+	previous := a.lastSuccessfulConnection
+	if previous == nil {
+		a.lastSuccessfulConnectionMu.Unlock()
+		return false, nil, false
+	}
+	idx := deviceprofiles.FindIndex(cfg.DeviceProfiles, previous.profile.ID)
+	if idx < 0 || !reflect.DeepEqual(cfg.DeviceProfiles[idx], previous.configuredProfile) ||
+		deviceProfileConnectionKeyForProfile(cfg.DeviceProfiles[idx], cfg.FanControlDeviceIp) != previous.profileKey {
+		a.lastSuccessfulConnection = nil
+		a.lastSuccessfulConnectionMu.Unlock()
+		return false, nil, false
+	}
+	if types.IsManualCompatibilityDeviceTransport(previous.profile.Transport) {
+		if !compatibilityConnectionEnabled(cfg) || types.ActiveDeviceProfile(&cfg).ID != previous.profile.ID {
+			a.lastSuccessfulConnection = nil
+			a.lastSuccessfulConnectionMu.Unlock()
+			return false, nil, false
+		}
+	}
+	if previous.failures >= knownDeviceReconnectAttempts {
+		a.lastSuccessfulConnectionMu.Unlock()
+		return false, nil, false
+	}
+	profile := deviceprofiles.CloneProfile(previous.profile)
+	a.lastSuccessfulConnectionMu.Unlock()
+
+	connected, info := tryProfile(profile)
+	if !connected && ctx.Err() == nil && !a.autoReconnectSuppressed.Load() && !a.systemSuspended.Load() && !a.monitorOnlyActive() {
+		a.lastSuccessfulConnectionMu.Lock()
+		if a.lastSuccessfulConnection == previous {
+			previous.failures++
+		}
+		a.lastSuccessfulConnectionMu.Unlock()
+	}
+	return connected, info, true
+}
+
+func (a *CoreApp) resetKnownDeviceReconnectAttempts() {
+	a.lastSuccessfulConnectionMu.Lock()
+	if a.lastSuccessfulConnection != nil {
+		a.lastSuccessfulConnection.failures = 0
+	}
+	a.lastSuccessfulConnectionMu.Unlock()
 }
 
 func (a *CoreApp) requestReconnect(reason string, retryDelays []time.Duration) {
@@ -316,6 +406,7 @@ func (a *CoreApp) cancelReconnect() {
 		a.reconnectCancel()
 	}
 	a.reconnectMutex.Unlock()
+	a.resetKnownDeviceReconnectAttempts()
 }
 
 func (a *CoreApp) suppressReconnect() {
@@ -325,6 +416,7 @@ func (a *CoreApp) suppressReconnect() {
 		a.reconnectCancel()
 	}
 	a.reconnectMutex.Unlock()
+	a.resetKnownDeviceReconnectAttempts()
 }
 
 // runReconnectLoop 安排设备重连
@@ -502,6 +594,10 @@ func (a *CoreApp) reconnectDevice(ctx context.Context) reconnectAttemptResult {
 	}
 	cfg, configRevision := a.configManager.GetWithRevision()
 	types.NormalizeDeviceProfileConfig(&cfg)
+	result, handled := a.connectLastSuccessfulForReconnect(ctx, cfg, configRevision)
+	if handled {
+		return result
+	}
 	prioritizeWiFi := shouldPrioritizeWiFiConnection(cfg)
 	if prioritizeWiFi {
 		priorityResult, handled := a.connectWiFiPriorityForReconnect(ctx, cfg, configRevision)
@@ -520,26 +616,12 @@ func (a *CoreApp) reconnectDevice(ctx context.Context) reconnectAttemptResult {
 	leavePhase := newDeviceConnectionFlow(a).enterPhase(deviceConnectionPhaseConnecting)
 	defer leavePhase()
 
-	lastConnectionWasNative := a.lastConnectionWasNative.Load()
-	activeProfile := a.deviceManager.ActiveProfile()
 	connected, deviceInfo := reconnectTransportWithPriority(
 		prioritizeWiFi,
-		a.hasSuccessfulConnection.Load(),
-		lastConnectionWasNative,
+		false,
+		false,
 		func() (bool, map[string]string) {
-			return reconnectNativeTransport(
-				lastConnectionWasNative,
-				activeProfile,
-				func(profile types.DeviceProfile) (bool, map[string]string) {
-					if shouldTryBlackSharkFirst(profile.ID) {
-						return a.deviceManager.ConnectBlackSharkPreferredNative(ctx)
-					}
-					return a.deviceManager.ConnectNativeProfileContext(ctx, profile)
-				},
-				func() (bool, map[string]string) {
-					return a.deviceManager.AutoConnectNativeProfilesContext(ctx, cfg.DeviceProfiles)
-				},
-			)
+			return a.deviceManager.AutoConnectNativeProfilesContext(ctx, cfg.DeviceProfiles)
 		},
 		func() (bool, map[string]string) {
 			if !compatibilityConnectionEnabled(cfg) {
@@ -563,6 +645,58 @@ func (a *CoreApp) reconnectDevice(ctx context.Context) reconnectAttemptResult {
 		},
 		isConnected: a.deviceManager.IsConnected,
 	}
+}
+
+func (a *CoreApp) connectLastSuccessfulForReconnect(ctx context.Context, cfg types.AppConfig, configRevision uint64) (reconnectAttemptResult, bool) {
+	a.connectMutex.Lock()
+	defer a.connectMutex.Unlock()
+	if a.deviceManager.IsConnected() {
+		return reconnectAttemptResult{connected: true, alreadyConnected: true, isConnected: a.deviceManager.IsConnected}, true
+	}
+	if ctx.Err() != nil || a.configManager.Revision() != configRevision {
+		return reconnectAttemptResult{}, true
+	}
+	if !a.hasRetryableKnownDevice(cfg) {
+		return reconnectAttemptResult{}, false
+	}
+	leavePhase := newDeviceConnectionFlow(a).enterPhase(deviceConnectionPhaseConnecting)
+	defer leavePhase()
+	connected, info, handled := a.reconnectLastSuccessfulDevice(ctx, cfg, func(profile types.DeviceProfile) (bool, map[string]string) {
+		if types.IsNativeDeviceTransport(profile.Transport) {
+			if types.IsBlackSharkDeviceProfileID(profile.ID) {
+				return a.deviceManager.ConnectBlackSharkPreferredNative(ctx)
+			}
+			return a.deviceManager.ConnectNativeProfileContext(ctx, profile)
+		}
+		a.deviceManager.ConfigureProfile(profile, cfg.FanControlDeviceIp)
+		return a.deviceManager.Connect()
+	})
+	generation := a.deviceManager.ConnectionGeneration()
+	disconnect := func() { a.deviceManager.DisconnectIfConnectionGeneration(generation) }
+	if connected && (ctx.Err() != nil || a.configManager.Revision() != configRevision ||
+		a.autoReconnectSuppressed.Load() || a.systemSuspended.Load() || a.monitorOnlyActive()) {
+		disconnect()
+		return reconnectAttemptResult{}, true
+	}
+	return reconnectAttemptResult{
+		connected: connected, deviceInfo: info,
+		disconnect: disconnect, isConnected: a.deviceManager.IsConnected,
+	}, handled
+}
+
+func (a *CoreApp) hasRetryableKnownDevice(cfg types.AppConfig) bool {
+	a.lastSuccessfulConnectionMu.Lock()
+	defer a.lastSuccessfulConnectionMu.Unlock()
+	if a.lastSuccessfulConnection == nil || a.lastSuccessfulConnection.failures >= knownDeviceReconnectAttempts {
+		return false
+	}
+	idx := deviceprofiles.FindIndex(cfg.DeviceProfiles, a.lastSuccessfulConnection.profile.ID)
+	if idx < 0 || !reflect.DeepEqual(cfg.DeviceProfiles[idx], a.lastSuccessfulConnection.configuredProfile) ||
+		deviceProfileConnectionKeyForProfile(cfg.DeviceProfiles[idx], cfg.FanControlDeviceIp) != a.lastSuccessfulConnection.profileKey {
+		return false
+	}
+	return !types.IsManualCompatibilityDeviceTransport(a.lastSuccessfulConnection.profile.Transport) ||
+		(compatibilityConnectionEnabled(cfg) && types.ActiveDeviceProfile(&cfg).ID == a.lastSuccessfulConnection.profile.ID)
 }
 
 func (a *CoreApp) connectWiFiPriorityForReconnect(ctx context.Context, cfg types.AppConfig, configRevision uint64) (reconnectAttemptResult, bool) {
@@ -615,19 +749,6 @@ func (a *CoreApp) connectWiFiPriorityForReconnect(ctx context.Context, cfg types
 		disconnect:       disconnect,
 		isConnected:      a.deviceManager.IsConnected,
 	}, true
-}
-
-func reconnectNativeTransport(
-	lastConnectionWasNative bool,
-	activeProfile types.DeviceProfile,
-	tryProfile func(types.DeviceProfile) (bool, map[string]string),
-	tryAll func() (bool, map[string]string),
-) (bool, map[string]string) {
-	activeProfile = types.NormalizeDeviceProfile(activeProfile, "")
-	if lastConnectionWasNative && types.IsNativeDeviceTransport(activeProfile.Transport) {
-		return tryProfile(activeProfile)
-	}
-	return tryAll()
 }
 
 // shouldTryBlackSharkFirst 决定"候选扫描之前是否先试黑鲨（USB 直连 → BLE 直连）"。
@@ -1033,6 +1154,7 @@ func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string,
 	}
 	a.deviceManager.UnblockWrites()
 	a.syncConnectedBuiltInDeviceProfile(deviceInfo)
+	a.rememberSuccessfulConnection()
 
 	newDeviceConnectionFlow(a).setRuntimeConnected()
 	atomic.StoreInt64(&a.lastHealthReconnectUnix, 0)

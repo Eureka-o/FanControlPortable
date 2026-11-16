@@ -3,10 +3,43 @@
 package device
 
 import (
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Eureka-o/FanControlPortable/internal/types"
+	"golang.org/x/sys/windows"
 )
+
+func TestBlackSharkLibUSBMissingDLL(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "libusb-1.0.dll")
+	dll := windows.NewLazyDLL(path)
+	previousDLL, previousInit := libusbDLL, libusbInitProc
+	libusbDLL, libusbInitProc = dll, dll.NewProc("libusb_init")
+	t.Cleanup(func() {
+		libusbDLL, libusbInitProc = previousDLL, previousInit
+	})
+	dev, err := openBlackSharkUSBDevice()
+	if dev != nil || err == nil || !strings.Contains(err.Error(), path) {
+		t.Fatalf("missing DLL error must identify %q, got %v", path, err)
+	}
+}
+
+func TestBlackSharkLibUSBMissingSymbol(t *testing.T) {
+	dll := windows.NewLazySystemDLL("kernel32.dll")
+	const missing = "libusb_bulk_transfer"
+	err := loadBlackSharkLibUSB(dll, dll.NewProc("GetCurrentProcessId"), dll.NewProc(missing))
+	if err == nil || !strings.Contains(err.Error(), dll.Name) || !strings.Contains(err.Error(), missing) {
+		t.Fatalf("missing symbol error must identify DLL and symbol, got %v", err)
+	}
+}
+
+func TestBlackSharkLibUSBSymbolsAvailable(t *testing.T) {
+	dll := windows.NewLazySystemDLL("kernel32.dll")
+	if err := loadBlackSharkLibUSB(dll, dll.NewProc("GetCurrentProcessId"), dll.NewProc("GetLastError")); err != nil {
+		t.Fatalf("available library symbols failed validation: %v", err)
+	}
+}
 
 func TestBlackSharkUSBTransportContract(t *testing.T) {
 	if blackSharkUSBOutEndpoint != 0x01 || blackSharkUSBInEndpoint != 0x81 {

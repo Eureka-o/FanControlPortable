@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { HistorySeriesKey } from '../lib/temperature-history';
-import type { TimelineEventType } from '../store/app-store-logic.mts';
+import type { TimelineEventType } from '../store/app-store-logic';
 
 export const HISTORY_SERIES_ORDER: HistorySeriesKey[] = ['cpu', 'gpu', 'fan', 'cpuPower', 'gpuPower', 'totalPower'];
 export const HISTORY_TIMELINE_EVENT_ORDER: TimelineEventType[] = ['disconnect', 'reconnect', 'resume', 'profile'];

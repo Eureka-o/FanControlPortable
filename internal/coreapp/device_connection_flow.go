@@ -85,7 +85,9 @@ func (f deviceConnectionFlow) connectBestScannedDevice() bool {
 			}
 		}
 	}
-	for _, transport := range []string{types.DeviceTransportBLE, types.DeviceTransportUSB, types.DeviceTransportHID} {
+	// 手动“扫描并连接”先探测黑鲨 USB，再尝试其它原生路径；USB 探测是毫秒级，
+	// 而 BLE 扫描可能占用整个连接超时窗口。USB 失败后继续 HID/BLE，不阻断其它设备。
+	for _, transport := range []string{types.DeviceTransportUSB, types.DeviceTransportHID, types.DeviceTransportBLE} {
 		devices := f.app.deviceManager.ScanNativeDevicesProfilesByTransport(cfg.DeviceProfiles, transport)
 		if len(devices) > 0 {
 			selected, ok := selectNativeAutoConnectCandidate(devices, selectionCfg, transport)

@@ -5,6 +5,7 @@ package device
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -62,6 +63,48 @@ func TestBlackSharkUSBProbeOnlyRunsWhenBlackSharkIsEligible(t *testing.T) {
 	}
 	if !shouldProbeBlackSharkUSB(types.DeviceProfile{}) || !shouldProbeBlackSharkUSB(types.BlackSharkBRB02Profile()) {
 		t.Fatal("eligible Black-Shark profile should probe USB before BLE")
+	}
+}
+
+func TestFailedNativeProbeRestoresPreviousProfile(t *testing.T) {
+	for _, automatic := range []bool{false, true} {
+		for _, panics := range []bool{false, true} {
+			t.Run(fmt.Sprintf("automatic=%v/panic=%v", automatic, panics), func(t *testing.T) {
+				m := NewManager(nil)
+				previous := types.FlyDigiBS3Profile()
+				m.ConfigureProfile(previous, "")
+				m.bleConnector = deviceprofileexec.BLEConnectorFunc(func(context.Context, types.DeviceProfile) (deviceprofileexec.BLEClient, error) {
+					if panics {
+						panic("test native backend failure")
+					}
+					return nil, errors.New("test native backend failure")
+				})
+				probe := types.FlyDigiBS1Profile()
+				probe.Connection.Endpoint = "AA:BB:CC:DD:EE:FF"
+				var recovered any
+				func() {
+					defer func() { recovered = recover() }()
+					var connected bool
+					if automatic {
+						connected, _ = m.connectNativeProfileContextIfDisconnected(context.Background(), probe)
+					} else {
+						connected, _ = m.ConnectNativeProfileContext(context.Background(), probe)
+					}
+					if connected {
+						t.Fatal("failed probe unexpectedly connected")
+					}
+				}()
+				if panics != (recovered != nil) {
+					t.Fatalf("recovered = %v, want panic=%v", recovered, panics)
+				}
+				if got := m.ActiveProfile(); !reflect.DeepEqual(got, previous) {
+					t.Fatalf("failed probe replaced previous profile: got %#v, want %#v", got, previous)
+				}
+				if m.IsConnected() {
+					t.Fatal("failed probe marked manager as connected")
+				}
+			})
+		}
 	}
 }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo, type ReactNode } from 'react';
+import { useState, useCallback, useEffect, useMemo, memo, type ReactNode } from 'react';
 import { motion, useReducedMotion, type Variants } from 'framer-motion';
 import {
   Cpu,
@@ -16,6 +16,8 @@ import { apiService } from '../services/api';
 import { types } from '../../../wailsjs/go/models';
 import { toast } from 'sonner';
 import { useLocale } from '../lib/i18n';
+import { selectFanData, selectTemperature, useAppStore } from '../store/app-store';
+import { applyPowerSpoofToTemperature } from '../lib/power-spoof';
 import {
   clampFanSpeedToRange,
   fanSpeedUnitLabel,
@@ -25,7 +27,7 @@ import {
   readCurrentFanSpeed,
 } from '../lib/fan-speed';
 import { BlackSharkPanel, ScenePanel, ScreenPanel } from './BlackSharkPanels';
-import DeviceDebugPanel from './DeviceDebugPanel';
+import DeviceDebugPanelBase from './DeviceDebugPanel';
 import { normalizeTransport } from './devices/profile-utils';
 import {
   activeProfileIdsByTransportFromConfig,
@@ -35,12 +37,12 @@ import {
   profileLabel,
 } from './settings/device-connection-utils';
 import FanControlSection from './settings/FanControlSection';
-import DeviceFeaturePanel from './settings/DeviceFeaturePanel';
+import DeviceFeaturePanelBase from './settings/DeviceFeaturePanel';
 import DeviceLightingControls from './settings/DeviceLightingControls';
 import DeviceImageTransferControls from './settings/DeviceImageTransferControls';
 import { Section } from './settings/SettingLayout';
 import DeviceConnectionSection from './settings/DeviceConnectionSection';
-import SystemSettingsSection from './settings/SystemSettingsSection';
+import SystemSettingsSectionBase from './settings/SystemSettingsSection';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 
@@ -49,8 +51,6 @@ interface ControlPanelProps {
   onConfigChange: (config: types.AppConfig) => void;
   isConnected: boolean;
   monitorOnlyActive?: boolean;
-  fanData: types.FanData | null;
-  temperature: types.TemperatureData | null;
   runtimeDeviceProfile?: types.DeviceProfile | null;
   runtimeDeviceCapabilities?: types.DeviceCapabilities | null;
   onDeviceContextRefresh?: () => Promise<unknown>;
@@ -104,27 +104,67 @@ function formatOverviewPower(value?: number, unavailable = false) {
   return `${watts < 10 ? Math.round(watts * 10) / 10 : Math.round(watts)} W`;
 }
 
-export default function ControlPanel({
+// 设置页里几块不随遥测变化的大子树 memo 化：父级因 loading/tab 切换重渲时整块跳过。
+const DeviceFeaturePanel = memo(DeviceFeaturePanelBase);
+const SystemSettingsSection = memo(SystemSettingsSectionBase);
+const DeviceDebugPanel = memo(DeviceDebugPanelBase);
+
+// 「风扇」设置页的温度基线区展示实时传感器读数，但它是设置面板里唯一需要遥测的部分：
+// 用自订阅包装承载 fanData/temperature，ControlPanel 本体不再按遥测节拍重渲。
+const LiveFanControlSection = memo(function LiveFanControlSection({
   config,
   onConfigChange,
   isConnected,
-  monitorOnlyActive = false,
-  fanData,
-  temperature,
   runtimeDeviceProfile,
-  runtimeDeviceCapabilities,
-  onDeviceContextRefresh,
-}: ControlPanelProps) {
+  supportsCustomSpeed,
+}: {
+  config: types.AppConfig;
+  onConfigChange: (config: types.AppConfig) => void;
+  isConnected: boolean;
+  runtimeDeviceProfile?: types.DeviceProfile | null;
+  supportsCustomSpeed: boolean;
+}) {
+  const fanData = useAppStore(selectFanData);
+  const rawTemperature = useAppStore(selectTemperature);
+  const temperature = useMemo(
+    () => applyPowerSpoofToTemperature(rawTemperature, config),
+    [config, rawTemperature],
+  );
+  return (
+    <FanControlSection
+      config={config}
+      onConfigChange={onConfigChange}
+      isConnected={isConnected}
+      fanData={fanData}
+      temperature={temperature}
+      runtimeDeviceProfile={runtimeDeviceProfile}
+      supportsCustomSpeed={supportsCustomSpeed}
+    />
+  );
+});
+
+// 设置页顶部的遥测概览条（温度/功率 + 当前转速/连接状态）：唯一逐拍刷新的区块。
+// 自己用精确 selector 订阅 store 并在本地做电源伪装换算，ControlPanel 不再接收遥测 props。
+const ControlPanelTelemetryOverview = memo(function ControlPanelTelemetryOverview({
+  config,
+  isConnected,
+  runtimeDeviceProfile,
+  overviewConnectionName,
+  overviewConnectionDetail,
+}: {
+  config: types.AppConfig;
+  isConnected: boolean;
+  runtimeDeviceProfile?: types.DeviceProfile | null;
+  overviewConnectionName: string;
+  overviewConnectionDetail: string;
+}) {
   const { t } = useTranslation();
-  const { locale } = useLocale();
-  const reduceMotion = useReducedMotion();
-  const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
-  const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('device');
-  const [mountedSettingsTabs, setMountedSettingsTabs] = useState<Record<SettingsTab, boolean>>({
-    device: true,
-    fan: false,
-    system: false,
-  });
+  const fanData = useAppStore(selectFanData);
+  const rawTemperature = useAppStore(selectTemperature);
+  const temperature = useMemo(
+    () => applyPowerSpoofToTemperature(rawTemperature, config),
+    [config, rawTemperature],
+  );
   const overviewRuntimeProfile = isConnected ? runtimeDeviceProfile : null;
   const overviewSpeedUnit = getFanSpeedUnit(fanData as any, config as any, overviewRuntimeProfile as any);
   const overviewSpeedLabel = fanSpeedUnitLabel(overviewSpeedUnit);
@@ -139,6 +179,123 @@ export default function ControlPanel({
   );
   const overviewFanSpeed = clampFanSpeedToRange(readCurrentFanSpeed(fanData, overviewSpeedUnit, config as any, overviewRuntimeProfile as any), overviewSpeedRange)
     ?? ((config as any).customSpeedEnabled ? configuredCustomSpeedValue : undefined);
+  const gpuReadState = (((temperature as any)?.gpuReadState as string) || 'unknown');
+  const gpuNotPolled = gpuReadState === 'notPolled';
+  const overviewThermals = [
+    {
+      id: 'cpu',
+      label: 'CPU',
+      model: temperature?.cpuModel?.trim() || '',
+      Icon: Cpu,
+      temperatureValue: formatOverviewTemperature(temperature?.cpuTemp),
+      powerValue: formatOverviewPower(temperature?.cpuPowerWatts),
+    },
+    {
+      id: 'gpu',
+      label: 'GPU',
+      model: temperature?.gpuModel?.trim() || '',
+      Icon: Gpu,
+      temperatureValue: formatOverviewTemperature(temperature?.gpuTemp, gpuNotPolled),
+      powerValue: formatOverviewPower(temperature?.gpuPowerWatts, gpuNotPolled),
+    },
+  ];
+
+  return (
+    <section data-theme-card="settings-overview" className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+      <div className="mb-4 flex items-center gap-2">
+        <Settings className="h-4 w-4 text-muted-foreground" />
+        <h3 className="text-base font-semibold text-foreground">{t('controlPanel.overview.title')}</h3>
+      </div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(220px,0.8fr)]">
+        <div data-theme-card="settings-overview-temperature" className="grid min-h-[10rem] grid-rows-2 divide-y divide-border/55 rounded-xl border border-border/70 bg-muted/30 px-4">
+          {overviewThermals.map(({ id, label, model, Icon, temperatureValue, powerValue }) => (
+            <div key={id} className="flex min-w-0 items-center gap-3 py-3.5">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background/65 text-muted-foreground shadow-inner shadow-white/15">
+                <Icon className="h-4.5 w-4.5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex min-h-5 min-w-0 items-center gap-2">
+                  <div className="shrink-0 text-sm font-semibold text-foreground">{label}</div>
+                  {model && (
+                    <span
+                      data-theme-ui="settings-overview-model"
+                      title={model}
+                      className="ml-auto min-w-0 max-w-[min(68%,22rem)] truncate rounded-full border border-primary/20 bg-background/80 px-2 py-0.5 text-[10px] font-medium leading-4 text-foreground/75 shadow-sm shadow-black/15 backdrop-blur-md"
+                    >
+                      {model}
+                    </span>
+                  )}
+                </div>
+                <div
+                  data-theme-ui="settings-overview-metrics"
+                  className="mt-1.5 grid min-w-0 grid-cols-[1rem_2.25rem_minmax(3.25rem,1fr)_1rem_2.25rem_minmax(3.25rem,1fr)] items-center gap-x-1.5 text-[11px] leading-none text-muted-foreground"
+                >
+                  <Thermometer className="h-3.5 w-3.5" />
+                  <span className="whitespace-nowrap">{t('controlPanel.overview.temperatureMetric')}</span>
+                  <span className="whitespace-nowrap text-sm font-semibold tabular-nums text-foreground">{temperatureValue}</span>
+                  <Zap className="h-3.5 w-3.5" />
+                  <span className="whitespace-nowrap">{t('controlPanel.overview.powerMetric')}</span>
+                  <span className="whitespace-nowrap text-sm font-semibold tabular-nums text-foreground">{powerValue}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div data-theme-card="settings-overview-device" className="grid min-h-[10rem] grid-rows-2 divide-y divide-border/55 rounded-xl border border-border/70 bg-muted/30 px-4">
+          <div className="flex min-w-0 items-center gap-3 py-3.5">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background/65 text-muted-foreground shadow-inner shadow-white/15">
+              <Radio className="h-4.5 w-4.5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div title={overviewConnectionName} className="line-clamp-2 break-words text-sm font-semibold leading-snug text-foreground">{overviewConnectionName}</div>
+              <div className="mt-1.5 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+                <span className={clsx('h-2 w-2 shrink-0 rounded-full', isConnected ? 'bg-emerald-500' : 'bg-muted-foreground/45')} />
+                <span className="truncate">{overviewConnectionDetail}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 items-center gap-4 py-3.5">
+            <div className="min-w-0">
+              <div className="text-[11px] text-muted-foreground">{t('controlPanel.overview.currentRpm')}</div>
+              <div className="mt-0.5 truncate text-base font-semibold tabular-nums text-foreground">{overviewFanSpeed ?? '--'}{overviewSpeedLabel}</div>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[11px] text-muted-foreground">{t('controlPanel.overview.controlModeMetric')}</div>
+              <div className="mt-0.5 truncate text-sm font-semibold text-foreground">
+                {config.autoControl ? t('appShell.status.smartControl') : t('appShell.status.manualMode')}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+});
+
+export default function ControlPanel({
+  config,
+  onConfigChange,
+  isConnected,
+  monitorOnlyActive = false,
+  runtimeDeviceProfile,
+  runtimeDeviceCapabilities,
+  onDeviceContextRefresh,
+}: ControlPanelProps) {
+  const { t } = useTranslation();
+  const { locale } = useLocale();
+  const reduceMotion = useReducedMotion();
+  const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
+  const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('device');
+  const [mountedSettingsTabs, setMountedSettingsTabs] = useState<Record<SettingsTab, boolean>>({
+    device: true,
+    fan: false,
+    system: false,
+  });
+  // 遥测不再作为 props 进入 ControlPanel；只有 fanData.transport 仍被读取（连接回退与上下文键），
+  // 用窄 selector 只订阅这一个字段，字段不变就不重渲。
+  const fanDataTransport = useAppStore((state) => state.fanData?.transport ?? null);
   const [deviceProfiles, setDeviceProfiles] = useState<types.DeviceProfile[]>(() => configuredDeviceProfiles(config));
   const [activeDeviceProfileId, setActiveDeviceProfileId] = useState<string>(((config as any).activeDeviceProfileId || '') as string);
   const [activeDeviceProfileIdsByTransport, setActiveDeviceProfileIdsByTransport] = useState<Record<string, string>>(
@@ -170,7 +327,7 @@ export default function ControlPanel({
   const connectedDeviceTransport = isConnected
     ? normalizeTransport(
       connectedDeviceProfile?.transport
-        || ((fanData as any)?.transport as string)
+        || fanDataTransport
         || ((config as any).deviceTransport as string)
         || '',
     )
@@ -214,28 +371,8 @@ export default function ControlPanel({
     isConnected ? 'connected' : 'offline',
     runtimeDeviceProfile?.id || '',
     runtimeDeviceProfile?.transport || '',
-    (fanData as any)?.transport || '',
+    fanDataTransport || '',
   ].join(':');
-  const gpuReadState = (((temperature as any)?.gpuReadState as string) || 'unknown');
-  const gpuNotPolled = gpuReadState === 'notPolled';
-  const overviewThermals = [
-    {
-      id: 'cpu',
-      label: 'CPU',
-      model: temperature?.cpuModel?.trim() || '',
-      Icon: Cpu,
-      temperatureValue: formatOverviewTemperature(temperature?.cpuTemp),
-      powerValue: formatOverviewPower(temperature?.cpuPowerWatts),
-    },
-    {
-      id: 'gpu',
-      label: 'GPU',
-      model: temperature?.gpuModel?.trim() || '',
-      Icon: Gpu,
-      temperatureValue: formatOverviewTemperature(temperature?.gpuTemp, gpuNotPolled),
-      powerValue: formatOverviewPower(temperature?.gpuPowerWatts, gpuNotPolled),
-    },
-  ];
   const settingsTabs: Array<{ id: SettingsTab; label: string }> = [
     { id: 'device', label: t('controlPanel.device.sectionTitle') },
     { id: 'fan', label: t('controlPanel.fan.sectionTitle') },
@@ -375,48 +512,82 @@ export default function ControlPanel({
     return () => window.clearTimeout(timer);
   }, [isConnected, runtimeDeviceContextKey]);
 
+  // 重设置区的 JSX 元素用 useMemo 稳住：ControlPanel 因 tab 切换/loading 翻转重渲时，
+  // memo 化的 DeviceFeaturePanel / SystemSettingsSection / DeviceDebugPanel 依 props 浅比较整块跳过。
+  const deviceFeaturePanelElement = useMemo(() => (
+    <DeviceFeaturePanel
+      config={config}
+      isConnected={isConnected}
+      refreshing={deviceContextRefreshing}
+      deviceProfile={effectiveDeviceProfile || null}
+      loadingStates={loadingStates}
+      supportsGearLight={currentDeviceSupportsGearLight}
+      supportsPowerOnStart={currentDeviceSupportsPowerOnStart}
+      supportsSmartStartStop={currentDeviceSupportsSmartStartStop}
+      supportsWiFiSmartStartStopStandbySpeed={currentDeviceSupportsWiFiSmartStartStopStandbySpeed}
+      smartStartStopOptions={smartStartStopOptions}
+      wifiSmartStartStopStandbySpeedOptions={wifiSmartStartStopStandbySpeedOptions}
+      onGearLightChange={handleGearLightChange}
+      onPowerOnStartChange={handlePowerOnStartChange}
+      onSmartStartStopChange={handleSmartStartStopChange}
+      onWiFiSmartStartStopStandbySpeedChange={handleWiFiSmartStartStopStandbySpeedChange}
+      lightingControls={currentDeviceSupportsLighting ? (
+        <DeviceLightingControls
+          config={config}
+          onConfigChange={onConfigChange}
+          isConnected={isConnected}
+          supportsBrightness={currentDeviceSupportsBrightness}
+        />
+      ) : undefined}
+    >
+      <DeviceConnectionSection
+        config={config}
+        availableDeviceProfiles={availableDeviceProfiles}
+        activeDeviceProfileId={activeDeviceProfileId}
+        activeDeviceProfileIdsByTransport={activeDeviceProfileIdsByTransport}
+        connectedDeviceProfile={connectedDeviceProfile}
+        connectedDeviceTransport={connectedDeviceTransport}
+        onConfigChange={onConfigChange}
+        onActiveDeviceProfileIdChange={setActiveDeviceProfileId}
+        refreshDeviceConfig={refreshDeviceConfig}
+        loadDeviceProfiles={loadDeviceProfiles}
+        refreshConnectedDeviceContext={refreshConnectedDeviceContext}
+      />
+    </DeviceFeaturePanel>
+  ), [
+    activeDeviceProfileId,
+    activeDeviceProfileIdsByTransport,
+    availableDeviceProfiles,
+    config,
+    connectedDeviceProfile,
+    connectedDeviceTransport,
+    currentDeviceSupportsBrightness,
+    currentDeviceSupportsGearLight,
+    currentDeviceSupportsLighting,
+    currentDeviceSupportsPowerOnStart,
+    currentDeviceSupportsSmartStartStop,
+    currentDeviceSupportsWiFiSmartStartStopStandbySpeed,
+    deviceContextRefreshing,
+    effectiveDeviceProfile,
+    handleGearLightChange,
+    handlePowerOnStartChange,
+    handleSmartStartStopChange,
+    handleWiFiSmartStartStopStandbySpeedChange,
+    isConnected,
+    loadDeviceProfiles,
+    loadingStates,
+    onConfigChange,
+    refreshConnectedDeviceContext,
+    refreshDeviceConfig,
+    setActiveDeviceProfileId,
+    smartStartStopOptions,
+    wifiSmartStartStopStandbySpeedOptions,
+  ]);
+
   const settingsPanelContent: Record<SettingsTab, ReactNode> = {
     device: (
       <>
-        <DeviceFeaturePanel
-          config={config}
-          isConnected={isConnected}
-          refreshing={deviceContextRefreshing}
-          deviceProfile={effectiveDeviceProfile || null}
-          loadingStates={loadingStates}
-          supportsGearLight={currentDeviceSupportsGearLight}
-          supportsPowerOnStart={currentDeviceSupportsPowerOnStart}
-          supportsSmartStartStop={currentDeviceSupportsSmartStartStop}
-          supportsWiFiSmartStartStopStandbySpeed={currentDeviceSupportsWiFiSmartStartStopStandbySpeed}
-          smartStartStopOptions={smartStartStopOptions}
-          wifiSmartStartStopStandbySpeedOptions={wifiSmartStartStopStandbySpeedOptions}
-          onGearLightChange={handleGearLightChange}
-          onPowerOnStartChange={handlePowerOnStartChange}
-          onSmartStartStopChange={handleSmartStartStopChange}
-          onWiFiSmartStartStopStandbySpeedChange={handleWiFiSmartStartStopStandbySpeedChange}
-          lightingControls={currentDeviceSupportsLighting ? (
-            <DeviceLightingControls
-              config={config}
-              onConfigChange={onConfigChange}
-              isConnected={isConnected}
-              supportsBrightness={currentDeviceSupportsBrightness}
-            />
-          ) : undefined}
-        >
-          <DeviceConnectionSection
-            config={config}
-            availableDeviceProfiles={availableDeviceProfiles}
-            activeDeviceProfileId={activeDeviceProfileId}
-            activeDeviceProfileIdsByTransport={activeDeviceProfileIdsByTransport}
-            connectedDeviceProfile={connectedDeviceProfile}
-            connectedDeviceTransport={connectedDeviceTransport}
-            onConfigChange={onConfigChange}
-            onActiveDeviceProfileIdChange={setActiveDeviceProfileId}
-            refreshDeviceConfig={refreshDeviceConfig}
-            loadDeviceProfiles={loadDeviceProfiles}
-            refreshConnectedDeviceContext={refreshConnectedDeviceContext}
-          />
-        </DeviceFeaturePanel>
+        {deviceFeaturePanelElement}
         {showDeviceImageTransfer && (
           <Section
             title={t('controlPanel.device.groups.imageTransfer')}
@@ -435,12 +606,11 @@ export default function ControlPanel({
     ),
     fan: (
       // 黑鲨也走同一套 FanControlSection；四档散热曲线与「曲线」页重复，不再单列。
-      <FanControlSection
+      // 遥测由 LiveFanControlSection 自行订阅，只在这一个挂载的设置页内逐拍更新。
+      <LiveFanControlSection
         config={config}
         onConfigChange={onConfigChange}
         isConnected={isConnected}
-        fanData={fanData}
-        temperature={temperature}
         runtimeDeviceProfile={effectiveDeviceProfile || null}
         supportsCustomSpeed={currentDeviceSupportsCustomSpeed}
       />
@@ -456,76 +626,13 @@ export default function ControlPanel({
   return (
     <>
       <div data-theme-section="settings-page" data-page-reveal="cards" className="space-y-4">
-        <section data-theme-card="settings-overview" className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-          <div className="mb-4 flex items-center gap-2">
-            <Settings className="h-4 w-4 text-muted-foreground" />
-            <h3 className="text-base font-semibold text-foreground">{t('controlPanel.overview.title')}</h3>
-          </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(220px,0.8fr)]">
-            <div data-theme-card="settings-overview-temperature" className="grid min-h-[10rem] grid-rows-2 divide-y divide-border/55 rounded-xl border border-border/70 bg-muted/30 px-4">
-              {overviewThermals.map(({ id, label, model, Icon, temperatureValue, powerValue }) => (
-                <div key={id} className="flex min-w-0 items-center gap-3 py-3.5">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background/65 text-muted-foreground shadow-inner shadow-white/15">
-                    <Icon className="h-4.5 w-4.5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex min-h-5 min-w-0 items-center gap-2">
-                      <div className="shrink-0 text-sm font-semibold text-foreground">{label}</div>
-                      {model && (
-                        <span
-                          data-theme-ui="settings-overview-model"
-                          title={model}
-                          className="ml-auto min-w-0 max-w-[min(68%,22rem)] truncate rounded-full border border-primary/20 bg-background/80 px-2 py-0.5 text-[10px] font-medium leading-4 text-foreground/75 shadow-sm shadow-black/15 backdrop-blur-md"
-                        >
-                          {model}
-                        </span>
-                      )}
-                    </div>
-                    <div
-                      data-theme-ui="settings-overview-metrics"
-                      className="mt-1.5 grid min-w-0 grid-cols-[1rem_2.25rem_minmax(3.25rem,1fr)_1rem_2.25rem_minmax(3.25rem,1fr)] items-center gap-x-1.5 text-[11px] leading-none text-muted-foreground"
-                    >
-                      <Thermometer className="h-3.5 w-3.5" />
-                      <span className="whitespace-nowrap">{t('controlPanel.overview.temperatureMetric')}</span>
-                      <span className="whitespace-nowrap text-sm font-semibold tabular-nums text-foreground">{temperatureValue}</span>
-                      <Zap className="h-3.5 w-3.5" />
-                      <span className="whitespace-nowrap">{t('controlPanel.overview.powerMetric')}</span>
-                      <span className="whitespace-nowrap text-sm font-semibold tabular-nums text-foreground">{powerValue}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div data-theme-card="settings-overview-device" className="grid min-h-[10rem] grid-rows-2 divide-y divide-border/55 rounded-xl border border-border/70 bg-muted/30 px-4">
-              <div className="flex min-w-0 items-center gap-3 py-3.5">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background/65 text-muted-foreground shadow-inner shadow-white/15">
-                  <Radio className="h-4.5 w-4.5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div title={overviewConnectionName} className="line-clamp-2 break-words text-sm font-semibold leading-snug text-foreground">{overviewConnectionName}</div>
-                  <div className="mt-1.5 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
-                    <span className={clsx('h-2 w-2 shrink-0 rounded-full', isConnected ? 'bg-emerald-500' : 'bg-muted-foreground/45')} />
-                    <span className="truncate">{overviewConnectionDetail}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 items-center gap-4 py-3.5">
-                <div className="min-w-0">
-                  <div className="text-[11px] text-muted-foreground">{t('controlPanel.overview.currentRpm')}</div>
-                  <div className="mt-0.5 truncate text-base font-semibold tabular-nums text-foreground">{overviewFanSpeed ?? '--'}{overviewSpeedLabel}</div>
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[11px] text-muted-foreground">{t('controlPanel.overview.controlModeMetric')}</div>
-                  <div className="mt-0.5 truncate text-sm font-semibold text-foreground">
-                    {config.autoControl ? t('appShell.status.smartControl') : t('appShell.status.manualMode')}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+        <ControlPanelTelemetryOverview
+          config={config}
+          isConnected={isConnected}
+          runtimeDeviceProfile={runtimeDeviceProfile}
+          overviewConnectionName={overviewConnectionName}
+          overviewConnectionDetail={overviewConnectionDetail}
+        />
 
         <div
           data-theme-ui="settings-tabs"

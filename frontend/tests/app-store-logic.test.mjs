@@ -7,7 +7,7 @@ import {
   cancelPendingTabChange,
   completePendingTabChange,
   requestTabChange,
-} from '../src/app/store/app-store-logic.mts';
+} from '../src/app/store/app-store-logic.ts';
 
 test('keeps the curve page mounted while a dirty draft awaits navigation confirmation', () => {
   const state = requestTabChange({

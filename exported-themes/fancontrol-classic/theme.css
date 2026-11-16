@@ -371,18 +371,19 @@ html[data-theme="fancontrol-classic"] .glacier-chart-canvas::before {
 }
 
 @keyframes classic-curtain-drift {
-  from { background-position: 96% 48%; }
-  to { background-position: 92% 52%; }
+  from { transform: translate3d(0, 0, 0); }
+  /* The 3:2 image at full viewport height is 150dvh wide. */
+  to { transform: translate3d(calc(6dvh - 4vw), 0, 0); }
 }
 
 @keyframes classic-dock-drift {
-  from { background-position: center 0, 0 0; }
-  to { background-position: center 14px, 0 0; }
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(0, 14px, 0); }
 }
 
 @keyframes classic-signal-drift {
-  from { background-position: 0 0, 0 0; }
-  to { background-position: 30px 16px, 0 0; }
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(30px, 16px, 0); }
 }
 
 /* 无障碍：当系统开启「减少动态效果」时，关闭扫描动画与 hover 位移。 */
@@ -395,6 +396,7 @@ html[data-theme="fancontrol-classic"] .glacier-chart-canvas::before {
   html[data-theme="fancontrol-classic"] .glacier-shell::before,
   html[data-theme="fancontrol-classic"] .glacier-shell::after,
   html[data-theme="fancontrol-classic"] .glacier-sidebar::before,
+  html[data-theme="fancontrol-classic"] .glacier-sidebar > nav::before,
   html[data-theme="fancontrol-classic"] .glacier-content-panel::before {
     animation: none !important;
   }
@@ -526,7 +528,7 @@ html[data-theme="fancontrol-classic"] .glacier-shell::before {
   inset: 0 !important;
   z-index: 0 !important;
   pointer-events: none !important;
-  background: var(--classic-curtain) right center / auto 100% no-repeat !important;
+  background: var(--classic-curtain) 96% 48% / auto 100% no-repeat !important;
   opacity: 0.72 !important;
   mix-blend-mode: multiply;
   -webkit-mask-image: linear-gradient(to left, #000 0 42%, rgba(0, 0, 0, 0.92) 66%, transparent 94%);
@@ -692,8 +694,7 @@ html[data-theme="fancontrol-classic"] .glacier-shell :is(.divide-y, .divide-x) >
   border-color: transparent;
 }
 
-/* Floating Dock glass: keep its texture on the persistent surface layer so it
- * remains visible while the dock expands. */
+/* Keep the glass and one texture stationary while the other texture drifts. */
 html[data-theme="fancontrol-classic"] .glacier-sidebar::before {
   content: "" !important;
   position: absolute !important;
@@ -704,11 +705,20 @@ html[data-theme="fancontrol-classic"] .glacier-sidebar::before {
   border-radius: 1.25rem !important;
   background:
     var(--classic-dock-texture) center top / 152px 152px repeat,
-    var(--classic-dock-texture) center top / 152px 152px repeat,
     var(--classic-surface-background) !important;
   box-shadow: var(--classic-dock-shadow) !important;
   -webkit-backdrop-filter: var(--classic-surface-filter) !important;
   backdrop-filter: var(--classic-surface-filter) !important;
+}
+
+/* The nav has no positioned box; this layer stays anchored to the Dock. */
+html[data-theme="fancontrol-classic"] .glacier-sidebar > nav::before {
+  content: "";
+  position: absolute;
+  inset: calc(0.55rem - 14px) 0.4rem 0.55rem;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--classic-dock-texture) center 14px / 152px 152px repeat;
   animation: classic-dock-drift 32s ease-in-out infinite alternate;
 }
 
@@ -726,16 +736,21 @@ html[data-theme="fancontrol-classic"] .glacier-content-panel::before {
   z-index: 0;
   pointer-events: none;
   background:
-    var(--classic-signal-texture) right 2rem top 4.5rem / 240px 120px no-repeat,
-    var(--classic-grid-texture) left 1rem bottom 2rem / 180px 180px no-repeat,
+    var(--classic-signal-texture) 0 0 / 240px 120px no-repeat,
     linear-gradient(135deg, transparent 0 83%, rgba(213, 74, 88, 0.08) 83% 83.2%, transparent 83.2%);
   mask-image: linear-gradient(to right, transparent, #000 18%, #000 82%, transparent);
   animation: classic-signal-drift 26s linear infinite;
 }
 
 html[data-theme="fancontrol-classic"] .glacier-content-panel::after {
-  content: none !important;
-  display: none !important;
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--classic-grid-texture) 0 0 / 180px 180px no-repeat;
+  mask-image: linear-gradient(to right, transparent, #000 18%, #000 82%, transparent);
+  opacity: 0.16;
 }
 
 html[data-theme="fancontrol-classic"] .glacier-content-panel > * {

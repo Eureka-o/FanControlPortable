@@ -823,7 +823,8 @@
       "zoomSelecting": "选择中 {{from}} - {{to}}",
       "retention": {
         "label": "保留时长",
-        "hours": "{{count}} 小时"
+        "hours": "{{count}} 小时",
+        "saveFailed": "保存历史保留时长失败: {{error}}"
       },
       "events": {
         "disconnect": "设备断开",

@@ -58,17 +58,42 @@ test('history subscribers ignore the inactive source and follow source switches'
   assert.equal(points[2], store.getState().temperatureHistoryPoints);
 });
 
+test('fan data equality keeps curve target RPM updates', () => {
+  assert.match(
+    storeSource,
+    /left\.targetRpm === right\.targetRpm\s*&&\s*left\.curveTargetRpm === right\.curveTargetRpm/,
+  );
+});
+
 test('keeps page orchestration outside live telemetry subscriptions', () => {
   const page = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
+  const appShell = readFileSync(new URL('../src/app/components/AppShell.tsx', import.meta.url), 'utf8');
+  const controlPanel = readFileSync(new URL('../src/app/components/ControlPanel.tsx', import.meta.url), 'utf8');
   const historyHook = readFileSync(new URL('../src/app/hooks/useTemperatureHistory.ts', import.meta.url), 'utf8');
   const home = page.slice(page.indexOf('function LiveHome()'));
   assert.doesNotMatch(home, /state\.(?:fanData|temperature)\b|view\.(?:fanData|temperature)\b/);
   assert.match(page, /useAppStore\(selectFanData\)/);
   assert.match(page, /useAppStore\(selectTemperature\)/);
-  for (const name of ['AppShell', 'DeviceStatus', 'FanCurve', 'ControlPanel']) {
+  // 只有逐拍展示遥测的 DeviceStatus / FanCurve 仍通过 Live 包装 + useLiveTelemetry 供数。
+  for (const name of ['DeviceStatus', 'FanCurve']) {
     assert.match(page, new RegExp(`<${name} \\{\\.\\.\\.props\\} \\{\\.\\.\\.useLiveTelemetry\\(props\\.config\\)\\} />`));
     assert.match(home, new RegExp(`<Live${name}\\b`));
   }
+  // AppShell / ControlPanel 不再逐拍接收遥测：壳层不使用 useLiveTelemetry，页面上也不再有 Live 包装。
+  assert.doesNotMatch(page, /<AppShell \{\.\.\.props\} \{\.\.\.useLiveTelemetry/);
+  assert.doesNotMatch(page, /<ControlPanel \{\.\.\.props\} \{\.\.\.useLiveTelemetry/);
+  assert.doesNotMatch(home, /<LiveAppShell\b/);
+  assert.doesNotMatch(home, /<LiveControlPanel\b/);
+  assert.doesNotMatch(appShell, /useLiveTelemetry/);
+  assert.doesNotMatch(controlPanel, /useLiveTelemetry/);
+  // 遥测叶子（标题栏 StatusBadges、设置页遥测概览条）自己用精确 selector 订阅。
+  assert.match(appShell, /const fanData = useAppStore\(selectFanData\)/);
+  assert.match(appShell, /const temperature = useAppStore\(selectTemperature\)/);
+  assert.match(controlPanel, /useAppStore\(selectFanData\)/);
+  assert.match(controlPanel, /useAppStore\(selectTemperature\)/);
+  // ControlPanel 对 fanData 只允许窄字段 selector（连接回退/上下文键用的 transport）。
+  assert.match(controlPanel, /useAppStore\(\(state\) => state\.fanData\?\.transport/);
+  assert.doesNotMatch(controlPanel, /state\.fanData\b(?!\?\.transport)/);
   assert.match(historyHook, /useAppStore\(selectTemperatureHistoryPoints\)/);
   assert.doesNotMatch(historyHook, /state\.(?:sessionHistoryPoints|temperatureHistoryPoints)/);
 });

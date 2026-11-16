@@ -269,6 +269,9 @@ namespace FanControl.TempBridge
         private const int IntelMsrRuntimeFailureThreshold = 3;
         private const int IntelMsrProbeRetryCooldownSeconds = 15;
         private const int IntelRaplProbeRetryCooldownSeconds = 30;
+        private const int WindowsThermalCounterRetryCooldownSeconds = 5;
+        private const int HardwareMonitorInitRetryBaseCooldownSeconds = 5;
+        private const int HardwareMonitorInitRetryMaxCooldownSeconds = 60;
         private const string MsrUnavailableMarker = "[msr-unavailable]";
         private const string MsrRetryableMarker = "[msr-retryable]";
         private const uint IntelTemperatureTargetMsr = 0x1A2;
@@ -283,9 +286,12 @@ namespace FanControl.TempBridge
         private static Computer computer;
         private static bool running = true;
         private static readonly object lockObject = new object();
+        private static readonly object windowsThermalCounterLock = new object();
         private static Mutex singleInstanceMutex;
         private static int consecutiveFailures = 0;
         private static int hardwareMonitorReinitializeQueued;
+        private static int hardwareMonitorInitFailures;
+        private static DateTime nextHardwareMonitorInitUtc = DateTime.MinValue;
         private static string lastHardwareMonitorError = string.Empty;
         private static DateTime lastMemoryTrimUtc = DateTime.MinValue;
         private static bool currentGpuMonitoringEnabled = false;
@@ -305,6 +311,14 @@ namespace FanControl.TempBridge
         private static double intelPackageEnergyUnit;
         private static uint lastIntelPackageEnergy;
         private static DateTime lastIntelPackageEnergyAt = DateTime.MinValue;
+        private static PerformanceCounter windowsThermalCounter;
+        private static DateTime nextWindowsThermalCounterProbeUtc = DateTime.MinValue;
+        private static readonly string[] preferredWindowsThermalCounterInstances =
+        {
+            @"\_TZ.THRM",
+            "_TZ.THRM",
+            "THRM"
+        };
         private static readonly string windowsCpuModel = ReadWindowsCpuModel();
 
         [DllImport("kernel32.dll")]
@@ -348,7 +362,7 @@ namespace FanControl.TempBridge
                         Console.Out.Flush();
                         return;
                     }
-                    InitializeHardwareMonitor(currentGpuMonitoringEnabled);
+                    InitializeHardwareMonitorAndTrack(currentGpuMonitoringEnabled);
                     Console.WriteLine($"PIPE:{PipeName}|OWNER");
                     Console.Out.Flush();
                     StartPipeServer();
@@ -377,6 +391,7 @@ namespace FanControl.TempBridge
             {
                 computer?.Close();
                 sensorTopology = null;
+                DisposeWindowsThermalCounter();
                 ResetIntelMsrFallback();
                 if (singleInstanceMutex != null)
                 {
@@ -389,7 +404,7 @@ namespace FanControl.TempBridge
         {
             var initStopwatch = Stopwatch.StartNew();
             LogInitProgress("stdio mode starting; initializing hardware monitor");
-            InitializeHardwareMonitor();
+            InitializeHardwareMonitorAndTrack();
             LogInitProgress(string.Format("hardware monitor initialized in {0} ms", initStopwatch.ElapsedMilliseconds));
             using (var stdin = Console.OpenStandardInput())
             using (var stdout = Console.OpenStandardOutput())
@@ -469,7 +484,7 @@ namespace FanControl.TempBridge
             Console.WriteLine($"时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             Console.WriteLine();
 
-            InitializeHardwareMonitor();
+            InitializeHardwareMonitorAndTrack();
 
             TemperatureData data = GetTemperatureData(new TemperatureSelection());
             PrintTemperatureSummary(data);
@@ -565,6 +580,30 @@ namespace FanControl.TempBridge
             }
 
             return wroteLine;
+        }
+
+        static void InitializeHardwareMonitorAndTrack(bool includeGpu = false)
+        {
+            InitializeHardwareMonitor(includeGpu);
+
+            bool initialized = intelMsrProbeAttempted ||
+                (computer != null && string.IsNullOrEmpty(lastHardwareMonitorError));
+            if (initialized)
+            {
+                hardwareMonitorInitFailures = 0;
+                nextHardwareMonitorInitUtc = DateTime.MinValue;
+                return;
+            }
+
+            hardwareMonitorInitFailures = Math.Min(hardwareMonitorInitFailures + 1, 4);
+            int cooldownSeconds = Math.Min(
+                HardwareMonitorInitRetryMaxCooldownSeconds,
+                HardwareMonitorInitRetryBaseCooldownSeconds * (1 << Math.Max(0, hardwareMonitorInitFailures - 1)));
+            nextHardwareMonitorInitUtc = DateTime.UtcNow.AddSeconds(cooldownSeconds);
+            LogInitProgress(string.Format(
+                "hardware monitor initialization is backing off for {0} seconds after failure (gpu={1})",
+                cooldownSeconds,
+                includeGpu ? "on" : "off"));
         }
 
         static void InitializeHardwareMonitor(bool includeGpu = false)
@@ -1340,13 +1379,18 @@ namespace FanControl.TempBridge
                 // Wait briefly after releasing handles. Avoid stopping PawnIO because other tools may share it.
                 Thread.Sleep(250);
 
-                InitializeHardwareMonitor(currentGpuMonitoringEnabled);
+                InitializeHardwareMonitorAndTrack(currentGpuMonitoringEnabled);
             }
         }
 
         static void EnsureHardwareMonitorGpuMode(bool includeGpu)
         {
             if ((computer != null || intelMsrProbeAttempted) && currentGpuMonitoringEnabled == includeGpu)
+            {
+                return;
+            }
+
+            if (computer == null && !intelMsrProbeAttempted && DateTime.UtcNow < nextHardwareMonitorInitUtc)
             {
                 return;
             }
@@ -1360,7 +1404,7 @@ namespace FanControl.TempBridge
             computer = null;
             sensorTopology = null;
             Thread.Sleep(120);
-            InitializeHardwareMonitor(includeGpu);
+            InitializeHardwareMonitorAndTrack(includeGpu);
             if (stopwatch.ElapsedMilliseconds >= 250)
             {
                 LogInitProgress(string.Format("LibreHardwareMonitor GPU mode changed to {0} in {1} ms", includeGpu ? "on" : "off", stopwatch.ElapsedMilliseconds));
@@ -1883,7 +1927,7 @@ namespace FanControl.TempBridge
                 // 3. Reinitialize hardware monitor with a fresh handle.
                 try
                 {
-                    InitializeHardwareMonitor();
+                    InitializeHardwareMonitorAndTrack();
                     consecutiveFailures = 0;
 
                     // 4. Do a test read to confirm it works or that fallback can supply data.
@@ -2026,7 +2070,7 @@ namespace FanControl.TempBridge
                     string topologySignature = BuildHardwareTopologySignature(computer);
                     if (sensorTopology == null || !string.Equals(sensorTopology.Signature, topologySignature, StringComparison.Ordinal))
                     {
-                        sensorTopology = BuildSensorTopology(computer, shouldPollGpu);
+                        sensorTopology = BuildSensorTopology(computer, shouldPollGpu, topologySignature);
                     }
 
                     if (sensorTopology != null)
@@ -2256,54 +2300,106 @@ namespace FanControl.TempBridge
         {
             const string categoryName = "Thermal Zone Information";
             const string counterName = "Temperature";
-            string[] preferredInstances = new[] { @"\_TZ.THRM", "_TZ.THRM", "THRM" };
-
-            foreach (string instance in preferredInstances)
+            lock (windowsThermalCounterLock)
             {
-                int temp = TryReadTemperatureCounter(categoryName, counterName, instance);
-                if (temp > 0)
+                if (windowsThermalCounter != null)
                 {
-                    return temp;
+                    try
+                    {
+                        return NormalizeCounterTemperature(windowsThermalCounter.NextValue());
+                    }
+                    catch
+                    {
+                        DisposeWindowsThermalCounterLocked();
+                    }
                 }
-            }
 
-            try
-            {
-                if (!PerformanceCounterCategory.Exists(categoryName))
+                DateTime now = DateTime.UtcNow;
+                if (now < nextWindowsThermalCounterProbeUtc)
                 {
                     return 0;
                 }
+                nextWindowsThermalCounterProbeUtc = now.AddSeconds(WindowsThermalCounterRetryCooldownSeconds);
 
-                var category = new PerformanceCounterCategory(categoryName);
-                foreach (string instance in category.GetInstanceNames())
+                foreach (string instance in preferredWindowsThermalCounterInstances)
                 {
-                    int temp = TryReadTemperatureCounter(categoryName, counterName, instance);
-                    if (temp > 0)
+                    int temp;
+                    PerformanceCounter counter;
+                    if (TryCreateTemperatureCounter(categoryName, counterName, instance, out counter, out temp) && temp > 0)
                     {
+                        windowsThermalCounter = counter;
+                        nextWindowsThermalCounterProbeUtc = DateTime.MinValue;
                         return temp;
                     }
+                    counter?.Dispose();
                 }
+
+                try
+                {
+                    if (!PerformanceCounterCategory.Exists(categoryName))
+                    {
+                        return 0;
+                    }
+
+                    var category = new PerformanceCounterCategory(categoryName);
+                    foreach (string instance in category.GetInstanceNames())
+                    {
+                        int temp;
+                        PerformanceCounter counter;
+                        if (TryCreateTemperatureCounter(categoryName, counterName, instance, out counter, out temp) && temp > 0)
+                        {
+                            windowsThermalCounter = counter;
+                            nextWindowsThermalCounterProbeUtc = DateTime.MinValue;
+                            return temp;
+                        }
+                        counter?.Dispose();
+                    }
+                }
+                catch
+                {
+                }
+
+                return 0;
+            }
+        }
+
+        static bool TryCreateTemperatureCounter(string categoryName, string counterName, string instanceName, out PerformanceCounter counter, out int temperature)
+        {
+            counter = null;
+            temperature = 0;
+            try
+            {
+                counter = new PerformanceCounter(categoryName, counterName, instanceName, true);
+                temperature = NormalizeCounterTemperature(counter.NextValue());
+                return true;
             }
             catch
             {
+                counter?.Dispose();
+                counter = null;
+                return false;
             }
-
-            return 0;
         }
 
-        static int TryReadTemperatureCounter(string categoryName, string counterName, string instanceName)
+        static void DisposeWindowsThermalCounter()
+        {
+            lock (windowsThermalCounterLock)
+            {
+                DisposeWindowsThermalCounterLocked();
+            }
+        }
+
+        static void DisposeWindowsThermalCounterLocked()
         {
             try
             {
-                using (var counter = new PerformanceCounter(categoryName, counterName, instanceName, true))
-                {
-                    return NormalizeCounterTemperature(counter.NextValue());
-                }
+                windowsThermalCounter?.Dispose();
             }
             catch
             {
-                return 0;
             }
+            windowsThermalCounter = null;
+            nextWindowsThermalCounterProbeUtc = DateTime.MinValue;
         }
 
         static int TryReadWmiCpuTemperature()
@@ -2437,11 +2533,11 @@ namespace FanControl.TempBridge
             }
         }
 
-        static HardwareSensorTopology BuildSensorTopology(Computer comp, bool includeGpu)
+        static HardwareSensorTopology BuildSensorTopology(Computer comp, bool includeGpu, string topologySignature = null)
         {
             var topology = new HardwareSensorTopology
             {
-                Signature = BuildHardwareTopologySignature(comp)
+                Signature = topologySignature ?? BuildHardwareTopologySignature(comp)
             };
             int gpuIndex = 0;
 
@@ -2491,6 +2587,22 @@ namespace FanControl.TempBridge
                 .Append(':')
                 .Append(hardware.Name ?? string.Empty)
                 .Append('|');
+            foreach (ISensor sensor in hardware.Sensors)
+            {
+                if (sensor.SensorType == SensorType.Temperature || sensor.SensorType == SensorType.Power)
+                {
+                    // Sensor instances can appear after the first GPU update (notably Intel iGPU telemetry).
+                    // Include identity, not Value, so the binding cache is invalidated without rebuilding per sample.
+                    builder.Append((int)sensor.SensorType)
+                        .Append(':')
+                        .Append(sensor.Index)
+                        .Append(':')
+                        .Append(sensor.Name ?? string.Empty)
+                        .Append(':')
+                        .Append(System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(sensor))
+                        .Append('|');
+                }
+            }
             foreach (IHardware subHardware in hardware.SubHardware)
             {
                 AppendHardwareTopologySignature(subHardware, builder);

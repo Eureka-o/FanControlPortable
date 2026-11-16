@@ -102,14 +102,14 @@ html[data-theme="doro"] .glacier-shell::after {
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(ellipse at 50% 55%, rgba(204, 127, 159, 0.2) 0 0.22rem, transparent 0.24rem) 6vw 2rem / 8rem 14rem,
-    radial-gradient(ellipse at 50% 55%, rgba(204, 127, 159, 0.16) 0 0.18rem, transparent 0.2rem) 28vw 0 / 9rem 16rem,
-    radial-gradient(ellipse at 50% 55%, rgba(255, 211, 225, 0.22) 0 0.2rem, transparent 0.22rem) 51vw 4rem / 10rem 15rem,
-    radial-gradient(ellipse at 50% 55%, rgba(204, 127, 159, 0.14) 0 0.17rem, transparent 0.19rem) 73vw 1rem / 8.5rem 17rem,
-    radial-gradient(ellipse at 50% 55%, rgba(255, 255, 255, 0.42) 0 0.16rem, transparent 0.18rem) 90vw 5rem / 9rem 13rem;
+    radial-gradient(ellipse at 50% 55%, rgba(204, 127, 159, 0.2) 0 0.22rem, transparent 0.24rem) 6vw 0 / 8rem 14rem,
+    radial-gradient(ellipse at 50% 55%, rgba(204, 127, 159, 0.16) 0 0.18rem, transparent 0.2rem) 28vw -2rem / 9rem 16rem,
+    radial-gradient(ellipse at 50% 55%, rgba(255, 211, 225, 0.22) 0 0.2rem, transparent 0.22rem) 51vw 3rem / 10rem 15rem,
+    radial-gradient(ellipse at 50% 55%, rgba(204, 127, 159, 0.14) 0 0.17rem, transparent 0.19rem) 73vw -1rem / 8.5rem 17rem,
+    radial-gradient(ellipse at 50% 55%, rgba(255, 255, 255, 0.42) 0 0.16rem, transparent 0.18rem) 90vw 2rem / 9rem 13rem;
   opacity: 0.46;
   filter: blur(0.1px);
-  transform: translateY(-3rem);
+  transform: translate3d(0, -3rem, 0);
   animation: doro-petal-fall 15s linear infinite;
   mask-image: linear-gradient(to bottom, transparent 0%, black 14%, black 72%, transparent 100%);
 }
@@ -621,24 +621,12 @@ html[data-theme="doro"] .glacier-chart-canvas::before {
 @keyframes doro-petal-fall {
   0% {
     transform: translate3d(-0.8rem, -5rem, 0);
-    background-position:
-      6vw 0,
-      28vw -2rem,
-      51vw 3rem,
-      73vw -1rem,
-      90vw 2rem;
   }
   50% {
     transform: translate3d(0.6rem, 4rem, 0);
   }
   100% {
     transform: translate3d(-0.6rem, 13rem, 0);
-    background-position:
-      7vw 14rem,
-      27vw 15rem,
-      52vw 18rem,
-      72vw 16rem,
-      91vw 15rem;
   }
 }
 

@@ -36,20 +36,15 @@ function useLiveTelemetry(config: types.AppConfig) {
   return { fanData, temperature };
 }
 
-function LiveAppShell(props: Omit<ComponentProps<typeof AppShell>, 'fanData' | 'temperature'>) {
-  return <AppShell {...props} {...useLiveTelemetry(props.config)} />;
-}
-
+// AppShell / ControlPanel 自身不直接展示遥测：它们的遥测叶子（StatusBadges、设置页遥测概览条）
+// 各自用精确 selector 订阅 store，因此这里不再把 tick 级 fanData/temperature 灌进整棵壳层。
+// 只有真正逐拍展示遥测的 DeviceStatus / FanCurve 仍走 Live 包装 + useLiveTelemetry。
 function LiveDeviceStatus(props: Omit<ComponentProps<typeof DeviceStatus>, 'fanData' | 'temperature'>) {
   return <DeviceStatus {...props} {...useLiveTelemetry(props.config)} />;
 }
 
 function LiveFanCurve(props: Omit<ComponentProps<typeof FanCurve>, 'fanData' | 'temperature'>) {
   return <FanCurve {...props} {...useLiveTelemetry(props.config)} />;
-}
-
-function LiveControlPanel(props: Omit<ComponentProps<typeof ControlPanel>, 'fanData' | 'temperature'>) {
-  return <ControlPanel {...props} {...useLiveTelemetry(props.config)} />;
 }
 
 function LiveHome() {
@@ -171,7 +166,7 @@ function LiveHome() {
 
   return (
     <>
-      <LiveAppShell
+      <AppShell
         activeTab={effectiveActiveTab}
         onTabChange={setActiveTab}
         isConnected={view.isConnected}
@@ -187,7 +182,7 @@ function LiveHome() {
         statusContent={statusContent}
         curveContent={curveContent}
         controlContent={
-          <LiveControlPanel
+          <ControlPanel
             config={safeConfig}
             onConfigChange={setConfig}
             isConnected={view.isConnected}

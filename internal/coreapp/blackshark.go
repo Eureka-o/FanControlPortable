@@ -538,7 +538,9 @@ func (a *CoreApp) blackSharkHostControlsSpeed() bool {
 	if a == nil || a.configManager == nil {
 		return false
 	}
-	return a.configManager.Get().BlackSharkHostVariableSpeed
+	// revision 缓存快照：只读顶层标量 BlackSharkHostVariableSpeed，
+	// 它只在配置提交（bump revision）时变化，见 monitoringConfigSnapshot。
+	return a.monitoringConfigSnapshot().BlackSharkHostVariableSpeed
 }
 
 // applyBlackSharkLcdScreensaverForHostSpeed 让 LCD 屏保跟随「Fan control 控制变频转速」开关。

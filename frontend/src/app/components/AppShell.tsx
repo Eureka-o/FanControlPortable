@@ -42,6 +42,7 @@ import {
 import { types } from "../../../wailsjs/go/models";
 import clsx from "clsx";
 import { useTranslation } from "react-i18next";
+import { selectFanData, selectTemperature, useAppStore } from "../store/app-store";
 import { BRAND } from "../lib/brand";
 import {
   clampFanSpeedToRange,
@@ -126,8 +127,6 @@ interface AppShellProps {
   onTabChange: (tab: ActiveTab) => void;
   isConnected: boolean;
   monitorOnlyActive?: boolean;
-  fanData: types.FanData | null;
-  temperature: types.TemperatureData | null;
   runtimeDeviceProfile?: types.DeviceProfile | null;
   config: types.AppConfig;
   autoControl: boolean;
@@ -284,22 +283,22 @@ function TitleBar({
 
 function StatusBadges({
   isConnected,
-  fanData,
-  temperature,
   runtimeDeviceProfile,
   config,
   autoControl,
   compact = false,
 }: {
   isConnected: boolean;
-  fanData: types.FanData | null;
-  temperature: types.TemperatureData | null;
   runtimeDeviceProfile?: types.DeviceProfile | null;
   config: types.AppConfig;
   autoControl: boolean;
   compact?: boolean;
 }) {
   const { t } = useTranslation();
+  // 遥测徽标自己订阅 store（精确 selector），避免整个 AppShell 壳层跟着遥测节拍重渲。
+  // 电源伪装只改功率字段、不改 maxTemp，因此这里直接用原始 temperature 展示值不变。
+  const fanData = useAppStore(selectFanData);
+  const temperature = useAppStore(selectTemperature);
   const fanSpeedUnit = getFanSpeedUnit(
     fanData as any,
     config as any,
@@ -686,8 +685,6 @@ export default function AppShell({
   onTabChange,
   isConnected,
   monitorOnlyActive = false,
-  fanData,
-  temperature,
   runtimeDeviceProfile,
   config,
   autoControl,
@@ -858,8 +855,6 @@ export default function AppShell({
           leftSlot={
             <StatusBadges
               isConnected={isConnected}
-              fanData={fanData}
-              temperature={temperature}
               runtimeDeviceProfile={runtimeDeviceProfile}
               config={config}
               autoControl={autoControl}
@@ -969,8 +964,6 @@ export default function AppShell({
             >
               <StatusBadges
                 isConnected={isConnected}
-                fanData={fanData}
-                temperature={temperature}
                 runtimeDeviceProfile={runtimeDeviceProfile}
                 config={config}
                 autoControl={autoControl}

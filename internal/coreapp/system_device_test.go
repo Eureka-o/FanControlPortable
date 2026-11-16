@@ -402,27 +402,110 @@ func TestConnectCompatibilityRetriesAfterEndpointRecovery(t *testing.T) {
 	}
 }
 
-func TestReconnectNativeTransportKeepsLastSuccessfulProfile(t *testing.T) {
-	profile := types.FlyDigiBS2PROProfile()
-	profileCalls := 0
-	autoCalls := 0
-	connected, info := reconnectNativeTransport(
-		true,
-		profile,
-		func(got types.DeviceProfile) (bool, map[string]string) {
-			profileCalls++
-			if got.ID != profile.ID {
-				t.Fatalf("reconnect profile = %q, want %q", got.ID, profile.ID)
+func TestKnownDeviceReconnectDefersDiscoveryForThreeAttempts(t *testing.T) {
+	profile := types.FlyDigiBS3Profile()
+	cfg := types.GetDefaultConfig(false)
+	for i := range cfg.DeviceProfiles {
+		if cfg.DeviceProfiles[i].ID == profile.ID {
+			cfg.DeviceProfiles[i] = profile
+			break
+		}
+	}
+	app := newDeviceProfileTestApp(t, cfg)
+	app.lastSuccessfulConnection = &successfulDeviceConnection{
+		profile: profile, configuredProfile: profile,
+		profileKey: deviceProfileConnectionKeyForProfile(profile, cfg.FanControlDeviceIp),
+	}
+	for attempt := 0; attempt < knownDeviceReconnectAttempts; attempt++ {
+		_, _, handled := app.reconnectLastSuccessfulDevice(context.Background(), app.configManager.Get(), func(got types.DeviceProfile) (bool, map[string]string) {
+			if got.ID != types.FlyDigiBS3ProfileID || got.Transport != types.DeviceTransportHID {
+				t.Fatalf("known reconnect profile = %#v", got)
 			}
-			return true, map[string]string{"transport": got.Transport}
-		},
-		func() (bool, map[string]string) {
-			autoCalls++
 			return false, nil
-		},
-	)
-	if !connected || info["transport"] != types.DeviceTransportHID || profileCalls != 1 || autoCalls != 0 {
-		t.Fatalf("connected=%v info=%#v profileCalls=%d autoCalls=%d", connected, info, profileCalls, autoCalls)
+		})
+		if !handled {
+			t.Fatalf("attempt %d should prioritize the known device", attempt+1)
+		}
+	}
+	_, _, handled := app.reconnectLastSuccessfulDevice(context.Background(), app.configManager.Get(), func(types.DeviceProfile) (bool, map[string]string) {
+		t.Fatal("known device must not be retried after three failures")
+		return false, nil
+	})
+	if handled {
+		t.Fatal("discovery should resume after three known-device failures")
+	}
+}
+
+func TestKnownBLERetryPreservesSuccessfulEndpoint(t *testing.T) {
+	profile := types.FlyDigiBS1Profile()
+	profile.Connection.Endpoint = "AA:BB:CC:DD:EE:FF"
+	cfg := types.GetDefaultConfig(false)
+	for i := range cfg.DeviceProfiles {
+		if cfg.DeviceProfiles[i].ID == profile.ID {
+			cfg.DeviceProfiles[i] = profile
+			break
+		}
+	}
+	app := newDeviceProfileTestApp(t, cfg)
+	app.lastSuccessfulConnection = &successfulDeviceConnection{
+		profile: profile, configuredProfile: profile,
+		profileKey: deviceProfileConnectionKeyForProfile(profile, cfg.FanControlDeviceIp),
+	}
+	connected, _, handled := app.reconnectLastSuccessfulDevice(context.Background(), cfg, func(got types.DeviceProfile) (bool, map[string]string) {
+		if got.Connection.Endpoint != profile.Connection.Endpoint {
+			t.Fatalf("BLE endpoint = %q, want saved endpoint %q", got.Connection.Endpoint, profile.Connection.Endpoint)
+		}
+		return true, nil
+	})
+	if !handled || !connected {
+		t.Fatalf("known BLE retry = connected %v handled %v, want both true", connected, handled)
+	}
+}
+
+func TestKnownDeviceReconnectSkipsModifiedProfile(t *testing.T) {
+	profile := types.FlyDigiBS3Profile()
+	cfg := types.GetDefaultConfig(false)
+	profileIndex := -1
+	for i := range cfg.DeviceProfiles {
+		if cfg.DeviceProfiles[i].ID == profile.ID {
+			profileIndex = i
+			break
+		}
+	}
+	if profileIndex < 0 {
+		t.Fatal("BS3 profile missing from default config")
+	}
+	app := newDeviceProfileTestApp(t, cfg)
+	app.lastSuccessfulConnection = &successfulDeviceConnection{
+		profile: profile, configuredProfile: profile,
+		profileKey: deviceProfileConnectionKeyForProfile(profile, cfg.FanControlDeviceIp),
+	}
+	cfg.DeviceProfiles[profileIndex].DisplayName = "Modified by user"
+	if app.hasRetryableKnownDevice(cfg) {
+		t.Fatal("modified profile must not be retried from the stale snapshot")
+	}
+}
+
+func TestKnownDeviceReconnectSkipsRemovedOrDisabledCompatibilityProfile(t *testing.T) {
+	profile := testSerialDeviceProfile()
+	cfg := types.GetDefaultConfig(false)
+	cfg.SerialCompatibilityEnabled = true
+	cfg.DeviceTransport = types.DeviceTransportSerial
+	cfg.ActiveDeviceProfileID = profile.ID
+	cfg.DeviceProfiles = []types.DeviceProfile{profile}
+	app := newDeviceProfileTestApp(t, cfg)
+	app.lastSuccessfulConnection = &successfulDeviceConnection{
+		profile: profile, configuredProfile: profile,
+		profileKey: deviceProfileConnectionKeyForProfile(profile, cfg.FanControlDeviceIp),
+	}
+	cfg.SerialCompatibilityEnabled = false
+	if app.hasRetryableKnownDevice(cfg) {
+		t.Fatal("disabled serial profile must not be retried")
+	}
+	cfg.SerialCompatibilityEnabled = true
+	cfg.DeviceProfiles = nil
+	if app.hasRetryableKnownDevice(cfg) {
+		t.Fatal("removed serial profile must not be retried")
 	}
 }
 
@@ -540,6 +623,73 @@ func TestDidDeviceSwitchToManualModeRecognizesProtocolLabels(t *testing.T) {
 	}
 	if didDeviceSwitchToManualMode("auto/realtime RPM mode", "hid") {
 		t.Fatal("transport-only status should not count as manual mode")
+	}
+}
+
+// 设备切到挡位模式时必须基于「新克隆」把 AutoControl=false 持久化，
+// 缓存快照只用于读判据，绝不能被写路径共享（见 monitoringConfigSnapshot）。
+func TestOnFanDataUpdateManualModeSwitchPersistsAutoControlOff(t *testing.T) {
+	cfg := types.GetDefaultConfig(false)
+	cfg.AutoControl = true
+	cfg.IgnoreDeviceOnReconnect = false
+	app := newDeviceProfileTestApp(t, cfg)
+
+	app.onFanDataUpdate(&types.FanData{WorkMode: "auto/realtime RPM mode"})
+	if !app.configManager.Get().AutoControl {
+		t.Fatal("non-manual report must not disable auto control")
+	}
+
+	app.onFanDataUpdate(&types.FanData{WorkMode: "manual/fixed gear mode"})
+
+	if got := app.configManager.Get().AutoControl; got {
+		t.Fatal("manual-mode switch did not persist AutoControl=false")
+	}
+
+	// 手动模式持续上报：模式没有再次切换，不应反复写配置。
+	revisionAfterSwitch := app.configManager.Revision()
+	app.onFanDataUpdate(&types.FanData{WorkMode: "manual/fixed gear mode"})
+	if app.configManager.Revision() != revisionAfterSwitch {
+		t.Fatal("repeated manual-mode reports re-committed the config")
+	}
+}
+
+// 断连保持配置模式开着时，同样的模式切换必须保持配置不变。
+func TestOnFanDataUpdateManualModeSwitchKeepsConfigWhenReconnectPreserved(t *testing.T) {
+	cfg := types.GetDefaultConfig(false)
+	cfg.AutoControl = true
+	cfg.IgnoreDeviceOnReconnect = true
+	app := newDeviceProfileTestApp(t, cfg)
+
+	app.onFanDataUpdate(&types.FanData{WorkMode: "auto/realtime RPM mode"})
+	app.onFanDataUpdate(&types.FanData{WorkMode: "挡位工作模式"})
+
+	if got := app.configManager.Get().AutoControl; !got {
+		t.Fatal("reconnect-preserve mode must keep AutoControl unchanged")
+	}
+}
+
+// 用户刚通过界面设置过自动控制（userSetAutoControl）时，模式切换不得覆盖用户意图。
+func TestOnFanDataUpdateManualModeSwitchRespectsUserSetAutoControl(t *testing.T) {
+	cfg := types.GetDefaultConfig(false)
+	cfg.AutoControl = true
+	cfg.IgnoreDeviceOnReconnect = false
+	app := newDeviceProfileTestApp(t, cfg)
+
+	app.mutex.Lock()
+	app.userSetAutoControl = true
+	app.lastDeviceMode = "auto/realtime RPM mode"
+	app.mutex.Unlock()
+
+	app.onFanDataUpdate(&types.FanData{WorkMode: "manual/fixed gear mode"})
+
+	if got := app.configManager.Get().AutoControl; !got {
+		t.Fatal("manual-mode switch overrode a user-initiated auto-control setting")
+	}
+	app.mutex.RLock()
+	userSet := app.userSetAutoControl
+	app.mutex.RUnlock()
+	if userSet {
+		t.Fatal("user-set flag was not consumed by the report")
 	}
 }
 

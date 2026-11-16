@@ -7,7 +7,7 @@ import {
   requestTabChange,
   type AppTab,
   type TimelineEvent,
-} from './app-store-logic.mts';
+} from './app-store-logic';
 import {
   reduceDeviceSnapshot,
   type DeviceSnapshotEvent,
@@ -20,6 +20,7 @@ import {
 	appendSampledHistoryPoint,
 	createLiveHistoryPoint,
 	clampHistoryRetentionHours,
+	resolveHistoryRetentionHours,
 	historyRetentionLimit,
 	SESSION_HISTORY_LIMIT,
 	SESSION_HISTORY_RETENTION_MS,
@@ -126,6 +127,7 @@ const fanDataEquals = (left: types.FanData | null, right: types.FanData | null) 
     left.reserved1 === right.reserved1 &&
     left.currentRpm === right.currentRpm &&
     left.targetRpm === right.targetRpm &&
+    left.curveTargetRpm === right.curveTargetRpm &&
     left.maxGear === right.maxGear &&
     left.setGear === right.setGear &&
     left.workMode === right.workMode &&
@@ -345,7 +347,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
 
 		const enabled = payload?.enabled !== false;
-		const retentionHours = clampHistoryRetentionHours(payload?.retentionHours);
+		const retentionHours = resolveHistoryRetentionHours(payload?.retentionHours, get().temperatureHistoryRetentionHours);
 		set({
 			temperatureHistoryEnabled: enabled,
 			temperatureHistoryRetentionHours: retentionHours,
@@ -364,7 +366,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
 		set({
 			temperatureHistoryEnabled: false,
-			temperatureHistoryRetentionHours: 1,
 			temperatureHistoryPoints: [],
         temperatureHistoryInitialized: true,
       });
@@ -391,9 +392,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
 		set({ temperatureHistorySaving: true });
 		try {
 			await apiService.setTemperatureHistoryRetentionHours(hours);
+			set({ temperatureHistoryRetentionHours: clampHistoryRetentionHours(hours) });
 			await get().loadTemperatureHistory(true);
 		} catch (error) {
 			console.error('设置温度历史保留时长失败:', error);
+			const detail = error instanceof Error ? error.message : String(error);
+			toast.error(i18n.t('fanCurve.history.retention.saveFailed', { error: detail }));
 		} finally {
 			set({ temperatureHistorySaving: false });
 		}
@@ -412,6 +416,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
       set((state) => ({
         config: appConfig,
+        temperatureHistoryRetentionHours: clampHistoryRetentionHours(appConfig.temperatureHistoryRetentionHours),
         ...applyDeviceSnapshotEvent(state, { type: 'status', status: deviceStatus }),
         monitorOnlyActive: deviceStatus.monitorOnly === true,
         legionFnQSupported: debugInfo?.legionFnQSupported === true,

@@ -136,6 +136,38 @@ func TestCurrentSuspendGenerationRequiresActiveSuspend(t *testing.T) {
 	}
 }
 
+func TestShouldReturnFlyDigiToFirmwareOnStop(t *testing.T) {
+	hidProfile := types.DeviceProfile{
+		Transport: types.DeviceTransportHID,
+		Capabilities: types.DeviceCapabilities{
+			SupportsSmartStartStop: true,
+		},
+	}
+	tests := []struct {
+		name      string
+		mode      string
+		profile   types.DeviceProfile
+		connected bool
+		want      bool
+	}{
+		{name: "delayed FlyDigi HID", mode: "delayed", profile: hidProfile, connected: true, want: true},
+		{name: "immediate FlyDigi HID", mode: "immediate", profile: hidProfile, connected: true, want: true},
+		{name: "disabled smart start stop", mode: "off", profile: hidProfile, connected: true},
+		{name: "disconnected", mode: "delayed", profile: hidProfile},
+		{name: "BLE", mode: "delayed", profile: types.DeviceProfile{Transport: types.DeviceTransportBLE, Capabilities: hidProfile.Capabilities}, connected: true},
+		{name: "USB", mode: "delayed", profile: types.DeviceProfile{Transport: types.DeviceTransportUSB, Capabilities: hidProfile.Capabilities}, connected: true},
+		{name: "unsupported profile", mode: "delayed", profile: types.DeviceProfile{Transport: types.DeviceTransportHID}, connected: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := types.AppConfig{SmartStartStop: test.mode}
+			if got := shouldReturnFlyDigiToFirmwareOnStop(cfg, test.profile, test.connected); got != test.want {
+				t.Fatalf("shouldReturnFlyDigiToFirmwareOnStop() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
 func TestShouldSendTargetRPM(t *testing.T) {
 	tests := []struct {
 		name          string

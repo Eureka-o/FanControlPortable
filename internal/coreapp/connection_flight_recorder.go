@@ -163,7 +163,9 @@ func (a *CoreApp) autoControlActive() bool {
 	if a == nil || a.configManager == nil {
 		return false
 	}
-	cfg := a.configManager.Get()
+	// revision 缓存快照：只读 AutoControl / CustomSpeedEnabled 两个顶层标量，
+	// 二者只在配置提交（bump revision）时变化，见 monitoringConfigSnapshot。
+	cfg := a.monitoringConfigSnapshot()
 	return cfg.AutoControl && !cfg.CustomSpeedEnabled
 }
 

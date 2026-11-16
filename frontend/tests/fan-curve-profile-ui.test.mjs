@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const source = readFileSync(new URL('../src/app/components/FanCurve.tsx', import.meta.url), 'utf8');
+// recharts 图表组件/常量已拆进独立分包文件，图表内部实现断言读这份源码。
+const chartSource = readFileSync(new URL('../src/app/components/fan-curve-charts.tsx', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8');
 const pageSource = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
 const historyHookSource = readFileSync(new URL('../src/app/hooks/useTemperatureHistory.ts', import.meta.url), 'utf8');
@@ -139,19 +141,22 @@ test('splits power history into an aligned conditional chart with a shared full-
   assert.match(source, /const renderHistoryTooltip = useCallback/);
   assert.match(source, /const point = payload\?\.\[0\]\?\.payload/);
   assert.match(source, /const showHistoryPowerChart = historyHasPower && \(historySeriesVisibility\.cpuPower \|\| historySeriesVisibility\.gpuPower \|\| historySeriesVisibility\.totalPower\)/);
-  assert.equal([...source.matchAll(/margin=\{\{ top: 12, right: 16, left: 4, bottom: 8 \}\}/g)].length, 2);
+  // 历史图表的 margin 提升为模块级常量（两张图共享同一份，不再逐渲染新建对象）——
+  // recharts 拆分后，常量与 margin 用法都在 fan-curve-charts.tsx 里。
+  assert.match(chartSource, /const HISTORY_CHART_MARGIN = \{ top: 12, right: 16, left: 4, bottom: 8 \}/);
+  assert.equal([...chartSource.matchAll(/margin=\{HISTORY_CHART_MARGIN\}/g)].length, 2);
 });
 
 test('lets the history detail page select one time range for both trend charts', () => {
   assert.match(source, /const \[historyZoomDomain, setHistoryZoomDomain\] = useState/);
   assert.match(source, /const \[historyZoomSelect, setHistoryZoomSelect\] = useState/);
   assert.equal([...source.matchAll(/data=\{historyDisplayData\}/g)].length, 2);
-  assert.equal([...source.matchAll(/syncId="historyTrend"/g)].length, 2);
+  assert.equal([...chartSource.matchAll(/syncId="historyTrend"/g)].length, 2);
   assert.equal([...source.matchAll(/onMouseDown=\{handleHistoryZoomMouseDown\}/g)].length, 2);
   assert.equal([...source.matchAll(/onMouseMove=\{handleHistoryZoomMouseMove\}/g)].length, 2);
-  assert.equal([...source.matchAll(/<ReferenceArea/g)].length, 2);
-  assert.equal([...source.matchAll(/fill="var\(--chart-primary\)"/g)].length, 2);
-  assert.match(source, /stroke="var\(--chart-primary-active\)"/);
+  assert.equal([...chartSource.matchAll(/<ReferenceArea/g)].length, 2);
+  assert.equal([...chartSource.matchAll(/fill="var\(--chart-primary\)"/g)].length, 2);
+  assert.match(chartSource, /stroke="var\(--chart-primary-active\)"/);
   assert.match(source, /onDoubleClick=\{resetHistoryZoom\}/);
   assert.match(source, /onClick=\{resetHistoryZoom\}/);
 });
@@ -165,7 +170,7 @@ test('defers all offscreen history charts until history approaches the viewport'
 });
 
 test('provides positive initial dimensions for every responsive chart', () => {
-  const responsiveContainers = [...source.matchAll(/<ResponsiveContainer\b[^>]*>/g)].map((match) => match[0]);
+  const responsiveContainers = [...chartSource.matchAll(/<ResponsiveContainer\b[^>]*>/g)].map((match) => match[0]);
   assert.equal(responsiveContainers.length, 3);
   for (const container of responsiveContainers) {
     assert.match(container, /initialDimension=\{\{ width: [1-9]\d*, height: [1-9]\d* \}\}/);

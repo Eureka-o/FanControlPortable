@@ -123,6 +123,13 @@ func (m *Manager) sendFlyDigiHIDDebugCommand(input string, waitMs int) (types.De
 
 func parseFlyDigiFanData(data []byte) *types.FanData {
 	frame, ok := deviceproto.ParseFrame(data)
+	if ok {
+		// A complete status frame with a bad checksum is transport noise, not a
+		// state update. Do not let it overwrite the actual RPM or history.
+		if frame.Command != deviceproto.CmdStatusNotify || !frame.ChecksumOK {
+			return nil
+		}
+	}
 	if !ok || frame.Command != deviceproto.CmdStatusNotify || len(frame.Payload) < 7 {
 		return parseFlyDigiFanDataFixedOffsets(data)
 	}
@@ -162,7 +169,9 @@ func parseFlyDigiFanDataFixedOffsets(data []byte) *types.FanData {
 	default:
 		return nil
 	}
-	if len(data) < offset+9 || data[offset+2] != deviceproto.CmdStatusNotify {
+	// The legacy path is only for the known malformed length-byte reports;
+	// require the complete current/target RPM payload before accepting one.
+	if len(data) < offset+11 || data[offset+2] != deviceproto.CmdStatusNotify {
 		return nil
 	}
 
@@ -181,13 +190,33 @@ func parseFlyDigiFanDataFixedOffsets(data []byte) *types.FanData {
 		Transport:    types.DeviceTransportHID,
 		SpeedUnit:    types.FanSpeedUnitRPM,
 	}
-	if len(data) >= offset+11 {
-		fanData.TargetRPM = binary.LittleEndian.Uint16(data[offset+9 : offset+11])
+	fanData.TargetRPM = binary.LittleEndian.Uint16(data[offset+9 : offset+11])
+	if !plausibleFlyDigiStatus(fanData.GearSettings, fanData.CurrentMode, fanData.CurrentRPM, fanData.TargetRPM) {
+		return nil
 	}
 	fanData.MaxGear, fanData.SetGear = parseFlyDigiGearSettings(gear)
 	capability := types.DecodeFlyDigiRuntimeCapability(fanData, nil)
 	fanData.FlyDigiCapability = &capability
 	return fanData
+}
+
+// plausibleFlyDigiStatus guards the legacy fixed-offset fallback used by a few
+// devices whose length byte is unreliable. It must not turn arbitrary HID
+// traffic into a fan-speed update.
+func plausibleFlyDigiStatus(gear, mode byte, currentRPM, targetRPM uint16) bool {
+	maxGear := (gear >> 4) & 0x0F
+	selectedGear := gear & 0x0F
+	if (maxGear != 0x2 && maxGear != 0x4 && maxGear != 0x6) ||
+		(selectedGear != 0x8 && selectedGear != 0xA && selectedGear != 0xC && selectedGear != 0xE) {
+		return false
+	}
+	switch mode & 0x0E {
+	case 0x00, 0x02, 0x04, 0x08:
+	default:
+		return false
+	}
+	const maxPlausibleRPM = types.LegacyRPMManualGearMax
+	return int(currentRPM) <= maxPlausibleRPM && int(targetRPM) <= maxPlausibleRPM
 }
 
 func parseFlyDigiGearSettings(value byte) (maxGear, selected string) {

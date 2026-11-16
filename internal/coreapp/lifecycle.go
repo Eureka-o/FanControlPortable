@@ -192,6 +192,12 @@ func (a *CoreApp) Start() error {
 		a.powerNotifyStop = stop
 		a.logInfo("已注册系统睡眠/唤醒通知")
 	}
+	if stop, err := powernotify.RegisterSessionEndNotifications(a.onSystemEndSession); err != nil {
+		a.logError("注册系统关机通知失败: %v", err)
+	} else {
+		a.sessionEndStop = stop
+		a.logInfo("已注册系统关机/注销通知")
+	}
 	if !a.monitorOnlyActive() {
 		if stop, err := powernotify.RegisterHIDInterfaceArrivalNotifications(
 			types.FlyDigiHIDVendorID,
@@ -280,6 +286,10 @@ func (a *CoreApp) Stop() {
 	}
 	a.logInfo("核心服务正在停止...")
 	a.cancelNoiseDiagnosticLease("核心服务停止")
+	if a.sessionEndStop != nil {
+		a.safeRun("session-end-unregister", a.sessionEndStop)
+		a.sessionEndStop = nil
+	}
 	if a.powerNotifyStop != nil {
 		a.safeRun("power-notify-unregister", a.powerNotifyStop)
 		a.powerNotifyStop = nil
@@ -307,6 +317,7 @@ func (a *CoreApp) Stop() {
 			a.logError("等待温度监控停止超时，继续退出")
 		}
 	}
+	a.returnFlyDigiToFirmwareOnStop()
 	if a.tempHistory != nil {
 		if err := a.tempHistory.Flush(); err != nil {
 			a.logError("退出时保存温度历史失败: %v", err)
@@ -339,6 +350,36 @@ func (a *CoreApp) Stop() {
 	a.logInfo("核心服务已停止")
 	if a.logger != nil {
 		a.logger.Close()
+	}
+}
+
+func (a *CoreApp) returnFlyDigiToFirmwareOnStop() {
+	if a.deviceManager == nil || a.configManager == nil {
+		return
+	}
+	cfg := a.configManager.Get()
+	profile := a.deviceManager.ActiveProfile()
+	if !shouldReturnFlyDigiToFirmwareOnStop(cfg, profile, a.deviceManager.IsConnected()) {
+		return
+	}
+	if a.deviceManager.ExitFlyDigiRealtimeRPM() {
+		a.logInfo("飞智实时转速已退出，设备固件接管智能启停")
+	}
+}
+
+func shouldReturnFlyDigiToFirmwareOnStop(cfg types.AppConfig, profile types.DeviceProfile, connected bool) bool {
+	mode := strings.ToLower(strings.TrimSpace(cfg.SmartStartStop))
+	if !connected || (mode != "immediate" && mode != "delayed") {
+		return false
+	}
+	return types.NormalizeDeviceTransport(profile.Transport) == types.DeviceTransportHID && profile.Capabilities.SupportsSmartStartStop
+}
+
+func (a *CoreApp) onSystemEndSession() {
+	a.logInfo("收到 Windows 会话结束通知")
+	select {
+	case a.quitChan <- true:
+	default:
 	}
 }
 
