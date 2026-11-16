@@ -53,8 +53,12 @@ if not "!FANCONTROL_CGO_COMPILER_BIN!"=="" (
 ) else (
     echo WARNING: No MinGW gcc found; FlyDigi HIDAPI backend will not be compiled.
 )
-if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
+if exist "C:\Program Files (x86)\NSIS\Bin\makensis.exe" (
+    set "PATH=C:\Program Files (x86)\NSIS\Bin;C:\Program Files (x86)\NSIS;!PATH!"
+) else if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
     set "PATH=C:\Program Files (x86)\NSIS;!PATH!"
+) else if exist "C:\Program Files\NSIS\Bin\makensis.exe" (
+    set "PATH=C:\Program Files\NSIS\Bin;C:\Program Files\NSIS;!PATH!"
 ) else if exist "C:\Program Files\NSIS\makensis.exe" (
     set "PATH=C:\Program Files\NSIS;!PATH!"
 )
@@ -109,13 +113,25 @@ if errorlevel 1 exit /b 1
 REM Build main application with wails
 echo Building main application...
 set "GOFLAGS=-buildvcs=false"
+set "WAILS_BINDINGS_SNAPSHOT=%TEMP%\fancontrol-wails-bindings-!RANDOM!.json"
+powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\check_generated_bindings.ps1" -SnapshotPath "!WAILS_BINDINGS_SNAPSHOT!" -Mode Capture
+if errorlevel 1 exit /b 1
 wails build -nsis -ldflags "!LDFLAGS!"
+set "WAILS_BUILD_ERROR=!errorlevel!"
 set "GOFLAGS="
-if errorlevel 1 exit /b 1
-
-REM Wails may regenerate models.ts with tab-only blank lines; normalize it to avoid noisy git diffs.
-powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\normalize_generated_bindings.ps1"
-if errorlevel 1 exit /b 1
+if "!WAILS_BUILD_ERROR!"=="0" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\normalize_generated_bindings.ps1"
+    if errorlevel 1 set "WAILS_BUILD_ERROR=1"
+)
+if "!WAILS_BUILD_ERROR!"=="0" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\check_generated_bindings.ps1" -SnapshotPath "!WAILS_BINDINGS_SNAPSHOT!" -Mode Verify
+    set "WAILS_BINDING_CHECK_ERROR=!errorlevel!"
+) else (
+    set "WAILS_BINDING_CHECK_ERROR=1"
+)
+if exist "!WAILS_BINDINGS_SNAPSHOT!" del /q "!WAILS_BINDINGS_SNAPSHOT!"
+if not "!WAILS_BUILD_ERROR!"=="0" exit /b !WAILS_BUILD_ERROR!
+if not "!WAILS_BINDING_CHECK_ERROR!"=="0" exit /b !WAILS_BINDING_CHECK_ERROR!
 
 REM Ensure core service is in the bin directory for installer
 if exist "build\bin\FanControl Core.exe" (

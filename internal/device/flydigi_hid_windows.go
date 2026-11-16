@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Eureka-o/FanControlPortable/internal/deviceproto"
@@ -102,16 +103,22 @@ func (m *Manager) disconnectFlyDigiHIDLocked() bool {
 }
 
 func (m *Manager) closeFlyDigiHIDLocked() {
+	m.flyDigiRealtimeWriteFailures = 0
+	m.flyDigiWriteRecoveryScheduled = false
 	if m.blackSharkHostInfoRefreshStop != nil {
 		close(m.blackSharkHostInfoRefreshStop)
 		m.blackSharkHostInfoRefreshStop = nil
 	}
 	if m.flyDigiHID == nil {
+		m.flyDigiRealtimeRPMActive.Store(false)
+		m.flyDigiRealtimeRPMStateGeneration.Store(0)
 		return
 	}
 	m.connectionGen.Add(1)
 	m.stopFlyDigiHIDReaderLocked()
 	m.flyDigiHID = nil
+	m.flyDigiRealtimeRPMActive.Store(false)
+	m.flyDigiRealtimeRPMStateGeneration.Store(0)
 }
 
 func (m *Manager) startFlyDigiHIDReaderLocked(dev *flyDigiHIDDevice, generation uint64) <-chan struct{} {
@@ -237,6 +244,8 @@ func (m *Manager) handleFlyDigiHIDReaderFailure(dev *flyDigiHIDDevice) {
 	m.flyDigiHID = nil
 	m.flyDigiHIDStop = nil
 	m.flyDigiHIDDone = nil
+	m.flyDigiRealtimeRPMActive.Store(false)
+	m.flyDigiRealtimeRPMStateGeneration.Store(0)
 	m.connectionGen.Add(1)
 	m.currentFanData.Store(nil)
 	m.mutex.Unlock()
@@ -260,6 +269,7 @@ func (m *Manager) handleFlyDigiHIDRX(generation uint64, raw []byte) bool {
 		return m.handleBlackSharkHIDRX(generation, raw, m.link.blackSharkResp)
 	}
 	if fanData := parseFlyDigiFanData(raw); fanData != nil {
+		m.syncFlyDigiRealtimeRPMState(generation, fanData.CurrentMode)
 		if m.connectionGen.Load() != generation {
 			return false
 		}
@@ -279,6 +289,24 @@ func (m *Manager) handleFlyDigiHIDRX(generation uint64, raw []byte) bool {
 		return true
 	}
 	return false
+}
+
+func (m *Manager) syncFlyDigiRealtimeRPMState(generation uint64, mode byte) {
+	if m == nil {
+		return
+	}
+	if m.connectionGen.Load() != generation {
+		return
+	}
+	m.flyDigiRealtimeRPMActive.Store(mode&0x01 != 0)
+	m.flyDigiRealtimeRPMStateGeneration.Store(generation)
+	if m.connectionGen.Load() != generation && m.flyDigiRealtimeRPMStateGeneration.CompareAndSwap(generation, 0) {
+		m.flyDigiRealtimeRPMActive.Store(false)
+	}
+}
+
+func (m *Manager) flyDigiRealtimeRPMIsActiveForCurrentConnection() bool {
+	return m.flyDigiRealtimeRPMStateGeneration.Load() == m.connectionGen.Load() && m.flyDigiRealtimeRPMActive.Load()
 }
 
 func (m *Manager) flyDigiHIDInfoLocked(productID uint16, path string) map[string]string {
@@ -385,10 +413,43 @@ func (m *Manager) writeFlyDigiHIDFrameLocked(cmd byte, payload []byte, reportLen
 	}
 	frame := deviceproto.BuildFrame(cmd, payload...)
 	report := deviceproto.BuildReport(frame, reportLen)
-	return retryDeviceSend(fmt.Sprintf("FlyDigi HID command 0x%02X", cmd), func() error {
+	if err := retryDeviceSend(fmt.Sprintf("FlyDigi HID command 0x%02X", cmd), func() error {
 		m.recordDebugFrame("tx", types.DeviceTransportHID, report)
 		return m.flyDigiHID.WriteReport(report, 800*time.Millisecond)
-	})
+	}); err != nil {
+		return err
+	}
+	applyFlyDigiRealtimeRPMCommand(&m.flyDigiRealtimeRPMActive, cmd)
+	m.flyDigiRealtimeRPMStateGeneration.Store(m.connectionGen.Load())
+	return nil
+}
+
+func applyFlyDigiRealtimeRPMCommand(active *atomic.Bool, cmd byte) {
+	if active == nil {
+		return
+	}
+	switch cmd {
+	case deviceproto.CmdEnterRealtimeRPM:
+		active.Store(true)
+	case deviceproto.CmdExitRealtimeRPM:
+		active.Store(false)
+	}
+}
+
+func (m *Manager) ExitFlyDigiRealtimeRPM() bool {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if m.writesBlocked.Load() || !m.isConnected || m.deviceType != types.DeviceTransportHID ||
+		isBlackSharkProfileID(m.activeProfile.ID) || !m.flyDigiRealtimeRPMIsActiveForCurrentConnection() {
+		return false
+	}
+	if err := m.writeFlyDigiHIDFrameLocked(deviceproto.CmdExitRealtimeRPM, nil, hidControlReportLen); err != nil {
+		m.noteFlyDigiRealtimeWriteResultLocked(false)
+		m.logWarn("退出飞智实时转速模式失败: %v", err)
+		return false
+	}
+	m.noteFlyDigiRealtimeWriteResultLocked(true)
+	return true
 }
 
 func (m *Manager) setFlyDigiHIDTargetSpeedLocked(speed types.FanSpeedValue) bool {
@@ -410,20 +471,57 @@ func (m *Manager) setFlyDigiHIDTargetSpeedLocked(speed types.FanSpeedValue) bool
 		rpm = cappedRPM
 		m.logWarn("飞智 HID 当前供电/挡位上限为 %s %d RPM，自动目标从 %d RPM 限制为 %d RPM", capability.MaxGearLabel, capability.MaxRPM, requestedRPM, rpm)
 	}
-	if err := m.writeFlyDigiHIDFrameLocked(deviceproto.CmdEnterRealtimeRPM, nil, hidControlReportLen); err != nil {
-		m.logError("进入实时转速模式失败: %v", err)
-		return false
+	if !m.flyDigiRealtimeRPMIsActiveForCurrentConnection() {
+		if err := m.writeFlyDigiHIDFrameLocked(deviceproto.CmdEnterRealtimeRPM, nil, hidControlReportLen); err != nil {
+			m.noteFlyDigiRealtimeWriteResultLocked(false)
+			m.logError("进入实时转速模式失败: %v", err)
+			return false
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
-	time.Sleep(50 * time.Millisecond)
 
 	payload := make([]byte, 2)
 	binary.LittleEndian.PutUint16(payload, uint16(rpm))
 	if err := m.writeFlyDigiHIDFrameLocked(deviceproto.CmdSetRealtimeRPM, payload, hidControlReportLen); err != nil {
+		// 目标帧失败后设备状态未知；下一次下发必须重新进入实时模式。
+		m.flyDigiRealtimeRPMActive.Store(false)
+		m.noteFlyDigiRealtimeWriteResultLocked(false)
 		m.logError("设置飞智 HID 转速失败: %v", err)
 		return false
 	}
+	if rpm == 0 {
+		time.Sleep(50 * time.Millisecond)
+		if err := m.writeFlyDigiHIDFrameLocked(deviceproto.CmdExitRealtimeRPM, nil, hidControlReportLen); err != nil {
+			m.flyDigiRealtimeRPMActive.Store(false)
+			m.noteFlyDigiRealtimeWriteResultLocked(false)
+			m.logError("退出飞智实时转速模式失败: %v", err)
+			return false
+		}
+		m.flyDigiRealtimeRPMActive.Store(false)
+	}
+	m.noteFlyDigiRealtimeWriteResultLocked(true)
 	m.storeFlyDigiHIDFanDataLocked(rpm, "自动模式(实时转速)")
 	return true
+}
+
+const maxFlyDigiRealtimeWriteFailures = 3
+
+// noteFlyDigiRealtimeWriteResultLocked escalates persistent output failures to
+// the existing reader/reconnect path, while leaving single transient failures
+// retryable. The caller holds m.mutex; Disconnect waits until it is released.
+func (m *Manager) noteFlyDigiRealtimeWriteResultLocked(success bool) {
+	if success {
+		m.flyDigiRealtimeWriteFailures = 0
+		m.flyDigiWriteRecoveryScheduled = false
+		return
+	}
+	m.flyDigiRealtimeWriteFailures++
+	if m.flyDigiRealtimeWriteFailures < maxFlyDigiRealtimeWriteFailures || m.flyDigiWriteRecoveryScheduled {
+		return
+	}
+	m.flyDigiWriteRecoveryScheduled = true
+	m.logError("飞智 HID 实时转速连续写入失败 %d 次，主动断开并重连设备", m.flyDigiRealtimeWriteFailures)
+	go m.Disconnect()
 }
 
 func (m *Manager) flyDigiHIDRuntimeCapabilityLocked() types.FlyDigiRuntimeCapability {
@@ -468,6 +566,7 @@ func (m *Manager) setFlyDigiHIDManualGearRPM(gear, level string, rpm int) bool {
 		m.logError("设置飞智 HID 挡位 %s %s (%d RPM) 失败: %v", gear, level, rpm, err)
 		return false
 	}
+	m.flyDigiRealtimeRPMActive.Store(false)
 	m.storeFlyDigiHIDFanDataLocked(rpm, "挡位工作模式")
 	return true
 }

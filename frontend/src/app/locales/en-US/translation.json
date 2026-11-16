@@ -823,7 +823,8 @@
       "zoomSelecting": "Selecting {{from}} - {{to}}",
       "retention": {
         "label": "Retention",
-        "hours": "{{count}} h"
+        "hours": "{{count}} h",
+        "saveFailed": "Failed to save history retention: {{error}}"
       },
       "events": {
         "disconnect": "Device disconnected",

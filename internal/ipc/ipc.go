@@ -282,8 +282,8 @@ type Server struct {
 }
 
 type pendingEvent struct {
-	payload []byte
-	timer   *time.Timer
+	data  []byte
+	timer *time.Timer
 }
 
 type clientState struct {
@@ -544,20 +544,20 @@ func isHighFrequencyEvent(eventType string) bool {
 	return ok
 }
 
-func (s *Server) broadcastHighFrequencyEvent(eventType string, payload []byte, threshold time.Duration) {
+func (s *Server) broadcastHighFrequencyEvent(eventType string, data []byte, threshold time.Duration) {
 	s.throttleMutex.Lock()
 	defer s.throttleMutex.Unlock()
 	if !s.HasClients() {
 		return
 	}
 	if pending := s.pendingEvents[eventType]; pending != nil {
-		pending.payload = payload
+		pending.data = data
 		return
 	}
 	now := time.Now()
 	last, exists := s.lastEventEmit[eventType]
 	if exists && now.Sub(last) < threshold {
-		pending := &pendingEvent{payload: payload}
+		pending := &pendingEvent{data: data}
 		pending.timer = time.AfterFunc(threshold-now.Sub(last), func() {
 			s.throttleMutex.Lock()
 			defer s.throttleMutex.Unlock()
@@ -566,13 +566,13 @@ func (s *Server) broadcastHighFrequencyEvent(eventType string, payload []byte, t
 			}
 			delete(s.pendingEvents, eventType)
 			s.lastEventEmit[eventType] = time.Now()
-			s.broadcastEventPayload(eventType, pending.payload)
+			s.broadcastEventData(eventType, pending.data)
 		})
 		s.pendingEvents[eventType] = pending
 		return
 	}
 	s.lastEventEmit[eventType] = now
-	s.broadcastEventPayload(eventType, payload)
+	s.broadcastEventData(eventType, data)
 }
 
 func (s *Server) clearPendingEventsLocked() {
@@ -595,6 +595,16 @@ func (s *Server) BroadcastEvent(eventType string, data any) {
 		return
 	}
 
+	if threshold, ok := highFrequencyEventTypes[eventType]; ok {
+		// Marshal once now to own a stable snapshot; defer the larger event envelope
+		// until the throttling window actually emits it.
+		s.broadcastHighFrequencyEvent(eventType, dataBytes, threshold)
+		return
+	}
+	s.broadcastEventData(eventType, dataBytes)
+}
+
+func (s *Server) broadcastEventData(eventType string, dataBytes []byte) {
 	event := Event{
 		SchemaVersion: currentProtocolVersion,
 		EventID:       newMessageID("evt"),
@@ -611,10 +621,6 @@ func (s *Server) BroadcastEvent(eventType string, data any) {
 		return
 	}
 	payload := append(eventBytes, '\n')
-	if threshold, ok := highFrequencyEventTypes[eventType]; ok {
-		s.broadcastHighFrequencyEvent(eventType, payload, threshold)
-		return
-	}
 	s.broadcastEventPayload(eventType, payload)
 }
 

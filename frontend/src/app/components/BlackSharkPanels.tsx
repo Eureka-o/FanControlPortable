@@ -3,7 +3,7 @@
 'use client';
 
 import clsx from 'clsx';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity,
   Archive,
@@ -65,7 +65,7 @@ const HUE_TRACK_GRADIENT =
   'linear-gradient(90deg, hsl(0 100% 50%), hsl(60 100% 50%), hsl(120 100% 50%), hsl(180 100% 50%), hsl(240 100% 50%), hsl(300 100% 50%), hsl(360 100% 50%))';
 
 /** 黑鲨（BlackShark）BRB02 散热器的专属控制区。 */
-export function BlackSharkPanel() {
+function BlackSharkPanelBase() {
   const { t } = useTranslation();
   // 数据加载盯 isConnected 上升沿查一次，同一次连接内不重复，而非每次进页面。
   const isConnected = useAppStore((state) => state.isConnected);
@@ -870,8 +870,11 @@ export function BlackSharkPanel() {
   );
 }
 
+// 三块面板都不接 props（数据自取），memo 后父级重渲不再带动这几块大子树。
+export const BlackSharkPanel = memo(BlackSharkPanelBase);
+
 /** 「情景」：按前台进程自动施加档位与灯效模式。 */
-export function ScenePanel() {
+function ScenePanelBase() {
   const { t } = useTranslation();
   const [rules, setRules] = useState<SceneRulePayload[]>([]);
   const [baseline, setBaseline] = useState(0);
@@ -1278,8 +1281,10 @@ function BlackSharkLcdSection() {
   );
 }
 
+export const ScenePanel = memo(ScenePanelBase);
+
 /** 「屏幕 / 屏保图像」：十张官方精选 + 本地上传。 */
-export function ScreenPanel() {
+function ScreenPanelBase() {
   const { t } = useTranslation();
   const isConnected = useAppStore((state) => state.isConnected);
   const runtimeDeviceProfile = useAppStore((state) => state.runtimeDeviceProfile);
@@ -2060,3 +2065,5 @@ export function ScreenPanel() {
     </Section>
   );
 }
+
+export const ScreenPanel = memo(ScreenPanelBase);

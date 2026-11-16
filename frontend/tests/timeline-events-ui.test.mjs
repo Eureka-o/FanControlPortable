@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const curve = readFileSync(new URL('../src/app/components/FanCurve.tsx', import.meta.url), 'utf8');
+// recharts 图表组件已拆进独立分包文件，图表内部实现断言读这份源码。
+const chart = readFileSync(new URL('../src/app/components/fan-curve-charts.tsx', import.meta.url), 'utf8');
 const store = readFileSync(new URL('../src/app/store/app-store.ts', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../src/app/services/api.ts', import.meta.url), 'utf8');
 const ipc = readFileSync(new URL('../../internal/ipc/ipc.go', import.meta.url), 'utf8');
@@ -23,10 +25,10 @@ test('renders real connection, resume, and profile events without heartbeat infe
   assert.match(store, /type: 'profile'/);
   assert.doesNotMatch(store, /onHeartbeat\(/);
 
-  assert.match(curve, /ReferenceLine/);
+  assert.match(chart, /ReferenceLine/);
   assert.match(curve, /const timelineEventLayout = useMemo/);
   assert.match(curve, /const historyTimeDomain = useMemo/);
-  assert.match(curve, /row \* 12/);
+  assert.match(chart, /row \* 12/);
   assert.match(curve, /anchorEnd/);
   assert.match(curve, /data-history-timeline-settings/);
   assert.match(curve, /historyShowTimelineEvents/);

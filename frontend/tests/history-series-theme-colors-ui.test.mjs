@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 
 const statusSource = readFileSync(new URL('../src/app/components/DeviceStatus.tsx', import.meta.url), 'utf8');
 const curveSource = readFileSync(new URL('../src/app/components/FanCurve.tsx', import.meta.url), 'utf8');
+// recharts 图表组件已拆进独立分包文件，图表内部实现断言读这份源码。
+const chartSource = readFileSync(new URL('../src/app/components/fan-curve-charts.tsx', import.meta.url), 'utf8');
 const preferencesSource = readFileSync(new URL('../src/app/hooks/useHistoryDisplayPreferences.ts', import.meta.url), 'utf8');
 const globalStyles = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8');
 
@@ -31,25 +33,28 @@ test('uses the same theme variables for history thumbnail and detail charts', ()
 test('supports total power and single-series statistics without hard-coded stat colors', () => {
   assert.match(curveSource, /totalPower:\s*'totalPowerWatts'/);
   assert.match(curveSource, /historySeriesVisibility\.totalPower/);
-  assert.match(curveSource, /ReferenceDot/);
-  assert.match(curveSource, /stroke=\{color\}/);
+  // recharts 拆分后：主包只产出标线描述符（stroke 随条目颜色走），
+  // ReferenceDot/ReferenceLine 元素与标线渲染细节在 fan-curve-charts.tsx 里。
+  assert.match(chartSource, /ReferenceDot/);
+  assert.match(curveSource, /stroke: color,/);
+  assert.match(chartSource, /stroke=\{marker\.stroke\}/);
   assert.match(curveSource, /var\(--chart-stat-max\)/);
   assert.match(curveSource, /var\(--chart-stat-min\)/);
   assert.match(curveSource, /var\(--chart-stat-average\)/);
   assert.match(curveSource, /showStatistics/);
-  assert.match(curveSource, /segment=\{key === 'average' \? undefined/);
+  assert.match(curveSource, /segment: key === 'average' \? undefined/);
   assert.match(curveSource, /minTimestamps: number\[\]/);
   assert.match(curveSource, /maxTimestamps: number\[\]/);
   assert.match(curveSource, /const leftmostTimestamp = timestamps\[0\] \?\? 0/);
   assert.match(curveSource, /const emphasizedTimestamps = timestamps\.slice\(0, 1\)/);
   assert.match(curveSource, /\{ x: leftmostTimestamp, y: value \}/);
   assert.match(curveSource, /\{ x: historyRightTimestamp, y: value \}/);
-  assert.match(curveSource, /textAnchor="end"/);
-  assert.match(curveSource, /stroke="var\(--chart-stat-label-halo\)"/);
-  assert.match(curveSource, /<ComposedChart/);
-  assert.match(curveSource, /baseValue="dataMin"/);
-  assert.match(curveSource, /var\(--chart-area-opacity-start\)/);
-  assert.match(curveSource, /var\(--chart-area-opacity-end\)/);
+  assert.match(chartSource, /textAnchor="end"/);
+  assert.match(chartSource, /stroke="var\(--chart-stat-label-halo\)"/);
+  assert.match(chartSource, /<ComposedChart/);
+  assert.match(chartSource, /baseValue="dataMin"/);
+  assert.match(chartSource, /var\(--chart-area-opacity-start\)/);
+  assert.match(chartSource, /var\(--chart-area-opacity-end\)/);
   assert.match(curveSource, /const formatValue = \(value: number\) => series\.axisId === 'power'/);
   assert.match(curveSource, /cpuPeak: Number\(formatSpeedValue\(cpuPeak\)\)/);
   assert.match(curveSource, /gpuPeak: Number\(formatSpeedValue\(gpuPeak\)\)/);
@@ -61,8 +66,8 @@ test('supports total power and single-series statistics without hard-coded stat 
 
 test('renders history statistics only for a single visible series', () => {
   assert.match(curveSource, /showStatisticsForSingleSeries/);
-  assert.match(curveSource, /historyStatistics\.thermalSeries\.length === 1/);
-  assert.match(curveSource, /historyStatistics\.powerSeries\.length === 1/);
+  assert.match(chartSource, /historyStatistics\.thermalSeries\.length === 1/);
+  assert.match(chartSource, /historyStatistics\.powerSeries\.length === 1/);
   assert.match(curveSource, /if \(!historyShowStatistics \|\| !showStatisticsForSingleSeries \|\| !series\)/);
 });
 
@@ -80,20 +85,21 @@ test('keeps independent home chart visibility and supports total power in the th
   assert.match(statusSource, /totalPower: buildPath\(getAvailableTotalPowerWatts, yForPower\)/);
   assert.match(statusSource, /const TOTAL_POWER_STROKE = 'var\(--chart-primary\)'/);
   assert.match(curveSource, /filter\(\(key\) => !\(monitorOnlyActive && key === 'fan'\)\)/);
-  assert.match(curveSource, /\{!monitorOnlyActive && \([\s\S]*?<YAxis[\s\S]*?yAxisId="fan"[\s\S]*?width=\{64\}/);
-  assert.doesNotMatch(curveSource, /yAxisId="fan"[\s\S]*?hide=\{monitorOnlyActive\}/);
+  // recharts 拆分后，这两张历史图的轴结构在 fan-curve-charts.tsx 里。
+  assert.match(chartSource, /\{!monitorOnlyActive && \([\s\S]*?<YAxis[\s\S]*?yAxisId="fan"[\s\S]*?width=\{64\}/);
+  assert.doesNotMatch(chartSource, /yAxisId="fan"[\s\S]*?hide=\{monitorOnlyActive\}/);
   assert.match(curveSource, /const historyTimelineAxisId = monitorOnlyActive \? 'temp' : 'fan'/);
-  assert.match(curveSource, /yAxisId=\{historyTimelineAxisId\}/);
-  assert.match(curveSource, /monitorOnlyActive \? \([\s\S]*?<YAxis[\s\S]*?yAxisId="power"[\s\S]*?orientation="right"[\s\S]*?width=\{44\}/);
-  assert.match(curveSource, /yAxisId="powerSpacer"[\s\S]*?orientation="right"[\s\S]*?width=\{44\}/);
+  assert.match(chartSource, /yAxisId=\{historyTimelineAxisId\}/);
+  assert.match(chartSource, /monitorOnlyActive \? \([\s\S]*?<YAxis[\s\S]*?yAxisId="power"[\s\S]*?orientation="right"[\s\S]*?width=\{44\}/);
+  assert.match(chartSource, /yAxisId="powerSpacer"[\s\S]*?orientation="right"[\s\S]*?width=\{44\}/);
 });
 
 test('keeps raw history values and relies on monotone rendering for light smoothing', () => {
   assert.doesNotMatch(curveSource, /smoothHistoryChartData/);
   assert.equal((curveSource.match(/data=\{historyDisplayData\}/g) || []).length, 2);
-  assert.equal((curveSource.match(/type="monotone"/g) || []).length >= 4, true);
+  assert.equal((chartSource.match(/type="monotone"/g) || []).length >= 4, true);
   assert.match(curveSource, /for \(const point of zoomedHistoryChartData\)/);
   assert.doesNotMatch(curveSource, /detectAbruptHistoryPoints|historyAbruptPoints|-abrupt-/);
-  assert.match(curveSource, /historyStatistics\.thermalSeries\.map/);
-  assert.match(curveSource, /historyStatistics\.powerSeries\.map/);
+  assert.match(chartSource, /historyStatistics\.thermalSeries\.map/);
+  assert.match(chartSource, /historyStatistics\.powerSeries\.map/);
 });

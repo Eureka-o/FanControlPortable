@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 
 	"github.com/Eureka-o/FanControlPortable/internal/autostart"
@@ -15,6 +16,11 @@ import (
 var iconData []byte
 
 func main() {
+	// 后台常驻进程按秒级节奏产生少量稳定垃圾，放宽 GC 触发阈值以降低稳态 GC 频率；
+	// 软内存上限只兜底异常增长，正常占用远低于该值。
+	debug.SetGCPercent(200)
+	debug.SetMemoryLimit(128 << 20)
+
 	if autostart.IsInstallAutoStartRequest(os.Args[1:]) {
 		os.Exit(runInstallAutoStart())
 	}

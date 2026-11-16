@@ -245,8 +245,13 @@ func (m *Manager) connectNativeProfileContextIfDisconnected(ctx context.Context,
 	}
 	previousProfile := m.activeProfile
 	previousEndpoint := m.wifiEndpoint
-	m.configureProfileLocked(profile, previousEndpoint)
 	var connected bool
+	defer func() {
+		if !connected {
+			m.configureProfileLocked(previousProfile, previousEndpoint)
+		}
+	}()
+	m.configureProfileLocked(profile, previousEndpoint)
 	var info map[string]string
 	switch profile.Transport {
 	case types.DeviceTransportHID:
@@ -256,9 +261,6 @@ func (m *Manager) connectNativeProfileContextIfDisconnected(ctx context.Context,
 	case types.DeviceTransportBLE:
 		connected, info = m.connectBLEWithContextLocked(ctx)
 	}
-	if !connected {
-		m.configureProfileLocked(previousProfile, previousEndpoint)
-	}
 	return connected, info
 }
 
@@ -266,7 +268,7 @@ func (m *Manager) ConnectNativeProfile(profile types.DeviceProfile) (bool, map[s
 	return m.ConnectNativeProfileContext(context.Background(), profile)
 }
 
-func (m *Manager) ConnectNativeProfileContext(ctx context.Context, profile types.DeviceProfile) (bool, map[string]string) {
+func (m *Manager) ConnectNativeProfileContext(ctx context.Context, profile types.DeviceProfile) (connected bool, info map[string]string) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -310,6 +312,11 @@ func (m *Manager) ConnectNativeProfileContext(ctx context.Context, profile types
 	if ctx.Err() != nil {
 		return false, nil
 	}
+	defer func() {
+		if !connected {
+			m.configureProfileLocked(previousProfile, previousEndpoint)
+		}
+	}()
 	m.configureProfileLocked(profile, previousEndpoint)
 	switch profile.Transport {
 	case types.DeviceTransportHID:
@@ -325,7 +332,6 @@ func (m *Manager) ConnectNativeProfileContext(ctx context.Context, profile types
 			return true, info
 		}
 	}
-	m.configureProfileLocked(previousProfile, previousEndpoint)
 	return false, nil
 }
 

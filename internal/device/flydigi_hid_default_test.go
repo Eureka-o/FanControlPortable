@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Eureka-o/FanControlPortable/internal/deviceproto"
 	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
@@ -476,5 +477,47 @@ func TestParseFlyDigiFanDataFallsBackToReferenceOffsets(t *testing.T) {
 	}
 	if fanData.CurrentRPM != 1560 || fanData.TargetRPM != 2200 {
 		t.Fatalf("rpm = %d/%d, want 1560/2200", fanData.CurrentRPM, fanData.TargetRPM)
+	}
+}
+
+func TestParseFlyDigiFanDataRejectsCorruptStatusFrames(t *testing.T) {
+	valid := deviceproto.BuildReport(deviceproto.BuildFrame(
+		deviceproto.CmdStatusNotify,
+		0x2A, 0x01, 0x00, 0x18, 0x09, 0xD0, 0x07,
+	), hidLightReportLen)
+	valid[12] ^= 0xFF
+	if got := parseFlyDigiFanData(valid); got != nil {
+		t.Fatalf("corrupt complete status frame was accepted: %#v", got)
+	}
+
+	garbage := []byte{0x02, 0x5A, 0xA5, 0xEF, 0x00, 0xFF, 0xFF, 0x00, 0xFF, 0xFF, 0xFF, 0xFF}
+	if got := parseFlyDigiFanData(garbage); got != nil {
+		t.Fatalf("implausible fixed-offset status frame was accepted: %#v", got)
+	}
+}
+
+func TestFlyDigiHIDCorruptStatusDoesNotOverwriteCurrentRPM(t *testing.T) {
+	m := NewManager(nil)
+	generation := m.connectionGen.Add(1)
+	valid := deviceproto.BuildReport(deviceproto.BuildFrame(
+		deviceproto.CmdStatusNotify,
+		0x2A, 0x01, 0x00, 0x18, 0x09, 0xD0, 0x07,
+	), hidLightReportLen)
+	if !m.handleFlyDigiHIDRX(generation, valid) {
+		t.Fatal("valid HID status frame was rejected")
+	}
+	before := m.GetCurrentFanData()
+	if before == nil || before.CurrentRPM != 2328 || before.TargetRPM != 2000 {
+		t.Fatalf("valid HID state = %#v, want 2328/2000 RPM", before)
+	}
+
+	corrupt := append([]byte(nil), valid...)
+	corrupt[12] ^= 0xFF
+	if m.handleFlyDigiHIDRX(generation, corrupt) {
+		t.Fatal("corrupt HID status frame was accepted")
+	}
+	after := m.GetCurrentFanData()
+	if after == nil || after.CurrentRPM != before.CurrentRPM || after.TargetRPM != before.TargetRPM {
+		t.Fatalf("corrupt HID frame overwrote state: before=%#v after=%#v", before, after)
 	}
 }

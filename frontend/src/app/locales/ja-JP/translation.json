@@ -823,7 +823,8 @@
       "zoomSelecting": "選択中 {{from}} - {{to}}",
       "retention": {
         "label": "保持時間",
-        "hours": "{{count}} 時間"
+        "hours": "{{count}} 時間",
+        "saveFailed": "履歴の保持時間を保存できませんでした: {{error}}"
       },
       "events": {
         "disconnect": "デバイス切断",

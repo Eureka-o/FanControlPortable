@@ -7,6 +7,7 @@ import {
   clampHistoryRetentionHours,
   historyRetentionLimit,
   normalizeHistoryPoints,
+  resolveHistoryRetentionHours,
 } from '../src/app/lib/temperature-history.ts';
 
 test('keeps the full rolling hour at the five-second core cadence', () => {
@@ -28,4 +29,10 @@ test('clamps selectable retention to the supported window', () => {
   assert.equal(clampHistoryRetentionHours(6.4), 6);
   assert.equal(clampHistoryRetentionHours(999), 24);
   assert.equal(historyRetentionLimit(3), CORE_HISTORY_LIMIT * 3);
+});
+
+test('keeps configured retention when history metadata is unavailable', () => {
+  assert.equal(resolveHistoryRetentionHours(0, 6), 6);
+  assert.equal(resolveHistoryRetentionHours(undefined, 12), 12);
+  assert.equal(resolveHistoryRetentionHours(3, 12), 3);
 });

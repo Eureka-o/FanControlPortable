@@ -75,6 +75,8 @@ type CoreApp struct {
 	autoReconnectSuppressed          atomic.Bool
 	hasSuccessfulConnection          atomic.Bool
 	lastConnectionWasNative          atomic.Bool
+	lastSuccessfulConnectionMu       sync.Mutex
+	lastSuccessfulConnection         *successfulDeviceConnection
 	resumeRecoveryRunning            atomic.Bool
 	temperatureBridgeRecoveryRunning atomic.Bool
 	systemSuspended                  atomic.Bool
@@ -125,6 +127,7 @@ type CoreApp struct {
 	smartControlDecision          smartcontrol.Decision
 
 	powerNotifyStop func()
+	sessionEndStop  func()
 	hidNotifyStop   func()
 	bleNotifyStop   func()
 	usbNotifyStop   func()

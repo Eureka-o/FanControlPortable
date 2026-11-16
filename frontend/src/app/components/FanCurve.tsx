@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, memo, useMemo, useRef } from 'react';
-import { Area, ComposedChart, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, ReferenceDot } from 'recharts';
+import dynamic from 'next/dynamic';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   RotateCw,
@@ -80,15 +80,17 @@ import {
   supportsManualGearsFromCapabilities,
   type ManualGearRpmMap,
 } from '../lib/manualGearPresets';
+import {
+  FAN_CURVE_AXIS_MIN_SPEED,
+  TIMELINE_EVENT_COLORS,
+  formatPowerValue,
+  formatSpeedValue,
+} from './fan-curve-chart-shared';
+// 仅类型引用（编译期整体擦除）：不会把 recharts 图表 chunk 拉回主包。
+import type { HistorySeriesMeta, HistoryStatisticsData, HistoryStatisticsMarker } from './fan-curve-charts';
 
 const FAN_CURVE_MIN_TEMP = 20;
 const FAN_CURVE_MAX_TEMP = 110;
-const TIMELINE_EVENT_COLORS: Record<(typeof HISTORY_TIMELINE_EVENT_ORDER)[number], string> = {
-  disconnect: '#ef4444',
-  reconnect: '#10b981',
-  resume: '#8b5cf6',
-  profile: '#0ea5e9',
-};
 const FAN_CURVE_TEMP_STEP = 5;
 const DEFAULT_CURVE_LENGTH = ((FAN_CURVE_MAX_TEMP - FAN_CURVE_MIN_TEMP) / FAN_CURVE_TEMP_STEP) + 1;
 const FAN_CURVE_TEMPERATURE_TICKS = Array.from({ length: DEFAULT_CURVE_LENGTH }, (_, i) => FAN_CURVE_MIN_TEMP + i * FAN_CURVE_TEMP_STEP);
@@ -101,9 +103,9 @@ const BLACKSHARK_CURVE_AXIS_TEMPERATURE_TICKS = Array.from(
   (_, i) => BLACKSHARK_CURVE_AXIS_MIN_TEMP + i * FAN_CURVE_TEMP_STEP,
 );
 
-// 纵轴下端定为 0（与横轴口径一致）。`YAxis` 与拖拽的 Y 映射都必须用它 ——
-// 两边各写一个数就会漂（拖拽把光标位置按错误的域换算成转速）。
-const FAN_CURVE_AXIS_MIN_SPEED = 0;
+// 纵轴下端（FAN_CURVE_AXIS_MIN_SPEED）挪到了 ./fan-curve-chart-shared：
+// `YAxis`（fan-curve-charts）与这里的拖拽 Y 映射必须共用同一个数，不能各写一份。
+
 const DEFAULT_FAN_CURVE: types.FanCurvePoint[] = [
   { temperature: 20, rpm: 0 }, { temperature: 25, rpm: 10 }, { temperature: 30, rpm: 18 }, { temperature: 35, rpm: 24 },
   { temperature: 40, rpm: 30 }, { temperature: 45, rpm: 36 }, { temperature: 50, rpm: 42 }, { temperature: 55, rpm: 48 },
@@ -112,6 +114,7 @@ const DEFAULT_FAN_CURVE: types.FanCurvePoint[] = [
   { temperature: 100, rpm: 100 }, { temperature: 105, rpm: 100 }, { temperature: 110, rpm: 100 },
 ];
 const DEFAULT_RPM_FAN_CURVE: types.FanCurvePoint[] = [
+	{ temperature: 20, rpm: 1000 }, { temperature: 25, rpm: 1000 },
   { temperature: 30, rpm: 1000 }, { temperature: 35, rpm: 1200 }, { temperature: 40, rpm: 1400 }, { temperature: 45, rpm: 1600 },
   { temperature: 50, rpm: 1800 }, { temperature: 55, rpm: 2000 }, { temperature: 60, rpm: 2300 }, { temperature: 65, rpm: 2600 },
   { temperature: 70, rpm: 2900 }, { temperature: 75, rpm: 3200 }, { temperature: 80, rpm: 3500 }, { temperature: 85, rpm: 3800 },
@@ -164,22 +167,6 @@ function learnedOffsetForDisplay(value: number, speedUnit: string) {
   return speedUnit === 'percent' ? learnedOffsetTicksToPercent(value) : value;
 }
 
-function formatSpeedValue(value: number) {
-  if (!Number.isFinite(value)) {
-    return '0';
-  }
-  const rounded = Math.round(value * 10) / 10;
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
-}
-
-function formatPowerValue(value: number) {
-  if (!Number.isFinite(value) || value <= 0) {
-    return '--';
-  }
-  const rounded = value < 10 ? Math.round(value * 10) / 10 : Math.round(value);
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
-}
-
 function getAvailableTotalPowerWatts(point: TemperatureHistoryPoint) {
   const cpu = Number(point.cpuPowerWatts || 0);
   const gpu = Number(point.gpuPowerWatts || 0);
@@ -187,15 +174,8 @@ function getAvailableTotalPowerWatts(point: TemperatureHistoryPoint) {
   return total > 0 ? Math.round(total * 10) / 10 : undefined;
 }
 
-type HistoryChartPoint = {
-  timestamp: number;
-  cpuTemp?: number;
-  gpuTemp?: number;
-  fanRpm?: number;
-  cpuPowerWatts?: number;
-  gpuPowerWatts?: number;
-  totalPowerWatts?: number;
-};
+// formatSpeedValue / formatPowerValue / HistoryChartPoint（图表数据点类型）挪到了
+// ./fan-curve-chart-shared 与 ./fan-curve-charts：图表分包与主包共用同一份实现。
 
 const CPU_TEMP_STROKE = 'var(--chart-cpu-temperature)';
 const GPU_TEMP_STROKE = 'var(--chart-gpu-temperature)';
@@ -394,13 +374,7 @@ interface FanCurveProps {
   historyOnly?: boolean;
 }
 
-function formatHistoryTime(timestamp: number, locale: string) {
-  return new Date(timestamp).toLocaleTimeString(locale, {
-    hour12: false,
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
+// formatHistoryTime（时间轴 tick 用）只服务于图表，挪到 ./fan-curve-charts。
 
 function formatHistoryDateTime(timestamp: number, locale: string) {
   return new Date(timestamp).toLocaleTimeString(locale, {
@@ -595,6 +569,22 @@ const DraggablePoint = memo(function DraggablePoint({
     </g>
   );
 });
+
+/* ═══════════════════════════════════════════════════════════
+   ─── Recharts 图表（动态分包，见 fan-curve-charts.tsx） ───
+   ═══════════════════════════════════════════════════════════ */
+
+// 图表的 props 只收父级已 memo 的值（数据/量程/可见性/缩放/统计），并把常量对象提升到模块级，
+// 这样遥测节拍（约 250ms~1s）触发的父级重渲会在 memo 浅比较处整体跳出，recharts 树只在
+// 数据真正变化的刷新周期（约 5s）重算。
+//
+// recharts 体积大：三张图表组件整体搬进 fan-curve-charts.tsx 单独分包，主包不再解析 recharts。
+// 组件仍是首帧后按需拉取；ssr:false（Wails 静态导出无服务端渲染，图表只在客户端挂载），
+// 加载完成前 loading 渲染 null，图表区域高度由外层容器撑住，不产生布局抖动。
+// chunk 会在首帧后由 requestIdleCallback 预取（见 FanCurve 内的 effect），打开曲线页零等待。
+const CurveEditorChart = dynamic(() => import('./fan-curve-charts').then((mod) => mod.CurveEditorChart), { ssr: false, loading: () => null });
+const HistoryThermalChart = dynamic(() => import('./fan-curve-charts').then((mod) => mod.HistoryThermalChart), { ssr: false, loading: () => null });
+const HistoryPowerChart = dynamic(() => import('./fan-curve-charts').then((mod) => mod.HistoryPowerChart), { ssr: false, loading: () => null });
 
 /* ═══════════════════════════════════════════════════════════
    ─── Main FanCurve Component ───
@@ -997,6 +987,20 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     return () => observer.disconnect();
   }, [historyChartsReady]);
 
+  // 首帧后趁空闲预取 recharts 图表分包（fan-curve-charts），用户打开曲线页/历史图前把 chunk 拉热，
+  // dynamic 挂载零等待；失败静默吞掉（各图表的 loading 兜底为 null，不影响页面其余部分）。
+  useEffect(() => {
+    const prefetchFanCurveCharts = () => {
+      void import('./fan-curve-charts').catch(() => {});
+    };
+    if (typeof window.requestIdleCallback === 'function') {
+      const idleId = window.requestIdleCallback(prefetchFanCurveCharts, { timeout: 1500 });
+      return () => window.cancelIdleCallback(idleId);
+    }
+    const timer = window.setTimeout(prefetchFanCurveCharts, 1500);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   const learnedOffsetSummary = useMemo(() => {
     const sourceCurve = localCurve.length > 0 ? localCurve : (config.fanCurve || []);
     return (smartControl.learnedOffsets || [])
@@ -1018,9 +1022,16 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     [historyChartsReady, temperatureHistory],
   );
 
+  // 摘要统计同样改在降采样切片上计算（峰值/均值随抽样略有偏移，已确认可接受）；
+  // 与原先语义一致：摘要不看缩放窗口、也不等图表就绪门槛。
+  const historySummaryPoints = useMemo(
+    () => downsampleHistoryPoints(temperatureHistory, 1500),
+    [temperatureHistory],
+  );
+
   const historySummary = useMemo(() => {
-    const latest = temperatureHistory[temperatureHistory.length - 1] ?? null;
-    const first = temperatureHistory[0] ?? null;
+    const latest = historySummaryPoints[historySummaryPoints.length - 1] ?? null;
+    const first = historySummaryPoints[0] ?? null;
     let cpuPeak = 0;
     let gpuPeak = 0;
     let fanPeak = 0;
@@ -1037,7 +1048,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     let cpuPowerCount = 0;
     let gpuPowerCount = 0;
 
-    for (const point of temperatureHistory) {
+    for (const point of historySummaryPoints) {
       if (point.cpuTemp > 0) {
         cpuPeak = Math.max(cpuPeak, point.cpuTemp);
         cpuSum += point.cpuTemp;
@@ -1071,7 +1082,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     const average = (sum: number, count: number) => count > 0 ? Math.round(sum / count) : 0;
 
     return {
-      sampleCount: temperatureHistory.length,
+      sampleCount: historySummaryPoints.length,
       latest,
       latestLabel: latest ? formatHistoryDateTime(latest.timestamp, locale) : '--',
       durationLabel: first && latest ? formatHistoryDuration(first.timestamp, latest.timestamp, t) : '--',
@@ -1086,11 +1097,27 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       gpuPowerPeak,
       gpuPowerAverage: average(gpuPowerSum, gpuPowerCount),
     };
-  }, [locale, speedRange.max, speedRange.min, t, temperatureHistory]);
+  }, [historySummaryPoints, locale, speedRange.max, speedRange.min, t]);
+
+  // 缩放窗口先作用在原始点（时间戳与取值映射无关），再降采样，最后才做逐点取值映射与统计，
+  // 让每个刷新周期（约 5s 一点）的重活都落在 ≤1501 点的显示切片上；逐点映射与降采样可交换，
+  // 因此绘制内容与原先完全一致。
+  const zoomedHistoryPoints = useMemo(() => {
+    if (!historyZoomDomain) {
+      return detailHistoryPoints;
+    }
+    const [from, to] = historyZoomDomain;
+    const selected = detailHistoryPoints.filter((point) => point.timestamp >= from && point.timestamp <= to);
+    return selected.length >= 2 ? selected : detailHistoryPoints;
+  }, [detailHistoryPoints, historyZoomDomain]);
+  const historyDisplayPoints = useMemo(
+    () => downsampleHistoryPoints(zoomedHistoryPoints, 1500),
+    [zoomedHistoryPoints],
+  );
 
   const historyChartStats = useMemo(() => {
     let maxPower = 0;
-    const data = detailHistoryPoints.map((point) => {
+    const data = historyDisplayPoints.map((point) => {
       const cpuPowerWatts = Number(point.cpuPowerWatts || 0);
       const gpuPowerWatts = Number(point.gpuPowerWatts || 0);
       const totalPowerWatts = getAvailableTotalPowerWatts(point);
@@ -1122,24 +1149,15 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       powerMax,
       hasPower: maxPower > 0,
     };
-  }, [detailHistoryPoints, historySeriesVisibility.cpuPower, historySeriesVisibility.gpuPower, historySeriesVisibility.totalPower, speedRange.max, speedRange.min]);
-  const historyChartData = historyChartStats.data;
+  }, [historyDisplayPoints, historySeriesVisibility.cpuPower, historySeriesVisibility.gpuPower, historySeriesVisibility.totalPower, speedRange.max, speedRange.min]);
+  // 降采样提前后，“缩放窗口的图表数据 / 图表显示数据 / 统计输入”收敛为同一份切片。
+  const zoomedHistoryChartData = historyChartStats.data;
+  const historyDisplayData = zoomedHistoryChartData;
+  const historyChartData = zoomedHistoryChartData;
   const historyPowerMax = historyChartStats.powerMax;
   const historyHasPower = historyChartStats.hasPower;
-	const zoomedHistoryChartData = useMemo(() => {
-    if (!historyZoomDomain) {
-      return historyChartData;
-    }
-    const [from, to] = historyZoomDomain;
-    const selected = historyChartData.filter((point) => point.timestamp >= from && point.timestamp <= to);
-    return selected.length >= 2 ? selected : historyChartData;
-	}, [historyChartData, historyZoomDomain]);
-	const historyDisplayData = useMemo(
-		() => downsampleHistoryPoints(zoomedHistoryChartData, 1500),
-		[zoomedHistoryChartData],
-	);
-  const historySeriesMeta = useMemo(() => {
-    const meta: Record<HistorySeriesKey, { key: HistorySeriesKey; label: string; color: string; dataKey: 'cpuTemp' | 'gpuTemp' | 'fanRpm' | 'cpuPowerWatts' | 'gpuPowerWatts' | 'totalPowerWatts'; axisId: 'temp' | 'fan' | 'power' }> = {
+  const historySeriesMeta = useMemo<HistorySeriesMeta[]>(() => {
+    const meta: Record<HistorySeriesKey, HistorySeriesMeta> = {
       cpu: { key: 'cpu', label: t('fanCurve.history.series.cpu'), color: CPU_TEMP_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.cpu, axisId: HISTORY_SERIES_AXIS.cpu },
       gpu: { key: 'gpu', label: t('fanCurve.history.series.gpu'), color: GPU_TEMP_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.gpu, axisId: HISTORY_SERIES_AXIS.gpu },
       fan: { key: 'fan', label: t('fanCurve.history.series.fan'), color: FAN_SPEED_STROKE, dataKey: HISTORY_SERIES_DATA_KEY.fan, axisId: HISTORY_SERIES_AXIS.fan },
@@ -1152,7 +1170,16 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       .map((key) => meta[key])
       .filter(Boolean);
   }, [locale, monitorOnlyActive, orderedSeries, t]);
-  const historyStatistics = useMemo(() => {
+  // 图表子组件只收“当前可见”的系列数组：可见性切换才变化，遥测节拍保持引用稳定。
+  const visibleThermalSeries = useMemo(
+    () => historySeriesMeta.filter((series) => series.axisId !== 'power' && historySeriesVisibility[series.key]),
+    [historySeriesMeta, historySeriesVisibility],
+  );
+  const visiblePowerSeries = useMemo(
+    () => historySeriesMeta.filter((series) => series.axisId === 'power' && historySeriesVisibility[series.key]),
+    [historySeriesMeta, historySeriesVisibility],
+  );
+  const historyStatistics = useMemo<HistoryStatisticsData>(() => {
     const values: Partial<Record<HistorySeriesKey, { min: number; max: number; average: number; minTimestamps: number[]; maxTimestamps: number[] }>> = {};
     const seriesWithData = historySeriesMeta.filter((series) => {
       if (!historySeriesVisibility[series.key]) {
@@ -1204,7 +1231,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     };
   }, [historySeriesMeta, historySeriesVisibility, zoomedHistoryChartData]);
   const historyRightTimestamp = zoomedHistoryChartData[zoomedHistoryChartData.length - 1]?.timestamp ?? 0;
-  const renderHistoryStatistics = useCallback((series: (typeof historySeriesMeta)[number] | undefined, yAxisId: 'temp' | 'fan' | 'power', showStatisticsForSingleSeries = true) => {
+  // 统计标线（max/min/average）改为返回纯数据描述符：ReferenceLine/ReferenceDot 元素由
+  // fan-curve-charts 创建，主包因此不需要任何 recharts 运行时引用。
+  // 判定门槛、取值、格式化、key 规则与原先完全一致；label 文案在这里算好随描述符传下去。
+  const renderHistoryStatistics = useCallback((series: HistorySeriesMeta | undefined, yAxisId: 'temp' | 'fan' | 'power', showStatisticsForSingleSeries = true): HistoryStatisticsMarker[] | null => {
     if (!historyShowStatistics || !showStatisticsForSingleSeries || !series) {
       return null;
     }
@@ -1224,49 +1254,28 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       const leftmostTimestamp = timestamps[0] ?? 0;
       const emphasizedTimestamps = timestamps.slice(0, 1);
       return [
-        <ReferenceLine
-          key={`${series.key}-${key}`}
-          yAxisId={yAxisId}
-          y={key === 'average' ? value : undefined}
-          segment={key === 'average' ? undefined : [
+        {
+          kind: 'line',
+          key: `${series.key}-${key}`,
+          yAxisId,
+          y: key === 'average' ? value : undefined,
+          segment: key === 'average' ? undefined : [
             { x: leftmostTimestamp, y: value },
             { x: historyRightTimestamp, y: value },
-          ]}
-          stroke={color}
-          strokeOpacity={opacity}
-          strokeDasharray="5 4"
-          strokeWidth={1.5}
-          label={({ viewBox }: { viewBox?: { x?: number; y?: number; width?: number } }) => (
-            <text
-              x={(viewBox?.x ?? 0) + (viewBox?.width ?? 0)}
-              y={viewBox?.y ?? 0}
-              dx={-8}
-              dy={key === 'min' ? 14 : -6}
-              textAnchor="end"
-              fill={color}
-              stroke="var(--chart-stat-label-halo)"
-              strokeWidth={3}
-              paintOrder="stroke"
-              strokeLinejoin="round"
-              fontSize={10}
-              fontWeight={600}
-            >
-              {`${t(`fanCurve.history.statistics.${key}`)} ${formatValue(value)}`}
-            </text>
-          )}
-        />,
-        ...emphasizedTimestamps.map((timestamp) => (
-          <ReferenceDot
-            key={`${series.key}-${key}-point-${timestamp}`}
-            x={timestamp}
-            y={value}
-            yAxisId={yAxisId}
-            r={4.5}
-            fill={color}
-            stroke="var(--card)"
-            strokeWidth={2}
-          />
-        )),
+          ],
+          stroke: color,
+          strokeOpacity: opacity,
+          statKey: key,
+          labelText: `${t(`fanCurve.history.statistics.${key}`)} ${formatValue(value)}`,
+        } satisfies HistoryStatisticsMarker,
+        ...emphasizedTimestamps.map((timestamp) => ({
+          kind: 'dot',
+          key: `${series.key}-${key}-point-${timestamp}`,
+          yAxisId,
+          x: timestamp,
+          y: value,
+          fill: color,
+        } satisfies HistoryStatisticsMarker)),
       ];
     });
   }, [historyRightTimestamp, historyShowStatistics, historyStatistics.values, t]);
@@ -1295,21 +1304,30 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       if (selection) {
         const from = Math.min(selection.start, selection.end);
         const to = Math.max(selection.start, selection.end);
-        const sampleCount = historyChartData.filter((point) => point.timestamp >= from && point.timestamp <= to).length;
+        // 采样数按原始全窗数据计（与显示切片无关），保证小范围缩放的判定不变。
+        const sampleCount = detailHistoryPoints.filter((point) => point.timestamp >= from && point.timestamp <= to).length;
         if (sampleCount >= 2) {
           setHistoryZoomDomain([from, to]);
         }
       }
       return null;
     });
-  }, [historyChartData]);
+  }, [detailHistoryPoints]);
   const resetHistoryZoom = useCallback(() => {
     setHistoryZoomSelect(null);
     setHistoryZoomDomain(null);
   }, []);
-  const historyZoomSelectionBounds = historyZoomSelect && historyZoomSelect.start !== historyZoomSelect.end
-    ? [Math.min(historyZoomSelect.start, historyZoomSelect.end), Math.max(historyZoomSelect.start, historyZoomSelect.end)] as const
-    : null;
+  const historyZoomSelectionBounds = useMemo(
+    () => (historyZoomSelect && historyZoomSelect.start !== historyZoomSelect.end
+      ? [Math.min(historyZoomSelect.start, historyZoomSelect.end), Math.max(historyZoomSelect.start, historyZoomSelect.end)] as const
+      : null),
+    [historyZoomSelect],
+  );
+  // 温度副轴只显示每 4 格一个刻度；useMemo 稳住数组引用，避免子组件 memo 失效。
+  const historyTempTicks = useMemo(
+    () => temperatureRange.ticks.filter((value) => value === temperatureRange.max || (value - temperatureRange.min) % (FAN_CURVE_TEMP_STEP * 4) === 0),
+    [temperatureRange],
+  );
   const visibleTimelineEvents = useMemo(() => {
     const firstTimestamp = zoomedHistoryChartData[0]?.timestamp ?? 0;
     const lastTimestamp = zoomedHistoryChartData[zoomedHistoryChartData.length - 1]?.timestamp ?? firstTimestamp;
@@ -1347,8 +1365,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   }, [historyTimeDomain, visibleTimelineEvents]);
 
   const showHistoryPowerChart = historyHasPower && (historySeriesVisibility.cpuPower || historySeriesVisibility.gpuPower || historySeriesVisibility.totalPower);
-  const thermalSingleSeries = historyStatistics.thermalSeries.length === 1 ? historyStatistics.thermalSeries[0] : undefined;
-  const powerSingleSeries = historyStatistics.powerSeries.length === 1 ? historyStatistics.powerSeries[0] : undefined;
 
   const renderHistoryTooltip = useCallback(({ active, label, payload }: any) => {
     const point = payload?.[0]?.payload;
@@ -2460,26 +2476,15 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
             className={clsx('relative rounded-3xl border bg-card p-4 shadow-sm', dragIndex !== null ? 'ring-2 ring-primary/40 border-primary/30' : 'border-border/70')}
           >
             <div className="h-80 md:h-96 relative">
-              <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 960, height: 384 }}>
-                <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-                  <XAxis dataKey="temperature" type="number" domain={[temperatureRange.min, temperatureRange.max]} ticks={temperatureRange.ticks} interval={0} minTickGap={0} tickLine={false} axisLine={{ stroke: 'var(--chart-axis)' }} tick={{ fill: 'var(--chart-tick)', fontSize: 10 }} label={{ value: t('fanCurve.chart.axes.temperature'), position: 'insideBottom', offset: -10, fill: 'var(--chart-tick)', fontSize: 12 }} />
-                  {/* 纵轴从 0 起（与其它图表一致）；只是量程显示，不改数据。 */}
-                  <YAxis type="number" domain={[FAN_CURVE_AXIS_MIN_SPEED, speedRange.max]} ticks={zeroBasedSpeedTicks} tickLine={false} axisLine={{ stroke: 'var(--chart-axis)' }} tick={{ fill: 'var(--chart-tick)', fontSize: 11 }} label={{ value: `速度（${speedUnitSuffix}）`, angle: -90, position: 'insideLeft', fill: 'var(--chart-tick)', fontSize: 12 }} />
-                  <RechartsTooltip
-                    formatter={(value, name) => {
-                      const numericValue = Number(value ?? 0);
-                      return name === 'coupledRpm' ? [`${formatSpeedValue(numericValue)}${speedUnitSuffix}`, '学习曲线'] : [`${formatSpeedValue(numericValue)}${speedUnitSuffix}`, '基础曲线'];
-                    }}
-                    labelFormatter={(v) => t('fanCurve.chart.temperatureLabel', { temperature: v })}
-                    contentStyle={{ backgroundColor: 'var(--chart-tooltip-bg)', border: '1px solid', borderColor: 'var(--chart-tooltip-border)', borderRadius: '8px', boxShadow: 'var(--chart-tooltip-shadow)', padding: '8px 12px', color: 'var(--chart-tooltip-text)' }}
-                    labelStyle={{ color: 'var(--chart-tooltip-text)', fontWeight: 600 }}
-                    itemStyle={{ color: 'var(--chart-tooltip-text)' }}
-                  />
-                  <Line type="monotone" dataKey="rpm" stroke="var(--chart-primary)" strokeWidth={3} dot={CustomDot} activeDot={false} isAnimationActive={false} />
-                  {showCoupledCurve && <Line type="monotone" dataKey="coupledRpm" stroke="var(--chart-primary)" strokeWidth={2} strokeDasharray="6 4" dot={false} activeDot={false} isAnimationActive={false} />}
-                </LineChart>
-              </ResponsiveContainer>
+              <CurveEditorChart
+                data={chartData}
+                temperatureRange={temperatureRange}
+                speedMax={speedRange.max}
+                speedTicks={zeroBasedSpeedTicks}
+                speedUnitSuffix={speedUnitSuffix}
+                showCoupledCurve={showCoupledCurve}
+                customDot={CustomDot}
+              />
               {blackSharkGearCurveMode && chartData.length >= 2 && (
                 <CurveExtensions
                   chartRef={chartRef}
@@ -2767,283 +2772,47 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                   ) : (
                     <>
                     <div data-history-chart="thermal-fan" className="h-72 cursor-crosshair select-none">
-                      <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 960, height: 288 }}>
-                        <ComposedChart
-	                          data={historyDisplayData}
-                          syncId="historyTrend"
-                          margin={{ top: 12, right: 16, left: 4, bottom: 8 }}
-                          onMouseDown={handleHistoryZoomMouseDown}
-                          onMouseMove={handleHistoryZoomMouseMove}
-                          onMouseUp={handleHistoryZoomMouseUp}
-                          onMouseLeave={handleHistoryZoomMouseUp}
-                          onDoubleClick={resetHistoryZoom}
-                        >
-                          {thermalSingleSeries && (
-                            <defs>
-                              <linearGradient id={`history-thermal-area-${thermalSingleSeries.key}`} x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor={thermalSingleSeries.color} stopOpacity="var(--chart-area-opacity-start)" />
-                                <stop offset="100%" stopColor={thermalSingleSeries.color} stopOpacity="var(--chart-area-opacity-end)" />
-                              </linearGradient>
-                            </defs>
-                          )}
-                          <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-                          <XAxis
-                            dataKey="timestamp"
-                            type="number"
-                            domain={historyTimeDomain}
-                            allowDataOverflow
-                            tickFormatter={(value) => formatHistoryTime(Number(value), locale)}
-                            tickLine={false}
-                            minTickGap={24}
-                            axisLine={{ stroke: 'var(--chart-axis)' }}
-                            tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
-                          />
-                          {!monitorOnlyActive && (
-                            <YAxis
-                              yAxisId="fan"
-                              type="number"
-                              domain={[speedRange.min, speedRange.max]}
-                              ticks={speedRange.ticks}
-                              allowDataOverflow
-                              tickFormatter={(value) => `${formatSpeedValue(Number(value))}${speedUnitSuffix}`}
-                              tickLine={false}
-                              axisLine={{ stroke: 'var(--chart-axis)' }}
-                              tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
-                              width={64}
-                            />
-                          )}
-                          <YAxis
-                            yAxisId="temp"
-                            orientation="right"
-                            type="number"
-                            domain={[temperatureRange.min, temperatureRange.max]}
-                            ticks={temperatureRange.ticks.filter((value) => value === temperatureRange.max || (value - temperatureRange.min) % (FAN_CURVE_TEMP_STEP * 4) === 0)}
-                            allowDataOverflow
-                            tickFormatter={(value) => `${Number(value)}°C`}
-                            tickLine={false}
-                            axisLine={{ stroke: 'var(--chart-axis)' }}
-                            tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
-                            width={44}
-                          />
-                          <RechartsTooltip content={renderHistoryTooltip} />
-                          {timelineEventLayout.map(({ event, row, anchorEnd }, index) => {
-                            const markerColor = TIMELINE_EVENT_COLORS[event.type];
-                            return (
-                              <ReferenceLine
-                                key={`${event.timestamp}-${event.type}-${index}`}
-                                x={event.timestamp}
-                                yAxisId={historyTimelineAxisId}
-                                stroke={markerColor}
-                                strokeDasharray="4 3"
-                                label={(labelProps: { viewBox?: { x?: number; y?: number } }) => {
-                                  const x = labelProps.viewBox?.x ?? 0;
-                                  const y = labelProps.viewBox?.y ?? 0;
-                                  return (
-                                    <text
-                                      x={x}
-                                      y={y + 10 + row * 12}
-                                      dx={anchorEnd ? -5 : 5}
-                                      textAnchor={anchorEnd ? 'end' : 'start'}
-                                      fontSize={10}
-                                      fontWeight={500}
-                                      fill={markerColor}
-                                    >
-                                      {t(`fanCurve.history.events.${event.type}`)}
-                                    </text>
-                                  );
-                                }}
-                              />
-                            );
-                          })}
-                          {thermalSingleSeries && (
-                            <Area
-                              yAxisId={thermalSingleSeries.axisId}
-                              type="monotone"
-                              dataKey={thermalSingleSeries.dataKey}
-                              stroke="none"
-                              fill={`url(#history-thermal-area-${thermalSingleSeries.key})`}
-                              baseValue="dataMin"
-                              tooltipType="none"
-                              isAnimationActive={false}
-                              connectNulls={false}
-                            />
-                          )}
-                          {historySeriesMeta.map((series) => {
-                            if (series.axisId === 'power' || !historySeriesVisibility[series.key]) {
-                              return null;
-                            }
-                            return (
-                              <Line
-                                key={series.key}
-                                yAxisId={series.axisId}
-                                type="monotone"
-                                dataKey={series.dataKey}
-                                name={series.dataKey}
-                                stroke={series.color}
-                                strokeWidth={series.key === 'fan' ? 1.8 : 2}
-                                dot={false}
-                                activeDot={false}
-                                isAnimationActive={false}
-                                connectNulls={false}
-                              />
-                              );
-                          })}
-                          {historyStatistics.thermalSeries.map((series) => {
-                            const yAxisId = series.axisId === 'fan' ? 'fan' : 'temp';
-                            return (
-                              <React.Fragment key={`${series.key}-markers`}>
-                                {renderHistoryStatistics(series, yAxisId, historyStatistics.thermalSeries.length === 1)}
-                              </React.Fragment>
-                            );
-                          })}
-                          {historyZoomSelectionBounds && (
-                            <>
-                              <ReferenceArea
-                                yAxisId="temp"
-                                x1={historyZoomSelectionBounds[0]}
-                                x2={historyZoomSelectionBounds[1]}
-                                fill="var(--chart-primary)"
-                                fillOpacity={0.22}
-                                stroke="var(--chart-primary-active)"
-                                strokeOpacity={0.95}
-                                strokeWidth={2}
-                              />
-                              <ReferenceLine x={historyZoomSelectionBounds[0]} yAxisId="temp" stroke="var(--chart-primary-active)" strokeOpacity={0.95} strokeWidth={2} />
-                              <ReferenceLine x={historyZoomSelectionBounds[1]} yAxisId="temp" stroke="var(--chart-primary-active)" strokeOpacity={0.95} strokeWidth={2} />
-                            </>
-                          )}
-                        </ComposedChart>
-                      </ResponsiveContainer>
+                      <HistoryThermalChart
+                        data={historyDisplayData}
+                        timeDomain={historyTimeDomain}
+                        monitorOnlyActive={monitorOnlyActive}
+                        speedRange={speedRange}
+                        temperatureRange={temperatureRange}
+                        temperatureTicks={historyTempTicks}
+                        visibleThermalSeries={visibleThermalSeries}
+                        timelineLayout={timelineEventLayout}
+                        historyTimelineAxisId={historyTimelineAxisId}
+                        historyStatistics={historyStatistics}
+                        renderStatistics={renderHistoryStatistics}
+                        zoomSelectionBounds={historyZoomSelectionBounds}
+                        tooltipContent={renderHistoryTooltip}
+                        speedUnitSuffix={speedUnitSuffix}
+                        onMouseDown={handleHistoryZoomMouseDown}
+                        onMouseMove={handleHistoryZoomMouseMove}
+                        onMouseUp={handleHistoryZoomMouseUp}
+                        onDoubleClick={resetHistoryZoom}
+                      />
                     </div>
 
                     {showHistoryPowerChart && (
                       <div data-history-chart="power" className="border-t border-border/60 pt-3">
                         <div className="mb-2 text-xs font-medium text-muted-foreground">{t('fanCurve.history.powerTrend')}</div>
                         <div className="h-48 cursor-crosshair select-none">
-                          <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 960, height: 192 }}>
-                              <ComposedChart
-	                          data={historyDisplayData}
-                                syncId="historyTrend"
-                                margin={{ top: 12, right: 16, left: 4, bottom: 8 }}
-                                onMouseDown={handleHistoryZoomMouseDown}
-                                onMouseMove={handleHistoryZoomMouseMove}
-                                onMouseUp={handleHistoryZoomMouseUp}
-                                onMouseLeave={handleHistoryZoomMouseUp}
-                                onDoubleClick={resetHistoryZoom}
-                              >
-                                {powerSingleSeries && (
-                                  <defs>
-                                    <linearGradient id={`history-power-area-${powerSingleSeries.key}`} x1="0" y1="0" x2="0" y2="1">
-                                      <stop offset="0%" stopColor={powerSingleSeries.color} stopOpacity="var(--chart-area-opacity-start)" />
-                                      <stop offset="100%" stopColor={powerSingleSeries.color} stopOpacity="var(--chart-area-opacity-end)" />
-                                    </linearGradient>
-                                  </defs>
-                                )}
-                                <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-                                <XAxis
-                                  dataKey="timestamp"
-                                  type="number"
-                                  domain={historyTimeDomain}
-                                  allowDataOverflow
-                                  tickFormatter={(value) => formatHistoryTime(Number(value), locale)}
-                                  tickLine={false}
-                                  minTickGap={24}
-                                  axisLine={{ stroke: 'var(--chart-axis)' }}
-                                  tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
-                                />
-                                {monitorOnlyActive ? (
-                                  <YAxis
-                                    yAxisId="power"
-                                    orientation="right"
-                                    type="number"
-                                    domain={[0, historyPowerMax]}
-                                    tickFormatter={(value) => Number(value) === 0 ? '0 W' : `${formatPowerValue(Number(value))} W`}
-                                    tickLine={false}
-                                    axisLine={{ stroke: 'var(--chart-axis)' }}
-                                    tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
-                                    width={44}
-                                  />
-                                ) : (
-                                  <>
-                                    <YAxis
-                                      yAxisId="power"
-                                      type="number"
-                                      domain={[0, historyPowerMax]}
-                                      tickFormatter={(value) => Number(value) === 0 ? '0 W' : `${formatPowerValue(Number(value))} W`}
-                                      tickLine={false}
-                                      axisLine={{ stroke: 'var(--chart-axis)' }}
-                                      tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
-                                      width={64}
-                                    />
-                                    <YAxis
-                                      yAxisId="powerSpacer"
-                                      orientation="right"
-                                      type="number"
-                                      domain={[0, historyPowerMax]}
-                                      tick={false}
-                                      tickLine={false}
-                                      axisLine={false}
-                                      width={44}
-                                    />
-                                  </>
-                                )}
-                                <RechartsTooltip content={renderHistoryTooltip} />
-                                {powerSingleSeries && (
-                                  <Area
-                                    yAxisId="power"
-                                    type="monotone"
-                                    dataKey={powerSingleSeries.dataKey}
-                                    stroke="none"
-                                    fill={`url(#history-power-area-${powerSingleSeries.key})`}
-                                    baseValue="dataMin"
-                                    tooltipType="none"
-                                    isAnimationActive={false}
-                                    connectNulls={false}
-                                  />
-                                )}
-                                {historySeriesMeta.map((series) => {
-                                  if (series.axisId !== 'power' || !historySeriesVisibility[series.key]) {
-                                    return null;
-                                  }
-                                  return (
-                                    <Line
-                                      key={series.key}
-                                      yAxisId="power"
-                                      type="monotone"
-                                      dataKey={series.dataKey}
-                                      name={series.dataKey}
-                                      stroke={series.color}
-                                      strokeWidth={2}
-                                      dot={false}
-                                      activeDot={false}
-                                      isAnimationActive={false}
-                                      connectNulls={false}
-                                    />
-                                  );
-                                })}
-                                {historyStatistics.powerSeries.map((series) => (
-                                  <React.Fragment key={`${series.key}-markers`}>
-                                    {renderHistoryStatistics(series, 'power', historyStatistics.powerSeries.length === 1)}
-                                  </React.Fragment>
-                                ))}
-                                {historyZoomSelectionBounds && (
-                                  <>
-                                    <ReferenceArea
-                                      yAxisId="power"
-                                      x1={historyZoomSelectionBounds[0]}
-                                      x2={historyZoomSelectionBounds[1]}
-                                      fill="var(--chart-primary)"
-                                      fillOpacity={0.22}
-                                      stroke="var(--chart-primary-active)"
-                                      strokeOpacity={0.95}
-                                      strokeWidth={2}
-                                    />
-                                    <ReferenceLine x={historyZoomSelectionBounds[0]} yAxisId="power" stroke="var(--chart-primary-active)" strokeOpacity={0.95} strokeWidth={2} />
-                                    <ReferenceLine x={historyZoomSelectionBounds[1]} yAxisId="power" stroke="var(--chart-primary-active)" strokeOpacity={0.95} strokeWidth={2} />
-                                  </>
-                                )}
-                              </ComposedChart>
-                          </ResponsiveContainer>
+                          <HistoryPowerChart
+                            data={historyDisplayData}
+                            timeDomain={historyTimeDomain}
+                            monitorOnlyActive={monitorOnlyActive}
+                            powerMax={historyPowerMax}
+                            visiblePowerSeries={visiblePowerSeries}
+                            historyStatistics={historyStatistics}
+                            renderStatistics={renderHistoryStatistics}
+                            zoomSelectionBounds={historyZoomSelectionBounds}
+                            tooltipContent={renderHistoryTooltip}
+                            onMouseDown={handleHistoryZoomMouseDown}
+                            onMouseMove={handleHistoryZoomMouseMove}
+                            onMouseUp={handleHistoryZoomMouseUp}
+                            onDoubleClick={resetHistoryZoom}
+                          />
                         </div>
                       </div>
                     )}

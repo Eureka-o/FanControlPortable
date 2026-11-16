@@ -539,8 +539,7 @@ const (
 )
 
 var (
-	// 必须用 NewLazyDLL 而不是 NewLazySystemDLL：后者只搜系统目录，随包放在 exe 旁边的
-	// libusb-1.0.dll 会找不到，随后 LazyProc.Call 直接 panic。
+	// NewLazyDLL also searches beside the executable for the bundled libusb.
 	libusbDLL                  = windows.NewLazyDLL("libusb-1.0.dll")
 	libusbInitProc             = libusbDLL.NewProc("libusb_init")
 	libusbExitProc             = libusbDLL.NewProc("libusb_exit")
@@ -581,6 +580,12 @@ func openBlackSharkUSBTransportDevice() (*flyDigiHIDDevice, error) {
 }
 
 func openBlackSharkUSBDevice() (*blackSharkUSBDevice, error) {
+	if err := loadBlackSharkLibUSB(libusbDLL,
+		libusbInitProc, libusbExitProc, libusbOpenProc, libusbCloseProc,
+		libusbClaimInterfaceProc, libusbReleaseInterfaceProc, libusbBulkTransferProc, libusbAutoDetachProc,
+	); err != nil {
+		return nil, err
+	}
 	var ctx uintptr
 	if r, _, err := libusbInitProc.Call(uintptr(unsafe.Pointer(&ctx))); int32(r) != 0 {
 		return nil, fmt.Errorf("libusb init failed: %v", err)
@@ -600,6 +605,18 @@ func openBlackSharkUSBDevice() (*blackSharkUSBDevice, error) {
 		return nil, fmt.Errorf("libusb claim interface %d failed: %d", blackSharkUSBInterface, int32(r))
 	}
 	return &blackSharkUSBDevice{ctx: ctx, handle: handle}, nil
+}
+
+func loadBlackSharkLibUSB(dll *windows.LazyDLL, procs ...*windows.LazyProc) error {
+	if err := dll.Load(); err != nil {
+		return fmt.Errorf("load BlackShark USB library %s: %w", dll.Name, err)
+	}
+	for _, proc := range procs {
+		if err := proc.Find(); err != nil {
+			return fmt.Errorf("load BlackShark USB library %s symbol %q: %w", dll.Name, proc.Name, err)
+		}
+	}
+	return nil
 }
 
 func (d *blackSharkUSBDevice) close() error {

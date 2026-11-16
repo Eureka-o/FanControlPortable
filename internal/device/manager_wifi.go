@@ -23,39 +23,41 @@ const (
 // Manager is the default FanControl device manager.
 // It keeps WiFi and profile-driven serial transports in the normal build.
 type Manager struct {
-	isConnected                   bool
-	productID                     uint16
-	deviceType                    string
-	deviceTransport               string
-	wifiEndpoint                  string
-	wifiHTTPClient                *http.Client
-	wifiProtocol                  string
-	wifiConfig                    bool
-	wifiHeartbeat                 bool
-	wifiHbFailures                int
-	wifiHbStop                    chan struct{}
-	wifiHbDone                    chan struct{}
-	activeProfile                 types.DeviceProfile
-	wifiExecutor                  *deviceprofileexec.WiFiExecutor
-	bleConnector                  deviceprofileexec.BLEConnector
-	bleScanner                    deviceprofileexec.BLEScanner
-	bleExecutor                   *deviceprofileexec.BLEExecutor
-	serialDialer                  deviceprofileexec.SerialDialer
-	serialExecutor                *deviceprofileexec.SerialExecutor
-	flyDigiHID                    *flyDigiHIDDevice
-	flyDigiHIDStop                chan struct{}
-	flyDigiHIDDone                chan struct{}
-	mutex                         sync.RWMutex
-	autoNativeMu                  sync.Mutex
-	operationControl              deviceOperationControl
-	logger                        types.Logger
-	currentFanData                atomic.Pointer[types.FanData]
-	writesBlocked                 atomic.Bool
-	connectionGen                 atomic.Uint64
-	lastAutoBLEScanAt             time.Time // legacy config compatibility; no longer controls candidate cooldowns
-	failedAutoBLEScans            map[string]time.Time
-	blackSharkHostInfoFrame       atomic.Pointer[[]byte]
-	blackSharkHostInfoRefreshStop chan struct{}
+	isConnected                       bool
+	productID                         uint16
+	deviceType                        string
+	deviceTransport                   string
+	wifiEndpoint                      string
+	wifiHTTPClient                    *http.Client
+	wifiProtocol                      string
+	wifiConfig                        bool
+	wifiHeartbeat                     bool
+	wifiHbFailures                    int
+	wifiHbStop                        chan struct{}
+	wifiHbDone                        chan struct{}
+	activeProfile                     types.DeviceProfile
+	wifiExecutor                      *deviceprofileexec.WiFiExecutor
+	bleConnector                      deviceprofileexec.BLEConnector
+	bleScanner                        deviceprofileexec.BLEScanner
+	bleExecutor                       *deviceprofileexec.BLEExecutor
+	serialDialer                      deviceprofileexec.SerialDialer
+	serialExecutor                    *deviceprofileexec.SerialExecutor
+	flyDigiHID                        *flyDigiHIDDevice
+	flyDigiHIDStop                    chan struct{}
+	flyDigiHIDDone                    chan struct{}
+	flyDigiRealtimeRPMActive          atomic.Bool
+	flyDigiRealtimeRPMStateGeneration atomic.Uint64
+	mutex                             sync.RWMutex
+	autoNativeMu                      sync.Mutex
+	operationControl                  deviceOperationControl
+	logger                            types.Logger
+	currentFanData                    atomic.Pointer[types.FanData]
+	writesBlocked                     atomic.Bool
+	connectionGen                     atomic.Uint64
+	lastAutoBLEScanAt                 time.Time // legacy config compatibility; no longer controls candidate cooldowns
+	failedAutoBLEScans                map[string]time.Time
+	blackSharkHostInfoFrame           atomic.Pointer[[]byte]
+	blackSharkHostInfoRefreshStop     chan struct{}
 
 	// ---- 黑鲨（BlackShark）BRB02 相关状态 ----
 	// 设备句柄、读协程与它的两条接收通道、链路状态（承载缓存 / 待切档位 / 等待序号 /
@@ -88,6 +90,10 @@ type Manager struct {
 	// 与 blackSharkLastPushedRPM 同一作废时机（ResetBlackSharkSpeedWriteState）。
 	blackSharkFixedRitualDone    atomic.Bool
 	blackSharkLastFixedWriteNano atomic.Int64
+	// Consecutive FlyDigi HID realtime-write failures. Protected by mutex; a
+	// persistent output failure must eventually enter the normal reconnect path.
+	flyDigiRealtimeWriteFailures  int
+	flyDigiWriteRecoveryScheduled bool
 
 	onFanDataUpdate func(data *types.FanData)
 	onDisconnect    func()
@@ -97,7 +103,7 @@ type Manager struct {
 	debugMutex  sync.Mutex
 	queryMutex  sync.Mutex
 	debugSeq    uint64
-	debugFrames []types.DeviceDebugFrame
+	debugFrames []debugFrameRecord
 }
 
 func NewManager(logger types.Logger) *Manager {
@@ -585,23 +591,24 @@ func (m *Manager) currentDebugSeq() uint64 {
 	return m.debugSeq
 }
 
+// recordDebugFrame 只做一次 raw 拷贝并登记（解析推迟到读取时，见 debugFrameRecord）。
 func (m *Manager) recordDebugFrame(direction, transport string, raw []byte) uint64 {
-	debugFrame := newDeviceDebugFrame(direction, transport, raw)
+	record := newDebugFrameRecord(direction, transport, raw)
 	m.debugMutex.Lock()
 	defer m.debugMutex.Unlock()
-	return appendBoundedDebugFrame(&m.debugSeq, &m.debugFrames, debugFrame)
+	return appendBoundedDebugRecord(&m.debugSeq, &m.debugFrames, record)
 }
 
 func (m *Manager) debugFramesAfter(seq uint64) []types.DeviceDebugFrame {
 	m.debugMutex.Lock()
 	defer m.debugMutex.Unlock()
-	return debugFramesAfterSeq(m.debugFrames, seq)
+	return materializeDebugFramesAfter(m.debugFrames, seq)
 }
 
 func (m *Manager) GetDebugFrames() []types.DeviceDebugFrame {
 	m.debugMutex.Lock()
 	defer m.debugMutex.Unlock()
-	return cloneDebugFrames(m.debugFrames)
+	return materializeDebugFrames(m.debugFrames)
 }
 
 func (m *Manager) SendDebugCommand(input string, waitMs int) (types.DeviceDebugCommandResult, error) {

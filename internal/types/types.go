@@ -1111,6 +1111,8 @@ func GetDefaultFanCurve() []FanCurvePoint {
 
 func GetDefaultRPMFanCurve() []FanCurvePoint {
 	return []FanCurvePoint{
+		{Temperature: 20, RPM: 1000},
+		{Temperature: 25, RPM: 1000},
 		{Temperature: 30, RPM: 1000},
 		{Temperature: 35, RPM: 1200},
 		{Temperature: 40, RPM: 1400},

@@ -26,6 +26,12 @@ export const clampHistoryRetentionHours = (hours: number | null | undefined) => 
   return Math.min(MAX_HISTORY_RETENTION_HOURS, numeric);
 };
 
+export const resolveHistoryRetentionHours = (reportedHours: number | null | undefined, fallbackHours: number) => (
+  Number.isFinite(Number(reportedHours)) && Number(reportedHours) > 0
+    ? clampHistoryRetentionHours(reportedHours)
+    : clampHistoryRetentionHours(fallbackHours)
+);
+
 export const historyRetentionLimit = (hours: number) => (
   clampHistoryRetentionHours(hours) * Math.round((60 * 60 * 1000) / HISTORY_SAMPLE_INTERVAL_MS)
 );
@@ -134,6 +140,68 @@ export const normalizeHistoryPoints = (points: TemperatureHistoryPoint[] | undef
   return trimHistoryPoints(points, CORE_HISTORY_RETENTION_MS, CORE_HISTORY_LIMIT);
 };
 
+// Appends run on the telemetry hot path (core history updates arrive every ~5s,
+// session points on every temperature event), so the in-order path in
+// appendHistoryPoint must not pay trimHistoryPoints' O(n) map/filter/sort per
+// append. Skipping it is safe because of the writer inventory for these arrays
+// (all in app-store.ts, the only writers):
+//   - initial state: []
+//   - loadTemperatureHistory hydration: trimHistoryPoints (normalize + sort)
+//   - appendSessionHistoryPoint / onTemperatureHistoryUpdate:
+//     appendSampledHistoryPoint -> appendHistoryPoint, which normalizes the new
+//     point and either pushes a strictly newer timestamp or replaces the last
+//     point (same timestamp) in place
+// So stored arrays are always normalized and sorted ascending, and
+// normalizeHistoryPoint is idempotent on them (finite non-negative numbers,
+// timestamp already normalized to milliseconds), meaning only the new point
+// needs normalizing (done in appendHistoryPoint) and re-sorting stored points
+// is redundant. Timestamps come from the backend clock (updateTime with a
+// Date.now() fallback), so a NEW point can still be older than the stored last
+// point (clock step across sleep/resume, core restart, or a live history event
+// racing the hydration snapshot); that single possible disorder is detected
+// cheaply by comparing the new point against the last one and falls back to the
+// full normalize+sort path, which also repairs the array. Interior disorder is
+// impossible because no other code path writes these arrays.
+const trimPreparedHistoryPoints = (
+  points: TemperatureHistoryPoint[],
+  normalized: TemperatureHistoryPoint,
+  replacesLast: boolean,
+  retentionMs: number,
+  limit: number,
+) => {
+  // `normalized.timestamp` is the newest timestamp of the merged array: an
+  // in-order append is strictly newer than the previous last point, and a
+  // same-timestamp replacement keeps the previous last point's position.
+  const cutoffTimestamp = Math.max(0, normalized.timestamp - retentionMs);
+
+  // Binary search for the first point inside the retention window; on a sorted
+  // array this equals trimHistoryPoints' `filter(timestamp >= cutoffTimestamp)`.
+  let low = 0;
+  let high = points.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (points[mid].timestamp < cutoffTimestamp) low = mid + 1;
+    else high = mid;
+  }
+
+  const retained = points.slice(low);
+  // For any retentionMs >= 0 (every real caller) the newest point satisfies
+  // normalized.timestamp >= cutoffTimestamp, so the guards below always hold;
+  // they only keep degenerate retentionMs values from writing past the end.
+  if (replacesLast) {
+    if (retained.length > 0 && normalized.timestamp >= cutoffTimestamp) {
+      retained[retained.length - 1] = normalized;
+    }
+  } else if (normalized.timestamp >= cutoffTimestamp) {
+    retained.push(normalized);
+  }
+
+  // Same as trimHistoryPoints' trailing `.slice(-limit)` for every limit value
+  // (including the `slice(-0)` keeps-everything quirk); `retained` is always a
+  // fresh array, so returning it directly still never aliases the input.
+  return retained.length > limit ? retained.slice(-limit) : retained;
+};
+
 export const appendHistoryPoint = (
   points: TemperatureHistoryPoint[],
   point: TemperatureHistoryPoint | null,
@@ -142,21 +210,23 @@ export const appendHistoryPoint = (
   const normalized = normalizeHistoryPoint(point);
   if (!normalized) return points;
 
-  const next = [...points];
-  const last = next[next.length - 1];
+  const last = points[points.length - 1];
 
   if (last && last.timestamp === normalized.timestamp) {
     if (historyPointEquals(last, normalized)) {
       return points;
     }
-    next[next.length - 1] = normalized;
-  } else if (last && normalized.timestamp < last.timestamp) {
-    return normalizeHistoryPoints([...next, normalized]);
-  } else {
-    next.push(normalized);
+    return trimPreparedHistoryPoints(points, normalized, true, options?.retentionMs ?? CORE_HISTORY_RETENTION_MS, options?.limit ?? HISTORY_LIMIT);
   }
 
-  return trimHistoryPoints(next, options?.retentionMs ?? CORE_HISTORY_RETENTION_MS, options?.limit ?? HISTORY_LIMIT);
+  if (last && normalized.timestamp < last.timestamp) {
+    // Out-of-order fallback (see the writer inventory above): the only way
+    // disorder can reach these arrays, so it is detected with a single
+    // comparison and only then pays for the full normalize+sort pass.
+    return normalizeHistoryPoints([...points, normalized]);
+  }
+
+  return trimPreparedHistoryPoints(points, normalized, false, options?.retentionMs ?? CORE_HISTORY_RETENTION_MS, options?.limit ?? HISTORY_LIMIT);
 };
 
 export const appendSampledHistoryPoint = (
