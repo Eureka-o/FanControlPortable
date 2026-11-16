@@ -1,6 +1,7 @@
 'use client';
 
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { motion } from 'framer-motion';
 import {
   AlertTriangle,
@@ -41,7 +42,8 @@ import { ToggleSwitch, Button } from './ui/index';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import clsx from 'clsx';
 import { toast } from 'sonner';
-import FanCurve from './FanCurve';
+
+const FanCurve = dynamic(() => import('./FanCurve'), { ssr: false, loading: () => null });
 
 interface DeviceStatusProps {
   isConnected: boolean;
@@ -244,6 +246,14 @@ const MetricHeader = memo(function MetricHeader({
   );
 });
 
+const CPU_METRIC_ICON = <Cpu className="h-4 w-4" />;
+const GPU_METRIC_ICON = <Gpu className="h-4 w-4" />;
+const POWER_TREND_WIDTH = 260;
+const POWER_TREND_HEIGHT = 68;
+const POWER_TREND_PAD = { left: 4, right: 4, top: 6, bottom: 6 } as const;
+const POWER_TREND_PLOT_WIDTH = POWER_TREND_WIDTH - POWER_TREND_PAD.left - POWER_TREND_PAD.right;
+const POWER_TREND_PLOT_HEIGHT = POWER_TREND_HEIGHT - POWER_TREND_PAD.top - POWER_TREND_PAD.bottom;
+
 const PowerTrendChart = memo(function PowerTrendChart({
   points,
   series,
@@ -258,11 +268,11 @@ const PowerTrendChart = memo(function PowerTrendChart({
   available?: boolean;
 }) {
   const { t } = useTranslation();
-  const width = 260;
-  const height = 68;
-  const pad = { left: 4, right: 4, top: 6, bottom: 6 };
-  const plotWidth = width - pad.left - pad.right;
-  const plotHeight = height - pad.top - pad.bottom;
+  const width = POWER_TREND_WIDTH;
+  const height = POWER_TREND_HEIGHT;
+  const pad = POWER_TREND_PAD;
+  const plotWidth = POWER_TREND_PLOT_WIDTH;
+  const plotHeight = POWER_TREND_PLOT_HEIGHT;
   const chart = useMemo(() => {
     if (!available) {
       return { path: '', area: '', current: null, min: 0, max: 0, width, height, pad, plotWidth, plotHeight };
@@ -852,14 +862,24 @@ export default function DeviceStatus({
   onConnect,
   onDisconnect,
   onConfigChange,
-  onOpenCurveEditor,
-  onOpenHistoryDetails,
+  onOpenCurveEditor: onOpenCurveEditorProp,
+  onOpenHistoryDetails: onOpenHistoryDetailsProp,
 	onExportDiagnostics,
 	diagnosticsExporting = false,
 	monitorOnlyActive = false,
 	onEnableMonitorOnly,
 }: DeviceStatusProps) {
   const { t } = useTranslation();
+  const onOpenCurveEditorRef = useRef(onOpenCurveEditorProp);
+  onOpenCurveEditorRef.current = onOpenCurveEditorProp;
+  const onOpenHistoryDetailsRef = useRef(onOpenHistoryDetailsProp);
+  onOpenHistoryDetailsRef.current = onOpenHistoryDetailsProp;
+  const onOpenCurveEditor = useCallback(() => {
+    onOpenCurveEditorRef.current();
+  }, []);
+  const onOpenHistoryDetails = useCallback(() => {
+    onOpenHistoryDetailsRef.current();
+  }, []);
   const [bridgeWarningReady, setBridgeWarningReady] = useState(false);
   const [activeCurveProfileName, setActiveCurveProfileName] = useState('');
   const [activeCurveProfileCurve, setActiveCurveProfileCurve] = useState<types.FanCurvePoint[] | null>(null);
@@ -1007,6 +1027,10 @@ export default function DeviceStatus({
     ? (config.autoControl ? t('controlPanel.overview.workModes.auto') : t('controlPanel.overview.workModes.manual'))
     : translatedWorkMode;
   const fanSpinDuration = getFanSpinDuration(currentFanSpeed, displayFanSpeedRange.min, displayFanSpeedRange.max);
+  const fanHeaderIcon = useMemo(
+    () => <SpinningFanIcon duration={fanSpinDuration} className="h-4 w-4" />,
+    [fanSpinDuration],
+  );
   // 温度就绪判定：后端首次推送（updateTime > 0）且该路传感器读到非零值。
   // 单独按通路判 — 只有 GPU 没装独显时仍会保持 0，但 CPU 已就绪则只显示 GPU 占位。
   const tempPushed = (temperature?.updateTime ?? 0) > 0;
@@ -1144,7 +1168,7 @@ export default function DeviceStatus({
           className="grid grid-cols-1 items-stretch gap-3 md:grid-cols-2"
         >
           <MonitorInfoCard
-            icon={<Cpu className="h-4 w-4" />}
+            icon={CPU_METRIC_ICON}
             label={t('deviceStatus.monitorOnly.cpuInfo')}
             themeCard="cpu-temperature"
             model={temperature?.cpuModel || t('deviceStatus.device.unknown')}
@@ -1156,7 +1180,7 @@ export default function DeviceStatus({
             powerSeries="cpu"
           />
           <MonitorInfoCard
-            icon={<Gpu className="h-4 w-4" />}
+            icon={GPU_METRIC_ICON}
             label={t('deviceStatus.monitorOnly.gpuInfo')}
             themeCard="gpu-temperature"
             model={temperature?.gpuModel || t('deviceStatus.device.unknown')}
@@ -1180,7 +1204,7 @@ export default function DeviceStatus({
           {/* CPU */}
           <div data-theme-card="cpu-temperature" className="glacier-metric-card flex h-full min-h-[148px] flex-col items-center rounded-xl border border-border bg-card px-4 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[158px]">
             <MetricHeader
-              icon={<Cpu className="h-4 w-4" />}
+              icon={CPU_METRIC_ICON}
               label={cpuMetricLabel}
             />
             <TempGaugeDisplay temp={cpuDisplayTemp} ready={cpuDisplayReady} />
@@ -1189,7 +1213,7 @@ export default function DeviceStatus({
           {/* GPU */}
           <div data-theme-card="gpu-temperature" className="glacier-metric-card flex h-full min-h-[148px] flex-col items-center rounded-xl border border-border bg-card px-4 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[158px]">
             <MetricHeader
-              icon={<Gpu className="h-4 w-4" />}
+              icon={GPU_METRIC_ICON}
               label={t('deviceStatus.metrics.gpuTemperature')}
             />
             <TempGaugeDisplay temp={temperature?.gpuTemp} ready={gpuReady} idleLabel={gpuNotPolled ? t('deviceStatus.tempGauge.notRead') : undefined} />
@@ -1198,9 +1222,7 @@ export default function DeviceStatus({
           {/* Fan */}
           <div data-theme-card="fan-speed" className="glacier-metric-card flex h-full min-h-[148px] flex-col items-center rounded-xl border border-border bg-card px-4 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[158px]">
             <MetricHeader
-              icon={(
-                <SpinningFanIcon duration={fanSpinDuration} className="h-4 w-4" />
-              )}
+              icon={fanHeaderIcon}
               label={t('deviceStatus.metrics.fanRpm')}
             />
             <FanSpeedDisplay

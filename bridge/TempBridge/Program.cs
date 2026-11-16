@@ -227,6 +227,13 @@ namespace FanControl.TempBridge
 
     public class UpdateVisitor : IVisitor
     {
+        private readonly bool includeGpu;
+
+        public UpdateVisitor(bool includeGpu = true)
+        {
+            this.includeGpu = includeGpu;
+        }
+
         public void VisitComputer(IComputer computer)
         {
             computer.Traverse(this);
@@ -234,6 +241,11 @@ namespace FanControl.TempBridge
 
         public void VisitHardware(IHardware hardware)
         {
+            if (!includeGpu && Program.IsGpuHardware(hardware.HardwareType))
+            {
+                return;
+            }
+
             hardware.Update();
             foreach (IHardware subHardware in hardware.SubHardware)
                 subHardware.Accept(this);
@@ -586,7 +598,7 @@ namespace FanControl.TempBridge
         {
             InitializeHardwareMonitor(includeGpu);
 
-            bool initialized = intelMsrProbeAttempted ||
+            bool initialized = intelMsrFallback != null ||
                 (computer != null && string.IsNullOrEmpty(lastHardwareMonitorError));
             if (initialized)
             {
@@ -643,7 +655,7 @@ namespace FanControl.TempBridge
                     currentGpuMonitoringEnabled = includeGpu;
 
                     computer.Open();
-                    computer.Accept(new UpdateVisitor());
+                    computer.Accept(new UpdateVisitor(includeGpu));
                     sensorTopology = BuildSensorTopology(computer, includeGpu);
 
                     bool hasAnyTemperature = HasAnyTemperatureSensor(computer);
@@ -1361,7 +1373,20 @@ namespace FanControl.TempBridge
             if (SelectPowerWatts(unrelated, "auto", new[] { "GPU Power" }, true) != 16.8)
                 throw new InvalidOperationException("GPU auto selection must retain its compatibility fallback");
 
+            if (!IsGpuHardware(HardwareType.GpuNvidia) ||
+                !IsGpuHardware(HardwareType.GpuAmd) ||
+                !IsGpuHardware(HardwareType.GpuIntel) ||
+                IsGpuHardware(HardwareType.Cpu))
+                throw new InvalidOperationException("GPU hardware classification self-test failed");
+
             Console.WriteLine("Power sensor selection self-test OK");
+        }
+
+        internal static bool IsGpuHardware(HardwareType hardwareType)
+        {
+            return hardwareType == HardwareType.GpuNvidia ||
+                   hardwareType == HardwareType.GpuAmd ||
+                   hardwareType == HardwareType.GpuIntel;
         }
 
         static void ReinitializeHardwareMonitor()
@@ -1385,14 +1410,41 @@ namespace FanControl.TempBridge
 
         static void EnsureHardwareMonitorGpuMode(bool includeGpu)
         {
-            if ((computer != null || intelMsrProbeAttempted) && currentGpuMonitoringEnabled == includeGpu)
+            if (computer != null)
             {
-                return;
-            }
+                if (!includeGpu || currentGpuMonitoringEnabled)
+                {
+                    return;
+                }
 
-            if (computer == null && !intelMsrProbeAttempted && DateTime.UtcNow < nextHardwareMonitorInitUtc)
+                var enableStopwatch = Stopwatch.StartNew();
+                try
+                {
+                    computer.IsGpuEnabled = true;
+                    currentGpuMonitoringEnabled = true;
+                    sensorTopology = null;
+                    if (enableStopwatch.ElapsedMilliseconds >= 250)
+                    {
+                        LogInitProgress(string.Format("LibreHardwareMonitor GPU mode enabled in {0} ms", enableStopwatch.ElapsedMilliseconds));
+                    }
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    LogInitProgress("LibreHardwareMonitor in-place GPU enable failed; falling back to reinit: " + ex.Message);
+                }
+            }
+            else
             {
-                return;
+                if (intelMsrFallback != null && (!includeGpu || currentGpuMonitoringEnabled))
+                {
+                    return;
+                }
+
+                if (DateTime.UtcNow < nextHardwareMonitorInitUtc)
+                {
+                    return;
+                }
             }
 
             var stopwatch = Stopwatch.StartNew();
@@ -2066,11 +2118,11 @@ namespace FanControl.TempBridge
 
                 if (computer != null)
                 {
-                    computer.Accept(new UpdateVisitor());
+                    computer.Accept(new UpdateVisitor(shouldPollGpu));
                     string topologySignature = BuildHardwareTopologySignature(computer);
                     if (sensorTopology == null || !string.Equals(sensorTopology.Signature, topologySignature, StringComparison.Ordinal))
                     {
-                        sensorTopology = BuildSensorTopology(computer, shouldPollGpu, topologySignature);
+                        sensorTopology = BuildSensorTopology(computer, currentGpuMonitoringEnabled, topologySignature);
                     }
 
                     if (sensorTopology != null)
@@ -2078,20 +2130,23 @@ namespace FanControl.TempBridge
                         cpuModel = sensorTopology.CpuModel;
                         cpuSensors = ReadTemperatureSensors(sensorTopology.CpuSensors);
                         cpuPowerSensors = ReadPowerSensors(sensorTopology.CpuPowerSensors);
-                        foreach (GpuSensorTopology gpu in sensorTopology.Gpus)
+                        if (shouldPollGpu)
                         {
-                            var sensors = ReadTemperatureSensors(gpu.Sensors);
-                            var powerSensors = ReadPowerSensors(gpu.PowerSensors);
-                            gpuCandidates.Add(new GpuCandidate
+                            foreach (GpuSensorTopology gpu in sensorTopology.Gpus)
                             {
-                                Key = gpu.Key,
-                                Model = gpu.Model,
-                                Vendor = gpu.Vendor,
-                                HardwareType = gpu.HardwareType,
-                                Sensors = sensors,
-                                PowerSensors = powerSensors,
-                                PowerWatts = SelectPowerWatts(powerSensors, selection.GpuPowerSensor, new[] { "GPU Power", "Total", "Package", "Board", "Chip" }, true),
-                            });
+                                var sensors = ReadTemperatureSensors(gpu.Sensors);
+                                var powerSensors = ReadPowerSensors(gpu.PowerSensors);
+                                gpuCandidates.Add(new GpuCandidate
+                                {
+                                    Key = gpu.Key,
+                                    Model = gpu.Model,
+                                    Vendor = gpu.Vendor,
+                                    HardwareType = gpu.HardwareType,
+                                    Sensors = sensors,
+                                    PowerSensors = powerSensors,
+                                    PowerWatts = SelectPowerWatts(powerSensors, selection.GpuPowerSensor, new[] { "GPU Power", "Total", "Package", "Board", "Chip" }, true),
+                                });
+                            }
                         }
                     }
                 }
@@ -2164,7 +2219,10 @@ namespace FanControl.TempBridge
             cpuPowerWatts = SelectPowerWatts(cpuPowerSensors, selection.CpuPowerSensor, new[] { "CPU Package", "Package Power", "CPU PPT", "PPT", "Package" }, false);
 
             var selectedGpu = SelectGpuCandidate(gpuCandidates, selection.GpuDevice, selection.GpuSensor, selection.GpuPowerSensor);
-            ReconcileHardwareProfileWithSensorsOnce(gpuCandidates);
+            if (shouldPollGpu && gpuCandidates.Count > 0)
+            {
+                ReconcileHardwareProfileWithSensorsOnce(gpuCandidates);
+            }
             var gpuSensors = selectedGpu != null ? selectedGpu.Sensors : new System.Collections.Generic.List<TemperatureSensor>();
             var gpuPowerSensors = selectedGpu != null ? selectedGpu.PowerSensors : new System.Collections.Generic.List<PowerSensor>();
             gpuModel = selectedGpu != null ? selectedGpu.Model : string.Empty;

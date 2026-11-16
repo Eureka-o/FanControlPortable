@@ -551,3 +551,22 @@ func TestTemperatureSafetyFallbackTargetUsesCurveMaximumAndDeviceLimit(t *testin
 		t.Fatalf("percent safety target = %d, want 1000 ticks", got)
 	}
 }
+
+func TestBridgeRestartCooldown(t *testing.T) {
+	tests := []struct {
+		attempts int
+		want     time.Duration
+	}{
+		{attempts: 0, want: 10 * time.Second},
+		{attempts: 1, want: 20 * time.Second},
+		{attempts: 2, want: 40 * time.Second},
+		{attempts: 3, want: 60 * time.Second},
+		{attempts: 4, want: 60 * time.Second},
+	}
+
+	for _, tt := range tests {
+		if got := bridgeRestartCooldown(tt.attempts); got != tt.want {
+			t.Fatalf("bridgeRestartCooldown(%d) = %s, want %s", tt.attempts, got, tt.want)
+		}
+	}
+}

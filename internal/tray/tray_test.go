@@ -125,3 +125,52 @@ func TestTrayCurveSignatureTracksOrderAndLabels(t *testing.T) {
 		t.Fatal("curve signature should be stable for identical options")
 	}
 }
+
+func TestTrayStatusSnapshotKeyDetectsDisplayChanges(t *testing.T) {
+	base := Status{
+		Connected:            true,
+		DeviceName:           " FlyDigi BS3 Pro ",
+		CPUTemp:              60,
+		GPUTemp:              52,
+		CPUPowerWatts:        9.12,
+		GPUPowerWatts:        25.3,
+		GPUReadState:         types.GPUReadStateActive,
+		CurrentRPM:           1400,
+		SpeedUnit:            "RPM",
+		AutoControlState:     true,
+		ActiveCurveProfileID: "quiet",
+		CurveProfiles:        []CurveOption{{ID: "quiet", Name: "Quiet"}},
+	}
+	sig := trayCurveSignature(base.CurveProfiles)
+	baseKey := makeTrayStatusSnapshotKey(base, sig)
+
+	// Sub-display-precision power jitter (<0.05W below 10W, <0.5W above 10W) and
+	// whitespace/case differences must keep the same key.
+	sameDisplay := base
+	sameDisplay.DeviceName = "FlyDigi BS3 Pro"
+	sameDisplay.CPUPowerWatts = 9.14
+	sameDisplay.GPUPowerWatts = 25.1
+	sameDisplay.SpeedUnit = types.FanSpeedUnitRPM
+	if got := makeTrayStatusSnapshotKey(sameDisplay, sig); got != baseKey {
+		t.Fatalf("equivalent display state produced different key: %+v vs %+v", got, baseKey)
+	}
+
+	// Display-visible change in rounded wattage or temperature must invalidate the key.
+	powerChanged := base
+	powerChanged.CPUPowerWatts = 9.16
+	if got := makeTrayStatusSnapshotKey(powerChanged, sig); got == baseKey {
+		t.Fatal("rounded wattage change did not change snapshot key")
+	}
+
+	// Non-polled GPU ignores stale GPU numbers.
+	notPolledA := base
+	notPolledA.GPUReadState = types.GPUReadStateNotPolled
+	notPolledA.GPUTemp = 48
+	notPolledA.GPUPowerWatts = 12
+	notPolledB := notPolledA
+	notPolledB.GPUTemp = 55
+	notPolledB.GPUPowerWatts = 20
+	if makeTrayStatusSnapshotKey(notPolledA, sig) != makeTrayStatusSnapshotKey(notPolledB, sig) {
+		t.Fatal("notPolled GPU state should ignore stale GPU temperature/power differences")
+	}
+}
