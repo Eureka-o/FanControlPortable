@@ -1,7 +1,6 @@
 package temperature
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -9,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Eureka-o/FanControlPortable/internal/types"
@@ -24,6 +24,9 @@ const (
 	historyBinaryVersionV2       uint16 = 2
 	historyBinaryVersion         uint16 = historyBinaryVersionV2
 	historyEnabledFlag           uint8  = 1
+	historyHeaderSize                   = len(historyBinaryMagic) + 20
+	historyV1PointSize                  = 20
+	historyV2PointSize                  = 36
 
 	dirtyFlushThreshold = 60
 	dirtyFlushInterval  = 60 * time.Second
@@ -41,9 +44,14 @@ type HistoryRecorder struct {
 	filled         bool
 	lastSampleAt   int64
 
-	dirtyCount  int
-	lastFlushAt time.Time
-	flushMutex  sync.Mutex // 串行化磁盘写入，与 mutex 互不持有
+	dirtyCount     int
+	lastFlushAt    time.Time
+	flushMutex     sync.Mutex // 串行化磁盘写入，与 mutex 互不持有
+	flushSeq       atomic.Uint64
+	latestFlushSeq atomic.Uint64
+	asyncMu        sync.Mutex
+	asyncCount     int
+	asyncIdle      chan struct{}
 }
 
 func NewHistoryRecorder(filePath string, capacity int, sampleInterval time.Duration, logger types.Logger) *HistoryRecorder {
@@ -75,11 +83,14 @@ func (r *HistoryRecorder) SetEnabled(enabled bool) error {
 		r.clearLocked()
 	}
 	payload, err := r.serializeLocked()
+	seq := r.flushSeq.Add(1)
 	r.mutex.Unlock()
 	if err != nil {
 		return err
 	}
-	return r.writeFile(payload)
+	writeErr := r.writeFileSeq(seq, payload)
+	r.waitAsyncFlushes()
+	return writeErr
 }
 
 func (r *HistoryRecorder) IsEnabled() bool {
@@ -122,27 +133,35 @@ func (r *HistoryRecorder) SetRetentionHours(hours int) error {
 	r.filled = false
 	r.applyLoadedPointsLocked(ordered)
 	payload, err := r.serializeLocked()
+	seq := r.flushSeq.Add(1)
 	r.mutex.Unlock()
 	if err != nil {
 		return err
 	}
-	return r.writeFile(payload)
+	writeErr := r.writeFileSeq(seq, payload)
+	r.waitAsyncFlushes()
+	return writeErr
 }
 
 func (r *HistoryRecorder) Flush() error {
 	r.mutex.Lock()
 	if r.dirtyCount == 0 {
 		r.mutex.Unlock()
+		r.waitAsyncFlushes()
 		return nil
 	}
 	payload, err := r.serializeLocked()
+	seq := r.flushSeq.Add(1)
 	r.dirtyCount = 0
 	r.lastFlushAt = time.Now()
 	r.mutex.Unlock()
 	if err != nil {
+		r.waitAsyncFlushes()
 		return err
 	}
-	return r.writeFile(payload)
+	writeErr := r.writeFileSeq(seq, payload)
+	r.waitAsyncFlushes()
+	return writeErr
 }
 
 func (r *HistoryRecorder) Add(temp types.TemperatureData, fanData *types.FanData) (types.TemperatureHistoryPoint, bool) {
@@ -177,6 +196,7 @@ func (r *HistoryRecorder) Add(temp types.TemperatureData, fanData *types.FanData
 	}
 
 	var flushPayload []byte
+	var flushSeq uint64
 
 	r.mutex.Lock()
 	if !r.enabled {
@@ -220,6 +240,7 @@ func (r *HistoryRecorder) Add(temp types.TemperatureData, fanData *types.FanData
 	if r.dirtyCount >= dirtyFlushThreshold || now.Sub(r.lastFlushAt) >= dirtyFlushInterval {
 		if payload, err := r.serializeLocked(); err == nil {
 			flushPayload = payload
+			flushSeq = r.flushSeq.Add(1)
 			r.dirtyCount = 0
 			r.lastFlushAt = now
 		} else {
@@ -229,9 +250,7 @@ func (r *HistoryRecorder) Add(temp types.TemperatureData, fanData *types.FanData
 	r.mutex.Unlock()
 
 	if flushPayload != nil {
-		if err := r.writeFile(flushPayload); err != nil {
-			r.logError("保存温度历史失败: %v", err)
-		}
+		r.startAsyncFlush(flushSeq, flushPayload)
 	}
 	return point, true
 }
@@ -279,72 +298,51 @@ func (r *HistoryRecorder) loadBinaryFile(path string) error {
 }
 
 func (r *HistoryRecorder) loadBinaryData(data []byte) error {
-	reader := bytes.NewReader(data)
-	magic := make([]byte, len(historyBinaryMagic))
-	if _, err := io.ReadFull(reader, magic); err != nil {
-		return err
+	if len(data) < len(historyBinaryMagic) {
+		return io.ErrUnexpectedEOF
 	}
-	if string(magic) != historyBinaryMagic {
+	if string(data[:len(historyBinaryMagic)]) != historyBinaryMagic {
+		return io.ErrUnexpectedEOF
+	}
+	if len(data) < historyHeaderSize {
 		return io.ErrUnexpectedEOF
 	}
 
-	var version uint16
-	if err := binary.Read(reader, binary.LittleEndian, &version); err != nil {
-		return err
-	}
+	off := len(historyBinaryMagic)
+	version := binary.LittleEndian.Uint16(data[off : off+2])
 	if version != historyBinaryVersionV1 && version != historyBinaryVersionV2 {
 		return fmt.Errorf("unsupported history version: %d", version)
 	}
 
-	var flags uint8
-	var reserved uint8
-	var sampleIntervalSeconds uint32
-	var count uint32
-	var updatedAt int64
-	if err := binary.Read(reader, binary.LittleEndian, &flags); err != nil {
-		return err
+	flags := data[off+2]
+	_ = data[off+3]
+	sampleIntervalSeconds := binary.LittleEndian.Uint32(data[off+4 : off+8])
+	count := binary.LittleEndian.Uint32(data[off+8 : off+12])
+	_ = binary.LittleEndian.Uint64(data[off+12 : off+20])
+
+	pointSize := historyV1PointSize
+	if version >= historyBinaryVersionV2 {
+		pointSize = historyV2PointSize
 	}
-	if err := binary.Read(reader, binary.LittleEndian, &reserved); err != nil {
-		return err
-	}
-	if err := binary.Read(reader, binary.LittleEndian, &sampleIntervalSeconds); err != nil {
-		return err
-	}
-	if err := binary.Read(reader, binary.LittleEndian, &count); err != nil {
-		return err
-	}
-	if err := binary.Read(reader, binary.LittleEndian, &updatedAt); err != nil {
-		return err
+	remaining := len(data) - historyHeaderSize
+	if uint64(count)*uint64(pointSize) > uint64(remaining) {
+		return io.ErrUnexpectedEOF
 	}
 
 	points := make([]types.TemperatureHistoryPoint, 0, count)
+	pos := historyHeaderSize
 	for i := uint32(0); i < count; i++ {
-		var timestamp int64
-		var cpuTemp int32
-		var gpuTemp int32
-		var fanRPM int32
+		timestamp := int64(binary.LittleEndian.Uint64(data[pos : pos+8]))
+		cpuTemp := int32(binary.LittleEndian.Uint32(data[pos+8 : pos+12]))
+		gpuTemp := int32(binary.LittleEndian.Uint32(data[pos+12 : pos+16]))
+		fanRPM := int32(binary.LittleEndian.Uint32(data[pos+16 : pos+20]))
 		var cpuPowerWatts float64
 		var gpuPowerWatts float64
-		if err := binary.Read(reader, binary.LittleEndian, &timestamp); err != nil {
-			return err
-		}
-		if err := binary.Read(reader, binary.LittleEndian, &cpuTemp); err != nil {
-			return err
-		}
-		if err := binary.Read(reader, binary.LittleEndian, &gpuTemp); err != nil {
-			return err
-		}
-		if err := binary.Read(reader, binary.LittleEndian, &fanRPM); err != nil {
-			return err
-		}
 		if version >= historyBinaryVersionV2 {
-			if err := binary.Read(reader, binary.LittleEndian, &cpuPowerWatts); err != nil {
-				return err
-			}
-			if err := binary.Read(reader, binary.LittleEndian, &gpuPowerWatts); err != nil {
-				return err
-			}
+			cpuPowerWatts = math.Float64frombits(binary.LittleEndian.Uint64(data[pos+20 : pos+28]))
+			gpuPowerWatts = math.Float64frombits(binary.LittleEndian.Uint64(data[pos+28 : pos+36]))
 		}
+		pos += pointSize
 		points = append(points, types.TemperatureHistoryPoint{
 			Timestamp:     normalizeTimestampMillis(timestamp),
 			CPUTemp:       int(cpuTemp),
@@ -471,6 +469,56 @@ func normalizePowerWatts(value float64) float64 {
 	return value
 }
 
+func (r *HistoryRecorder) startAsyncFlush(seq uint64, payload []byte) {
+	r.asyncMu.Lock()
+	if r.asyncIdle == nil {
+		r.asyncIdle = make(chan struct{})
+	}
+	r.asyncCount++
+	r.asyncMu.Unlock()
+
+	go func() {
+		defer func() {
+			r.asyncMu.Lock()
+			r.asyncCount--
+			if r.asyncCount == 0 && r.asyncIdle != nil {
+				close(r.asyncIdle)
+				r.asyncIdle = nil
+			}
+			r.asyncMu.Unlock()
+		}()
+		if err := r.writeFileSeq(seq, payload); err != nil {
+			r.logError("保存温度历史失败: %v", err)
+		}
+	}()
+}
+
+func (r *HistoryRecorder) waitAsyncFlushes() {
+	for {
+		r.asyncMu.Lock()
+		idle := r.asyncIdle
+		r.asyncMu.Unlock()
+		if idle == nil {
+			return
+		}
+		<-idle
+	}
+}
+
+func (r *HistoryRecorder) writeFileSeq(seq uint64, payload []byte) error {
+	if payload == nil || r.filePath == "" {
+		return nil
+	}
+	r.flushMutex.Lock()
+	defer r.flushMutex.Unlock()
+
+	if seq < r.latestFlushSeq.Load() {
+		return nil
+	}
+	r.latestFlushSeq.Store(seq)
+	return r.writeFileLocked(payload)
+}
+
 // writeFile 在锁外执行磁盘 IO。flushMutex 串行化多次并发 Flush 调用。
 func (r *HistoryRecorder) writeFile(payload []byte) error {
 	if payload == nil || r.filePath == "" {
@@ -478,7 +526,10 @@ func (r *HistoryRecorder) writeFile(payload []byte) error {
 	}
 	r.flushMutex.Lock()
 	defer r.flushMutex.Unlock()
+	return r.writeFileLocked(payload)
+}
 
+func (r *HistoryRecorder) writeFileLocked(payload []byte) error {
 	if err := os.MkdirAll(filepath.Dir(r.filePath), 0755); err != nil {
 		return err
 	}

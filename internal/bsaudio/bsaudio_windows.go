@@ -169,6 +169,8 @@ func (s *Sampler) capture(ready chan<- error) {
 	// 到这里才算真的采起来了，可以放行调用方。
 	ready <- nil
 
+	const capturePollInterval = 10 * time.Millisecond
+
 	// 复用的暂存区：采集循环跑得比"推送循环"快得多，避免每块都分配。
 	mono := make([]float64, 0, WindowSize*4)
 	re := make([]float64, WindowSize)
@@ -185,11 +187,11 @@ func (s *Sampler) capture(ready chan<- error) {
 		var frames, pflags uint32
 		var devPos, qpcPos uint64
 		if err := acc.GetBuffer(&data, &frames, &pflags, &devPos, &qpcPos); err != nil {
-			time.Sleep(2 * time.Millisecond)
+			time.Sleep(capturePollInterval)
 			continue
 		}
 		if frames == 0 {
-			time.Sleep(2 * time.Millisecond)
+			time.Sleep(capturePollInterval)
 			continue
 		}
 
@@ -204,7 +206,7 @@ func (s *Sampler) capture(ready chan<- error) {
 			// 静音块（或太短的块）：不出新结果，但必须把数据取走。
 			_ = acc.ReleaseBuffer(frames)
 			s.noteBlock(0, false)
-			time.Sleep(2 * time.Millisecond)
+			time.Sleep(capturePollInterval)
 			continue
 		}
 
@@ -225,6 +227,6 @@ func (s *Sampler) capture(ready chan<- error) {
 		}
 
 		_ = acc.ReleaseBuffer(frames)
-		time.Sleep(2 * time.Millisecond)
+		time.Sleep(capturePollInterval)
 	}
 }

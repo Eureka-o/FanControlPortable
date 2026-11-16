@@ -3,6 +3,8 @@ package temperature
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -238,5 +240,54 @@ func TestNormalizePowerWattsDropsInvalidValues(t *testing.T) {
 		if got := normalizePowerWatts(value); got != 0 {
 			t.Fatalf("expected invalid power %.2f to normalize to 0, got %.2f", value, got)
 		}
+	}
+}
+
+func TestHistoryRecorderRejectsTruncatedBinaryPayload(t *testing.T) {
+	t.Parallel()
+
+	recorder := NewHistoryRecorder("", 8, 5*time.Second, nil)
+
+	// Short header
+	if err := recorder.loadBinaryData([]byte("THST\x02\x00")); !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("short header err = %v, want io.ErrUnexpectedEOF", err)
+	}
+
+	// Valid header claiming 1 v2 point, but truncated point bytes
+	header := make([]byte, 0, historyHeaderSize+10)
+	header = append(header, historyBinaryMagic...)
+	header = binary.LittleEndian.AppendUint16(header, historyBinaryVersionV2)
+	header = append(header, historyEnabledFlag, 0)
+	header = binary.LittleEndian.AppendUint32(header, 5)
+	header = binary.LittleEndian.AppendUint32(header, 1)
+	header = binary.LittleEndian.AppendUint64(header, uint64(1_717_000_010_000))
+	header = append(header, make([]byte, 10)...)
+	if err := recorder.loadBinaryData(header); !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("truncated point err = %v, want io.ErrUnexpectedEOF", err)
+	}
+}
+
+func TestHistoryRecorderAsyncAutoFlushCompletesBeforeExplicitFlush(t *testing.T) {
+	t.Parallel()
+
+	filePath := filepath.Join(t.TempDir(), "history.bin")
+	recorder := NewHistoryRecorder(filePath, dirtyFlushThreshold+10, time.Second, nil)
+	enableRecorderForTest(t, recorder)
+
+	baseSeconds := int64(1_717_000_000)
+	for i := 0; i < dirtyFlushThreshold+5; i++ {
+		if _, recorded := recorder.Add(types.TemperatureData{
+			CPUTemp:    55 + (i % 10),
+			UpdateTime: baseSeconds + int64(i),
+		}, nil); !recorded {
+			t.Fatalf("point %d was not recorded", i)
+		}
+	}
+	if err := recorder.Flush(); err != nil {
+		t.Fatalf("Flush() error = %v", err)
+	}
+	reloaded := NewHistoryRecorder(filePath, dirtyFlushThreshold+10, time.Second, nil)
+	if got := len(reloaded.Snapshot().Points); got != dirtyFlushThreshold+5 {
+		t.Fatalf("reloaded point count = %d, want %d", got, dirtyFlushThreshold+5)
 	}
 }

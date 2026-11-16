@@ -44,3 +44,29 @@ func TestRemainingHostFxTickDelayPreservesCadenceWithoutNegativeTimers(t *testin
 		}
 	}
 }
+
+func TestWakeBlackSharkHostFxIsSafeAndNonBlocking(t *testing.T) {
+	var nilApp *CoreApp
+	nilApp.wakeBlackSharkHostFx()
+
+	emptyApp := &CoreApp{}
+	emptyApp.wakeBlackSharkHostFx()
+
+	app := &CoreApp{btHostFx: newBlackSharkHostFx()}
+	// Repeated wakes before the loop drains the 1-slot buffer must never block.
+	app.wakeBlackSharkHostFx()
+	app.wakeBlackSharkHostFx()
+	select {
+	case <-app.btHostFx.wake:
+	default:
+		t.Fatal("expected wake signal to be buffered")
+	}
+}
+
+func TestBlackSharkHostFxTickSlowsWhenDisconnected(t *testing.T) {
+	app := &CoreApp{}
+	fx := newBlackSharkHostFx()
+	if got := fx.tick(app); got != blackSharkHostFxDisconnectedPollInterval {
+		t.Fatalf("disconnected host fx poll interval = %s, want %s", got, blackSharkHostFxDisconnectedPollInterval)
+	}
+}
