@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build --webpack",
+    "build": "next build --webpack && node scripts/prune-dist.mjs",
     "start": "next start",
     "lint": "next lint",
     "test": "node --test tests/*.test.mjs"

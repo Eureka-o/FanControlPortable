@@ -15,7 +15,6 @@ import (
 	"io/fs"
 	"math"
 	"sort"
-	"sync"
 )
 
 const (
@@ -434,28 +433,20 @@ func PresetImage(index int) (image.Image, []byte, uint16, error) {
 	return nil, nil, 0, fmt.Errorf("preset %d not found", index)
 }
 
-// presetCRCOnce / presetCRCByPtr 惰性构建「内置精选 CRC → 官方位次」的映射。
-var (
-	presetCRCOnce  sync.Once
-	presetCRCByPtr map[uint16]int // CRC -> 官方位次（1..10）
-	presetCRCErr   error
-)
-
-func buildPresetCRCCache() {
-	presetCRCByPtr = make(map[uint16]int, len(OfficialUILabelOrder))
-	ordered, err := PresetsInOfficialOrder()
-	if err != nil {
-		presetCRCErr = err
-		return
-	}
-	for i, p := range ordered {
-		_, _, crc, err := PresetImage(p.Index)
-		if err != nil {
-			presetCRCErr = err
-			return
-		}
-		presetCRCByPtr[crc] = i + 1 // 官方位次从 1 开始
-	}
+// officialPresetCRCs 记录官方位次 1..10（对应 OfficialUILabelOrder）各自的 RGB565 CRC-16/XMODEM。
+// 用静态表替代运行时解码内嵌 PNG，让仅做 CRC 认图的可执行文件（GUI）不必把 10 张 PNG 编译进去，
+// 同时由单测 TestPresetByCRCMatchesEmbeddedPresets 保证与 presets/*.png 100% 一致。
+var officialPresetCRCs = [10]uint16{
+	0x94CE, // 预设一 -> preset_06.png (Index 6)
+	0xA4C1, // 预设二 -> preset_03.png (Index 3)
+	0x3EE6, // 预设三 -> preset_01.png (Index 1)
+	0x71BD, // 预设四 -> preset_09.png (Index 9)
+	0x7CEB, // 预设五 -> preset_07.png (Index 7)
+	0x511F, // 预设六 -> preset_05.png (Index 5)
+	0xB3D5, // 预设七 -> preset_02.png (Index 2)
+	0x31DF, // 预设八 -> preset_10.png (Index 10)
+	0x21C2, // 预设九 -> preset_08.png (Index 8)
+	0x8FEE, // 预设十 -> preset_04.png (Index 4)
 }
 
 // PresetByCRC 按设备回读的 CRC 反查这是内置的第几项（官方位次 1..10）。
@@ -463,17 +454,16 @@ func buildPresetCRCCache() {
 // `0xC5` 只回 11 字节信息（时间戳/大小/CRC），协议没有读图命令，
 // 因此只能靠 CRC 与十张内置预设比对来"认图"。
 func PresetByCRC(crc uint16) (officialPosition int, preset Preset, ok bool) {
-	presetCRCOnce.Do(buildPresetCRCCache)
-	if presetCRCErr != nil || len(presetCRCByPtr) == 0 {
-		return 0, Preset{}, false
+	for i, want := range officialPresetCRCs {
+		if crc != want || i >= len(OfficialUILabelOrder) || i >= len(presetNames) {
+			continue
+		}
+		assetIndex := OfficialUILabelOrder[i]
+		return i + 1, Preset{
+			Index: assetIndex,
+			Name:  presetNames[i],
+			File:  fmt.Sprintf("presets/preset_%02d.png", assetIndex),
+		}, true
 	}
-	pos, hit := presetCRCByPtr[crc]
-	if !hit {
-		return 0, Preset{}, false
-	}
-	ordered, err := PresetsInOfficialOrder()
-	if err != nil || pos < 1 || pos > len(ordered) {
-		return 0, Preset{}, false
-	}
-	return pos, ordered[pos-1], true
+	return 0, Preset{}, false
 }

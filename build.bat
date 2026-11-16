@@ -109,6 +109,13 @@ echo Syncing built-in themes...
 if exist "!BUILD_BIN!\themes" rmdir /s /q "!BUILD_BIN!\themes"
 xcopy /E /I /Y "themes" "!BUILD_BIN!\themes" >nul
 if errorlevel 1 exit /b 1
+for %%F in (
+    "!BUILD_BIN!\themes\shinchan\decorations\stars.svg"
+    "!BUILD_BIN!\themes\shinchan\decorations\cookie.svg"
+    "!BUILD_BIN!\themes\shinchan\decorations\palette.svg"
+) do (
+    if exist "%%~F" del /q "%%~F"
+)
 
 REM Build main application with wails
 echo Building main application...
