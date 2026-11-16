@@ -90,7 +90,22 @@ const idleMemoryReleaseCooldown = 30 * time.Second
 const (
 	consecutiveBridgeFailureRestartThreshold = 2
 	temperatureBridgeRestartCooldown         = 10 * time.Second
+	maxTemperatureBridgeRestartCooldown      = 60 * time.Second
 )
+
+func bridgeRestartCooldown(attempts int) time.Duration {
+	if attempts <= 0 {
+		return temperatureBridgeRestartCooldown
+	}
+	cooldown := temperatureBridgeRestartCooldown
+	for i := 0; i < attempts && cooldown < maxTemperatureBridgeRestartCooldown; i++ {
+		cooldown *= 2
+	}
+	if cooldown > maxTemperatureBridgeRestartCooldown {
+		return maxTemperatureBridgeRestartCooldown
+	}
+	return cooldown
+}
 
 // smartControlSampleContext identifies telemetry that may safely share
 // transient prediction and learning state.
@@ -221,6 +236,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	lastBridgeUpdateTime := initialTemp.UpdateTime
 	staleBridgeUpdateCount := 0
 	bridgeFailureCount := 0
+	bridgeRestartAttempts := 0
 	lastBridgeRestart := time.Time{}
 	lastWiFiOverviewRefresh := time.Time{}
 	var wifiOverviewRefreshRunning atomic.Bool
@@ -241,8 +257,11 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	timer := time.NewTimer(updateInterval)
 	wifiOverviewInterval := wifiOverviewRefreshInterval(false, cfg.AutoControl)
 	wifiOverviewTimer := time.NewTimer(wifiOverviewInterval)
-	if a.monitorOnlyActive() {
+	wifiOverviewTimerArmed := false
+	if a.monitorOnlyActive() || a.deviceManager == nil || a.deviceManager.GetDeviceType() != types.DeviceTransportWiFi {
 		wifiOverviewTimer.Stop()
+	} else {
+		wifiOverviewTimerArmed = true
 	}
 	defer timer.Stop()
 	defer wifiOverviewTimer.Stop()
@@ -255,6 +274,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 		case <-ctx.Done():
 			return
 		case <-wifiOverviewTimer.C:
+			wifiOverviewTimerArmed = false
 			now := time.Now()
 			// revision 门控：与主 tick 保持一致，未变时复用已缓存的 cfg。
 			// selection 重建由主 tick 的独立检查统一处理，此处只更新 cfg。
@@ -263,10 +283,12 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				cfg, cfgRevision = a.configManager.GetWithRevision()
 			}
 			hasClientsForOverview := a.ipcServer != nil && a.ipcServer.HasClients()
-			deviceType := a.deviceManager.GetDeviceType()
+			deviceType := ""
+			if a.deviceManager != nil {
+				deviceType = a.deviceManager.GetDeviceType()
+			}
 			wifiOverviewInterval = wifiOverviewRefreshInterval(hasClientsForOverview, cfg.AutoControl)
-			if deviceType != types.DeviceTransportWiFi {
-				wifiOverviewTimer.Reset(wifiOverviewBackgroundRefreshInterval)
+			if a.monitorOnlyActive() || deviceType != types.DeviceTransportWiFi {
 				continue
 			}
 			if shouldRefreshWiFiOverviewState(deviceType, now, lastWiFiOverviewRefresh, false, wifiOverviewInterval) {
@@ -274,6 +296,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				a.refreshWiFiOverviewState(&wifiOverviewRefreshRunning)
 			}
 			wifiOverviewTimer.Reset(wifiOverviewInterval)
+			wifiOverviewTimerArmed = true
 		case <-timer.C:
 			now := time.Now()
 			gap := now.Sub(lastMonitorTick)
@@ -328,28 +351,44 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				a.safeGo("release-idle-memory", func() { debug.FreeOSMemory() })
 			}
 			prevHasClients = hasClients
+			wifiDeviceActive := !a.monitorOnlyActive() && a.deviceManager != nil && a.deviceManager.GetDeviceType() == types.DeviceTransportWiFi
+			if wifiDeviceActive && !wifiOverviewTimerArmed {
+				wifiOverviewTimer.Reset(wifiOverviewRefreshInterval(hasClients, cfg.AutoControl))
+				wifiOverviewTimerArmed = true
+			} else if !wifiDeviceActive && wifiOverviewTimerArmed {
+				wifiOverviewTimer.Stop()
+				wifiOverviewTimerArmed = false
+			}
 
 			temp := a.tempReader.Read(cachedSelection)
 			staleBridgeTelemetry := false
 			if temp.BridgeOk {
 				bridgeFailureCount = 0
+				hadBridgeUpdate := lastBridgeUpdateTime > 0
 				lastBridgeUpdateTime, staleBridgeUpdateCount, staleBridgeTelemetry = trackBridgeTemperatureStaleness(temp, lastBridgeUpdateTime, staleBridgeUpdateCount)
-				if staleBridgeTelemetry && time.Since(lastBridgeRestart) >= temperatureBridgeRestartCooldown {
-					a.logError("温度桥接返回的 updateTime 连续 %d 次未变化，触发桥接重连自愈", staleBridgeUpdateCount+1)
-					a.recoverTemperatureBridge("stale-update")
-					lastBridgeRestart = time.Now()
-					lastBridgeUpdateTime = 0
-					staleBridgeUpdateCount = 0
+				if staleBridgeTelemetry {
+					if lastBridgeRestart.IsZero() || time.Since(lastBridgeRestart) >= bridgeRestartCooldown(bridgeRestartAttempts) {
+						a.logError("温度桥接返回的 updateTime 连续 %d 次未变化，触发桥接重连自愈", staleBridgeUpdateCount+1)
+						a.recoverTemperatureBridge("stale-update")
+						lastBridgeRestart = time.Now()
+						bridgeRestartAttempts++
+						lastBridgeUpdateTime = 0
+						staleBridgeUpdateCount = 0
+					}
+				} else if hadBridgeUpdate && staleBridgeUpdateCount == 0 {
+					bridgeRestartAttempts = 0
 				}
 			} else {
 				lastBridgeUpdateTime = 0
 				staleBridgeUpdateCount = 0
 				if shouldRestartTemperatureBridge(temp) {
 					bridgeFailureCount++
-					if bridgeFailureCount >= consecutiveBridgeFailureRestartThreshold && time.Since(lastBridgeRestart) >= temperatureBridgeRestartCooldown {
+					if bridgeFailureCount >= consecutiveBridgeFailureRestartThreshold &&
+						(lastBridgeRestart.IsZero() || time.Since(lastBridgeRestart) >= bridgeRestartCooldown(bridgeRestartAttempts)) {
 						a.logError("温度桥接连续 %d 次读取失败，触发桥接重连自愈: %s", bridgeFailureCount, temp.BridgeMsg)
 						a.recoverTemperatureBridge("read-failure")
 						lastBridgeRestart = time.Now()
+						bridgeRestartAttempts++
 						bridgeFailureCount = 0
 					}
 				} else {

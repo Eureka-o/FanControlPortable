@@ -131,6 +131,81 @@ type trayMenuRenderState struct {
 	activeCurve  string
 }
 
+type trayStatusSnapshotKey struct {
+	connected     bool
+	monitorOnly   bool
+	deviceName    string
+	cpuTemp       int
+	gpuTemp       int
+	cpuPowerKey   int64
+	gpuPowerKey   int64
+	gpuReadState  string
+	currentRPM    uint16
+	speedUnit     string
+	autoControl   bool
+	activeCurveID string
+	curveSig      string
+}
+
+func quantizeTrayPowerWatts(watts float64) int64 {
+	if watts <= 0 || math.IsNaN(watts) || math.IsInf(watts, 0) {
+		return -1
+	}
+	if watts < 10 {
+		return int64(math.Round(watts * 10))
+	}
+	return 1000 + int64(math.Round(watts))
+}
+
+func trayCurveOptionsEqual(a, b []CurveOption) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func makeTrayStatusSnapshotKey(status Status, curveSig string) trayStatusSnapshotKey {
+	cpuTemp := status.CPUTemp
+	if cpuTemp < 0 {
+		cpuTemp = 0
+	}
+	gpuTemp := status.GPUTemp
+	if gpuTemp < 0 {
+		gpuTemp = 0
+	}
+	gpuPowerKey := quantizeTrayPowerWatts(status.GPUPowerWatts)
+	if status.GPUReadState == types.GPUReadStateNotPolled {
+		gpuTemp = 0
+		gpuPowerKey = -1
+	}
+	currentRPM := status.CurrentRPM
+	speedUnit := types.NormalizeFanSpeedUnit(status.SpeedUnit)
+	if status.MonitorOnly {
+		currentRPM = 0
+		speedUnit = ""
+	}
+	return trayStatusSnapshotKey{
+		connected:     status.Connected,
+		monitorOnly:   status.MonitorOnly,
+		deviceName:    strings.TrimSpace(status.DeviceName),
+		cpuTemp:       cpuTemp,
+		gpuTemp:       gpuTemp,
+		cpuPowerKey:   quantizeTrayPowerWatts(status.CPUPowerWatts),
+		gpuPowerKey:   gpuPowerKey,
+		gpuReadState:  status.GPUReadState,
+		currentRPM:    currentRPM,
+		speedUnit:     speedUnit,
+		autoControl:   status.AutoControlState,
+		activeCurveID: status.ActiveCurveProfileID,
+		curveSig:      curveSig,
+	}
+}
+
 func trayCurveSignature(options []CurveOption) string {
 	var b strings.Builder
 	for _, option := range options {
@@ -665,6 +740,10 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 	defer ticker.Stop()
 	var lastApplied *trayMenuRenderState
 	var lastMenuItems *MenuItems
+	var lastKey trayStatusSnapshotKey
+	var hasLastKey bool
+	var lastCurveProfiles []CurveOption
+	var lastCurveSig string
 
 	for {
 		select {
@@ -679,6 +758,15 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 			}
 
 			status := m.getStatus()
+			if !trayCurveOptionsEqual(lastCurveProfiles, status.CurveProfiles) {
+				lastCurveSig = trayCurveSignature(status.CurveProfiles)
+				lastCurveProfiles = append(lastCurveProfiles[:0], status.CurveProfiles...)
+			}
+			key := makeTrayStatusSnapshotKey(status, lastCurveSig)
+			if hasLastKey && key == lastKey {
+				continue
+			}
+
 			fanSpeedText := formatFanSpeedForTray(status.CurrentRPM, status.SpeedUnit)
 			state := trayMenuRenderState{
 				deviceStatus: deviceStatusTitle(status.DeviceName, status.Connected, status.MonitorOnly),
@@ -693,7 +781,7 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 				curveEnabled: !status.MonitorOnly,
 				autoEnabled:  !status.MonitorOnly,
 				autoChecked:  !status.MonitorOnly && status.AutoControlState,
-				curveSig:     trayCurveSignature(status.CurveProfiles),
+				curveSig:     lastCurveSig,
 				activeCurve:  status.ActiveCurveProfileID,
 			}
 			if status.CPUTemp > 0 {
@@ -720,7 +808,7 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 				state.tooltip = appmeta.AppName + " - 设备未连接"
 			}
 
-			m.enqueueUI("update-menu-status", func() {
+			if m.enqueueUI("update-menu-status", func() {
 				if m.menuItems == nil {
 					return
 				}
@@ -794,7 +882,10 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 					systray.SetTooltip(state.tooltip)
 				}
 				lastApplied = &state
-			})
+			}) {
+				lastKey = key
+				hasLastKey = true
+			}
 		case <-instanceDone:
 			return
 		case <-m.done:
@@ -850,7 +941,7 @@ func (m *Manager) startShellRestartMonitor(instanceDone <-chan struct{}) {
 
 	lastTray, lastPID := trayNotifyState()
 	shellWasMissing := lastTray == 0
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	for {
