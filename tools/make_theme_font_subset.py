@@ -127,6 +127,11 @@ def main() -> int:
     subsetter.populate(unicodes=selected)
     subsetter.subset(source)
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    ext = args.output.suffix.lower()
+    if ext == ".woff2":
+        source.flavor = "woff2"
+    elif ext == ".woff":
+        source.flavor = "woff"
     source.save(args.output)
 
     if args.css_output:
