@@ -162,7 +162,11 @@ func (a *CoreApp) handleBlackSharkIPCRequest(req ipc.Request) (ipc.Response, boo
 		if err := json.Unmarshal(req.Data, &params); err != nil {
 			return a.errorResponse("解析参数失败: " + err.Error()), true
 		}
-		return a.successResponse(a.deviceManager.SelectBlackSharkRgbMode(params.Value)), true
+		ok := a.deviceManager.SelectBlackSharkRgbMode(params.Value)
+		if ok {
+			a.wakeBlackSharkHostFx()
+		}
+		return a.successResponse(ok), true
 
 	case ipc.ReqSetBlackSharkRgbModeAll:
 		var params ipc.BlackSharkRgbModeAllParams
@@ -182,6 +186,7 @@ func (a *CoreApp) handleBlackSharkIPCRequest(req ipc.Request) (ipc.Response, boo
 		if !ok {
 			return a.errorResponse("黑鲨灯效保存失败（设备未确认受理）"), true
 		}
+		a.wakeBlackSharkHostFx()
 		// 把保存后的权威视图直接回给界面：界面据此**原地更新**，不必再整页重读（省掉 0x11 + 0x13）。
 		return a.dataResponse(view), true
 
@@ -257,7 +262,11 @@ func (a *CoreApp) handleBlackSharkIPCRequest(req ipc.Request) (ipc.Response, boo
 	case ipc.ReqResetBlackSharkRgb:
 		// 官方「灯效页 · 重置」：9 条 0x12 常量（8 槽位 + 把模式 1 设回当前）。
 		// 会同时重置未选中的槽位、并让当前模式跳回「彩色流动」，这是官方自身行为。
-		return a.successResponse(a.deviceManager.ResetBlackSharkRgbModes()), true
+		ok := a.deviceManager.ResetBlackSharkRgbModes()
+		if ok {
+			a.wakeBlackSharkHostFx()
+		}
+		return a.successResponse(ok), true
 
 	case ipc.ReqResetBlackSharkCooling:
 		// 「一键恢复四档出厂曲线」：四个档位都走「恢复该档出厂曲线」的同一条路
@@ -1317,6 +1326,7 @@ func (a *CoreApp) blackSharkInitialConfig() (types.BlackSharkRgbLighting, bool) 
 	} else {
 		a.logInfo("连接后重读设备固件版本失败")
 	}
+	a.wakeBlackSharkHostFx()
 	return lighting, true
 }
 
@@ -1934,8 +1944,9 @@ const (
 
 	// blackSharkHostFxRetryInterval 是启动失败后多久再试一次：一次瞬时失败
 	// （比如默认音频设备正在切换）就会让功能永久不可用，重试间隔给恢复留窗口。
-	blackSharkHostFxRetryInterval    = 20 * time.Second
-	blackSharkHostFxIdlePollInterval = 2 * time.Second
+	blackSharkHostFxRetryInterval            = 20 * time.Second
+	blackSharkHostFxIdlePollInterval         = 2 * time.Second
+	blackSharkHostFxDisconnectedPollInterval = 15 * time.Second
 
 	// blackSharkPressQueueSize 是键鼠事件队列长度：满了就丢，钩子线程绝不能阻塞；
 	// 丢的是极短时间内的重复按下，对灯效观感无影响。
@@ -1951,6 +1962,7 @@ type blackSharkHostFx struct {
 	mu     sync.Mutex
 	stop   chan struct{}
 	done   chan struct{}
+	wake   chan struct{}
 	closed bool
 
 	// 音频同步（槽位 7）
@@ -1980,7 +1992,21 @@ type blackSharkHostFx struct {
 }
 
 func newBlackSharkHostFx() *blackSharkHostFx {
-	return &blackSharkHostFx{stop: make(chan struct{}), done: make(chan struct{})}
+	return &blackSharkHostFx{
+		stop: make(chan struct{}),
+		done: make(chan struct{}),
+		wake: make(chan struct{}, 1),
+	}
+}
+
+func (a *CoreApp) wakeBlackSharkHostFx() {
+	if a == nil || a.btHostFx == nil || a.btHostFx.wake == nil {
+		return
+	}
+	select {
+	case a.btHostFx.wake <- struct{}{}:
+	default:
+	}
 }
 
 // startBlackSharkHostFx 起一个约 4.9 Hz 的循环，按设备当前生效的灯效槽位起停两个主机侧驱动。
@@ -2003,21 +2029,28 @@ func (a *CoreApp) startBlackSharkHostFx() {
 			case <-fx.stop:
 				fx.shutdown(a)
 				return
-			case <-timer.C:
-				tickStarted := time.Now()
-				nextInterval := fx.tick(a)
-				if a.ipcServer != nil && a.ipcServer.HasClients() {
-					effects := a.BlackSharkHostEffects()
-					now := time.Now()
-					if shouldBroadcastBlackSharkHostEffects(hasLastEffects, lastEffects, effects, now, lastEffectsBroadcast) {
-						a.ipcServer.BroadcastEvent(ipc.EventBlackSharkHostEffects, effects)
-						lastEffects = effects
-						hasLastEffects = true
-						lastEffectsBroadcast = now
+			case <-fx.wake:
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
 					}
 				}
-				timer.Reset(remainingHostFxTickDelay(nextInterval, time.Since(tickStarted)))
+			case <-timer.C:
 			}
+			tickStarted := time.Now()
+			nextInterval := fx.tick(a)
+			if a.ipcServer != nil && a.ipcServer.HasClients() {
+				effects := a.BlackSharkHostEffects()
+				now := time.Now()
+				if shouldBroadcastBlackSharkHostEffects(hasLastEffects, lastEffects, effects, now, lastEffectsBroadcast) {
+					a.ipcServer.BroadcastEvent(ipc.EventBlackSharkHostEffects, effects)
+					lastEffects = effects
+					hasLastEffects = true
+					lastEffectsBroadcast = now
+				}
+			}
+			timer.Reset(remainingHostFxTickDelay(nextInterval, time.Since(tickStarted)))
 		}
 	})
 	a.logInfo("黑鲨主机侧灯效驱动已启动（轮询 %s；槽位 6=响应 / 7=音频同步）", blackSharkHostFxPollInterval)
@@ -2046,8 +2079,9 @@ func (a *CoreApp) stopBlackSharkHostFx() {
 
 // tick 是每个节拍做一次的事：判当前槽位 → 该起的起、该停的停、该推的推。
 func (fx *blackSharkHostFx) tick(a *CoreApp) time.Duration {
+	blackSharkActive := a.deviceManager != nil && a.deviceManager.IsBlackSharkActive()
 	slot := 0
-	if a.deviceManager != nil && a.deviceManager.IsBlackSharkActive() {
+	if blackSharkActive {
 		slot = a.deviceManager.BlackSharkCurrentRgbSlot()
 	}
 	if slot != fx.lastSlot {
@@ -2080,6 +2114,9 @@ func (fx *blackSharkHostFx) tick(a *CoreApp) time.Duration {
 	}
 	if slot == 6 || slot == 7 {
 		return blackSharkHostFxPollInterval
+	}
+	if !blackSharkActive {
+		return blackSharkHostFxDisconnectedPollInterval
 	}
 	return blackSharkHostFxIdlePollInterval
 }
@@ -2479,6 +2516,7 @@ func (a *CoreApp) applyScene(act scene.Action, cfg types.AppConfig) {
 		if !a.deviceManager.SelectBlackSharkRgbMode(act.RgbMode) {
 			a.logError("情景「%s」：切换灯效模式 %d 失败", name, act.RgbMode)
 		} else {
+			a.wakeBlackSharkHostFx()
 			a.logInfo("情景「%s」：已切换灯效模式 %d", name, act.RgbMode)
 		}
 	}

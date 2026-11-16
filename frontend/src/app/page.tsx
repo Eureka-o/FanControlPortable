@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useMemo, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
+import dynamic from 'next/dynamic';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { AlertTriangle } from 'lucide-react';
@@ -8,10 +9,7 @@ import { types } from '../../wailsjs/go/models';
 import { useShallow } from 'zustand/react/shallow';
 import AppFatalError from './components/AppFatalError';
 import AppLoadingSkeleton from './components/AppLoadingSkeleton';
-import AboutPanel from './components/AboutPanel';
-import AdvancedDevicesPanel from './components/AdvancedDevicesPanel';
 import AppShell from './components/AppShell';
-import ControlPanel from './components/ControlPanel';
 import DeviceStatus from './components/DeviceStatus';
 import FanCurve from './components/FanCurve';
 import { useAppBootstrap } from './hooks/useAppBootstrap';
@@ -19,6 +17,13 @@ import { apiService } from './services/api';
 import { selectFanData, selectTemperature, useAppStore } from './store/app-store';
 import { applyPowerSpoofToTemperature } from './lib/power-spoof';
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './components/ui';
+
+const loadControlPanel = () => import('./components/ControlPanel');
+const loadAdvancedDevicesPanel = () => import('./components/AdvancedDevicesPanel');
+const loadAboutPanel = () => import('./components/AboutPanel');
+const ControlPanel = dynamic(loadControlPanel, { ssr: false, loading: () => null });
+const AdvancedDevicesPanel = dynamic(loadAdvancedDevicesPanel, { ssr: false, loading: () => null });
+const AboutPanel = dynamic(loadAboutPanel, { ssr: false, loading: () => null });
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -49,6 +54,19 @@ function LiveFanCurve(props: Omit<ComponentProps<typeof FanCurve>, 'fanData' | '
 
 function LiveHome() {
   useAppBootstrap();
+  useEffect(() => {
+    const prefetchSecondaryTabs = () => {
+      void loadControlPanel().catch(() => {});
+      void loadAdvancedDevicesPanel().catch(() => {});
+      void loadAboutPanel().catch(() => {});
+    };
+    if (typeof window.requestIdleCallback === 'function') {
+      const idleId = window.requestIdleCallback(prefetchSecondaryTabs, { timeout: 1500 });
+      return () => window.cancelIdleCallback(idleId);
+    }
+    const timer = window.setTimeout(prefetchSecondaryTabs, 1500);
+    return () => window.clearTimeout(timer);
+  }, []);
   const { t } = useTranslation();
   const [diagnosticsExporting, setDiagnosticsExporting] = useState(false);
   const [monitorOnlyDialogOpen, setMonitorOnlyDialogOpen] = useState(false);

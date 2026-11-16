@@ -8,8 +8,10 @@ namespace FanControl.TempBridge
     internal sealed class GpuReadCoordinator
     {
         private const int ProbeIntervalSeconds = 10;
+        private const int DeepIdleProbeIntervalSeconds = 30;
         private const int ActiveSamplesToWake = 1;
         private const int IdleSamplesToSleep = 3;
+        private const int DeepIdleSamplesThreshold = IdleSamplesToSleep * 2;
         private const long SlowProbeLogThresholdMs = 200;
 
         private readonly object stateLock = new object();
@@ -47,7 +49,10 @@ namespace FanControl.TempBridge
             lock (stateLock)
             {
                 lastHasDiscreteGpu = true;
-                if (!probeRunning && (now - lastProbeUtc).TotalSeconds >= ProbeIntervalSeconds)
+                int probeIntervalSeconds = (!gpuPollingActive && idleSamples >= DeepIdleSamplesThreshold)
+                    ? DeepIdleProbeIntervalSeconds
+                    : ProbeIntervalSeconds;
+                if (!probeRunning && (now - lastProbeUtc).TotalSeconds >= probeIntervalSeconds)
                 {
                     lastProbeUtc = now;
                     probeRunning = true;

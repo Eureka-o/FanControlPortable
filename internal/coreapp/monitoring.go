@@ -266,7 +266,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	defer timer.Stop()
 	defer wifiOverviewTimer.Stop()
 
-	prevHasClients := a.ipcServer != nil && a.ipcServer.HasClients()
+	prevHasClients := a.ipcServer != nil && a.ipcServer.HasInteractiveClients()
 	var lastMemRelease time.Time
 
 	for {
@@ -282,7 +282,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				learningDirty = false
 				cfg, cfgRevision = a.configManager.GetWithRevision()
 			}
-			hasClientsForOverview := a.ipcServer != nil && a.ipcServer.HasClients()
+			hasClientsForOverview := a.ipcServer != nil && a.ipcServer.HasInteractiveClients()
 			deviceType := ""
 			if a.deviceManager != nil {
 				deviceType = a.deviceManager.GetDeviceType()
@@ -343,7 +343,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			}
 
 			// 后台空闲（无 GUI 连接且未开启智能控温）时放慢采样；智能控温或前台打开时保持原频率。
-			hasClients := a.ipcServer != nil && a.ipcServer.HasClients()
+			hasClients := a.ipcServer != nil && a.ipcServer.HasInteractiveClients()
 			updateInterval = monitorOnlySamplingInterval(activeTemperatureMonitorInterval(cfg.TempUpdateRate, hasClients, cfg.AutoControl), a.monitorOnlyActive())
 			// GUI 断开瞬间把会话期间膨胀的堆内存归还操作系统，降低核心常驻后台时的 RSS。
 			if prevHasClients && !hasClients && now.Sub(lastMemRelease) > idleMemoryReleaseCooldown {

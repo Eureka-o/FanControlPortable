@@ -64,9 +64,80 @@ foreach ($file in $requiredFiles) {
 Require-Directory (Join-Path $buildBin "bridge")
 Require-Directory (Join-Path $buildBin "themes")
 
+function Invoke-WithFileLockRetry {
+    param(
+        [scriptblock]$Action,
+        [int]$MaxAttempts = 6,
+        [int]$BaseDelayMs = 400
+    )
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        try {
+            & $Action
+            return
+        } catch {
+            $ex = $_.Exception
+            $isTransientLock = ($ex -is [System.IO.IOException]) -or
+                ($ex -is [System.UnauthorizedAccessException]) -or
+                ($ex.InnerException -is [System.IO.IOException]) -or
+                ($ex.InnerException -is [System.UnauthorizedAccessException])
+            if (-not $isTransientLock -or $attempt -ge $MaxAttempts) {
+                throw
+            }
+            Start-Sleep -Milliseconds ($BaseDelayMs * $attempt)
+        }
+    }
+}
+
+function New-PortableZipWithReadWriteShare {
+    param(
+        [string]$SourceDir,
+        [string]$ZipPath
+    )
+
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+    $rootFull = [System.IO.Path]::GetFullPath($SourceDir).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+    if (Test-Path -LiteralPath $ZipPath) {
+        Remove-Item -LiteralPath $ZipPath -Force
+    }
+
+    $zipStream = [System.IO.File]::Open($ZipPath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+    try {
+        $archive = New-Object System.IO.Compression.ZipArchive($zipStream, [System.IO.Compression.ZipArchiveMode]::Create, $false)
+        try {
+            foreach ($file in Get-ChildItem -LiteralPath $rootFull -Recurse -File) {
+                $relativePath = $file.FullName.Substring($rootFull.Length + 1).Replace('\', '/')
+                $entry = $archive.CreateEntry($relativePath, [System.IO.Compression.CompressionLevel]::Optimal)
+                $entry.LastWriteTime = $file.LastWriteTime
+                $entryStream = $entry.Open()
+                try {
+                    $fileStream = [System.IO.File]::Open($file.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                    try {
+                        $fileStream.CopyTo($entryStream)
+                    } finally {
+                        $fileStream.Dispose()
+                    }
+                } finally {
+                    $entryStream.Dispose()
+                }
+            }
+        } finally {
+            $archive.Dispose()
+        }
+    } finally {
+        $zipStream.Dispose()
+    }
+}
+
 $safeOutputDir = Resolve-InRepoPath $outputDir
 if (Test-Path -LiteralPath $safeOutputDir) {
-    Remove-Item -LiteralPath $safeOutputDir -Recurse -Force
+    Invoke-WithFileLockRetry {
+        if (Test-Path -LiteralPath $safeOutputDir) {
+            Remove-Item -LiteralPath $safeOutputDir -Recurse -Force
+        }
+    }
 }
 New-Item -ItemType Directory -Path $safeOutputDir | Out-Null
 
@@ -78,11 +149,9 @@ Copy-Item -LiteralPath (Join-Path $buildBin "bridge") -Destination (Join-Path $s
 Copy-Item -LiteralPath (Join-Path $buildBin "themes") -Destination (Join-Path $safeOutputDir "themes") -Recurse
 
 $zipPath = Join-Path $buildBin "FanControl-$Version-portable.zip"
-if (Test-Path -LiteralPath $zipPath) {
-    Remove-Item -LiteralPath $zipPath -Force
+Invoke-WithFileLockRetry {
+    New-PortableZipWithReadWriteShare -SourceDir $safeOutputDir -ZipPath $zipPath
 }
-
-Compress-Archive -Path (Join-Path $safeOutputDir "*") -DestinationPath $zipPath -Force
 Write-Host "Portable package created: $zipPath"
 
 if ($CopyToRoot) {
