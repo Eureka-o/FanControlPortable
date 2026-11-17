@@ -37,8 +37,8 @@ FlyDigi and Black Shark devices are matched through built-in profiles first. The
 
 ## 下载文件 / Downloads
 
-- `FanControl-2.9.0-amd64-installer.exe`：安装版，升级时保留已有配置 / Installer; preserves existing configuration during upgrades.
-- `FanControl-2.9.0-portable.zip`：便携版，解压后运行 `FanControl.exe` / Portable package; extract and run `FanControl.exe`.
+- `FanControl-2.9.1-amd64-installer.exe`：安装版，升级时保留已有配置 / Installer; preserves existing configuration during upgrades.
+- `FanControl-2.9.1-portable.zip`：便携版，解压后运行 `FanControl.exe` / Portable package; extract and run `FanControl.exe`.
 
 首次启动时如 Windows 弹出权限确认，请选择允许。软件可能需要管理员权限读取硬件温度或安装温度读取组件。
 
@@ -63,13 +63,12 @@ When Windows asks for permission on first launch, allow it. Administrator access
 
 ## 最新版本 / Latest version
 
-当前构建版本：`2.9.0` / Current build: `2.9.0`
+当前构建版本：`2.9.1` / Current build: `2.9.1`
 
-- 黑鲨风神 Pro 支持 BLE 与 USB 有线原生连接，曲线页提供设备专属 RPM 曲线和四档散热方案 / Black Shark Fengshen Pro now supports native BLE and USB wired connections with device-scoped RPM curves and four cooling profiles.
-- 黑鲨 USB 有线与 BLE 模式都支持屏幕图片上传、裁剪和历史图重传；BLE 传输较慢，软件会在开始传输前提醒优先使用有线连接 / Black Shark USB wired and BLE modes support screen image upload, cropping, and history re-upload; BLE is slower and the app recommends wired mode before transfer.
-- 黑鲨专属设置加入灯效、屏幕参数和主机侧/设备侧变频控制，转速上限按设备标定到 4000 RPM / Black Shark settings add lighting, screen parameters, host/device variable-speed control, and a calibrated 4000 RPM ceiling.
-- 优化 BLE/USB 设备连接、重连、挂起恢复和连接状态同步，减少设备已连接但不可控制的中间状态 / Improved BLE/USB connection, reconnect, resume, and state synchronization to reduce unusable intermediate states.
-- 改善 Explorer 重启、电源状态切换和启动竞态下的托盘图标恢复，并保留既有仅监控、主题和历史曲线功能 / Improved tray recovery across Explorer restarts, power-state changes, and startup races while retaining monitor-only mode, themes, and history charts.
+- 减少最小化托盘与闲置状态的后台轮询，独显休眠后不重建传感器监控，温度历史改用异步定期保存 / Reduced background polling while idle or in tray, stopped reinitializing hardware monitoring across dGPU sleep transitions, and switched periodic history saves to async writes.
+- 控制设置、图表与非当前语言包改为按需加载，缩小每秒温控刷新引起的界面重绘范围 / Loaded secondary pages, charts, and inactive locales on demand and narrowed per-second telemetry updates to limit UI repaints.
+- 关机或注销时退出飞智 HID 实时转速模式以交回固件智能启停，并优化 WiFi/蓝牙重连优先级与低温段通用曲线范围 / Exited FlyDigi HID real-time RPM mode on shutdown/logoff to restore firmware smart start-stop, and refined reconnect scheduling and generic curve padding.
+- 按软件界面与设置用字重建初音未来、小八 Plus、蜡笔小新主题字体子集以补齐缺字，同时压缩主题与内置预设资源，安装包与便携包均减小约 4 MB / Rebuilt Miku, Xiaoba Plus, and Crayon Shin-chan font subsets for complete UI glyph coverage and compressed theme/preset assets, reducing installer and portable packages by about 4 MB.
 
 完整记录请查看 [GitHub Releases](https://github.com/Eureka-o/FanControlPortable/releases) 或 `docs/release-notes/`。
 
