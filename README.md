@@ -69,10 +69,10 @@ When Windows asks for permission on first launch, allow it. Administrator access
 
 当前构建版本：`3.0.0` / Current build: `3.0.0`
 
-- 新增「插件与扩展」及官方「插件市场」，支持启停管理、日志查看、本地 `.zip` 导入，首发提供 **RTSS OSD** 屏幕转速显示与 **HP OMEN** 双风扇/性能功耗控制插件 / Added Plugins & Extensions and the Official Plugin Store with toggles, logs, local `.zip` import, and launch plugins for **RTSS OSD** and **HP OMEN**.
-- 将 9 套官方自定义主题从安装包中拆分为按需获取，新增「主题管理」与「主题市场」支持筛选、一键更新与免重启切换，并显著减小安装包与便携包体积 / Decoupled the 9 official custom themes into on-demand downloads via Theme Management and Theme Store with filtering, batch updates, hot-switching, and smaller distribution packages.
-- 重构首页状态卡片、仪表盘比例与分组设置页，新增曲线节点微调、整体微调、步进吸附、`Ctrl+Z` 撤销、低转速提示、方案管理升级及一键将学习偏移应用到曲线 / Redesigned homepage status cards, gauges, and grouped settings, and added point tuning, global shift, snap-to-step, `Ctrl+Z` undo, low-RPM guidance, upgraded profile management, and applying learned offsets to curves.
-- 新增独显休眠原因提示与临时传感器探测、菜单防截断及折叠动效，修复休眠唤醒无法调速与退出后温度辅助进程残留问题，并精简安装与卸载等待流程 / Added dGPU sleep notices with temporary sensor probing, non-clipping menus, collapse transitions, sleep-resume fan recovery, clean helper shutdown on exit, and streamlined install/uninstall flows.
+- 新增「插件与扩展」及官方「插件市场」，支持启停管理、日志查看、本地 `.zip` 导入与多镜像下载回退，首发提供 **RTSS OSD** 屏幕转速显示与 **HP OMEN** 双风扇/性能功耗控制插件 / Added Plugins & Extensions and the Official Plugin Store with toggles, logs, local `.zip` import, multi-mirror fallback, and launch plugins for **RTSS OSD** and **HP OMEN**.
+- 将 9 套官方自定义主题从安装包中拆分为按需获取，新增「主题管理」与「主题市场」支持筛选、一键更新与免重启切换，减小安装包与便携包体积 / Decoupled the 9 official custom themes into on-demand downloads via Theme Management and Theme Store with filtering, batch updates, hot-switching, and smaller distribution packages.
+- 重构仅监控模式双栏首页（内置 60 秒功耗变化折线与完整历史面板），对齐正常模式半圆仪表盘与独显休眠上方提示，并新增曲线节点微调、整体微调、步进吸附、`Ctrl+Z` 撤销、低转速提示、方案管理升级及一键将学习偏移应用到曲线 / Redesigned the Monitor-Only homepage with 60-second power trends and integrated history, aligned Normal-mode gauges with above-dial GPU sleep notices, and added point tuning, global shift, snap-to-step, `Ctrl+Z` undo, low-RPM guidance, upgraded profile management, and applying learned offsets to curves.
+- 新增独显休眠功耗单位保留与按需传感器探测、菜单防截断及折叠动效，修复休眠唤醒无法调速与退出后温度辅助进程残留问题，并精简安装与卸载等待流程 / Preserved `0 W` units on sleeping dGPUs with on-demand sensor probing, added non-clipping menus and collapse transitions, fixed sleep-resume fan control recovery and clean helper shutdown on exit, and streamlined install/uninstall flows.
 
 完整记录请查看 [GitHub Releases](https://github.com/Eureka-o/FanControlPortable/releases) 或 [docs/release-notes/](docs/release-notes/)。
 
