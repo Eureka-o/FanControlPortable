@@ -2081,6 +2081,10 @@ html.dark:not([data-theme]) .about-channel-active-pill {
   gap: 0.75rem;
 }
 
+.home-bento-layout--monitor-only {
+  flex: 0 0 auto;
+}
+
 .home-metrics-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -2098,15 +2102,30 @@ html.dark:not([data-theme]) .about-channel-active-pill {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .home-metrics-grid.home-metrics-grid--monitor-only {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .home-metrics-grid > [data-theme-card="fan-speed"] {
     grid-column: span 2;
   }
 }
 
+@container home-dashboard (min-width: 600px) {
+  .home-metrics-grid.home-metrics-grid--monitor-only {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @container home-dashboard (min-width: 740px) {
   .home-bento-layout {
-    grid-template-rows: minmax(238px, 1.02fr) minmax(220px, 1fr);
+    grid-template-rows: auto minmax(220px, 1fr);
     max-height: 760px;
+  }
+
+  .home-bento-layout.home-bento-layout--monitor-only {
+    grid-template-rows: auto;
+    max-height: none;
   }
 
   .home-metrics-grid {
@@ -2123,9 +2142,17 @@ html.dark:not([data-theme]) .about-channel-active-pill {
 }
 
 @container home-dashboard (min-width: 1120px) {
+  .home-dashboard-root {
+    gap: 0.875rem;
+  }
+
   .home-bento-layout {
     gap: 0.875rem;
-    grid-template-rows: minmax(256px, 1.02fr) minmax(248px, 1fr);
+    grid-template-rows: auto minmax(248px, 1fr);
+  }
+
+  .home-bento-layout.home-bento-layout--monitor-only {
+    grid-template-rows: auto;
   }
 
   .home-metrics-grid,

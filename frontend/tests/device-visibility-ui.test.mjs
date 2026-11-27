@@ -9,6 +9,8 @@ const control = readFileSync(new URL('../src/app/components/ControlPanel.tsx', i
 const advanced = readFileSync(new URL('../src/app/components/AdvancedDevicesPanel.tsx', import.meta.url), 'utf8');
 const editor = readFileSync(new URL('../src/app/components/devices/DeviceProfileEditorDialog.tsx', import.meta.url), 'utf8');
 const store = readFileSync(new URL('../src/app/store/app-store.ts', import.meta.url), 'utf8');
+const curve = readFileSync(new URL('../src/app/components/FanCurve.tsx', import.meta.url), 'utf8');
+const globalsCss = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8');
 const powerTrendChart = status.slice(status.indexOf('const PowerTrendChart'), status.indexOf('const MonitorInfoCard'));
 
 test('clears device identity immediately when the backend reports a disconnect', () => {
@@ -35,9 +37,15 @@ test('keeps all three settings sections and the existing device surfaces visible
   assert.match(control, /<DeviceDebugPanel/);
 });
 
-test('uses a dedicated two-card monitor-only dashboard without fan controls', () => {
+test('uses a v3.0 bento two-card monitor-only dashboard without fan controls', () => {
   assert.match(status, /monitorOnlyActive && !isConnected/);
+  assert.match(status, /deviceStatus\.monitorOnly\.heroTitle/);
+  assert.match(status, /deviceStatus\.monitorOnly\.heroBadge/);
+  assert.match(status, /home-bento-layout--monitor-only/);
+  assert.match(status, /home-metrics-grid--monitor-only/);
   assert.match(status, /<MonitorInfoCard/);
+  assert.match(status, /powerThemeCard="cpu-power"/);
+  assert.match(status, /powerThemeCard="gpu-power"/);
   assert.match(status, /deviceStatus\.monitorOnly\.cpuInfo/);
   assert.match(status, /deviceStatus\.monitorOnly\.gpuInfo/);
   assert.match(status, /formatPowerWatts\(temperature\?\.cpuPowerWatts\)/);
@@ -51,16 +59,31 @@ test('uses a dedicated two-card monitor-only dashboard without fan controls', ()
   assert.match(status, /powerPoints=\{temperatureHistory\}/);
   assert.match(status, /powerSeries="cpu"/);
   assert.match(status, /powerSeries="gpu"/);
-  assert.match(status, /grid-cols-\[minmax\(9rem,0\.9fr\)_minmax\(0,1\.1fr\)\]/);
+  assert.doesNotMatch(status, /className="monitor-info-body/);
+  assert.doesNotMatch(globalsCss, /\.monitor-info-body/);
+  assert.match(globalsCss, /@container home-dashboard \(min-width: 600px\) \{\s*\.home-metrics-grid\.home-metrics-grid--monitor-only \{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
   assert.match(status, /<TempGaugeDisplay temp=\{temperature\} ready=\{ready\} idleLabel=\{idleLabel\} \/>/);
   assert.match(status, /role="img" aria-label=\{`\$\{label\}: \$\{value\}`\}/);
   assert.doesNotMatch(status, /role="progressbar"/);
-  assert.match(status, /rounded-lg border border-border\/70 bg-background\/55/);
+  assert.match(status, /glacier-stat-tile mt-2 flex w-full flex-col gap-2/);
+  assert.match(status, /\{powerParts\.value !== '--' && \(\s*<span className=\{clsx\('text-xs font-semibold', powerUnavailable \? 'text-muted-foreground\/70' : 'text-muted-foreground\/80'\)\}>\s*\{powerParts\.unit\}\s*<\/span>\s*\)\}/s);
+  assert.match(status, /<PowerTrendChart[\s\S]*?canvasClassName="h-24"/);
   assert.match(status, /const hasBridgeWarning = isConnected && bridgeOk === false/);
   assert.match(status, /if \(!isConnected\) \{[\s\S]*?setActiveCurveProfileName\(''\)/);
   assert.match(status, /data-theme-section="control-protection"/);
   assert.match(status, /\{isConnected && \([\s\S]*?data-theme-section="control-protection"/);
   assert.match(status, /HISTORY_SERIES_ORDER\.filter\(\(series\) => series !== 'fan'\)/);
+});
+
+test('keeps normal-mode metric gauges aligned in shared fixed-notice slots without jump', () => {
+  assert.match(globalsCss, /grid-template-rows:\s*auto minmax\(220px, 1fr\)/);
+  assert.match(globalsCss, /grid-template-rows:\s*auto minmax\(248px, 1fr\)/);
+  assert.match(status, /viewBox="0 0 200 110"/);
+  assert.match(status, /const MetricGaugeSlot = memo[\s\S]*?pt-4 pb-1\.5[\s\S]*?absolute inset-x-0 top-0 z-10 flex justify-center[\s\S]*?\{notice\}[\s\S]*?\{children\}/);
+  assert.match(status, /const MonitorInfoCard[\s\S]*?<MetricGaugeSlot/);
+  assert.match(status, /const LiveCpuMetricCard[\s\S]*?<MetricGaugeSlot className="flex-1">/);
+  assert.match(status, /const LiveGpuMetricCard[\s\S]*?<MetricGaugeSlot[\s\S]*?className="flex-1"[\s\S]*?<GpuIdleNotice note=\{gpuAutoIdleNote\} tooltip=\{gpuNotPolledTooltip\} \/>/);
+  assert.match(status, /const LiveFanMetricCard[\s\S]*?<MetricGaugeSlot className="flex-1">/);
 });
 
 test('merges the curve history into the monitor-only homepage and hides its dock tab', () => {
@@ -75,9 +98,12 @@ test('merges the curve history into the monitor-only homepage and hides its dock
   assert.match(status, /onOpen=\{monitorOnlyActive \? undefined : onOpenHistoryDetails\}/);
   assert.match(page, /statusContent=\{statusContent\}/);
   assert.match(shell, /data-monitor-only/);
-  assert.match(readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8'), /data-monitor-only="true"/);
+  assert.match(globalsCss, /data-monitor-only="true"/);
   assert.match(status, /\{showMonitoringLayout && \(/);
   assert.match(status, /\{!monitorOnlyActive && \(/);
+  assert.match(curve, /!historyOnly && 'px-1 pb-2'/);
+  assert.match(curve, /monitorOnlyActive \? 'md:grid-cols-4' : 'md:grid-cols-5'/);
+  assert.match(curve, /deviceStatus\.monitorOnly\.historyDescription/);
 });
 
 test('does not filter device library or profile controls by compatibility state', () => {
@@ -144,8 +170,7 @@ test('activates sensor catalog only while TemperatureBaselineSection is mounted 
   }
 });
 
-test('restores dark-mode orange accent and keeps thicker top-aligned SemiGauge cards', () => {
-  const globalsCss = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8');
+test('restores dark-mode orange accent and keeps thicker centered SemiGauge cards', () => {
   const darkSection = globalsCss.slice(globalsCss.indexOf('.dark {'));
   assert.match(darkSection, /--ring:\s*#ff4b26;/);
   assert.match(darkSection, /--primary:\s*#ff4b26;/);
@@ -155,7 +180,7 @@ test('restores dark-mode orange accent and keeps thicker top-aligned SemiGauge c
   const pathStrokes = status.match(/strokeWidth="12"/g) ?? [];
   assert.equal(pathStrokes.length, 2, 'SemiGauge track and progress arcs should use strokeWidth="12"');
   assert.match(status, /r="4\.5"[\s\S]*?strokeWidth="3"/);
-  assert.match(status, /<div className="flex flex-1 items-start justify-center pt-3">\s*<TempGaugeDisplay temp=\{cpuDisplayTemp\}/);
-  assert.match(status, /<div className="flex flex-1 flex-col items-center justify-between gap-2 pt-3">\s*<TempGaugeDisplay/);
-  assert.match(status, /<div className="flex flex-1 items-start justify-center pt-3">\s*<FanSpeedDisplay/);
+  assert.match(status, /<MetricGaugeSlot className="flex-1">\s*<TempGaugeDisplay temp=\{cpuDisplayTemp\}/);
+  assert.match(status, /<MetricGaugeSlot[\s\S]*?className="flex-1"[\s\S]*?notice=\{gpuAutoIdleNote && gpuNotPolledTooltip[\s\S]*?<TempGaugeDisplay/);
+  assert.match(status, /<MetricGaugeSlot className="flex-1">\s*<FanSpeedDisplay/);
 });

@@ -504,10 +504,13 @@
       "confirm": "Enable",
       "restartFailed": "Failed to enable monitor-only mode: {{error}}",
       "sensorOnly": "Monitor-only mode: device connection and control are disabled",
+      "heroTitle": "Monitor-only mode",
+      "heroBadge": "Sensors active",
       "cpuInfo": "CPU information",
       "gpuInfo": "GPU information",
       "power": "Power",
-      "historyTitle": "Temperature and power history"
+      "historyTitle": "Temperature and power history",
+      "historyDescription": "Choose a history retention window to review temperature and power trends."
     },
     "recovery": {
       "deviceAvailable": "Confirm the device is powered on and visible in Windows.",

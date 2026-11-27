@@ -504,10 +504,13 @@
       "confirm": "确认启用",
       "restartFailed": "启用仅监控模式失败：{{error}}",
       "sensorOnly": "仅监控模式：设备连接与控制已关闭",
+      "heroTitle": "仅监控模式",
+      "heroBadge": "传感监控中",
       "cpuInfo": "CPU 信息",
       "gpuInfo": "GPU 信息",
       "power": "功耗",
-      "historyTitle": "温度与功耗历史"
+      "historyTitle": "温度与功耗历史",
+      "historyDescription": "可选择历史保留时长，查看温度与功耗变化趋势。"
     },
     "recovery": {
       "deviceAvailable": "确认设备已通电，并且 Windows 可以识别。",

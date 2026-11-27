@@ -3034,7 +3034,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       data-page-reveal={initialFocusTarget === 'history-details'
         ? 'cards-reverse'
         : (!isConnected && !initialFocusTarget ? 'cards-delayed' : (!initialFocusTarget ? 'cards' : undefined))}
-      className="relative space-y-4 px-1 pb-2"
+      className={clsx('relative space-y-4', !historyOnly && 'px-1 pb-2')}
     >
       {!historyOnly && isConnected && (
         <>
@@ -3856,8 +3856,12 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
             <div className="flex items-center gap-2">
               <History className="h-4 w-4 text-primary" />
               <div>
-                <div className="text-sm font-medium text-foreground">{t('fanCurve.history.detailsTitle')}</div>
-                <div className="text-xs text-muted-foreground">{t('fanCurve.history.detailsDescription')}</div>
+                <div className="text-sm font-medium text-foreground">
+                  {monitorOnlyActive ? t('deviceStatus.monitorOnly.historyTitle') : t('fanCurve.history.detailsTitle')}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {monitorOnlyActive ? t('deviceStatus.monitorOnly.historyDescription') : t('fanCurve.history.detailsDescription')}
+                </div>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2.5">
@@ -3905,11 +3909,13 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+              <div className={clsx('grid grid-cols-2 gap-3', monitorOnlyActive ? 'md:grid-cols-4' : 'md:grid-cols-5')}>
                 {[
                   [t('fanCurve.history.summary.cpuPeak'), historySummary.cpuPeak ? `${historySummary.cpuPeak}°C` : '--', historySummary.cpuAverage ? t('fanCurve.history.summary.averageTemperature', { value: historySummary.cpuAverage }) : t('fanCurve.history.summary.noCpuTemperature')],
                   [t('fanCurve.history.summary.gpuPeak'), historySummary.gpuPeak ? `${historySummary.gpuPeak}°C` : '--', historySummary.gpuAverage ? t('fanCurve.history.summary.averageTemperature', { value: historySummary.gpuAverage }) : t('fanCurve.history.summary.noGpuTemperature')],
-                  [t('fanCurve.history.summary.fanPeak'), historySummary.fanPeak ? `${formatSpeedValue(historySummary.fanPeak)}${speedUnitSuffix}` : '--', historySummary.fanAverage ? t('fanCurve.history.summary.averageFan', { value: formatSpeedValue(historySummary.fanAverage), unit: speedUnitSuffix }) : t('fanCurve.history.summary.noFanData')],
+                  ...(!monitorOnlyActive
+                    ? [[t('fanCurve.history.summary.fanPeak'), historySummary.fanPeak ? `${formatSpeedValue(historySummary.fanPeak)}${speedUnitSuffix}` : '--', historySummary.fanAverage ? t('fanCurve.history.summary.averageFan', { value: formatSpeedValue(historySummary.fanAverage), unit: speedUnitSuffix }) : t('fanCurve.history.summary.noFanData')]]
+                    : []),
                   [t('fanCurve.history.summary.cpuPowerPeak'), historySummary.cpuPowerPeak ? `${formatPowerValue(historySummary.cpuPowerPeak)} W` : '-- W', historySummary.cpuPowerAverage ? t('fanCurve.history.summary.averagePower', { value: formatPowerValue(historySummary.cpuPowerAverage) }) : t('fanCurve.history.summary.noPowerData')],
                   [t('fanCurve.history.summary.gpuPowerPeak'), historySummary.gpuPowerPeak ? `${formatPowerValue(historySummary.gpuPowerPeak)} W` : '-- W', historySummary.gpuPowerAverage ? t('fanCurve.history.summary.averagePower', { value: formatPowerValue(historySummary.gpuPowerAverage) }) : t('fanCurve.history.summary.noPowerData')],
                 ].map(([label, value, hint]) => (

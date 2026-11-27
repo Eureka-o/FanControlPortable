@@ -504,10 +504,13 @@
       "confirm": "有効化",
       "restartFailed": "モニター専用モードの有効化に失敗しました: {{error}}",
       "sensorOnly": "モニター専用モード: デバイス接続と制御は無効です",
+      "heroTitle": "モニター専用モード",
+      "heroBadge": "センサー監視中",
       "cpuInfo": "CPU 情報",
       "gpuInfo": "GPU 情報",
       "power": "電力",
-      "historyTitle": "温度と電力の履歴"
+      "historyTitle": "温度と電力の履歴",
+      "historyDescription": "履歴の保持期間を選択して、温度と電力の推移を確認できます。"
     },
     "recovery": {
       "deviceAvailable": "デバイスの電源が入り、Windows で認識されていることを確認します。",

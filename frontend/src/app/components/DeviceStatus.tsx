@@ -208,7 +208,7 @@ export const SemiGauge = memo(function SemiGauge({ value, color, children }: Sem
   return (
     <div className="relative w-full max-w-[15.5rem]">
       <svg
-        viewBox="0 0 200 116"
+        viewBox="0 0 200 110"
         className="semi-gauge-svg block w-full"
         preserveAspectRatio="xMidYMid meet"
         aria-hidden="true"
@@ -255,7 +255,7 @@ export const SemiGauge = memo(function SemiGauge({ value, color, children }: Sem
         </g>
       </svg>
       {/* 居中区域 — 数值 + 单位 + 状态标签 全部塞进半圆几何中心略偏下 */}
-      <div className="pointer-events-none absolute inset-x-0 top-[68%] -translate-y-1/2 flex flex-col items-center justify-center">
+      <div className="pointer-events-none absolute inset-x-0 top-[71%] -translate-y-1/2 flex flex-col items-center justify-center">
         {children}
       </div>
     </div>
@@ -294,7 +294,7 @@ const MetricHeader = memo(function MetricHeader({
   align?: 'center' | 'start';
 }) {
   return (
-    <div className={clsx('mb-2 flex items-center', align === 'start' ? 'justify-start' : 'justify-center')}>
+    <div className={clsx('mb-1 flex items-center', align === 'start' ? 'justify-start' : 'justify-center')}>
       <div className={clsx('flex min-w-0 max-w-full items-center gap-2 text-[13px] font-medium text-muted-foreground', align === 'start' ? 'justify-start' : 'justify-center')}>
         <span className="metric-header-icon shrink-0 text-primary [&_svg]:stroke-[2.4]">{icon}</span>
         <span className="shrink-0">{label}</span>
@@ -305,8 +305,8 @@ const MetricHeader = memo(function MetricHeader({
 
 const CPU_METRIC_ICON = <Cpu className="h-4 w-4" />;
 const GPU_METRIC_ICON = <Gpu className="h-4 w-4" />;
-const POWER_TREND_WIDTH = 260;
-const POWER_TREND_HEIGHT = 68;
+const POWER_TREND_WIDTH = 360;
+const POWER_TREND_HEIGHT = 96;
 const POWER_TREND_PAD = { left: 4, right: 4, top: 6, bottom: 6 } as const;
 const POWER_TREND_PLOT_WIDTH = POWER_TREND_WIDTH - POWER_TREND_PAD.left - POWER_TREND_PAD.right;
 const POWER_TREND_PLOT_HEIGHT = POWER_TREND_HEIGHT - POWER_TREND_PAD.top - POWER_TREND_PAD.bottom;
@@ -318,6 +318,8 @@ const PowerTrendChart = memo(function PowerTrendChart({
   value,
   available = true,
   unavailableLabel,
+  hideHeader = false,
+  canvasClassName,
 }: {
   points: TemperatureHistoryPoint[];
   series: 'cpu' | 'gpu';
@@ -325,6 +327,8 @@ const PowerTrendChart = memo(function PowerTrendChart({
   value: string;
   available?: boolean;
   unavailableLabel?: string;
+  hideHeader?: boolean;
+  canvasClassName?: string;
 }) {
   const { t } = useTranslation();
   const width = POWER_TREND_WIDTH;
@@ -345,8 +349,13 @@ const PowerTrendChart = memo(function PowerTrendChart({
       return { path: '', area: '', current: null, min: 0, max: 0, width, height, pad, plotWidth, plotHeight };
     }
 
-    const min = Math.max(0, Math.floor((Math.min(...values) - 2) / 5) * 5);
-    const max = Math.max(min + 10, Math.ceil((Math.max(...values) + 2) / 5) * 5);
+    const rawMin = Math.min(...values);
+    const rawMax = Math.max(...values);
+    const rawSpan = rawMax - rawMin;
+    const halfSpan = Math.max(2.5, rawSpan * 0.65);
+    const mid = (rawMin + rawMax) / 2;
+    const min = Math.max(0, mid - halfSpan);
+    const max = Math.max(min + 5, mid + halfSpan);
     const range = Math.max(1, max - min);
     const firstTimestamp = recent[0]?.timestamp ?? 0;
     const lastTimestamp = recent[recent.length - 1]?.timestamp ?? firstTimestamp;
@@ -381,11 +390,13 @@ const PowerTrendChart = memo(function PowerTrendChart({
 
   return (
     <div className="min-w-0">
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="truncate text-[10px] font-medium text-muted-foreground">{label}</span>
-        <span className="shrink-0 text-sm font-semibold leading-none tabular-nums text-foreground">{value}</span>
-      </div>
-      <div className="h-[68px] overflow-hidden rounded-lg border border-border/60 bg-background/35 px-1.5 py-1">
+      {!hideHeader && (
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <span className="truncate text-[10px] font-medium text-muted-foreground">{label}</span>
+          <span className="shrink-0 text-sm font-semibold leading-none tabular-nums text-foreground">{value}</span>
+        </div>
+      )}
+      <div className={clsx('glacier-chart-canvas overflow-hidden rounded-lg bg-muted/20 px-1.5 py-1.5', canvasClassName || 'h-24')}>
         {chart.path ? (
           <div className="relative h-full w-full">
             <svg viewBox={`0 0 ${chart.width} ${chart.height}`} className="h-full w-full" preserveAspectRatio="none" role="img" aria-label={`${label}: ${value}`}>
@@ -425,6 +436,8 @@ const MonitorInfoCard = memo(function MonitorInfoCard({
   icon,
   label,
   themeCard,
+  powerThemeCard,
+  powerAccentClass,
   model,
   temperature,
   ready,
@@ -441,6 +454,8 @@ const MonitorInfoCard = memo(function MonitorInfoCard({
   icon: React.ReactNode;
   label: string;
   themeCard?: string;
+  powerThemeCard?: string;
+  powerAccentClass?: string;
   model?: string;
   temperature?: number;
   ready: boolean;
@@ -454,19 +469,45 @@ const MonitorInfoCard = memo(function MonitorInfoCard({
   idleNote?: string;
   idleTooltip?: string;
 }) {
+  const { t } = useTranslation();
+  const powerParts = splitPowerParts(power);
+  const powerUnavailable = !powerAvailable || powerParts.value === '--';
+
   return (
-    <div data-theme-card={themeCard} className="glacier-metric-card flex h-full min-h-[230px] flex-col rounded-xl border border-border bg-card px-4 py-3 shadow-sm shadow-black/5">
-      <div className="mb-2.5 flex min-h-8 items-start justify-between gap-3">
-        <div className="pt-1">
-          <MetricHeader icon={icon} label={label} align="start" />
-        </div>
-        <div className="flex h-8 min-w-0 max-w-[58%] items-center rounded-lg border border-border/70 bg-background/55 px-2.5 text-[11px] text-muted-foreground">
-          <span className="truncate">{model || '--'}</span>
-        </div>
-      </div>
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(9rem,0.9fr)_minmax(0,1.1fr)] items-start gap-3 pt-1">
-        <div className="flex min-h-[145px] min-w-0 items-start justify-center pt-1">
-          <TempGaugeDisplay temp={temperature} ready={ready} idleLabel={idleLabel} />
+    <div data-theme-card={themeCard} className="glacier-metric-card flex h-full min-h-[218px] flex-col rounded-xl border border-border bg-card px-4 pb-3.5 pt-3 shadow-sm shadow-black/5">
+      <MetricHeader icon={icon} label={label} />
+      <MetricGaugeSlot
+        className="flex-1"
+        notice={idleNote && idleTooltip ? (
+          <GpuIdleNotice note={idleNote} tooltip={idleTooltip} />
+        ) : undefined}
+      >
+        <TempGaugeDisplay temp={temperature} ready={ready} idleLabel={idleLabel} />
+      </MetricGaugeSlot>
+      <div
+        data-theme-card={powerThemeCard}
+        className="glacier-stat-tile mt-2 flex w-full flex-col gap-2 rounded-lg border border-border/75 bg-background/55 px-3.5 py-2.5"
+      >
+        <div className="flex items-center justify-between gap-2.5">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+              <Zap className={clsx('h-3.5 w-3.5 shrink-0', powerUnavailable ? 'text-muted-foreground/50' : (powerAccentClass || 'text-amber-500 dark:text-amber-400'))} />
+              <span className="truncate">{powerLabel}</span>
+            </div>
+            <div className="mt-0.5 flex min-w-0">
+              <HardwareModelLabel model={model} fallbackLabel={t('deviceStatus.device.unknown')} />
+            </div>
+          </div>
+          <div className="flex shrink-0 items-baseline gap-0.5 tabular-nums">
+            <span className={clsx('text-[20px] font-bold leading-none tracking-[-0.02em]', powerUnavailable ? 'text-muted-foreground/70' : 'text-foreground')}>
+              {powerParts.value}
+            </span>
+            {powerParts.value !== '--' && (
+              <span className={clsx('text-xs font-semibold', powerUnavailable ? 'text-muted-foreground/70' : 'text-muted-foreground/80')}>
+                {powerParts.unit}
+              </span>
+            )}
+          </div>
         </div>
         <PowerTrendChart
           points={powerPoints}
@@ -475,13 +516,10 @@ const MonitorInfoCard = memo(function MonitorInfoCard({
           value={power}
           available={powerAvailable}
           unavailableLabel={unavailableLabel || idleLabel}
+          hideHeader
+          canvasClassName="h-24"
         />
       </div>
-      {idleNote && idleTooltip && (
-        <div className="mt-2">
-          <GpuIdleNotice note={idleNote} tooltip={idleTooltip} />
-        </div>
-      )}
     </div>
   );
 });
@@ -537,9 +575,9 @@ const GpuIdleNotice = memo(function GpuIdleNotice({
           type="button"
           data-theme-ui="gpu-idle-note"
           aria-label={t('deviceStatus.tempGauge.notReadHintAria')}
-          className="flex w-full cursor-help items-center justify-center gap-1.5 rounded-lg border border-border/60 bg-background/45 px-2.5 py-1 text-[11px] leading-tight text-muted-foreground transition-colors hover:border-border hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+          className="inline-flex max-w-full cursor-help items-center justify-center gap-1.5 rounded-full border border-border/60 bg-background/55 px-2.5 py-0.5 text-[11px] leading-tight text-muted-foreground transition-colors hover:border-border hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
         >
-          <CircleHelp className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80" aria-hidden="true" />
+          <CircleHelp className="h-3 w-3 shrink-0 text-muted-foreground/80" aria-hidden="true" />
           <span className="truncate">{note}</span>
         </button>
       </TooltipTrigger>
@@ -547,6 +585,29 @@ const GpuIdleNotice = memo(function GpuIdleNotice({
         {tooltip}
       </TooltipContent>
     </Tooltip>
+  );
+});
+
+const MetricGaugeSlot = memo(function MetricGaugeSlot({
+  children,
+  notice,
+  className,
+}: {
+  children: React.ReactNode;
+  notice?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={clsx('relative flex w-full min-w-0 flex-col items-center justify-center pt-4 pb-1.5', className)}>
+      {notice && (
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center">
+          <div className="pointer-events-auto flex max-w-full justify-center">
+            {notice}
+          </div>
+        </div>
+      )}
+      {children}
+    </div>
   );
 });
 
@@ -1336,39 +1397,46 @@ const LiveMonitorOnlyCards = memo(function LiveMonitorOnlyCards({
     <m.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      transition={{ duration: 0.3, ease: 'easeOut' }}
-      className="grid grid-cols-1 items-stretch gap-3 md:grid-cols-2"
+      transition={{ duration: 0.25, ease: 'easeOut' }}
+      data-theme-section="home-bento"
+      className="home-bento-layout home-bento-layout--monitor-only"
     >
-      <MonitorInfoCard
-        icon={CPU_METRIC_ICON}
-        label={t('deviceStatus.monitorOnly.cpuInfo')}
-        themeCard="cpu-temperature"
-        model={temperature?.cpuModel || t('deviceStatus.device.unknown')}
-        temperature={cpuDisplayTemp}
-        ready={cpuDisplayReady}
-        powerLabel={t('deviceStatus.monitorOnly.power')}
-        power={cpuPowerAvailable ? cpuPowerFormatted : '--'}
-        powerPoints={temperatureHistory}
-        powerSeries="cpu"
-        powerAvailable={cpuPowerAvailable}
-        unavailableLabel={!cpuPowerAvailable ? t('deviceStatus.tempGauge.notRead') : undefined}
-      />
-      <MonitorInfoCard
-        icon={GPU_METRIC_ICON}
-        label={t('deviceStatus.monitorOnly.gpuInfo')}
-        themeCard="gpu-temperature"
-        model={temperature?.gpuModel || t('deviceStatus.device.unknown')}
-        temperature={temperature?.gpuTemp}
-        ready={gpuReady}
-        powerLabel={t('deviceStatus.monitorOnly.power')}
-        power={formatGpuPowerWatts(temperature?.gpuPowerWatts, gpuReadState)}
-        powerPoints={temperatureHistory}
-        powerSeries="gpu"
-        powerAvailable={!gpuNotPolled}
-        idleLabel={gpuIdleLabel}
-        idleNote={gpuAutoIdleNote}
-        idleTooltip={gpuNotPolledTooltip}
-      />
+      <div className="home-metrics-grid home-metrics-grid--monitor-only">
+        <MonitorInfoCard
+          icon={CPU_METRIC_ICON}
+          label={t('deviceStatus.monitorOnly.cpuInfo')}
+          themeCard="cpu-temperature"
+          powerThemeCard="cpu-power"
+          powerAccentClass="text-amber-500 dark:text-amber-400"
+          model={temperature?.cpuModel || t('deviceStatus.device.unknown')}
+          temperature={cpuDisplayTemp}
+          ready={cpuDisplayReady}
+          powerLabel={t('deviceStatus.stats.cpuPower')}
+          power={cpuPowerAvailable ? cpuPowerFormatted : '--'}
+          powerPoints={temperatureHistory}
+          powerSeries="cpu"
+          powerAvailable={cpuPowerAvailable}
+          unavailableLabel={!cpuPowerAvailable ? t('deviceStatus.tempGauge.notRead') : undefined}
+        />
+        <MonitorInfoCard
+          icon={GPU_METRIC_ICON}
+          label={t('deviceStatus.monitorOnly.gpuInfo')}
+          themeCard="gpu-temperature"
+          powerThemeCard="gpu-power"
+          powerAccentClass="text-violet-500 dark:text-violet-400"
+          model={temperature?.gpuModel || t('deviceStatus.device.unknown')}
+          temperature={temperature?.gpuTemp}
+          ready={gpuReady}
+          powerLabel={t('deviceStatus.stats.gpuPower')}
+          power={formatGpuPowerWatts(temperature?.gpuPowerWatts, gpuReadState)}
+          powerPoints={temperatureHistory}
+          powerSeries="gpu"
+          powerAvailable={!gpuNotPolled}
+          idleLabel={gpuIdleLabel}
+          idleNote={gpuAutoIdleNote}
+          idleTooltip={gpuNotPolledTooltip}
+        />
+      </div>
     </m.div>
   );
 });
@@ -1396,10 +1464,10 @@ const LiveCpuMetricCard = memo(function LiveCpuMetricCard({
         icon={CPU_METRIC_ICON}
         label={cpuMetricLabel}
       />
-      <div className="flex flex-1 items-start justify-center pt-3">
+      <MetricGaugeSlot className="flex-1">
         <TempGaugeDisplay temp={cpuDisplayTemp} ready={cpuDisplayReady} />
-      </div>
-      <div data-theme-card="cpu-power" className="glacier-stat-tile mt-3 flex min-h-[56px] w-full items-center justify-between gap-2.5 rounded-lg border border-border/75 bg-background/55 px-3.5 py-2">
+      </MetricGaugeSlot>
+      <div data-theme-card="cpu-power" className="glacier-stat-tile mt-2 flex min-h-[56px] w-full items-center justify-between gap-2.5 rounded-lg border border-border/75 bg-background/55 px-3.5 py-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
             <Zap className={clsx('h-3.5 w-3.5 shrink-0', cpuPowerUnavailable ? 'text-muted-foreground/50' : 'text-amber-500 dark:text-amber-400')} />
@@ -1451,17 +1519,19 @@ const LiveGpuMetricCard = memo(function LiveGpuMetricCard({
         icon={GPU_METRIC_ICON}
         label={t('deviceStatus.metrics.gpuTemperature')}
       />
-      <div className="flex flex-1 flex-col items-center justify-between gap-2 pt-3">
+      <MetricGaugeSlot
+        className="flex-1"
+        notice={gpuAutoIdleNote && gpuNotPolledTooltip ? (
+          <GpuIdleNotice note={gpuAutoIdleNote} tooltip={gpuNotPolledTooltip} />
+        ) : undefined}
+      >
         <TempGaugeDisplay
           temp={temperature?.gpuTemp}
           ready={gpuReady}
           idleLabel={gpuIdleLabel}
         />
-        {gpuAutoIdleNote && gpuNotPolledTooltip && (
-          <GpuIdleNotice note={gpuAutoIdleNote} tooltip={gpuNotPolledTooltip} />
-        )}
-      </div>
-      <div data-theme-card="gpu-power" className="glacier-stat-tile mt-3 flex min-h-[56px] w-full items-center justify-between gap-2.5 rounded-lg border border-border/75 bg-background/55 px-3.5 py-2">
+      </MetricGaugeSlot>
+      <div data-theme-card="gpu-power" className="glacier-stat-tile mt-2 flex min-h-[56px] w-full items-center justify-between gap-2.5 rounded-lg border border-border/75 bg-background/55 px-3.5 py-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
             <Zap className={clsx('h-3.5 w-3.5 shrink-0', gpuNotPolled ? 'text-muted-foreground/50' : 'text-violet-500 dark:text-violet-400')} />
@@ -1556,7 +1626,7 @@ const LiveFanMetricCard = memo(function LiveFanMetricCard({
         icon={fanHeaderIcon}
         label={t('deviceStatus.metrics.fanRpm')}
       />
-      <div className="flex flex-1 items-start justify-center pt-3">
+      <MetricGaugeSlot className="flex-1">
         <FanSpeedDisplay
           currentSpeed={displayCurrentFanSpeed}
           targetSpeed={displayTargetFanSpeed}
@@ -1564,9 +1634,9 @@ const LiveFanMetricCard = memo(function LiveFanMetricCard({
           minSpeed={displayFanSpeedRange.min}
           maxSpeed={displayFanSpeedRange.max}
         />
-      </div>
+      </MetricGaugeSlot>
       {isConnected && (
-        <div data-theme-section="control-protection" className="mt-3 grid w-full grid-cols-2 gap-2">
+        <div data-theme-section="control-protection" className="mt-2 grid w-full grid-cols-2 gap-2">
           <div
             data-theme-card="control-mode"
             data-control-mode={config.autoControl ? 'auto' : 'manual'}
@@ -1780,9 +1850,12 @@ export default function DeviceStatus({
     : runtimeState === 'unavailable'
       ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
       : 'bg-primary/10 text-primary';
+  const isMonitorOnlyHero = monitorOnlyActive && !isConnected;
   const deviceModelName = isConnected
     ? (deviceModel?.trim() || activeDeviceName || t('deviceStatus.device.unknown'))
-    : t('deviceStatus.disconnected.title');
+    : isMonitorOnlyHero
+      ? t('deviceStatus.monitorOnly.heroTitle')
+      : t('deviceStatus.disconnected.title');
   const modeTitle = config.autoControl ? t('deviceStatus.mode.smartControl') : config.customSpeedEnabled ? t('deviceStatus.mode.fixedSpeed') : t('deviceStatus.mode.manualStrategy');
   const storeFanTransport = useAppStore((state) => state.fanData?.transport ?? '');
   const storeFanSpeedUnit = useAppStore((state) => state.fanData?.speedUnit ?? '');
@@ -1805,7 +1878,7 @@ export default function DeviceStatus({
         <div className="glacier-hero-content relative z-10 flex w-full flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
               <div data-theme-ui="hero-brand-mark" className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl bg-primary/10 text-primary">
-                <Fan className="h-8 w-8" />
+                {isMonitorOnlyHero ? <Gauge className="h-8 w-8" /> : <Fan className="h-8 w-8" />}
               </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
@@ -1813,13 +1886,17 @@ export default function DeviceStatus({
                 <span
                   className={clsx(
                     'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold',
-                    isConnected
+                    isConnected || isMonitorOnlyHero
                       ? 'border border-primary/25 bg-primary/10 text-primary'
                       : 'bg-destructive/10 text-destructive',
                   )}
                 >
-                  {isConnected && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 ring-2 ring-emerald-500/25" />}
-                  {isConnected ? t('deviceStatus.connectStatus.connected') : t('deviceStatus.connectStatus.offline')}
+                  {(isConnected || isMonitorOnlyHero) && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 ring-2 ring-emerald-500/25" />}
+                  {isConnected
+                    ? t('deviceStatus.connectStatus.connected')
+                    : isMonitorOnlyHero
+                      ? t('deviceStatus.monitorOnly.heroBadge')
+                      : t('deviceStatus.connectStatus.offline')}
                 </span>
                 {showRuntimeState && (
                   <span className={clsx('rounded-md px-2 py-0.5 text-[11px] font-semibold', runtimeStateClass)}>
@@ -1848,24 +1925,24 @@ export default function DeviceStatus({
             </div>
           </div>
 
-          <div
-            data-theme-ui="hero-actions"
-            data-hero-connected={isConnected ? 'true' : 'false'}
-            className="glacier-hero-actions flex items-center gap-3"
-          >
-            {isConnected && (
-              <ToggleSwitch
-                enabled={config.autoControl}
-                onChange={handleAutoControlChange}
-                label={t('deviceStatus.actions.smartControl')}
-                size="md"
-                color="blue"
-              />
-            )}
-            {isConnected && (!monitorOnlyActive || isConnected) && (
-              <span className="h-5 w-px bg-border/70" aria-hidden="true" />
-            )}
-            {(!monitorOnlyActive || isConnected) && (
+          {(!monitorOnlyActive || isConnected) && (
+            <div
+              data-theme-ui="hero-actions"
+              data-hero-connected={isConnected ? 'true' : 'false'}
+              className="glacier-hero-actions flex items-center gap-3"
+            >
+              {isConnected && (
+                <ToggleSwitch
+                  enabled={config.autoControl}
+                  onChange={handleAutoControlChange}
+                  label={t('deviceStatus.actions.smartControl')}
+                  size="md"
+                  color="blue"
+                />
+              )}
+              {isConnected && (
+                <span className="h-5 w-px bg-border/70" aria-hidden="true" />
+              )}
               <Button
                 variant={isConnected ? 'secondary' : 'primary'}
                 size="sm"
@@ -1873,8 +1950,8 @@ export default function DeviceStatus({
               >
                 {isConnected ? t('deviceStatus.actions.disconnect') : t('deviceStatus.actions.connect')}
               </Button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1999,8 +2076,8 @@ export default function DeviceStatus({
           <m.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 0.2, duration: 0.3 }}
-            className="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-1"
+            transition={{ delay: 0.15, duration: 0.25 }}
+            className="min-w-0"
           >
             <FanCurve
               config={config}

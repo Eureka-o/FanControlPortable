@@ -190,7 +190,7 @@ test('integrates curve legend hints, collapsible strategy card, diverging learni
   assert.match(chartSource, /learningActive/);
   assert.match(chartSource, /comfortBandBounds/);
   assert.doesNotMatch(chartSource, /x=\{comfortBandBounds\.high\}/);
-  assert.match(source, /grid-cols-2 gap-3 md:grid-cols-5/);
+  assert.match(source, /clsx\('grid grid-cols-2 gap-3', monitorOnlyActive \? 'md:grid-cols-4' : 'md:grid-cols-5'\)/);
 });
 
 test('places thermal prediction above learning bias tabs, guards apply-learning and low-RPM, and validates manual gears on save', () => {
