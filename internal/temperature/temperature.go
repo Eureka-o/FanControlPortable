@@ -109,7 +109,8 @@ func (r *Reader) Read(selection types.TemperatureSelection) (temp types.Temperat
 
 	// 如果桥接程序失败，使用备用方法
 	r.logger.Warn("桥接程序读取温度失败: %s, 使用备用方法", bridgeTemp.Error)
-	if cached, ok := r.lastGoodBridgeTemperature(selection); ok {
+	if cached, ok := r.lastGoodBridgeTemperature(selection); ok &&
+		(!selection.ForcePollGpu || cached.GPUReadState == types.GPUReadStateActive) {
 		r.logger.Warn("TempBridge read failed, using last valid temperature: %s", bridgeTemp.Error)
 		cached.UpdateTime = time.Now().UnixMilli()
 		cached.BridgeOk = true
@@ -194,6 +195,8 @@ func (r *Reader) storeLastGoodBridgeTemperature(selection types.TemperatureSelec
 	if temp.CPUTemp <= 0 && temp.GPUTemp <= 0 && temp.ControlTemp <= 0 {
 		return
 	}
+	selection.OmitSensorLists = false
+	selection.ForcePollGpu = false
 	r.cacheMutex.Lock()
 	defer r.cacheMutex.Unlock()
 	r.lastGoodBridgeTemp = temp
@@ -202,6 +205,8 @@ func (r *Reader) storeLastGoodBridgeTemperature(selection types.TemperatureSelec
 }
 
 func (r *Reader) lastGoodBridgeTemperature(selection types.TemperatureSelection) (types.TemperatureData, bool) {
+	selection.OmitSensorLists = false
+	selection.ForcePollGpu = false
 	r.cacheMutex.RLock()
 	defer r.cacheMutex.RUnlock()
 	if r.lastGoodBridgeAt.IsZero() || r.lastGoodBridgeSelection != selection {
@@ -225,6 +230,7 @@ func copyBridgeTemperatureMetadata(temp *types.TemperatureData, bridgeTemp types
 	temp.GPUReadState = normalizeGPUReadState(bridgeTemp.GPUReadState, bridgeTemp.GpuTemp)
 	temp.TelemetrySource = bridgeTemp.TelemetrySource
 	temp.TelemetryFailureStage = bridgeTemp.TelemetryFailureStage
+	temp.BridgeGpuMonitoringActive = bridgeTemp.GpuMonitoringActive
 	temp.MaxTemp = bridgeTemp.MaxTemp
 	temp.ControlTemp = bridgeTemp.ControlTemp
 	temp.ControlSource = bridgeTemp.ControlSource

@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, m } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import clsx from 'clsx';
 import { types } from '../../../../wailsjs/go/models';
 import { apiService } from '../../services/api';
@@ -225,7 +226,7 @@ export default function DeviceLightingControls({
       await apiService.setLightStrip(submitConfig);
       onConfigChange(types.AppConfig.createFrom({ ...config, lightStrip: submitConfig }));
     } catch (error) {
-      alert(t('controlPanel.alerts.lightStripFailed', { error: getErrorMessage(error) }));
+      toast.error(t('controlPanel.alerts.lightStripFailed', { error: getErrorMessage(error) }));
     } finally {
       setLoading(false);
     }
@@ -274,7 +275,7 @@ export default function DeviceLightingControls({
 
       <AnimatePresence>
         {requiredColorCount > 0 && (
-          <motion.div
+          <m.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
@@ -286,27 +287,46 @@ export default function DeviceLightingControls({
                   key={preset.name}
                   type="button"
                   onClick={() => updateDraft({ colors: preset.colors })}
-                  className="cursor-pointer rounded-lg border border-border px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-muted"
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-background/55 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary/35 hover:bg-muted/70"
                 >
+                  <span className="inline-flex items-center -space-x-1" aria-hidden="true">
+                    {preset.colors.slice(0, 3).map((color, colorIndex) => (
+                      <span
+                        key={colorIndex}
+                        className="h-2.5 w-2.5 rounded-full border border-card"
+                        style={{ backgroundColor: rgbToHex(color) }}
+                      />
+                    ))}
+                  </span>
                   {preset.name}
                 </button>
               ))}
             </div>
 
             <div className={clsx('grid gap-3', requiredColorCount === 1 ? 'grid-cols-1' : 'grid-cols-3')}>
-              {Array.from({ length: requiredColorCount }).map((_, index) => (
-                <div key={index}>
-                  <label className="mb-1 block text-xs text-muted-foreground">{t('controlPanel.light.colorLabel', { index: index + 1 })}</label>
-                  <input
-                    type="color"
-                    value={rgbToHex(normalizeColors(lightStripConfig.colors)[index])}
-                    onChange={(event) => handleLightColorChange(index, event.target.value)}
-                    className="h-9 w-full cursor-pointer rounded-lg border border-border bg-card"
-                  />
-                </div>
-              ))}
+              {Array.from({ length: requiredColorCount }).map((_, index) => {
+                const hex = rgbToHex(normalizeColors(lightStripConfig.colors)[index]);
+                return (
+                  <div key={index}>
+                    <span className="mb-1 block text-xs text-muted-foreground">{t('controlPanel.light.colorLabel', { index: index + 1 })}</span>
+                    <label className="group flex h-9 cursor-pointer items-center gap-2.5 rounded-lg border border-border bg-background/60 px-2.5 transition-colors hover:border-primary/40 hover:bg-muted/45 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-ring/30">
+                      <span
+                        className="h-5 w-5 shrink-0 rounded-md border border-black/10 shadow-xs transition-transform group-hover:scale-105 dark:border-white/15"
+                        style={{ backgroundColor: hex }}
+                      />
+                      <span className="min-w-0 flex-1 truncate font-mono text-xs uppercase text-foreground">{hex}</span>
+                      <input
+                        type="color"
+                        value={hex}
+                        onChange={(event) => handleLightColorChange(index, event.target.value)}
+                        className="sr-only"
+                      />
+                    </label>
+                  </div>
+                );
+              })}
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
 

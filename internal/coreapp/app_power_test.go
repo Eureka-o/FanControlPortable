@@ -4,6 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Eureka-o/FanControlPortable/internal/bridge"
+	"github.com/Eureka-o/FanControlPortable/internal/config"
+	"github.com/Eureka-o/FanControlPortable/internal/device"
 	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
@@ -192,5 +195,101 @@ func TestShouldSendTargetRPM(t *testing.T) {
 				t.Fatalf("shouldSendTargetRPM() = %v, want %v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestHandleSystemResumeUnblocksWritesUnlessMonitorOnly(t *testing.T) {
+	cfgMgr := config.NewManager(t.TempDir(), nil)
+	cfgMgr.Set(types.GetDefaultConfig(false))
+	app := &CoreApp{
+		configManager: cfgMgr,
+		deviceManager: device.NewManager(nil),
+		bridgeManager: bridge.NewManager(nil),
+	}
+
+	app.systemSuspended.Store(true)
+	app.deviceManager.BlockWrites()
+	app.handleSystemResume("test", time.Minute, false)
+	if app.deviceManager.WritesBlocked() {
+		t.Fatal("handleSystemResume() left writesBlocked=true when monitorOnly=false")
+	}
+
+	app.monitorOnly.Store(true)
+	app.systemSuspended.Store(true)
+	app.deviceManager.BlockWrites()
+	app.handleSystemResume("test-monitor-only", time.Minute, false)
+	if !app.deviceManager.WritesBlocked() {
+		t.Fatal("handleSystemResume() unblocked writes while monitorOnly=true")
+	}
+}
+
+func TestCleanupBroadcastsToAllWaiters(t *testing.T) {
+	app := &CoreApp{
+		cleanupChan: make(chan bool),
+	}
+	waiter1 := make(chan struct{})
+	waiter2 := make(chan struct{})
+	go func() {
+		<-app.cleanupChan
+		close(waiter1)
+	}()
+	go func() {
+		<-app.cleanupChan
+		close(waiter2)
+	}()
+
+	app.cleanup()
+	app.cleanup()
+
+	for idx, ch := range []chan struct{}{waiter1, waiter2} {
+		select {
+		case <-ch:
+		case <-time.After(time.Second):
+			t.Fatalf("waiter %d did not unblock on cleanup()", idx+1)
+		}
+	}
+}
+
+func TestCanTickSceneBlocksDuringExclusiveStates(t *testing.T) {
+	app := &CoreApp{}
+	if app.canTickSceneForActive(false) {
+		t.Fatal("canTickSceneForActive(false) = true")
+	}
+	if !app.canTickSceneForActive(true) {
+		t.Fatal("canTickSceneForActive(true) = false for idle active BlackShark")
+	}
+
+	checks := []struct {
+		name  string
+		setup func(bool)
+	}{
+		{name: "systemSuspended", setup: func(v bool) { app.systemSuspended.Store(v) }},
+		{name: "resumeRecoveryRunning", setup: func(v bool) { app.resumeRecoveryRunning.Store(v) }},
+		{name: "reconnectInProgress", setup: func(v bool) { app.reconnectInProgress.Store(v) }},
+		{
+			name: "noiseDiagnosticLease",
+			setup: func(v bool) {
+				app.noiseDiagnosticMu.Lock()
+				if v {
+					app.noiseDiagnosticLease = &noiseDiagnosticLease{
+						sessionID: "test",
+						expiresAt: time.Now().Add(time.Minute),
+					}
+				} else {
+					app.noiseDiagnosticLease = nil
+				}
+				app.noiseDiagnosticMu.Unlock()
+			},
+		},
+	}
+	for _, tc := range checks {
+		tc.setup(true)
+		if app.canTickSceneForActive(true) {
+			t.Fatalf("canTickSceneForActive(true) = true while %s active", tc.name)
+		}
+		tc.setup(false)
+		if !app.canTickSceneForActive(true) {
+			t.Fatalf("canTickSceneForActive(true) = false after clearing %s", tc.name)
+		}
 	}
 }

@@ -92,6 +92,17 @@ namespace FanControl.TempBridge
             }
         }
 
+        public bool IsProbeRunning
+        {
+            get
+            {
+                lock (stateLock)
+                {
+                    return probeRunning;
+                }
+            }
+        }
+
         private void ProbeGpuActivity(Action<string> log, bool expectDiscreteGpu, int generation)
         {
             var stopwatch = Stopwatch.StartNew();

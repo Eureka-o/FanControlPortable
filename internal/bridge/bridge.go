@@ -27,6 +27,7 @@ import (
 // channel + 超时实现真正可取消的等待。
 type Manager struct {
 	cmd       *exec.Cmd
+	job       *processJob
 	stdin     io.WriteCloser
 	stdout    io.ReadCloser
 	lineCh    chan string
@@ -238,6 +239,10 @@ func (m *Manager) startStdio() error {
 		setFailed(err)
 		return fmt.Errorf("启动桥接程序失败: %v", err)
 	}
+	job, jobErr := attachKillOnCloseJob(cmd)
+	if jobErr != nil {
+		m.logger.Debug("绑定桥接子进程到 Job Object 失败（继续运行）: %v", jobErr)
+	}
 
 	go m.forwardBridgeStderr(stderr)
 
@@ -246,6 +251,9 @@ func (m *Manager) startStdio() error {
 		m.logger.Error("桥接程序启动握手失败（已等待 %s）: %v", time.Since(startAt).Round(time.Millisecond), err)
 		_ = stdin.Close()
 		_ = cmd.Process.Kill()
+		if job != nil {
+			job.Close()
+		}
 		// 异步回收进程，避免句柄/僵尸进程泄漏；Wait 会同时关闭残留管道。
 		go func() { _ = cmd.Wait() }()
 		go drainLines(lineCh)
@@ -258,11 +266,15 @@ func (m *Manager) startStdio() error {
 		m.mutex.Unlock()
 		_ = stdin.Close()
 		_ = cmd.Process.Kill()
+		if job != nil {
+			job.Close()
+		}
 		go func() { _ = cmd.Wait() }()
 		go drainLines(lineCh)
 		return fmt.Errorf("桥接程序已请求停止")
 	}
 	m.cmd = cmd
+	m.job = job
 	m.stdin = stdin
 	m.stdout = stdout
 	m.lineCh = lineCh
@@ -382,6 +394,7 @@ func (m *Manager) sendCommandUnsafe(cmdType, data string) (*types.BridgeResponse
 	}
 
 	timeout := bridgeCommandTimeoutFor(cmdType)
+	deadline := time.Now().Add(timeout)
 
 	// 先丢弃残留的过期输出，防止上一条超时命令的迟到响应被错配到本次请求。
 drainLoop:
@@ -407,7 +420,13 @@ drainLoop:
 		return nil, fmt.Errorf("序列化命令失败: %v", err)
 	}
 
-	// 写入也可能在桥接进程卡死、管道缓冲填满时阻塞，同样需要超时保护。
+	// 写入也可能在桥接进程卡死、管道缓冲填满时阻塞，与后续读取共享同一总截止时间。
+	writeRemaining := time.Until(deadline)
+	if writeRemaining <= 0 {
+		timeoutErr := fmt.Errorf("发送 %s 命令超时 (timeout=%s)", cmdType, timeout)
+		m.failBridgeUnsafe(timeoutErr)
+		return nil, timeoutErr
+	}
 	stdin := m.stdin
 	writeDone := make(chan error, 1)
 	go func() {
@@ -415,10 +434,15 @@ drainLoop:
 		writeDone <- werr
 	}()
 
-	writeTimer := time.NewTimer(timeout)
+	writeTimer := time.NewTimer(writeRemaining)
 	select {
 	case werr := <-writeDone:
-		writeTimer.Stop()
+		if !writeTimer.Stop() {
+			select {
+			case <-writeTimer.C:
+			default:
+			}
+		}
 		if werr != nil {
 			m.failBridgeUnsafe(werr)
 			return nil, fmt.Errorf("发送 %s 命令失败 (timeout=%s): %v", cmdType, timeout, werr)
@@ -429,7 +453,6 @@ drainLoop:
 		return nil, timeoutErr
 	}
 
-	deadline := time.Now().Add(timeout)
 	for {
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
@@ -483,22 +506,37 @@ func (m *Manager) failBridgeUnsafe(err error) {
 // teardownProcessUnsafe 关闭通信管道并按需终止/回收桥接进程。调用方必须持有 m.mutex。
 func (m *Manager) teardownProcessUnsafe(kill bool) {
 	cmd := m.cmd
+	job := m.job
 	ownsCmd := m.ownsCmd
 	m.cmd = nil
+	m.job = nil
 	m.ownsCmd = false
 	m.pipeName = ""
 	m.closeConnUnsafe()
 
 	if cmd == nil || cmd.Process == nil {
+		if job != nil {
+			job.Close()
+		}
 		return
 	}
 	if ownsCmd {
 		if kill {
 			_ = cmd.Process.Kill()
 		}
+		if job != nil {
+			if kill {
+				job.Close()
+			} else {
+				defer job.Close()
+			}
+		}
 		// 异步回收，避免阻塞调用方；Wait 同时会关闭残留的管道句柄。
 		go func() { _ = cmd.Wait() }()
 	} else {
+		if job != nil {
+			job.Close()
+		}
 		_ = cmd.Process.Release()
 	}
 }
@@ -544,8 +582,10 @@ func (m *Manager) stopUnsafe() {
 	}
 
 	ownedCmd := m.cmd
+	job := m.job
 	ownsCmd := m.ownsCmd
 	m.cmd = nil
+	m.job = nil
 	m.ownsCmd = false
 	m.pipeName = ""
 	m.closeConnUnsafe()
@@ -564,6 +604,9 @@ func (m *Manager) stopUnsafe() {
 			m.logger.Error("等待桥接进程退出超时（%s），强制终止", bridgeProcessExitWait)
 			_ = ownedCmd.Process.Kill()
 		}
+	}
+	if job != nil {
+		job.Close()
 	}
 
 	m.setState(BridgeStateStopped, nil)

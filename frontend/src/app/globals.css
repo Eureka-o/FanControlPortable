@@ -7,16 +7,16 @@
   --font-ui-sans: "Manrope", "Segoe UI Variable Text", "Segoe UI", sans-serif;
   --font-ui-cjk: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   --font-geist-mono: "Geist Mono", "Cascadia Mono", Consolas, monospace;
-  --background: #f6f8fc;
-  --foreground: #111827;
+  --background: #f5f5f7;
+  --foreground: #1d1d1f;
   --card: #ffffff;
-  --card-foreground: #111827;
-  --muted: #edf2f9;
-  --muted-foreground: #66758a;
-  --border: #e1e7f0;
-  --input: #d3ddea;
-  --ring: #2f6df6;
-  --primary: #2f6df6;
+  --card-foreground: #1d1d1f;
+  --muted: #ececef;
+  --muted-foreground: #6e6e73;
+  --border: #e2e2e7;
+  --input: #d5d5dc;
+  --ring: #0071e3;
+  --primary: #0071e3;
   --primary-foreground: #ffffff;
   --destructive: #dc2626;
   --scrollbar-size: 10px;
@@ -37,17 +37,17 @@
     var(--foreground) 34%,
     transparent
   );
-  --chart-grid: color-mix(in srgb, #e8edf5 82%, var(--background) 18%);
-  --chart-axis: color-mix(in srgb, #d8e0ec 80%, var(--background) 20%);
-  --chart-tick: #6b7280;
-  --chart-primary: #2f6df6;
-  --chart-primary-active: #1f57da;
-  --chart-primary-glow: rgba(47, 109, 246, 0.36);
+  --chart-grid: color-mix(in srgb, #e5e5ea 82%, var(--background) 18%);
+  --chart-axis: color-mix(in srgb, #d5d5dc 80%, var(--background) 20%);
+  --chart-tick: #6e6e73;
+  --chart-primary: #0071e3;
+  --chart-primary-active: #005bb5;
+  --chart-primary-glow: rgba(0, 113, 227, 0.28);
   --chart-point-shadow: rgba(0, 0, 0, 0.1);
   --chart-cpu-temperature: #2f6df6;
   --chart-gpu-temperature: #f97316;
   --chart-fan-speed: #10b981;
-  --chart-cpu-power: color-mix(in srgb, #0891b2 88%, var(--foreground) 12%);
+  --chart-cpu-power: color-mix(in srgb, #d97706 88%, var(--foreground) 12%);
   --chart-gpu-power: color-mix(in srgb, #a855f7 84%, var(--foreground) 16%);
   --chart-stat-max: var(--destructive);
   --chart-stat-min: color-mix(
@@ -65,27 +65,27 @@
   --chart-tooltip-bg: rgba(255, 255, 255, 0.95);
   --chart-tooltip-border: transparent;
   --chart-tooltip-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
-  --chart-tooltip-text: #111827;
+  --chart-tooltip-text: #1d1d1f;
   --popover: #ffffff;
-  --popover-foreground: #111827;
-  --secondary: #edf2f9;
-  --secondary-foreground: #111827;
-  --accent: #edf2f9;
-  --accent-foreground: #111827;
+  --popover-foreground: #1d1d1f;
+  --secondary: #efeff3;
+  --secondary-foreground: #1d1d1f;
+  --accent: #efeff3;
+  --accent-foreground: #1d1d1f;
   --chart-1: oklch(0.809 0.105 251.813);
   --chart-2: oklch(0.623 0.214 259.815);
   --chart-3: oklch(0.546 0.245 262.881);
   --chart-4: oklch(0.488 0.243 264.376);
   --chart-5: oklch(0.424 0.199 265.638);
   --radius: 0.75rem;
-  --sidebar: #ffffff;
-  --sidebar-foreground: #111827;
-  --sidebar-primary: #2f6df6;
+  --sidebar: #fbfbfd;
+  --sidebar-foreground: #1d1d1f;
+  --sidebar-primary: #0071e3;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #eef4ff;
-  --sidebar-accent-foreground: #111827;
-  --sidebar-border: #e5ebf4;
-  --sidebar-ring: #2f6df6;
+  --sidebar-accent: rgba(0, 0, 0, 0.048);
+  --sidebar-accent-foreground: #1d1d1f;
+  --sidebar-border: #e5e5ea;
+  --sidebar-ring: #0071e3;
   --mica-content-surface: color-mix(
     in srgb,
     var(--background) 94%,
@@ -103,9 +103,9 @@
     var(--background) 2%
   );
   --surface-soft-shadow:
-    0 12px 30px -24px rgba(15, 23, 42, 0.22),
-    0 1px 2px -1px rgba(15, 23, 42, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.68);
+    0 12px 28px -22px rgba(15, 23, 42, 0.16),
+    0 1px 3px -1px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
   --surface-hairline: color-mix(
     in srgb,
     var(--border) 92%,
@@ -156,13 +156,14 @@
     var(--theme-card-border)
   );
   --theme-card-hover-shadow:
-    0 14px 32px -24px
-      color-mix(in srgb, var(--primary) 30%, rgba(15, 23, 42, 0.18)),
-    0 1px 2px -1px rgba(15, 23, 42, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    0 14px 28px -20px rgba(15, 23, 42, 0.16),
+    0 1px 3px -1px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
   --theme-card-hover-transform: translateY(-1px);
   --theme-card-backdrop-filter: none;
-  --theme-card-radius: var(--radius-2xl);
+  --theme-card-radius: 1.25rem;
+  --theme-card-inner-radius: calc(var(--theme-card-radius) - 0.375rem);
+  --theme-control-radius: 0.625rem;
   --theme-preview-card-background: color-mix(
     in srgb,
     var(--card) 97%,
@@ -226,27 +227,27 @@
     var(--primary) 7%,
     var(--background) 93%
   );
-  --theme-control-hover-shadow: 0 14px 28px -22px
-    color-mix(in srgb, var(--primary) 54%, transparent);
-  --theme-control-focus-shadow: 0 0 0 3px
-    color-mix(in srgb, var(--primary) 18%, transparent);
+  --theme-control-hover-shadow: 0 8px 18px -16px
+    color-mix(in srgb, var(--primary) 34%, transparent);
+  --theme-control-focus-shadow: 0 0 0 2px
+    color-mix(in srgb, var(--primary) 16%, transparent);
   --theme-switch-border: color-mix(in srgb, var(--border) 68%, transparent);
   --theme-switch-hover-border: color-mix(
     in srgb,
-    var(--primary) 44%,
+    var(--primary) 40%,
     transparent
   );
   --theme-switch-hover-shadow: 0 0 0 2px
-    color-mix(in srgb, var(--primary) 12%, transparent);
+    color-mix(in srgb, var(--primary) 10%, transparent);
   --theme-switch-checked-border: color-mix(
     in srgb,
-    var(--primary) 52%,
+    var(--primary) 48%,
     transparent
   );
-  --theme-switch-checked-shadow: 0 0 0 3px
+  --theme-switch-checked-shadow: 0 0 0 2px
+    color-mix(in srgb, var(--primary) 12%, transparent);
+  --theme-switch-checked-hover-shadow: 0 0 0 2px
     color-mix(in srgb, var(--primary) 16%, transparent);
-  --theme-switch-checked-hover-shadow: 0 0 0 3px
-    color-mix(in srgb, var(--primary) 18%, transparent);
   --theme-switch-unchecked-background: color-mix(
     in srgb,
     var(--muted) 78%,
@@ -318,14 +319,14 @@
 }
 
 .dark {
-  --background: #07090d;
-  --foreground: #eef2f7;
-  --card: #11161d;
-  --card-foreground: #eef2f7;
-  --muted: #1a2029;
-  --muted-foreground: #98a2b3;
-  --border: #232a35;
-  --input: #2b3442;
+  --background: #131417;
+  --foreground: #f5f5f7;
+  --card: #1c1d21;
+  --card-foreground: #f5f5f7;
+  --muted: #25262b;
+  --muted-foreground: #98989d;
+  --border: #2d2e35;
+  --input: #363842;
   --ring: #ff4b26;
   --primary: #ff4b26;
   --primary-foreground: #fff7f3;
@@ -347,9 +348,9 @@
     var(--foreground) 32%,
     transparent
   );
-  --chart-grid: #252b35;
-  --chart-axis: #313845;
-  --chart-tick: #98a2b3;
+  --chart-grid: #272930;
+  --chart-axis: #343741;
+  --chart-tick: #98989d;
   --chart-primary: #ff4b26;
   --chart-primary-active: #ff7048;
   --chart-primary-glow: rgba(255, 75, 38, 0.42);
@@ -357,7 +358,7 @@
   --chart-cpu-temperature: #6aa6ff;
   --chart-gpu-temperature: #ff9a62;
   --chart-fan-speed: #34d399;
-  --chart-cpu-power: color-mix(in srgb, #22d3ee 78%, var(--foreground) 22%);
+  --chart-cpu-power: color-mix(in srgb, #fbbf24 82%, var(--foreground) 18%);
   --chart-gpu-power: color-mix(in srgb, #c084fc 78%, var(--foreground) 22%);
   --chart-stat-max: var(--destructive);
   --chart-stat-min: color-mix(
@@ -372,28 +373,28 @@
   --status-temperature-hot: #ef4444;
   --status-temperature-warm: #fb923c;
   --chart-temperature-indicator: #ff7048;
-  --chart-tooltip-bg: rgba(17, 22, 29, 0.96);
-  --chart-tooltip-border: #303845;
+  --chart-tooltip-bg: rgba(28, 29, 33, 0.96);
+  --chart-tooltip-border: #343741;
   --chart-tooltip-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6);
-  --chart-tooltip-text: #e5e7eb;
-  --popover: #11161d;
-  --popover-foreground: #e5e7eb;
-  --secondary: #1a2029;
-  --secondary-foreground: #e5e7eb;
-  --accent: #1d232d;
-  --accent-foreground: #e5e7eb;
+  --chart-tooltip-text: #f5f5f7;
+  --popover: #1c1d21;
+  --popover-foreground: #f5f5f7;
+  --secondary: #25262b;
+  --secondary-foreground: #f5f5f7;
+  --accent: #2a2c33;
+  --accent-foreground: #f5f5f7;
   --chart-1: oklch(0.809 0.105 251.813);
   --chart-2: oklch(0.623 0.214 259.815);
   --chart-3: oklch(0.546 0.245 262.881);
   --chart-4: oklch(0.488 0.243 264.376);
   --chart-5: oklch(0.424 0.199 265.638);
-  --sidebar: #0a0d12;
-  --sidebar-foreground: #e8edf5;
+  --sidebar: #18191d;
+  --sidebar-foreground: #f5f5f7;
   --sidebar-primary: #ff4b26;
   --sidebar-primary-foreground: #fff7f3;
-  --sidebar-accent: #171c24;
-  --sidebar-accent-foreground: #e5e7eb;
-  --sidebar-border: #202631;
+  --sidebar-accent: rgba(255, 255, 255, 0.06);
+  --sidebar-accent-foreground: #f5f5f7;
+  --sidebar-border: #282a31;
   --sidebar-ring: #ff4b26;
   --mica-content-surface: color-mix(
     in srgb,
@@ -412,8 +413,8 @@
     var(--background) 6%
   );
   --surface-soft-shadow:
-    0 16px 38px -28px rgba(0, 0, 0, 0.68), 0 1px 2px -1px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    0 16px 36px -26px rgba(0, 0, 0, 0.64), 0 1px 2px -1px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.065);
   --surface-hairline: color-mix(
     in srgb,
     var(--border) 90%,
@@ -464,12 +465,13 @@
     var(--theme-card-border)
   );
   --theme-card-hover-shadow:
-    0 18px 40px -28px
-      color-mix(in srgb, var(--primary) 34%, rgba(0, 0, 0, 0.68)),
-    0 1px 2px -1px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    0 18px 38px -26px rgba(0, 0, 0, 0.7),
+    0 1px 3px -1px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   --theme-card-hover-transform: translateY(-1px);
   --theme-card-backdrop-filter: none;
-  --theme-card-radius: var(--radius-2xl);
+  --theme-card-radius: 1.25rem;
+  --theme-card-inner-radius: calc(var(--theme-card-radius) - 0.375rem);
+  --theme-control-radius: 0.625rem;
   --theme-preview-card-background: color-mix(
     in srgb,
     var(--card) 92%,
@@ -531,27 +533,27 @@
     var(--primary) 12%,
     var(--background) 88%
   );
-  --theme-control-hover-shadow: 0 16px 30px -22px
-    color-mix(in srgb, var(--primary) 62%, transparent);
-  --theme-control-focus-shadow: 0 0 0 3px
-    color-mix(in srgb, var(--primary) 22%, transparent);
+  --theme-control-hover-shadow: 0 10px 22px -18px
+    color-mix(in srgb, var(--primary) 40%, transparent);
+  --theme-control-focus-shadow: 0 0 0 2px
+    color-mix(in srgb, var(--primary) 20%, transparent);
   --theme-switch-border: color-mix(in srgb, var(--border) 72%, transparent);
   --theme-switch-hover-border: color-mix(
     in srgb,
-    var(--primary) 48%,
+    var(--primary) 42%,
     transparent
   );
   --theme-switch-hover-shadow: 0 0 0 2px
-    color-mix(in srgb, var(--primary) 14%, transparent);
+    color-mix(in srgb, var(--primary) 12%, transparent);
   --theme-switch-checked-border: color-mix(
     in srgb,
-    var(--primary) 56%,
+    var(--primary) 52%,
     transparent
   );
-  --theme-switch-checked-shadow: 0 0 0 3px
+  --theme-switch-checked-shadow: 0 0 0 2px
+    color-mix(in srgb, var(--primary) 15%, transparent);
+  --theme-switch-checked-hover-shadow: 0 0 0 2px
     color-mix(in srgb, var(--primary) 18%, transparent);
-  --theme-switch-checked-hover-shadow: 0 0 0 3px
-    color-mix(in srgb, var(--primary) 20%, transparent);
   --theme-switch-unchecked-background: color-mix(
     in srgb,
     var(--muted) 76%,
@@ -629,7 +631,7 @@ html[data-window-blur="on"]:not([data-theme])
 html:not([data-theme]) .glacier-sidebar {
   --sidebar-dock-surface: color-mix(in srgb, var(--sidebar) 88%, transparent);
   --sidebar-dock-edge: color-mix(in srgb, var(--foreground) 11%, transparent);
-  --sidebar-active-fill: color-mix(in srgb, var(--primary) 28%, transparent);
+  --sidebar-active-fill: color-mix(in srgb, var(--primary) 22%, rgba(255, 255, 255, 0.42));
   --sidebar-dock-shadow:
     0 12px 28px -24px color-mix(in srgb, var(--foreground) 28%, transparent),
     inset 0 1px 0 color-mix(in srgb, white 52%, transparent);
@@ -645,7 +647,7 @@ html:not([data-theme]) .glacier-sidebar {
 html.dark:not([data-theme]) .glacier-sidebar {
   --sidebar-dock-surface: color-mix(in srgb, var(--sidebar) 86%, transparent);
   --sidebar-dock-edge: color-mix(in srgb, white 15%, transparent);
-  --sidebar-active-fill: color-mix(in srgb, var(--primary) 32%, transparent);
+  --sidebar-active-fill: color-mix(in srgb, var(--primary) 30%, rgba(14, 24, 42, 0.35));
   --sidebar-dock-shadow:
     0 12px 30px -24px rgba(0, 0, 0, 0.72),
     inset 0 1px 0 color-mix(in srgb, white 14%, transparent);
@@ -727,11 +729,64 @@ html:not([data-theme])
   .glacier-shell
   .glacier-sidebar
   > [data-app-ui="sidebar-active-indicator"] {
-  border: 0 !important;
+  overflow: visible;
+  border: 1px solid color-mix(in srgb, var(--primary) 34%, transparent) !important;
   background: var(--sidebar-active-fill) !important;
   box-shadow:
-    0 0 12px color-mix(in srgb, var(--primary) 28%, transparent),
-    0 0 22px color-mix(in srgb, var(--primary) 16%, transparent) !important;
+    0 0 10px color-mix(in srgb, var(--primary) 30%, transparent),
+    0 0 22px color-mix(in srgb, var(--primary) 18%, transparent),
+    0 4px 14px -4px color-mix(in srgb, var(--primary) 26%, transparent),
+    inset 0 0 10px color-mix(in srgb, var(--primary) 18%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72) !important;
+  opacity: 1;
+}
+
+html.dark:not([data-theme])
+  body
+  .glacier-shell
+  .glacier-sidebar
+  > [data-app-ui="sidebar-active-indicator"] {
+  border-color: color-mix(in srgb, var(--primary) 46%, transparent) !important;
+  box-shadow:
+    0 0 14px color-mix(in srgb, var(--primary) 46%, transparent),
+    0 0 28px color-mix(in srgb, var(--primary) 24%, transparent),
+    0 6px 18px -4px color-mix(in srgb, var(--primary) 32%, transparent),
+    inset 0 0 12px color-mix(in srgb, var(--primary) 26%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
+}
+
+html:not([data-theme])
+  body
+  .glacier-shell
+  .glacier-sidebar
+  > [data-app-ui="sidebar-active-indicator"]::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  background: radial-gradient(
+    120% 100% at 50% 50%,
+    color-mix(in srgb, var(--primary) 36%, transparent) 0%,
+    color-mix(in srgb, var(--primary) 14%, transparent) 55%,
+    transparent 100%
+  );
+  filter: blur(7px);
+  opacity: 0.9;
+  pointer-events: none;
+  z-index: -1;
+}
+
+html.dark:not([data-theme])
+  body
+  .glacier-shell
+  .glacier-sidebar
+  > [data-app-ui="sidebar-active-indicator"]::before {
+  background: radial-gradient(
+    120% 100% at 50% 50%,
+    color-mix(in srgb, var(--primary) 48%, transparent) 0%,
+    color-mix(in srgb, var(--primary) 18%, transparent) 55%,
+    transparent 100%
+  );
   opacity: 1;
 }
 
@@ -749,6 +804,13 @@ html:not([data-theme])
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   transform: none;
+}
+
+html:not([data-theme])
+  .glacier-sidebar
+  [data-theme-ui="sidebar-item"][aria-selected="true"]
+  [data-app-ui="sidebar-item-icon"] {
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--primary) 42%, transparent));
 }
 
 html:not([data-theme]) [data-theme-ui="hero-brand-mark"] {
@@ -1104,10 +1166,14 @@ html
 @media (prefers-reduced-motion: reduce) {
   .glacier-sidebar,
   .glacier-titlebar,
+  [data-app-ui="titlebar-info"],
+  [data-app-ui="titlebar-home-heading"],
   [data-app-ui="brand-wordmark"],
   [data-app-ui="brand-wordmark"] > [data-brand-part],
   [data-app-ui="brand-compact"],
-  [data-app-ui="sidebar-item-label"] {
+  [data-app-ui="sidebar-item-label"],
+  .settings-tab-active-pill,
+  .about-channel-active-pill {
     transition: none !important;
   }
 
@@ -1128,6 +1194,66 @@ html[data-window-blur="on"]:not([data-theme])
   .glacier-native-backdrop
   .glacier-titlebar {
   background: transparent;
+}
+
+.glacier-shell [data-app-ui="titlebar-info"] {
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.glacier-shell[data-theme-page="status"] [data-app-ui="titlebar-info"] {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+}
+
+.glacier-shell [data-app-ui="titlebar-home-heading"] {
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.glacier-shell[data-theme-page="status"]
+  [data-app-ui="titlebar-home-heading"] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+html[data-theme][data-theme]
+  body
+  .glacier-shell
+  [data-app-ui="titlebar-home-heading"]
+  > * {
+  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--card) 58%, transparent);
+  padding: 0.25rem 0.65rem;
+  box-shadow:
+    0 5px 14px -12px color-mix(in srgb, var(--foreground) 28%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
+  -webkit-backdrop-filter: blur(10px) saturate(116%);
+  backdrop-filter: blur(10px) saturate(116%);
+}
+
+html:not([data-theme]) .glacier-shell [data-app-ui="titlebar-status-card"] {
+  border-color: rgba(0, 0, 0, 0.075);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+html.dark:not([data-theme])
+  .glacier-shell
+  [data-app-ui="titlebar-status-card"] {
+  border-color: rgba(255, 255, 255, 0.09);
+  background: rgba(34, 36, 42, 0.78);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .glacier-native-backdrop .glacier-content {
@@ -1191,12 +1317,16 @@ html[data-window-blur="on"]:not([data-theme]) {
     transparent
   );
   --theme-chart-canvas-border: var(--window-glass-border-muted);
-  --popover: var(--window-glass-card-deep-bg);
+  --popover: rgba(255, 255, 255, 0.96);
   --chart-tooltip-bg: color-mix(
     in srgb,
     var(--window-glass-card-deep-bg) 94%,
     transparent
   );
+}
+
+html.dark[data-window-blur="on"]:not([data-theme]) {
+  --popover: rgba(28, 29, 34, 0.96);
 }
 
 .glacier-shell svg {
@@ -1223,43 +1353,43 @@ html[data-window-blur="on"]:not([data-theme]) {
 }
 
 [data-page-reveal="cards"] > :nth-child(2) {
-  animation-delay: 0.08s;
+  animation-delay: 0.03s;
 }
 
 [data-page-reveal="cards"] > :nth-child(3) {
-  animation-delay: 0.16s;
-}
-
-[data-page-reveal="cards"] > :nth-child(4) {
-  animation-delay: 0.24s;
-}
-
-[data-page-reveal="cards"] > :nth-child(5) {
-  animation-delay: 0.32s;
-}
-
-[data-page-reveal="cards-reverse"] > :nth-last-child(2) {
   animation-delay: 0.06s;
 }
 
-[data-page-reveal="cards-reverse"] > :nth-last-child(3) {
+[data-page-reveal="cards"] > :nth-child(4) {
+  animation-delay: 0.09s;
+}
+
+[data-page-reveal="cards"] > :nth-child(5) {
   animation-delay: 0.12s;
 }
 
+[data-page-reveal="cards-reverse"] > :nth-last-child(2) {
+  animation-delay: 0.025s;
+}
+
+[data-page-reveal="cards-reverse"] > :nth-last-child(3) {
+  animation-delay: 0.05s;
+}
+
 [data-page-reveal="cards-reverse"] > :nth-last-child(4) {
-  animation-delay: 0.18s;
+  animation-delay: 0.075s;
 }
 
 [data-page-reveal="cards-reverse"] > :nth-last-child(5) {
-  animation-delay: 0.24s;
+  animation-delay: 0.1s;
 }
 
 [data-page-reveal="cards-reverse"] > :nth-last-child(6) {
-  animation-delay: 0.3s;
+  animation-delay: 0.125s;
 }
 
 [data-page-reveal="cards-reverse"] > :nth-last-child(7) {
-  animation-delay: 0.36s;
+  animation-delay: 0.15s;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1323,6 +1453,16 @@ html[data-window-blur="on"]:not([data-theme])
   backdrop-filter: var(--theme-card-backdrop-filter);
 }
 
+html[data-theme] {
+  --theme-card-inner-radius: max(0.375rem, calc(var(--theme-card-radius) - 0.375rem));
+}
+
+.glacier-shell [data-theme-card].glacier-stat-tile,
+.glacier-shell [data-theme-card="settings-overview-temperature"][class*="rounded"],
+.glacier-shell [data-theme-card="settings-overview-device"][class*="rounded"] {
+  border-radius: var(--theme-card-inner-radius);
+}
+
 .glacier-shell .glacier-chart-canvas {
   border: 1px solid var(--theme-chart-canvas-border);
   border-radius: calc(var(--theme-card-radius) - 0.5rem);
@@ -1379,9 +1519,13 @@ html[data-window-blur="on"]:not([data-theme])
   box-shadow: var(--theme-tile-hover-shadow);
 }
 
+html[data-theme] .glacier-shell .glacier-metric-card .glacier-stat-tile:hover {
+  transform: none;
+}
+
 .glacier-shell [data-theme-ui="setting-section"],
 .glacier-shell [data-theme-card][class*="rounded"] {
-  overflow: hidden;
+  overflow: clip;
 }
 
 html[data-window-blur="on"]:not([data-theme])
@@ -1747,7 +1891,8 @@ html[data-window-blur="on"]:not([data-theme])
 
 .glacier-shell [data-theme-ui="setting-row"]:hover,
 .glacier-shell [data-theme-ui="compatibility-submenu-row"]:hover {
-  box-shadow: inset 2px 0 0 var(--theme-control-hover-border);
+  background-color: color-mix(in srgb, var(--muted) 42%, transparent);
+  box-shadow: none;
 }
 
 html[data-window-blur="on"]:not([data-theme])
@@ -1765,13 +1910,10 @@ html[data-window-blur="on"]:not([data-theme])
     );
   border-color: color-mix(
     in srgb,
-    var(--window-glass-border-muted) 66%,
-    transparent
+    var(--window-glass-border-muted) 88%,
+    var(--primary) 12%
   );
-  box-shadow:
-    var(--window-glass-row-shadow),
-    inset 1px 0 0
-      color-mix(in srgb, var(--theme-control-hover-border) 72%, transparent);
+  box-shadow: var(--window-glass-row-shadow);
 }
 
 .glacier-shell [data-theme-ui="select-trigger"] {
@@ -1861,6 +2003,141 @@ html[data-window-blur="on"]:not([data-theme])
   transform: translateY(-1px);
 }
 
+html:not([data-theme])
+  .glacier-shell
+  [data-theme-ui="settings-tab"][aria-selected="true"] {
+  background: transparent;
+  border-color: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
+  transform: none;
+}
+
+html:not([data-theme])
+  .glacier-shell
+  [data-theme-ui="settings-tab"]:not([aria-selected="true"]):hover {
+  background: color-mix(in srgb, var(--muted) 56%, transparent);
+  border-color: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.settings-tab-active-pill {
+  background: var(--card);
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  box-shadow:
+    0 2px 8px -4px rgba(15, 23, 42, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+html.dark:not([data-theme]) .settings-tab-active-pill {
+  background: color-mix(in srgb, var(--card) 92%, var(--foreground) 8%);
+  border-color: color-mix(in srgb, white 12%, transparent);
+  box-shadow:
+    0 3px 10px -4px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+html[data-window-blur="on"]:not([data-theme]) .settings-tab-active-pill {
+  background: var(--window-glass-card-strong-bg);
+  border-color: var(--window-glass-border-muted);
+}
+
+html[data-theme] .settings-tab-active-pill {
+  display: none;
+}
+
+.about-channel-active-pill {
+  background: var(--primary);
+  box-shadow: 0 2px 8px -3px color-mix(in srgb, var(--primary) 45%, transparent);
+}
+
+html:not([data-theme]) .about-channel-active-pill {
+  background: linear-gradient(180deg, #ffffff 0%, #f8f8fa 100%);
+  border: 1px solid rgba(0, 0, 0, 0.065);
+  box-shadow:
+    0 2px 8px -2px rgba(0, 0, 0, 0.14),
+    0 1px 2px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+}
+
+html.dark:not([data-theme]) .about-channel-active-pill {
+  background: linear-gradient(180deg, rgba(54, 56, 65, 0.96) 0%, rgba(44, 46, 54, 0.98) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  box-shadow:
+    0 3px 10px -3px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.home-dashboard-root {
+  container-type: inline-size;
+  container-name: home-dashboard;
+}
+
+.home-bento-layout {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+.home-metrics-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+.home-charts-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+@container home-dashboard (min-width: 520px) {
+  .home-metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-metrics-grid > [data-theme-card="fan-speed"] {
+    grid-column: span 2;
+  }
+}
+
+@container home-dashboard (min-width: 740px) {
+  .home-bento-layout {
+    grid-template-rows: minmax(238px, 1.02fr) minmax(220px, 1fr);
+    max-height: 760px;
+  }
+
+  .home-metrics-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .home-metrics-grid > [data-theme-card="fan-speed"] {
+    grid-column: auto;
+  }
+
+  .home-charts-grid {
+    grid-template-columns: minmax(0, 1.24fr) minmax(280px, 1fr);
+  }
+}
+
+@container home-dashboard (min-width: 1120px) {
+  .home-bento-layout {
+    gap: 0.875rem;
+    grid-template-rows: minmax(256px, 1.02fr) minmax(248px, 1fr);
+  }
+
+  .home-metrics-grid,
+  .home-charts-grid {
+    gap: 0.875rem;
+  }
+
+  .home-charts-grid {
+    grid-template-columns: minmax(0, 1.3fr) minmax(340px, 1fr);
+  }
+}
+
 html,
 body {
   height: 100%;
@@ -1927,6 +2204,7 @@ textarea,
   height: 100%;
   overflow-x: hidden;
   overflow-y: auto;
+  overflow-anchor: none;
   overscroll-behavior: contain;
 }
 
@@ -2083,3 +2361,505 @@ textarea,
 .cn-toast-info {
   border-color: color-mix(in srgb, #3b82f6 40%, var(--border)) !important;
 }
+
+/* 窗口隐藏到托盘或最小化时暂停全部 CSS 无限动画与装饰动效，恢复后零延迟继续。 */
+html[data-window-hidden="true"] *,
+html[data-window-hidden="true"] *::before,
+html[data-window-hidden="true"] *::after {
+  animation-play-state: paused !important;
+}
+
+/* 隔离指标卡/图表/设置分区的布局与样式计算；已设 overflow:hidden 的画布与英雄卡额外启用 paint 隔离。 */
+.glacier-metric-card,
+.glacier-chart-card,
+[data-theme-ui="setting-section"] {
+  contain: layout style;
+}
+
+.glacier-hero-card,
+.glacier-chart-canvas {
+  contain: layout style paint;
+}
+
+/* ============================================================================
+ * Apple System UI 全页面统一质感（仅限内置默认主题 html:not([data-theme])）
+ * ============================================================================ */
+
+html:not([data-theme]) .glacier-shell .glacier-hero-card,
+html:not([data-theme]) .glacier-shell .glacier-metric-card,
+html:not([data-theme]) .glacier-shell .glacier-chart-card,
+html:not([data-theme]) .glacier-shell [data-theme-card="fan-curve-preview"],
+html:not([data-theme]) .glacier-shell [data-theme-card="temperature-history"],
+html:not([data-theme]) .glacier-shell [data-theme-card="connection-empty"],
+html:not([data-theme]) .glacier-shell [data-theme-card="curve-manual-gears"],
+html:not([data-theme]) .glacier-shell [data-theme-card="curve-editor"],
+html:not([data-theme]) .glacier-shell [data-theme-card="curve-learning"],
+html:not([data-theme]) .glacier-shell [data-theme-card="device-noise"],
+html:not([data-theme]) .glacier-shell [data-theme-card="curve-history"],
+html:not([data-theme]) .glacier-shell [data-theme-card="curve-history-summary"],
+html:not([data-theme]) .glacier-shell [data-theme-card="curve-history-chart"],
+html:not([data-theme]) .glacier-shell [data-theme-ui="setting-section"],
+html:not([data-theme]) .glacier-shell [data-theme-card="settings-overview"],
+html:not([data-theme]) .glacier-shell [data-theme-card="device-debug"],
+html:not([data-theme]) .glacier-shell [data-theme-card="advanced-compatibility-banner"],
+html:not([data-theme]) .glacier-shell [data-theme-card="advanced-gate"],
+html:not([data-theme]) .glacier-shell [data-theme-card="about-shell"] {
+  background: linear-gradient(180deg, #ffffff 0%, #fcfcfd 100%);
+  border-color: rgba(0, 0, 0, 0.068);
+  border-radius: 20px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 8px 24px -14px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+}
+
+html.dark:not([data-theme]) .glacier-shell .glacier-hero-card,
+html.dark:not([data-theme]) .glacier-shell .glacier-metric-card,
+html.dark:not([data-theme]) .glacier-shell .glacier-chart-card,
+html.dark:not([data-theme]) .glacier-shell [data-theme-card="fan-curve-preview"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-card="temperature-history"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-card="connection-empty"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-card="curve-manual-gears"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-card="curve-editor"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-card="curve-learning"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-card="device-noise"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-card="curve-history"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-card="curve-history-summary"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-card="curve-history-chart"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-ui="setting-section"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-card="settings-overview"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-card="device-debug"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-card="advanced-compatibility-banner"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-card="advanced-gate"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-card="about-shell"] {
+  background: linear-gradient(
+    180deg,
+    rgba(31, 32, 37, 0.96) 0%,
+    rgba(25, 26, 30, 0.98) 100%
+  );
+  border-color: rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 14px 30px -16px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell .glacier-hero-card,
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell .glacier-metric-card,
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell .glacier-chart-card,
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="fan-curve-preview"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="temperature-history"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="connection-empty"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="curve-manual-gears"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="curve-editor"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="curve-learning"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="device-noise"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="curve-history"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="curve-history-summary"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="curve-history-chart"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="setting-section"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="settings-overview"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="device-debug"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="advanced-compatibility-banner"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="advanced-gate"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="about-shell"] {
+  background: var(--window-glass-card-highlight), var(--window-glass-card-mid-bg);
+  border-color: color-mix(in srgb, var(--window-glass-border-muted) 92%, white 18%);
+  box-shadow:
+    0 12px 28px -16px rgba(0, 0, 0, 0.16),
+    0 2px 6px -2px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+html.dark[data-window-blur="on"]:not([data-theme]) .glacier-shell .glacier-hero-card,
+html.dark[data-window-blur="on"]:not([data-theme]) .glacier-shell .glacier-metric-card,
+html.dark[data-window-blur="on"]:not([data-theme]) .glacier-shell .glacier-chart-card,
+html.dark[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="fan-curve-preview"],
+html.dark[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="temperature-history"],
+html.dark[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="connection-empty"],
+html.dark[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="curve-manual-gears"],
+html.dark[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="curve-editor"],
+html.dark[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="curve-learning"],
+html.dark[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="device-noise"],
+html.dark[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="curve-history"],
+html.dark[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="curve-history-summary"],
+html.dark[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="curve-history-chart"],
+html.dark[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="setting-section"],
+html.dark[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="settings-overview"],
+html.dark[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="device-debug"],
+html.dark[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="advanced-compatibility-banner"],
+html.dark[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="advanced-gate"],
+html.dark[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-card="about-shell"] {
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 18px 40px -18px rgba(0, 0, 0, 0.72),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+html:not([data-theme]) .glacier-shell .glacier-metric-card:hover,
+html:not([data-theme]) .glacier-shell .glacier-chart-card:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--primary) 26%, rgba(15, 23, 42, 0.09));
+  box-shadow:
+    0 4px 14px -4px color-mix(in srgb, var(--primary) 16%, transparent),
+    0 14px 28px -16px rgba(15, 23, 42, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+}
+
+html.dark:not([data-theme]) .glacier-shell .glacier-metric-card:hover,
+html.dark:not([data-theme]) .glacier-shell .glacier-chart-card:hover {
+  border-color: color-mix(in srgb, var(--primary) 34%, rgba(255, 255, 255, 0.12));
+  box-shadow:
+    0 6px 20px -6px color-mix(in srgb, var(--primary) 22%, transparent),
+    0 18px 36px -18px rgba(0, 0, 0, 0.78),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* 卡片头部统一细粒度层次（全页面通用） */
+html:not([data-theme]) .glacier-shell [data-theme-ui="setting-section-header"] {
+  background: rgba(247, 247, 249, 0.72);
+  border-bottom-color: rgba(0, 0, 0, 0.06);
+}
+
+html.dark:not([data-theme]) .glacier-shell [data-theme-ui="setting-section-header"] {
+  background: rgba(255, 255, 255, 0.025);
+  border-bottom-color: rgba(255, 255, 255, 0.07);
+}
+
+/* 磨砂窗口模式下让分组卡片内部的设置行无缝贴合，用细分隔线代替独立浮条 */
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="setting-section"] > .divide-y > :not([hidden]) ~ :not([hidden]) {
+  border-top-color: rgba(0, 0, 0, 0.06);
+}
+
+html.dark[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="setting-section"] > .divide-y > :not([hidden]) ~ :not([hidden]) {
+  border-top-color: rgba(255, 255, 255, 0.07);
+}
+
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="setting-row"],
+html[data-window-blur="on"]:not([data-theme]) .glacier-shell [data-theme-ui="setting-row"]:has(> [data-theme-ui="setting-row-control"] [data-theme-ui="switch"]) {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html:not([data-theme]) .glacier-shell [data-theme-ui="setting-row"]:hover,
+html:not([data-theme]) .glacier-shell [data-theme-ui="compatibility-submenu-row"]:hover {
+  background: rgba(0, 0, 0, 0.022);
+  box-shadow: none;
+}
+
+html.dark:not([data-theme]) .glacier-shell [data-theme-ui="setting-row"]:hover,
+html.dark:not([data-theme]) .glacier-shell [data-theme-ui="compatibility-submenu-row"]:hover {
+  background: rgba(255, 255, 255, 0.032);
+  box-shadow: none;
+}
+
+/* Apple 磨砂玻璃 Squircle 图标徽章与低眩光多色语义系统 */
+html:not([data-theme]) .glacier-shell [data-theme-ui="setting-row-icon"] {
+  background: linear-gradient(180deg, #ffffff 0%, #f3f3f6 100%);
+  border: 1px solid rgba(0, 0, 0, 0.075);
+  color: rgba(29, 29, 31, 0.76);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+html.dark:not([data-theme]) .glacier-shell [data-theme-ui="setting-row-icon"] {
+  background: linear-gradient(
+    180deg,
+    rgba(46, 48, 56, 0.92) 0%,
+    rgba(36, 38, 45, 0.96) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: rgba(245, 245, 247, 0.82);
+  box-shadow:
+    0 2px 6px -2px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09);
+}
+
+html:not([data-theme]) .glacier-shell [data-theme-ui="setting-section-icon"] {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--primary) 13%, #ffffff) 0%,
+    color-mix(in srgb, var(--primary) 8%, #f4f7fc) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, rgba(15, 23, 42, 0.06));
+  color: var(--primary);
+  box-shadow:
+    0 1px 3px color-mix(in srgb, var(--primary) 12%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+html.dark:not([data-theme]) .glacier-shell [data-theme-ui="setting-section-icon"] {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--primary) 20%, rgba(36, 40, 52, 0.95)) 0%,
+    color-mix(in srgb, var(--primary) 14%, rgba(28, 32, 42, 0.96)) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, rgba(255, 255, 255, 0.08));
+  color: var(--primary);
+  box-shadow:
+    0 2px 6px -2px rgba(0, 0, 0, 0.48),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+html:not([data-theme])
+  .glacier-shell
+  :is([data-theme-ui="setting-row-icon"], [data-theme-ui="setting-section-icon"])[data-icon-tone="blue"] {
+  --icon-tone-accent: var(--primary);
+  --icon-tone-ink: var(--primary);
+  --icon-tone-border: color-mix(in srgb, var(--primary) 24%, rgba(15, 23, 42, 0.06));
+  --icon-tone-ink-dark: var(--primary);
+  --icon-tone-border-dark: color-mix(in srgb, var(--primary) 34%, rgba(255, 255, 255, 0.08));
+}
+
+html:not([data-theme])
+  .glacier-shell
+  :is([data-theme-ui="setting-row-icon"], [data-theme-ui="setting-section-icon"])[data-icon-tone="emerald"] {
+  --icon-tone-accent: #10b981;
+  --icon-tone-ink: #059669;
+  --icon-tone-border: rgba(16, 185, 129, 0.25);
+  --icon-tone-ink-dark: #34d399;
+  --icon-tone-border-dark: rgba(52, 211, 153, 0.3);
+}
+
+html:not([data-theme])
+  .glacier-shell
+  :is([data-theme-ui="setting-row-icon"], [data-theme-ui="setting-section-icon"])[data-icon-tone="amber"] {
+  --icon-tone-accent: #f59e0b;
+  --icon-tone-ink: #d97706;
+  --icon-tone-border: rgba(245, 158, 11, 0.27);
+  --icon-tone-ink-dark: #fbbf24;
+  --icon-tone-border-dark: rgba(251, 191, 36, 0.3);
+}
+
+html:not([data-theme])
+  .glacier-shell
+  :is([data-theme-ui="setting-row-icon"], [data-theme-ui="setting-section-icon"])[data-icon-tone="purple"] {
+  --icon-tone-accent: #8b5cf6;
+  --icon-tone-ink: #7c3aed;
+  --icon-tone-border: rgba(139, 92, 246, 0.24);
+  --icon-tone-ink-dark: #a78bfa;
+  --icon-tone-border-dark: rgba(167, 139, 250, 0.3);
+}
+
+html:not([data-theme])
+  .glacier-shell
+  :is([data-theme-ui="setting-row-icon"], [data-theme-ui="setting-section-icon"])[data-icon-tone="rose"] {
+  --icon-tone-accent: #f43f5e;
+  --icon-tone-ink: #e11d48;
+  --icon-tone-border: rgba(244, 63, 94, 0.24);
+  --icon-tone-ink-dark: #fb7185;
+  --icon-tone-border-dark: rgba(251, 113, 133, 0.3);
+}
+
+html:not([data-theme])
+  .glacier-shell
+  :is([data-theme-ui="setting-row-icon"], [data-theme-ui="setting-section-icon"]):is(
+    [data-icon-tone="blue"],
+    [data-icon-tone="emerald"],
+    [data-icon-tone="amber"],
+    [data-icon-tone="purple"],
+    [data-icon-tone="rose"]
+  ) {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--icon-tone-accent) 14%, #ffffff) 0%,
+    color-mix(in srgb, var(--icon-tone-accent) 8%, #f7f9fc) 100%
+  );
+  border-color: var(--icon-tone-border);
+  color: var(--icon-tone-ink);
+  box-shadow:
+    0 1px 3px color-mix(in srgb, var(--icon-tone-accent) 12%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+html.dark:not([data-theme])
+  .glacier-shell
+  :is([data-theme-ui="setting-row-icon"], [data-theme-ui="setting-section-icon"]):is(
+    [data-icon-tone="blue"],
+    [data-icon-tone="emerald"],
+    [data-icon-tone="amber"],
+    [data-icon-tone="purple"],
+    [data-icon-tone="rose"]
+  ) {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--icon-tone-accent) 20%, rgba(36, 40, 52, 0.95)) 0%,
+    color-mix(in srgb, var(--icon-tone-accent) 13%, rgba(28, 32, 42, 0.96)) 100%
+  );
+  border-color: var(--icon-tone-border-dark);
+  color: var(--icon-tone-ink-dark);
+  box-shadow:
+    0 2px 6px -2px rgba(0, 0, 0, 0.48),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Apple 内凹分段控制槽与纯白/石墨隆起滑块 */
+html:not([data-theme]) .glacier-shell [data-theme-ui="settings-tabs"],
+html:not([data-theme]) .glacier-shell [data-theme-ui="learning-bias-tabs"],
+html:not([data-theme]) .glacier-shell [data-theme-ui="about-channel-tabs"] {
+  background: rgba(0, 0, 0, 0.055);
+  border-color: rgba(0, 0, 0, 0.06);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.07);
+}
+
+html.dark:not([data-theme]) .glacier-shell [data-theme-ui="settings-tabs"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-ui="learning-bias-tabs"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-ui="about-channel-tabs"] {
+  background: rgba(0, 0, 0, 0.32);
+  border-color: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.42);
+}
+
+html:not([data-theme]) .settings-tab-active-pill {
+  background: linear-gradient(180deg, #ffffff 0%, #f8f8fa 100%);
+  border-color: color-mix(in srgb, var(--primary) 22%, rgba(0, 0, 0, 0.06));
+  box-shadow:
+    0 2px 8px -2px rgba(0, 0, 0, 0.14),
+    0 1px 3px color-mix(in srgb, var(--primary) 12%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+}
+
+html.dark:not([data-theme]) .settings-tab-active-pill {
+  background: linear-gradient(180deg, #353740 0%, #2c2e36 100%);
+  border-color: color-mix(in srgb, var(--primary) 32%, rgba(255, 255, 255, 0.1));
+  box-shadow:
+    0 3px 10px -3px rgba(0, 0, 0, 0.55),
+    0 0 8px -2px color-mix(in srgb, var(--primary) 18%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+/* 全页面统一内嵌井卡片与次级信息块（轻灰中性微凹质感） */
+html:not([data-theme]) .glacier-shell .glacier-stat-tile,
+html:not([data-theme]) .glacier-shell [data-theme-card="settings-overview-temperature"],
+html:not([data-theme]) .glacier-shell [data-theme-card="settings-overview-device"],
+html:not([data-theme]) .glacier-shell [data-theme-ui="setting-subcard"],
+html:not([data-theme]) .glacier-shell [data-theme-ui="curve-prediction-row"],
+html:not([data-theme]) .glacier-shell [data-theme-ui="about-subcard"] {
+  background: linear-gradient(180deg, #f6f6f8 0%, #f1f1f4 100%);
+  border-color: rgba(0, 0, 0, 0.055);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+html.dark:not([data-theme]) .glacier-shell .glacier-stat-tile,
+html.dark:not([data-theme]) .glacier-shell [data-theme-card="settings-overview-temperature"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-card="settings-overview-device"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-ui="setting-subcard"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-ui="curve-prediction-row"],
+html.dark:not([data-theme]) .glacier-shell [data-theme-ui="about-subcard"] {
+  background: rgba(255, 255, 255, 0.038);
+  border-color: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+html:not([data-theme]) .glacier-shell [data-theme-ui="select-trigger"] {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+html.dark:not([data-theme]) .glacier-shell [data-theme-ui="select-trigger"] {
+  box-shadow:
+    0 2px 6px -2px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+html:not([data-theme]) .glacier-shell [data-theme-ui="switch"] {
+  box-shadow:
+    inset 0 1.5px 3px rgba(0, 0, 0, 0.14),
+    0 1px 1px rgba(255, 255, 255, 0.55);
+}
+
+html.dark:not([data-theme]) .glacier-shell [data-theme-ui="switch"] {
+  box-shadow:
+    inset 0 1.5px 3px rgba(0, 0, 0, 0.48),
+    0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* 默认主题弹窗/下拉菜单/提示框高不透明度浮层，避免底层内容透字看不清 */
+html:not([data-theme]) [data-slot="select-content"],
+html:not([data-theme]) [data-slot="dialog-content"],
+html:not([data-theme]) [data-slot="tooltip-content"],
+html:not([data-theme]) [data-theme-ui="sponsor-popover"] {
+  background: rgba(255, 255, 255, 0.97) !important;
+  border-color: rgba(0, 0, 0, 0.09) !important;
+  box-shadow:
+    0 18px 42px -12px rgba(0, 0, 0, 0.18),
+    0 4px 12px -2px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(145%);
+  backdrop-filter: blur(22px) saturate(145%);
+  background-clip: padding-box;
+}
+
+html.dark:not([data-theme]) [data-slot="select-content"],
+html.dark:not([data-theme]) [data-slot="dialog-content"],
+html.dark:not([data-theme]) [data-slot="tooltip-content"],
+html.dark:not([data-theme]) [data-theme-ui="sponsor-popover"] {
+  background: rgba(28, 29, 34, 0.97) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  box-shadow:
+    0 22px 48px -12px rgba(0, 0, 0, 0.72),
+    0 4px 14px -2px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(145%);
+  backdrop-filter: blur(22px) saturate(145%);
+  background-clip: padding-box;
+}
+
+/* 自定义主题 v3.0 清晰边界与新增 UI 节点兼容修复 */
+html[data-theme][data-theme] .glacier-shell :is(
+  [data-theme-ui="setting-section"],
+  [data-theme-card][class*="rounded"],
+  .glacier-hero-card,
+  .glacier-metric-card,
+  .glacier-chart-card
+) {
+  background-clip: padding-box;
+}
+
+html[data-theme][data-theme] .glacier-shell :is(
+  [data-theme-card="settings-overview-temperature"],
+  [data-theme-card="settings-overview-device"],
+  [data-theme-ui="setting-subcard"],
+  [data-theme-ui="about-subcard"],
+  [data-theme-ui="curve-prediction-row"],
+  [data-theme-card="curve-history-summary"],
+  [data-theme-card="curve-history-chart"],
+  .glacier-metric-card .glacier-stat-tile
+) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  background-clip: padding-box;
+}
+
+html[data-theme][data-theme] .glacier-shell :is(
+  [data-theme-ui="setting-subcard"],
+  [data-theme-ui="about-subcard"],
+  [data-theme-ui="curve-prediction-row"]
+) {
+  background: var(--theme-tile-background, color-mix(in srgb, var(--card) 84%, transparent));
+  border-color: var(--theme-tile-border, var(--theme-card-border, var(--border)));
+  border-radius: var(--theme-card-inner-radius);
+}
+
+html[data-theme][data-theme] .glacier-shell [data-theme-ui="setting-section-icon"] {
+  background: color-mix(in srgb, var(--muted) 76%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
+  color: var(--primary);
+}
+
+html[data-theme][data-theme] .glacier-shell [data-theme-ui="about-channel-tabs"] button[aria-pressed="true"] {
+  color: var(--primary-foreground) !important;
+}
+
+html[data-theme][data-theme] [data-slot="select-content"] {
+  background: var(--popover);
+  border-color: var(--theme-card-border, var(--border));
+  background-clip: padding-box;
+}
+

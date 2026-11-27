@@ -425,3 +425,116 @@ func TestReadDoesNotUseExpiredBridgeTemperatureCache(t *testing.T) {
 		t.Fatal("second read TelemetryFresh = true, want false after bridge failure")
 	}
 }
+
+func TestReadRecoveryCacheIgnoresOmitSensorListsToggle(t *testing.T) {
+	oldNow := readTimeNow
+	defer func() {
+		readTimeNow = oldNow
+	}()
+
+	now := time.Unix(1_717_000_000, 0)
+	readTimeNow = func() time.Time { return now }
+
+	bridge := &fakeBridgeTemperatureProvider{
+		responses: []types.BridgeTemperatureData{
+			{
+				Success:       true,
+				CpuTemp:       60,
+				GpuTemp:       52,
+				ControlTemp:   60,
+				ControlSource: types.TempSourceCPU,
+			},
+			{
+				Success: false,
+				Error:   "timeout",
+			},
+		},
+	}
+
+	reader := NewReader(bridge, testLogger{})
+	firstSel := types.GetDefaultTemperatureSelection()
+	firstSel.TempSource = types.TempSourceCPU
+	firstSel.OmitSensorLists = false
+	if first := reader.Read(firstSel); !first.BridgeOk {
+		t.Fatalf("first read BridgeOk = false, want true")
+	}
+
+	secondSel := firstSel
+	secondSel.OmitSensorLists = true
+	second := reader.Read(secondSel)
+	if !second.BridgeOk || second.TelemetrySource != types.TelemetrySourceBridgeCache {
+		t.Fatalf("second read = %+v, want cached bridge fallback regardless of OmitSensorLists", second)
+	}
+}
+
+func TestReadRecoveryCacheHandlesForcePollGpuSafely(t *testing.T) {
+	oldNow := readTimeNow
+	defer func() {
+		readTimeNow = oldNow
+	}()
+
+	now := time.Unix(1_717_000_000, 0)
+	readTimeNow = func() time.Time { return now }
+
+	t.Run("normalizes ForcePollGpu for regular fallback", func(t *testing.T) {
+		bridge := &fakeBridgeTemperatureProvider{
+			responses: []types.BridgeTemperatureData{
+				{
+					Success:       true,
+					CpuTemp:       60,
+					GpuTemp:       52,
+					GPUReadState:  types.GPUReadStateActive,
+					ControlTemp:   60,
+					ControlSource: types.TempSourceCPU,
+				},
+				{
+					Success: false,
+					Error:   "timeout",
+				},
+			},
+		}
+		reader := NewReader(bridge, testLogger{})
+		firstSel := types.GetDefaultTemperatureSelection()
+		firstSel.ForcePollGpu = true
+		if first := reader.Read(firstSel); !first.BridgeOk {
+			t.Fatalf("first read BridgeOk = false, want true")
+		}
+		secondSel := types.GetDefaultTemperatureSelection()
+		second := reader.Read(secondSel)
+		if !second.BridgeOk || second.TelemetrySource != types.TelemetrySourceBridgeCache {
+			t.Fatalf("second read = %+v, want cached bridge fallback after ForcePollGpu cleared", second)
+		}
+	})
+
+	t.Run("does not mask failed ForcePollGpu probe with notPolled cache", func(t *testing.T) {
+		bridge := &fakeBridgeTemperatureProvider{
+			responses: []types.BridgeTemperatureData{
+				{
+					Success:       true,
+					CpuTemp:       58,
+					GpuTemp:       0,
+					GPUReadState:  types.GPUReadStateNotPolled,
+					ControlTemp:   58,
+					ControlSource: types.TempSourceCPU,
+				},
+				{
+					Success: false,
+					Error:   "probe failed",
+				},
+			},
+		}
+		reader := NewReader(bridge, testLogger{})
+		if first := reader.Read(types.GetDefaultTemperatureSelection()); !first.BridgeOk {
+			t.Fatalf("first read BridgeOk = false, want true")
+		}
+		probeSel := types.GetDefaultTemperatureSelection()
+		probeSel.ForcePollGpu = true
+		second := reader.Read(probeSel)
+		if second.BridgeOk {
+			t.Fatalf("second read BridgeOk = true, want probe failure instead of stale notPolled cache")
+		}
+		if second.TelemetrySource == types.TelemetrySourceBridgeCache {
+			t.Fatalf("TelemetrySource = %q, want non-cache failure result", second.TelemetrySource)
+		}
+	})
+}

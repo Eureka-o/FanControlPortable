@@ -14,26 +14,6 @@ const deviceStatus = readFileSync(
   new URL("../src/app/components/DeviceStatus.tsx", import.meta.url),
   "utf8",
 );
-const duneTheme = readFileSync(
-  new URL("../../themes/dune/theme.css", import.meta.url),
-  "utf8",
-);
-const mikuTheme = readFileSync(
-  new URL("../../themes/miku-01/theme.css", import.meta.url),
-  "utf8",
-);
-const shinchanTheme = readFileSync(
-  new URL("../../themes/shinchan/theme.css", import.meta.url),
-  "utf8",
-);
-const xiaobaDeluxeTheme = readFileSync(
-  new URL("../../themes/xiaoba-deluxe/theme.css", import.meta.url),
-  "utf8",
-);
-const cyberpunkTheme = readFileSync(
-  new URL("../../themes/cyberpunk2077/theme.css", import.meta.url),
-  "utf8",
-);
 
 test("keeps the built-in dock as one continuous surface", () => {
   assert.match(
@@ -58,11 +38,11 @@ test("keeps the built-in dock as one continuous surface", () => {
   );
   assert.match(
     css,
-    /--sidebar-active-fill:\s*color-mix\(in srgb, var\(--primary\) 28%, transparent\)/,
+    /--sidebar-active-fill:\s*color-mix\(in srgb, var\(--primary\) 22%, rgba\(255, 255, 255, 0\.42\)\)/,
   );
   assert.match(
     css,
-    /html\.dark:not\(\[data-theme\]\) \.glacier-sidebar[\s\S]*?--sidebar-active-fill:\s*color-mix\(in srgb, var\(--primary\) 32%, transparent\)/,
+    /html\.dark:not\(\[data-theme\]\) \.glacier-sidebar[\s\S]*?--sidebar-active-fill:\s*color-mix\(in srgb, var\(--primary\) 30%, rgba\(14, 24, 42, 0\.35\)\)/,
   );
   assert.match(
     css,
@@ -75,6 +55,31 @@ test("keeps the built-in dock as one continuous surface", () => {
   assert.match(
     css,
     /\[data-theme-ui="sidebar-item"\]\[aria-selected="true"\][\s\S]*?background:\s*transparent/,
+  );
+  const builtInDockRule = css.match(
+    /html:not\(\[data-theme\]\) \.glacier-sidebar\s*\{[\s\S]*?\n\}/,
+  )?.[0];
+  const builtInDarkDockRule = css.match(
+    /html\.dark:not\(\[data-theme\]\) \.glacier-sidebar\s*\{[\s\S]*?\n\}/,
+  )?.[0];
+  assert.ok(builtInDockRule && builtInDarkDockRule);
+  assert.doesNotMatch(builtInDockRule, /--sidebar-dock-(?:edge|shadow):[^;]*var\(--primary\)/);
+  assert.doesNotMatch(builtInDarkDockRule, /--sidebar-dock-(?:edge|shadow):[^;]*var\(--primary\)/);
+  assert.match(
+    css,
+    /html:not\(\[data-theme\]\)[\s\S]*?> \[data-app-ui="sidebar-active-indicator"\]\s*\{[\s\S]*?box-shadow:[\s\S]*?0 0 10px color-mix\(in srgb, var\(--primary\)/,
+  );
+  assert.match(
+    css,
+    /html\.dark:not\(\[data-theme\]\)[\s\S]*?> \[data-app-ui="sidebar-active-indicator"\]\s*\{[\s\S]*?box-shadow:[\s\S]*?0 0 14px color-mix\(in srgb, var\(--primary\)/,
+  );
+  assert.match(
+    css,
+    /html:not\(\[data-theme\]\)[\s\S]*?> \[data-app-ui="sidebar-active-indicator"\]::before[\s\S]*?radial-gradient/,
+  );
+  assert.match(
+    css,
+    /html\.dark:not\(\[data-theme\]\)[\s\S]*?> \[data-app-ui="sidebar-active-indicator"\]::before[\s\S]*?radial-gradient/,
   );
 });
 
@@ -202,10 +207,6 @@ test("expands one themed dock without transient pointer focus frames", () => {
     /\.glacier-sidebar\[data-dock-expanded="true"\]::after[\s\S]*?opacity:\s*0\s*!important/,
   );
   assert.match(
-    duneTheme,
-    /\.glacier-sidebar::before[\s\S]*?var\(--dune-sidebar-pattern\)/,
-  );
-  assert.match(
     css,
     /html\[data-theme\]\[data-theme\]\s+body\s+\.glacier-shell\s+:is\(\.glacier-titlebar, \.glacier-content, \.glacier-content-panel\)[\s\S]*?border:\s*0\s*!important[\s\S]*?border-radius:\s*0\s*!important[\s\S]*?background:\s*transparent\s*!important[\s\S]*?box-shadow:\s*none\s*!important[\s\S]*?backdrop-filter:\s*none\s*!important/,
   );
@@ -290,83 +291,4 @@ test("expands one themed dock without transient pointer focus frames", () => {
     /html:not\(\[data-theme\]\) \[data-theme-ui="hero-brand-mark"\][\s\S]*?display:\s*none/,
   );
   assert.doesNotMatch(deviceStatus, /fancontrol-flow-loop-v2/);
-});
-
-test("keeps illustration curtains on the full window shell", () => {
-  assert.match(duneTheme, /\.glacier-sidebar\s*\{[\s\S]*?background:/);
-  assert.match(mikuTheme, /\.glacier-sidebar\s*\{[\s\S]*?background:/);
-  assert.match(shinchanTheme, /\.glacier-sidebar\s*\{[\s\S]*?background:/);
-  assert.match(xiaobaDeluxeTheme, /\.glacier-sidebar\s*\{[\s\S]*?background:/);
-  const xiaobaSidebarFrame = xiaobaDeluxeTheme.match(
-    /\.glacier-sidebar::before\s*\{[\s\S]*?\n\}/,
-  )?.[0];
-  assert.ok(xiaobaSidebarFrame);
-  assert.doesNotMatch(xiaobaSidebarFrame, /--xiaoba-deluxe-star/);
-  assert.match(
-    duneTheme,
-    /One continuous window curtain[\s\S]*?\.glacier-shell::before[\s\S]*?var\(--dune-poster-image\)[\s\S]*?\.glacier-content-panel::before,[\s\S]*?content:\s*none\s*!important/,
-  );
-
-  for (const [theme, imageVariable] of [
-    [mikuTheme, "--miku-01-curtain-image"],
-    [shinchanTheme, "--shinchan-curtain-image"],
-    [xiaobaDeluxeTheme, "--xiaoba-deluxe-curtain-image"],
-  ]) {
-    const curtainOverride = theme.lastIndexOf(
-      "Keep the illustration on the window curtain",
-    );
-    assert.ok(curtainOverride >= 0);
-    const finalCss = theme.slice(curtainOverride);
-    assert.match(
-      finalCss,
-      /\.glacier-shell::before[\s\S]*?inset:\s*0\s*!important/,
-    );
-    assert.ok(finalCss.includes(`var(${imageVariable})`));
-    assert.match(
-      finalCss,
-      /\.glacier-content-panel::before[\s\S]*?content:\s*none\s*!important/,
-    );
-  }
-  assert.match(
-    mikuTheme,
-    /\.glacier-sidebar::before\s*\{[\s\S]*?0 16px 34px -18px[\s\S]*?4px 0 18px -14px/,
-  );
-  assert.match(
-    mikuTheme,
-    /data-theme-ui="compatibility-divider"[\s\S]*?border-top: 0 !important/,
-  );
-});
-
-test("keeps the Miku hero brand mark across page navigation", () => {
-  assert.doesNotMatch(
-    mikuTheme,
-    /data-theme-page="status"\]\s*\[data-theme-ui="hero-brand-mark"\]/,
-  );
-  assert.match(
-    mikuTheme,
-    /\.glacier-shell \[data-theme-ui="hero-brand-mark"\] > svg[\s\S]*?opacity: 0 !important/,
-  );
-  assert.match(
-    mikuTheme,
-    /\.glacier-shell \[data-theme-ui="hero-brand-mark"\]::after[\s\S]*?mask: var\(--miku-01-icon-music\)/,
-  );
-});
-
-test("keeps the cyberpunk compact dock hover inside the icon slot", () => {
-  assert.ok(
-    cyberpunkTheme.lastIndexOf("Keep compact dock feedback") >
-      cyberpunkTheme.lastIndexOf('.glacier-shell button,'),
-  );
-  assert.match(
-    cyberpunkTheme,
-    /data-dock-expanded="false"\][\s\S]*?button\[data-theme-ui="sidebar-item"\][\s\S]*?background:\s*transparent\s*!important[\s\S]*?clip-path:\s*none\s*!important/,
-  );
-  assert.match(
-    cyberpunkTheme,
-    /button\[data-theme-ui="sidebar-item"\]:not\(\[aria-selected="true"\]\):hover\s*>\s*i:first-of-type[\s\S]*?border:[\s\S]*?var\(--cyberpunk-cyan\)[\s\S]*?background:/,
-  );
-  assert.match(
-    cyberpunkTheme,
-    /data-dock-expanded="false"\]::after[\s\S]*?bottom:\s*11\.75rem\s*!important[\s\S]*?width:\s*7\.25rem/,
-  );
 });

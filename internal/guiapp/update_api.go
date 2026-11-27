@@ -17,8 +17,14 @@ import (
 	"time"
 
 	"github.com/Eureka-o/FanControlPortable/internal/config"
+	"github.com/Eureka-o/FanControlPortable/internal/ghmirror"
 	"github.com/Eureka-o/FanControlPortable/internal/version"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+)
+
+var (
+	updateCandidateBuilder  = ghmirror.BuildCandidates
+	updateHTTPClientBuilder = newUpdateHTTPClient
 )
 
 const (
@@ -157,6 +163,7 @@ type updateProgress struct {
 	Received    int64  `json:"received"`
 	Total       int64  `json:"total"`
 	Stage       string `json:"stage"`
+	Source      string `json:"source,omitempty"`
 	Message     string `json:"message"`
 	Attempt     int    `json:"attempt"`
 	MaxAttempts int    `json:"maxAttempts"`
@@ -170,6 +177,8 @@ type UpdateRelease struct {
 	UpdateAvailable bool   `json:"update_available"`
 	InstallerURL    string `json:"installer_url"`
 	InstallerSHA256 string `json:"installer_sha256"`
+	ResolvedSource  string `json:"resolved_source,omitempty"`
+	LatencyMs       int64  `json:"latency_ms,omitempty"`
 }
 
 type githubRelease struct {
@@ -380,42 +389,12 @@ func (a *App) CancelUpdateDownload(downloadURL string) error {
 	return nil
 }
 
-func checkLatestRelease(ctx context.Context, client *http.Client, channel, stableURL, releasesURL string) (UpdateRelease, error) {
-	isPrerelease := strings.EqualFold(strings.TrimSpace(channel), "prerelease")
-	endpoint := stableURL
-	if isPrerelease {
-		endpoint = releasesURL
-	}
-
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return UpdateRelease{}, err
-	}
-	request.Header.Set("Accept", "application/vnd.github+json")
-	request.Header.Set("User-Agent", "FanControl-Updater")
-
-	response, err := client.Do(request)
-	if err != nil {
-		return UpdateRelease{}, err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return UpdateRelease{}, fmt.Errorf("GitHub API returned HTTP %d", response.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(response.Body, updateMaxMetadataSize+1))
-	if err != nil {
-		return UpdateRelease{}, err
-	}
-	if len(body) > updateMaxMetadataSize {
-		return UpdateRelease{}, fmt.Errorf("release metadata exceeds the size limit")
-	}
-
+func parseGitHubReleasePayload(body []byte, isPrerelease bool) (githubRelease, error) {
 	var release githubRelease
 	if isPrerelease {
 		var releases []githubRelease
 		if err := json.Unmarshal(body, &releases); err != nil {
-			return UpdateRelease{}, fmt.Errorf("decode release metadata: %w", err)
+			return githubRelease{}, fmt.Errorf("decode release metadata: %w", err)
 		}
 		for _, candidate := range releases {
 			if !candidate.Draft && candidate.Prerelease {
@@ -423,11 +402,40 @@ func checkLatestRelease(ctx context.Context, client *http.Client, channel, stabl
 				break
 			}
 		}
-		if release.TagName == "" {
-			return UpdateRelease{}, nil
-		}
-	} else if err := json.Unmarshal(body, &release); err != nil {
-		return UpdateRelease{}, fmt.Errorf("decode release metadata: %w", err)
+		return release, nil
+	}
+	if err := json.Unmarshal(body, &release); err != nil {
+		return githubRelease{}, fmt.Errorf("decode release metadata: %w", err)
+	}
+	return release, nil
+}
+
+func checkLatestRelease(ctx context.Context, client *http.Client, channel, stableURL, releasesURL string) (UpdateRelease, error) {
+	isPrerelease := strings.EqualFold(strings.TrimSpace(channel), "prerelease")
+	endpoint := stableURL
+	if isPrerelease {
+		endpoint = releasesURL
+	}
+
+	candidates := updateCandidateBuilder(endpoint)
+	headers := map[string]string{
+		"Accept":     "application/vnd.github+json",
+		"User-Agent": "FanControl-Updater",
+	}
+	body, winner, latencyMs, err := ghmirror.RaceGet(ctx, candidates, client, headers, updateMaxMetadataSize, func(raw []byte) error {
+		_, pErr := parseGitHubReleasePayload(raw, isPrerelease)
+		return pErr
+	})
+	if err != nil {
+		return UpdateRelease{}, err
+	}
+
+	release, err := parseGitHubReleasePayload(body, isPrerelease)
+	if err != nil {
+		return UpdateRelease{}, err
+	}
+	if isPrerelease && release.TagName == "" {
+		return UpdateRelease{}, nil
 	}
 
 	result := UpdateRelease{
@@ -436,6 +444,8 @@ func checkLatestRelease(ctx context.Context, client *http.Client, channel, stabl
 		Body:            release.Body,
 		Prerelease:      release.Prerelease,
 		UpdateAvailable: version.IsNewer(version.Get(), release.TagName),
+		ResolvedSource:  winner.Label,
+		LatencyMs:       latencyMs,
 	}
 	for _, asset := range release.Assets {
 		name := strings.ToLower(strings.TrimSpace(asset.Name))
@@ -534,7 +544,8 @@ func validateUpdateURL(raw string) (*url.URL, error) {
 	host := strings.ToLower(parsed.Hostname())
 	if host != "github.com" && !strings.HasSuffix(host, ".github.com") &&
 		host != "githubusercontent.com" && !strings.HasSuffix(host, ".githubusercontent.com") &&
-		host != "objects.githubusercontent.com" {
+		host != "objects.githubusercontent.com" &&
+		!ghmirror.IsTrustedMirrorHost(host) {
 		return nil, fmt.Errorf("unsupported update download source")
 	}
 	return parsed, nil
@@ -637,44 +648,74 @@ func (a *App) downloadUpdateInstaller(downloadURL, updateDir, expectedSHA256 str
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	control.setCancel(cancel)
-	lastPercent := -1
-	err := downloadWithRetryControlled(
-		ctx,
-		func(attempt int) *http.Client {
-			return newUpdateHTTPClient(0, updateResponseTimeout, shouldBypassUpdateProxy(attempt, updateDownloadAttempts))
-		},
-		downloadURL,
-		partPath,
-		updateDownloadAttempts,
-		control,
-		func(received, total int64) {
-			percent := -1
-			if total > 0 {
-				percent = int(received * 100 / total)
+
+	candidates := updateCandidateBuilder(downloadURL)
+	if len(candidates) == 0 {
+		candidates = []ghmirror.Candidate{{Name: "origin", Label: "GitHub 源站", URL: downloadURL}}
+	}
+
+	var lastErr error
+	for _, bypassProxy := range []bool{false, true} {
+		probeClient := updateHTTPClientBuilder(5*time.Second, 4*time.Second, bypassProxy)
+		ranked := ghmirror.RankByLatency(ctx, candidates, probeClient, "FanControl-Updater")
+
+		for idx, item := range ranked {
+			if idx > 0 {
+				// Avoid mixing partial bytes across distinct mirror routes if the previous route failed.
+				_ = cleanupPartialDownload(partPath)
 			}
-			if percent == lastPercent || (percent >= 0 && percent != 100 && percent%2 != 0) {
-				return
+			attemptsPerRoute := 2
+			if len(ranked) == 1 {
+				attemptsPerRoute = updateDownloadAttempts
 			}
-			lastPercent = percent
-			a.emitUpdateProgress(updateProgress{Percent: percent, Received: received, Total: max64(total, 0), Stage: "downloading", MaxAttempts: updateDownloadAttempts})
-		},
-		func(attempt int, retryErr error) {
-			a.emitUpdateProgress(updateProgress{Percent: lastPercent, Stage: "retrying", Message: retryErr.Error(), Attempt: attempt, MaxAttempts: updateDownloadAttempts})
-		},
-	)
-	if err != nil {
-		return "", fmt.Errorf("download failed after %d attempts: %w", updateDownloadAttempts, err)
+			lastPercent := -1
+			a.emitUpdateProgress(updateProgress{Percent: 0, Stage: "downloading", Source: item.Label, Attempt: idx + 1, MaxAttempts: len(ranked)})
+
+			err := downloadWithRetryControlled(
+				ctx,
+				func(int) *http.Client {
+					return updateHTTPClientBuilder(0, updateResponseTimeout, bypassProxy)
+				},
+				item.URL,
+				partPath,
+				attemptsPerRoute,
+				control,
+				func(received, total int64) {
+					percent := -1
+					if total > 0 {
+						percent = int(received * 100 / total)
+					}
+					if percent == lastPercent || (percent >= 0 && percent != 100 && percent%2 != 0) {
+						return
+					}
+					lastPercent = percent
+					a.emitUpdateProgress(updateProgress{Percent: percent, Received: received, Total: max64(total, 0), Stage: "downloading", Source: item.Label, MaxAttempts: len(ranked)})
+				},
+				func(attempt int, retryErr error) {
+					a.emitUpdateProgress(updateProgress{Percent: lastPercent, Stage: "retrying", Source: item.Label, Message: retryErr.Error(), Attempt: attempt, MaxAttempts: attemptsPerRoute})
+				},
+			)
+			if errors.Is(err, errUpdateCanceled) || (control != nil && control.IsCanceled()) {
+				return "", errUpdateCanceled
+			}
+			if err != nil {
+				lastErr = fmt.Errorf("%s: %w", item.Name, err)
+				continue
+			}
+			if err := validateInstallerFile(partPath, expectedSHA256); err != nil {
+				_ = cleanupPartialDownload(partPath)
+				lastErr = fmt.Errorf("%s: %w", item.Name, err)
+				continue
+			}
+			_ = os.Remove(target)
+			if err := os.Rename(partPath, target); err != nil {
+				return "", fmt.Errorf("prepare update installer: %w", err)
+			}
+			_ = os.Remove(partialDownloadMetadataPath(partPath))
+			return target, nil
+		}
 	}
-	if err := validateInstallerFile(partPath, expectedSHA256); err != nil {
-		_ = cleanupPartialDownload(partPath)
-		return "", err
-	}
-	_ = os.Remove(target)
-	if err := os.Rename(partPath, target); err != nil {
-		return "", fmt.Errorf("prepare update installer: %w", err)
-	}
-	_ = os.Remove(partialDownloadMetadataPath(partPath))
-	return target, nil
+	return "", fmt.Errorf("download failed across all mirrors and origin: %w", lastErr)
 }
 
 func downloadWithRetry(

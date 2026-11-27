@@ -7,7 +7,7 @@ export const LEGACY_THEME_CONTRACT = 'legacy';
 
 // Bump this when custom theme CSS resource semantics change, so stale cached
 // CSS cannot point at assets unavailable to the current executable.
-const THEME_BOOTSTRAP_VERSION = 5;
+const THEME_BOOTSTRAP_VERSION = 6;
 
 // 缓存的 CSS 最大体积（字节），超过此值截断并添加注释标记。
 // 防止 localStorage QuotaExceededError，以及重型 advanced 主题导致的前端内存压力。

@@ -52,6 +52,11 @@ const (
 	noiseGainMin          = 0.4
 	noiseGainMax          = 1.8
 	noiseWeightBaseline   = 4.0
+
+	minValidPowerWatts     = 0.5
+	noPowerDownDamping     = 0.65
+	highPowerDownDamping   = 0.80
+	rpmLearningSafetyFloor = 800
 )
 
 type learningTuning struct {
@@ -126,12 +131,17 @@ type EffectivePower struct {
 	GPUValid bool
 }
 
+// IsValidPowerWatts reports whether a power reading is a usable real load rather than zero or sensor noise.
+func IsValidPowerWatts(watts float64) bool {
+	return !math.IsNaN(watts) && !math.IsInf(watts, 0) && watts >= minValidPowerWatts
+}
+
 func normalizeEffectivePower(power EffectivePower) EffectivePower {
-	if !power.CPUValid || power.CPUWatts <= 0 {
+	if !power.CPUValid || !IsValidPowerWatts(power.CPUWatts) {
 		power.CPUWatts = 0
 		power.CPUValid = false
 	}
-	if !power.GPUValid || power.GPUWatts <= 0 {
+	if !power.GPUValid || !IsValidPowerWatts(power.GPUWatts) {
 		power.GPUWatts = 0
 		power.GPUValid = false
 	}
@@ -410,13 +420,22 @@ func (o *StableObserver) ObserveWithEffectivePowerAt(now time.Time, temp, effect
 		rpmJump := effectiveRPM > 0 && o.lastRPMs[idx] > 0 && absInt(effectiveRPM-o.lastRPMs[idx]) > rpmBand
 		powerJump := havePower != o.powerSeen[idx] ||
 			(havePower && o.powerSeen[idx] && !effectivePowerContextClose(power, o.lastPowers[idx], stablePowerAbsBandWatts, stablePowerRelBand))
-		if tempJump || rpmJump || powerJump {
+		if tempJump || rpmJump {
 			o.samples[idx] = o.samples[idx][:0]
 			o.rpmSamples[idx] = o.rpmSamples[idx][:0]
 			o.powerSamples[idx] = o.powerSamples[idx][:0]
 			o.sampleTimes[idx] = o.sampleTimes[idx][:0]
 			o.settle[idx] = 0
 			o.longTerm[idx] = steadyLearningAggregate{}
+			o.clearQuietLearningContext()
+		} else if powerJump {
+			// Single-sample power drops or brief dGPU wakes only reset the current
+			// short sample buffer; aggregateLongTermSteady owns cross-window matching.
+			o.samples[idx] = o.samples[idx][:0]
+			o.rpmSamples[idx] = o.rpmSamples[idx][:0]
+			o.powerSamples[idx] = o.powerSamples[idx][:0]
+			o.sampleTimes[idx] = o.sampleTimes[idx][:0]
+			o.settle[idx] = 0
 			o.clearQuietLearningContext()
 		}
 	} else {
@@ -892,8 +911,14 @@ func solveLearnStepForUnitWithPower(steadyTemp int, eff float64, haveEff bool, c
 	default:
 		return 0
 	}
-	if havePower && !haveEff {
-		step *= learningPowerGain(step, meanPower)
+	if havePower {
+		if !haveEff {
+			step *= learningPowerGain(step, meanPower)
+		} else if step < 0 && meanPower >= 120 {
+			step *= highPowerDownDamping
+		}
+	} else if !haveEff && step < 0 {
+		step *= noPowerDownDamping
 	}
 	if step < 0 {
 		if math.IsNaN(noiseGain) || math.IsInf(noiseGain, 0) {
@@ -920,25 +945,22 @@ func learningPowerGain(step, meanPower float64) float64 {
 	if meanPower <= 0 {
 		return 1
 	}
+	const lowWatts = 35.0
+	const highWatts = 120.0
+	t := 0.0
+	switch {
+	case meanPower <= lowWatts:
+		t = 0
+	case meanPower >= highWatts:
+		t = 1
+	default:
+		t = (meanPower - lowWatts) / (highWatts - lowWatts)
+	}
 	if step > 0 {
-		switch {
-		case meanPower >= 120:
-			return 1.10
-		case meanPower <= 35:
-			return 0.85
-		default:
-			return 1
-		}
+		return 0.85 + t*(1.15-0.85)
 	}
 	if step < 0 {
-		switch {
-		case meanPower >= 120:
-			return 0.75
-		case meanPower <= 35:
-			return 1.15
-		default:
-			return 1
-		}
+		return 1.15 + t*(0.65-1.15)
 	}
 	return 1
 }
@@ -1031,6 +1053,7 @@ func LearnSteadyOffsetForUnitWithPowerAndNoiseGain(
 		)
 	}
 	apply(bucketIdx, mainDelta)
+	enforceRPMSafetyFloor(curve, offsets, unit, cap, leftMin, rightMax)
 	if biased, updated := constrainOffsetsToLearningBias(offsets, cfg.LearningBias); updated {
 		offsets = biased
 	}
@@ -1040,6 +1063,7 @@ func LearnSteadyOffsetForUnitWithPowerAndNoiseGain(
 		offsets = biased
 	}
 	enforceMonotonicWithOffsets(curve, offsets, cap, leftMin, rightMax)
+	enforceRPMSafetyFloor(curve, offsets, unit, cap, leftMin, rightMax)
 
 	changed := false
 	for i := range offsets {
@@ -1049,6 +1073,21 @@ func LearnSteadyOffsetForUnitWithPowerAndNoiseGain(
 		}
 	}
 	return offsets, changed
+}
+
+func enforceRPMSafetyFloor(curve []types.FanCurvePoint, offsets []int, unit string, cap, leftMin, rightMax int) {
+	if !types.IsRPMSpeedUnit(unit) {
+		return
+	}
+	for i := 0; i < len(curve) && i < len(offsets); i++ {
+		if curve[i].RPM < rpmLearningSafetyFloor || offsets[i] >= 0 {
+			continue
+		}
+		if curve[i].RPM+offsets[i] < rpmLearningSafetyFloor {
+			minAllowedOffset := rpmLearningSafetyFloor - curve[i].RPM
+			offsets[i] = clampOffsetForPoint(minAllowedOffset, curve[i].RPM, leftMin, rightMax, cap)
+		}
+	}
 }
 
 // NoiseLearningDownGain weights only safe downward learning by measured noise benefit.

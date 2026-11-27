@@ -48,6 +48,7 @@ type Meta struct {
 	Layer       string `json:"layer,omitempty"` // basic | advanced
 	Contract    string `json:"contract,omitempty"`
 	Source      string `json:"source"` // user | install | builtin
+	Builtin     bool   `json:"builtin,omitempty"`
 }
 
 // Manager keeps install-root themes authoritative.
@@ -460,6 +461,7 @@ func isUnderAnyDir(path string, roots []string) bool {
 // residue and embedded built-ins.
 func (m *Manager) List() []Meta {
 	merged := map[string]Meta{}
+	builtinIDs := map[string]bool{}
 
 	if m.builtin != nil {
 		if entries, err := fs.ReadDir(m.builtin, "."); err == nil {
@@ -471,6 +473,8 @@ func (m *Manager) List() []Meta {
 					if meta.ID == LegacyThemeID {
 						continue
 					}
+					builtinIDs[meta.ID] = true
+					meta.Builtin = true
 					merged[meta.ID] = meta
 				}
 			}
@@ -495,6 +499,9 @@ func (m *Manager) List() []Meta {
 
 	out := make([]Meta, 0, len(merged))
 	for _, meta := range merged {
+		if builtinIDs[meta.ID] {
+			meta.Builtin = true
+		}
 		out = append(out, meta)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -504,6 +511,15 @@ func (m *Manager) List() []Meta {
 		return out[i].Name < out[j].Name
 	})
 	return out
+}
+
+// IsBuiltin reports whether the given theme ID is bundled into the executable.
+func (m *Manager) IsBuiltin(id string) bool {
+	if m == nil || m.builtin == nil || !validID(id) {
+		return false
+	}
+	_, ok := m.readBuiltinMeta(id)
+	return ok
 }
 
 func (m *Manager) scanDir(baseDir, source string) []Meta {
@@ -583,6 +599,29 @@ func themeLookupIDs(id string) []string {
 	return []string{id}
 }
 
+func (m *Manager) readThemeVersion(id string) string {
+	if m.installDir != "" {
+		if data, err := os.ReadFile(filepath.Join(m.installDir, id, manifestName)); err == nil {
+			if meta, ok := parseMeta(data, id); ok {
+				return strings.TrimSpace(meta.Version)
+			}
+		}
+	}
+	for _, legacyDir := range m.legacyDirs {
+		if data, err := os.ReadFile(filepath.Join(legacyDir, id, manifestName)); err == nil {
+			if meta, ok := parseMeta(data, id); ok {
+				return strings.TrimSpace(meta.Version)
+			}
+		}
+	}
+	if m.builtin != nil {
+		if meta, ok := m.readBuiltinMeta(id); ok {
+			return strings.TrimSpace(meta.Version)
+		}
+	}
+	return ""
+}
+
 // ReadCSS reads theme.css. The install package wins over old user residue.
 func (m *Manager) ReadCSS(id string) (string, error) {
 	if !validID(id) {
@@ -592,19 +631,19 @@ func (m *Manager) ReadCSS(id string) (string, error) {
 	for _, lookupID := range themeLookupIDs(id) {
 		if m.installDir != "" {
 			if data, err := os.ReadFile(filepath.Join(m.installDir, lookupID, styleName)); err == nil {
-				return m.rewriteCSSAssetURLs(string(data), lookupID), nil
+				return m.rewriteCSSAssetURLs(string(data), lookupID, m.readThemeVersion(lookupID)), nil
 			}
 		}
 
 		for _, legacyDir := range m.legacyDirs {
 			if data, err := os.ReadFile(filepath.Join(legacyDir, lookupID, styleName)); err == nil {
-				return m.rewriteCSSAssetURLs(string(data), lookupID), nil
+				return m.rewriteCSSAssetURLs(string(data), lookupID, m.readThemeVersion(lookupID)), nil
 			}
 		}
 
 		if m.builtin != nil {
 			if data, err := fs.ReadFile(m.builtin, lookupID+"/"+styleName); err == nil {
-				return m.rewriteCSSAssetURLs(string(data), lookupID), nil
+				return m.rewriteCSSAssetURLs(string(data), lookupID, m.readThemeVersion(lookupID)), nil
 			}
 		}
 	}
@@ -684,7 +723,7 @@ func isUnderDir(path, root string) bool {
 	return rel == "." || (rel != "" && !strings.HasPrefix(rel, ".."))
 }
 
-func (m *Manager) rewriteCSSAssetURLs(css, id string) string {
+func (m *Manager) rewriteCSSAssetURLs(css, id, version string) string {
 	if !validID(id) || css == "" {
 		return css
 	}
@@ -701,7 +740,7 @@ func (m *Manager) rewriteCSSAssetURLs(css, id string) string {
 		// 使用 URL 路由而非 base64 inline，让浏览器按需请求并缓存资产。
 		// 字体等大文件 inline 会使 CSS 体积膨胀至数 MB，加重 IPC 传输与
 		// localStorage 压力；/theme-assets/ handler 已在 main.go 注册。
-		url := ThemeAssetURL(id, assetPath)
+		url := ThemeAssetURLWithVersion(id, assetPath, version)
 		if url == "" {
 			return match
 		}
@@ -777,6 +816,18 @@ func ThemeAssetURL(id, assetPath string) string {
 		escaped = append(escaped, url.PathEscape(segment))
 	}
 	return AssetURLPrefix + strings.Join(escaped, "/")
+}
+
+func ThemeAssetURLWithVersion(id, assetPath, version string) string {
+	baseURL := ThemeAssetURL(id, assetPath)
+	if baseURL == "" {
+		return ""
+	}
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return baseURL
+	}
+	return baseURL + "?v=" + url.QueryEscape(version)
 }
 
 // ResolveDir returns the install-root themes folder exposed by "Open themes".

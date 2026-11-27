@@ -143,3 +143,31 @@ func TestWriteTaskXMLFileUsesUTF16LEAndCleansUp(t *testing.T) {
 		t.Fatalf("UTF-16 output = %q, want %q", got, source)
 	}
 }
+
+func TestCurrentParentProcessNameAndTaskSchedulerMatch(t *testing.T) {
+	parentName := currentParentProcessName()
+	if strings.TrimSpace(parentName) == "" {
+		t.Fatal("expected non-empty parent process name from Toolhelp32 snapshot")
+	}
+
+	for _, name := range []string{"svchost.exe", "TASKENG.EXE", " TaskHostW.exe "} {
+		if !isTaskSchedulerProcessName(name) {
+			t.Fatalf("expected %q to match task scheduler host process", name)
+		}
+	}
+	for _, name := range []string{"explorer.exe", "cmd.exe", ""} {
+		if isTaskSchedulerProcessName(name) {
+			t.Fatalf("expected %q not to match task scheduler host process", name)
+		}
+	}
+}
+
+func TestScheduledTaskCommandFromXML(t *testing.T) {
+	definition := buildScheduledTaskXML(`C:\Program Files\FanControl\FanControl Core.exe`, "")
+	if got := scheduledTaskCommandFromXML(definition); got != `C:\Program Files\FanControl\FanControl Core.exe` {
+		t.Fatalf("scheduledTaskCommandFromXML = %q", got)
+	}
+	if got := scheduledTaskCommandFromXML("not xml"); got != "" {
+		t.Fatalf("expected empty command for invalid XML, got %q", got)
+	}
+}

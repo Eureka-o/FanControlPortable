@@ -10,6 +10,10 @@ export function BeginNoiseDiagnostic(arg1) {
   return window['go']['main']['App']['BeginNoiseDiagnostic'](arg1);
 }
 
+export function CachedPluginDevDirs() {
+  return window['go']['main']['App']['CachedPluginDevDirs']();
+}
+
 export function CancelNoiseDiagnostic(arg1) {
   return window['go']['main']['App']['CancelNoiseDiagnostic'](arg1);
 }
@@ -98,6 +102,10 @@ export function ExportFanCurveProfilesToFile(arg1) {
   return window['go']['main']['App']['ExportFanCurveProfilesToFile'](arg1);
 }
 
+export function FetchMarketplaceCatalog(arg1) {
+  return window['go']['main']['App']['FetchMarketplaceCatalog'](arg1);
+}
+
 export function GetAppVersion() {
   return window['go']['main']['App']['GetAppVersion']();
 }
@@ -182,6 +190,18 @@ export function GetFanCurveProfiles() {
   return window['go']['main']['App']['GetFanCurveProfiles']();
 }
 
+export function GetPluginLogs(arg1) {
+  return window['go']['main']['App']['GetPluginLogs'](arg1);
+}
+
+export function GetPluginSettings(arg1) {
+  return window['go']['main']['App']['GetPluginSettings'](arg1);
+}
+
+export function GetPlugins() {
+  return window['go']['main']['App']['GetPlugins']();
+}
+
 export function GetSceneRules() {
   return window['go']['main']['App']['GetSceneRules']();
 }
@@ -226,8 +246,24 @@ export function ImportFanCurveProfiles(arg1) {
   return window['go']['main']['App']['ImportFanCurveProfiles'](arg1);
 }
 
+export function ImportMarketplacePackage(arg1) {
+  return window['go']['main']['App']['ImportMarketplacePackage'](arg1);
+}
+
 export function InitSystemTray() {
   return window['go']['main']['App']['InitSystemTray']();
+}
+
+export function InstallMarketplacePlugin(arg1, arg2, arg3) {
+  return window['go']['main']['App']['InstallMarketplacePlugin'](arg1, arg2, arg3);
+}
+
+export function InstallMarketplaceTheme(arg1, arg2, arg3) {
+  return window['go']['main']['App']['InstallMarketplaceTheme'](arg1, arg2, arg3);
+}
+
+export function InvokePlugin(arg1, arg2, arg3) {
+  return window['go']['main']['App']['InvokePlugin'](arg1, arg2, arg3);
 }
 
 export function IsAutoStartLaunch() {
@@ -266,6 +302,10 @@ export function OnWindowClosing(arg1) {
   return window['go']['main']['App']['OnWindowClosing'](arg1);
 }
 
+export function OpenPluginsFolder() {
+  return window['go']['main']['App']['OpenPluginsFolder']();
+}
+
 export function OpenThemesFolder() {
   return window['go']['main']['App']['OpenThemesFolder']();
 }
@@ -286,6 +326,10 @@ export function ProbeBLEGATT(arg1) {
   return window['go']['main']['App']['ProbeBLEGATT'](arg1);
 }
 
+export function ProbeGpuSensors() {
+  return window['go']['main']['App']['ProbeGpuSensors']();
+}
+
 export function QuitAll() {
   return window['go']['main']['App']['QuitAll']();
 }
@@ -300,6 +344,10 @@ export function ReadScreenImageFromDevice() {
 
 export function RefreshDeviceSettings() {
   return window['go']['main']['App']['RefreshDeviceSettings']();
+}
+
+export function RefreshPlugins() {
+  return window['go']['main']['App']['RefreshPlugins']();
 }
 
 export function ReinstallPawnIO() {
@@ -330,6 +378,10 @@ export function RestartPawnIO() {
   return window['go']['main']['App']['RestartPawnIO']();
 }
 
+export function RestartPlugin(arg1) {
+  return window['go']['main']['App']['RestartPlugin'](arg1);
+}
+
 export function RestoreBlackSharkConfigFromFile() {
   return window['go']['main']['App']['RestoreBlackSharkConfigFromFile']();
 }
@@ -352,6 +404,10 @@ export function SaveFanCurveProfile(arg1, arg2, arg3, arg4) {
 
 export function SaveNoiseDiagnosticResult(arg1) {
   return window['go']['main']['App']['SaveNoiseDiagnosticResult'](arg1);
+}
+
+export function SavePluginSettings(arg1, arg2) {
+  return window['go']['main']['App']['SavePluginSettings'](arg1, arg2);
 }
 
 export function ScanBLEDevices(arg1) {
@@ -422,6 +478,10 @@ export function SetBrightness(arg1) {
   return window['go']['main']['App']['SetBrightness'](arg1);
 }
 
+export function SetCachedPluginDevDirs(arg1) {
+  return window['go']['main']['App']['SetCachedPluginDevDirs'](arg1);
+}
+
 export function SetCustomSpeed(arg1, arg2) {
   return window['go']['main']['App']['SetCustomSpeed'](arg1, arg2);
 }
@@ -438,6 +498,10 @@ export function SetGearLight(arg1) {
   return window['go']['main']['App']['SetGearLight'](arg1);
 }
 
+export function SetInitialWindowHidden(arg1) {
+  return window['go']['main']['App']['SetInitialWindowHidden'](arg1);
+}
+
 export function SetLightStrip(arg1) {
   return window['go']['main']['App']['SetLightStrip'](arg1);
 }
@@ -450,12 +514,24 @@ export function SetNoiseDiagnosticTarget(arg1, arg2) {
   return window['go']['main']['App']['SetNoiseDiagnosticTarget'](arg1, arg2);
 }
 
+export function SetPluginDevPaths(arg1) {
+  return window['go']['main']['App']['SetPluginDevPaths'](arg1);
+}
+
+export function SetPluginEnabled(arg1, arg2) {
+  return window['go']['main']['App']['SetPluginEnabled'](arg1, arg2);
+}
+
 export function SetPowerOnStart(arg1) {
   return window['go']['main']['App']['SetPowerOnStart'](arg1);
 }
 
 export function SetSceneRules(arg1) {
   return window['go']['main']['App']['SetSceneRules'](arg1);
+}
+
+export function SetSensorCatalogActive(arg1) {
+  return window['go']['main']['App']['SetSensorCatalogActive'](arg1);
 }
 
 export function SetSmartStartStop(arg1) {
@@ -472,6 +548,10 @@ export function SetTemperatureHistoryRetentionHours(arg1) {
 
 export function SetWiFiSmartStartStopStandbySpeed(arg1) {
   return window['go']['main']['App']['SetWiFiSmartStartStopStandbySpeed'](arg1);
+}
+
+export function SetWindowHidden(arg1) {
+  return window['go']['main']['App']['SetWindowHidden'](arg1);
 }
 
 export function SetWindowsAutoStart(arg1) {
@@ -500,6 +580,14 @@ export function TestTemperatureReading() {
 
 export function TransferDeviceImage(arg1) {
   return window['go']['main']['App']['TransferDeviceImage'](arg1);
+}
+
+export function UninstallPlugin(arg1, arg2) {
+  return window['go']['main']['App']['UninstallPlugin'](arg1, arg2);
+}
+
+export function UninstallTheme(arg1) {
+  return window['go']['main']['App']['UninstallTheme'](arg1);
 }
 
 export function UpdateCompletedOnLaunch() {

@@ -2,6 +2,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -25,11 +26,12 @@ const configLearningCurveScopeSeparator = "::curve::"
 // 公共方法（Get/Set/Update/Save/Load）是并发安全的；不要在持有 mu 的情况下调用
 // 这些公共方法（会自死锁）；内部需要无锁版本时使用以 Locked 结尾的私有方法。
 type Manager struct {
-	mu         sync.RWMutex
-	config     types.AppConfig
-	revision   uint64
-	installDir string
-	logger     types.Logger
+	mu          sync.RWMutex
+	config      types.AppConfig
+	initialized bool
+	revision    uint64
+	installDir  string
+	logger      types.Logger
 }
 
 // NewManager 创建新的配置管理器
@@ -113,6 +115,7 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 
 	m.config = types.GetDefaultConfig(isAutoStart)
 	m.config.ConfigPath = installConfigPath
+	m.initialized = true
 	if err := m.saveLocked(); err != nil {
 		m.logError("保存默认配置失败: %v", err)
 	}
@@ -150,6 +153,7 @@ func (m *Manager) tryLoadFromPathLocked(configPath string) bool {
 	applyMissingDeviceDefaults(&config, rawConfig)
 	applyMissingSmartControlDefaults(&config, rawConfig)
 	applyMissingLegionFnQDefaults(&config, rawConfig)
+	applyMissingRTSSDefaults(&config, rawConfig)
 	applyMissingThemeDefaults(&config, rawConfig)
 	applyMissingWindowBlurDefaults(&config, rawConfig)
 	applyMissingTemperatureDefaults(&config, rawConfig)
@@ -157,6 +161,7 @@ func (m *Manager) tryLoadFromPathLocked(configPath string) bool {
 	normalizeBlackSharkConfig(&config)
 
 	m.config = config
+	m.initialized = true
 	return true
 }
 
@@ -196,6 +201,7 @@ func (m *Manager) tryLoadLegacyPortableSettingsLocked(isAutoStart bool, targetPa
 		applyLegacyPortableSettings(&cfg, legacy)
 		cfg.ConfigPath = targetPath
 		m.config = cfg
+		m.initialized = true
 		m.logInfo("已读取旧版便携配置: %s", path)
 		return true
 	}
@@ -387,6 +393,39 @@ func applyMissingLegionFnQDefaults(cfg *types.AppConfig, rawConfig map[string]js
 		return
 	}
 	cfg.LegionFnQ = types.NormalizeLegionFnQConfig(cfg.LegionFnQ)
+}
+
+func applyMissingRTSSDefaults(cfg *types.AppConfig, rawConfig map[string]json.RawMessage) {
+	if cfg == nil {
+		return
+	}
+	defaults := types.GetDefaultRTSSConfig()
+	rawRTSS, ok := rawConfig["rtss"]
+	if !ok {
+		cfg.RTSS = defaults
+		return
+	}
+	var rtssConfig map[string]json.RawMessage
+	if err := json.Unmarshal(rawRTSS, &rtssConfig); err != nil {
+		cfg.RTSS = defaults
+		return
+	}
+	if _, ok := rtssConfig["enabled"]; !ok {
+		cfg.RTSS.Enabled = defaults.Enabled
+	}
+	if _, ok := rtssConfig["updateIntervalMs"]; !ok {
+		cfg.RTSS.UpdateIntervalMS = defaults.UpdateIntervalMS
+	}
+	if _, ok := rtssConfig["positionMode"]; !ok {
+		cfg.RTSS.PositionMode = defaults.PositionMode
+	}
+	if _, ok := rtssConfig["positionX"]; !ok {
+		cfg.RTSS.PositionX = defaults.PositionX
+	}
+	if _, ok := rtssConfig["positionY"]; !ok {
+		cfg.RTSS.PositionY = defaults.PositionY
+	}
+	cfg.RTSS, _ = types.NormalizeRTSSConfig(cfg.RTSS)
 }
 
 func applyMissingThemeDefaults(cfg *types.AppConfig, rawConfig map[string]json.RawMessage) {
@@ -819,6 +858,19 @@ func cloneAppConfig(input types.AppConfig) types.AppConfig {
 		}
 		return out
 	}()
+	input.Plugins = func() map[string]bool {
+		if input.Plugins == nil {
+			return nil
+		}
+		out := make(map[string]bool, len(input.Plugins))
+		for key, value := range input.Plugins {
+			out[key] = value
+		}
+		return out
+	}()
+	if input.PluginDevPaths != nil {
+		input.PluginDevPaths = append([]string(nil), input.PluginDevPaths...)
+	}
 	input.ActiveDeviceProfileIDsByTransport = cloneStringMapExact(input.ActiveDeviceProfileIDsByTransport)
 	input.DeviceProfiles = cloneDeviceProfilesExact(input.DeviceProfiles)
 	input.ManualGearLevels = cloneStringMapExact(input.ManualGearLevels)
@@ -829,6 +881,10 @@ func cloneAppConfig(input types.AppConfig) types.AppConfig {
 	input.NoiseDiagnosticsByDevice = cloneNoiseDiagnosticsExact(input.NoiseDiagnosticsByDevice)
 	input.AxisNoiseProfilesByDevice = cloneAxisNoiseProfilesExact(input.AxisNoiseProfilesByDevice)
 	input.SmartControl = cloneSmartControlConfig(input.SmartControl)
+	if input.HistoryEnabled != nil {
+		historyEnabled := *input.HistoryEnabled
+		input.HistoryEnabled = &historyEnabled
+	}
 	if input.LightStrip.Colors != nil {
 		input.LightStrip.Colors = append([]types.RGBColor{}, input.LightStrip.Colors...)
 	}
@@ -1018,6 +1074,11 @@ func (m *Manager) Save() error {
 
 // saveLocked 保存配置（调用方需持有 m.mu 写锁）
 func (m *Manager) saveLocked() error {
+	if !m.initialized {
+		err := fmt.Errorf("配置尚未加载或初始化，拒绝覆盖写入配置文件")
+		m.logError("%v", err)
+		return err
+	}
 	installConfigDir := filepath.Join(m.installDir, "config")
 	installConfigPath := filepath.Join(installConfigDir, "config.json")
 	data, err := json.MarshalIndent(m.config, "", "  ")
@@ -1051,6 +1112,14 @@ func (m *Manager) saveLocked() error {
 }
 
 func writeConfigFileAtomically(path string, data []byte) error {
+	// 覆盖前把上一份有效配置备份到 config.json.bak，异常中断或误覆盖时可恢复。
+	if existing, err := os.ReadFile(path); err == nil && len(bytes.TrimSpace(existing)) > 0 && json.Valid(existing) && !bytes.Equal(existing, data) {
+		_ = writeFileAtomically(path+".bak", existing)
+	}
+	return writeFileAtomically(path, data)
+}
+
+func writeFileAtomically(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
@@ -1134,6 +1203,7 @@ func (m *Manager) Set(config types.AppConfig) {
 	config = cloneAppConfig(config)
 	m.mu.Lock()
 	m.config = config
+	m.initialized = true
 	m.bumpRevisionLocked()
 	m.mu.Unlock()
 }
@@ -1143,6 +1213,11 @@ func (m *Manager) Update(config types.AppConfig) error {
 	config = cloneAppConfig(config)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if !m.initialized {
+		err := fmt.Errorf("配置尚未加载或初始化，拒绝覆盖写入配置文件")
+		m.logError("%v", err)
+		return err
+	}
 	if sameAppConfig(m.config, config) {
 		return nil
 	}
@@ -1160,6 +1235,11 @@ func (m *Manager) Update(config types.AppConfig) error {
 func (m *Manager) MutateAndSave(mutate func(*types.AppConfig)) (types.AppConfig, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if !m.initialized {
+		err := fmt.Errorf("配置尚未加载或初始化，拒绝覆盖写入配置文件")
+		m.logError("%v", err)
+		return cloneAppConfig(m.config), err
+	}
 	if mutate == nil {
 		return cloneAppConfig(m.config), nil
 	}
@@ -1197,6 +1277,11 @@ func (m *Manager) MutateIfRevision(expected uint64, mutate func(*types.AppConfig
 func (m *Manager) MutateIfRevisionAndSave(expected uint64, mutate func(*types.AppConfig)) (types.AppConfig, uint64, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if !m.initialized {
+		err := fmt.Errorf("配置尚未加载或初始化，拒绝覆盖写入配置文件")
+		m.logError("%v", err)
+		return cloneAppConfig(m.config), m.revision, false, err
+	}
 	if mutate == nil || m.revision != expected {
 		return cloneAppConfig(m.config), m.revision, false, nil
 	}

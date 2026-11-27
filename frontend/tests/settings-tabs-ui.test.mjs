@@ -11,7 +11,7 @@ const systemSettingsSource = readFileSync(new URL('../src/app/components/setting
 const styles = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8');
 
 test('lazily mounts settings sections once behind an accessible segmented control', () => {
-  assert.match(source, /type SettingsTab = 'device' \| 'fan' \| 'system'/);
+  assert.match(source, /type SettingsTab = 'device' \| 'fan' \| 'system' \| 'plugins'/);
   assert.match(source, /data-theme-ui="settings-tabs"/);
   assert.match(source, /role="tablist"/);
   assert.match(source, /const \[mountedSettingsTabs, setMountedSettingsTabs\]/);
@@ -36,13 +36,24 @@ test('uses slightly faster page transitions without changing card reveal timing'
   assert.match(styles, /glacier-page-card-fade 0\.285s/);
 });
 
-test('uses a slightly faster page-style transition for settings sections', () => {
-  assert.match(source, /SETTINGS_PANEL_ENTER_DURATION = 0\.17/);
-  assert.match(source, /SETTINGS_PANEL_EXIT_DURATION = 0\.13/);
-  assert.match(source, /active:[\s\S]*?opacity: reduceMotion \? 1 : \[0, 1\][\s\S]*?y: reduceMotion \? 0 : \[8, 0\][\s\S]*?duration: reduceMotion \? 0 : SETTINGS_PANEL_ENTER_DURATION/);
-  assert.match(source, /inactive:[\s\S]*?opacity: reduceMotion \? 0 : \[1, 0\][\s\S]*?y: reduceMotion \? 0 : \[0, -6\][\s\S]*?duration: reduceMotion \? 0 : SETTINGS_PANEL_EXIT_DURATION/);
-  assert.match(source, /initial=\{id === 'device' \? false : \{ opacity: 0, y: reduceMotion \? 0 : 8 \}\}/);
-  assert.match(source, /ease: \[0\.22, 1, 0\.36, 1\]/);
+test('uses a directional horizontal cross-slide transition for settings sections', () => {
+  assert.match(source, /SETTINGS_TAB_ORDER/);
+  assert.match(source, /SETTINGS_PANEL_ENTER_DURATION = 0\.36/);
+  assert.match(source, /SETTINGS_PANEL_ENTER_DELAY = 0\.04/);
+  assert.match(source, /SETTINGS_PANEL_EXIT_DURATION = 0\.18/);
+  assert.match(source, /SETTINGS_PANEL_SLIDE_OFFSET = 20/);
+  assert.match(source, /SETTINGS_PANEL_EXIT_OFFSET = 12/);
+  assert.match(source, /SETTINGS_PANEL_EASE.*= \[0\.32, 0\.72, 0, 1\]/);
+  assert.match(source, /SETTINGS_PANEL_EXIT_EASE.*= \[0\.4, 0, 0\.2, 1\]/);
+  assert.match(source, /active:\s*\(direction: number\)[\s\S]*?opacity:\s*1[\s\S]*?x:\s*reduceMotion \? 0 : \[direction \* SETTINGS_PANEL_SLIDE_OFFSET, 0\][\s\S]*?duration:\s*reduceMotion \? 0 : SETTINGS_PANEL_ENTER_DURATION/);
+  assert.match(source, /exiting:\s*\(direction: number\)[\s\S]*?opacity:\s*0[\s\S]*?x:\s*reduceMotion \? 0 : direction \* -SETTINGS_PANEL_EXIT_OFFSET[\s\S]*?duration:\s*reduceMotion \? 0 : SETTINGS_PANEL_EXIT_DURATION/);
+  assert.match(source, /hidden:\s*\{[\s\S]*?opacity:\s*0[\s\S]*?x:\s*0[\s\S]*?duration:\s*0/);
+  assert.match(source, /custom=\{settingsTabDirection\}/);
+  assert.match(source, /initial=\{id === 'device' \? false : \{ opacity: 0, x: reduceMotion \? 0 : settingsTabDirection \* SETTINGS_PANEL_SLIDE_OFFSET \}\}/);
+  assert.match(source, /ease: SETTINGS_PANEL_EASE/);
+  assert.match(source, /ease: SETTINGS_PANEL_EXIT_EASE/);
+  assert.match(source, /duration-\[360ms\] ease-\[cubic-bezier\(0\.32,0\.72,0,1\)\]/);
+  assert.match(source, /transition-colors duration-300/);
   assert.match(source, /data-theme-ui="settings-panels"/);
   assert.match(source, /will-change-\[opacity,transform\]/);
   assert.doesNotMatch(source, /settings-panel-switch|AnimatePresence mode="wait"/);
@@ -113,11 +124,23 @@ test('uses existing telemetry and theme hooks without waking an idle GPU', () =>
 });
 
 test('balances both overview cards and protects long device names', () => {
-  assert.match(source, /data-theme-card="settings-overview-temperature" className="grid min-h-\[10rem\] grid-rows-2/);
-  assert.match(source, /data-theme-card="settings-overview-device" className="grid min-h-\[10rem\] grid-rows-2/);
+  assert.match(source, /data-theme-card="settings-overview-temperature" className="grid min-h-\[8\.5rem\] grid-rows-2/);
+  assert.match(source, /data-theme-card="settings-overview-device" className="grid min-h-\[8\.5rem\] grid-rows-2/);
   assert.match(source, /title=\{overviewConnectionName\}/);
   assert.match(source, /line-clamp-2 break-words text-sm font-semibold leading-snug/);
   assert.doesNotMatch(source, /className="mt-auto grid grid-cols-2/);
+});
+
+test('unifies settings section grouping, typography hierarchy, power spoof button, and device-scoped panels', () => {
+  const layoutSource = readFileSync(new URL('../src/app/components/settings/SettingLayout.tsx', import.meta.url), 'utf8');
+  assert.match(systemSettingsSource, /controlPanel\.system\.groups\.appearance/);
+  assert.match(systemSettingsSource, /controlPanel\.system\.groups\.monitoringAndHotkeys/);
+  assert.match(systemSettingsSource, /controlPanel\.system\.groups\.startupAndConnection/);
+  assert.match(source, /device:\s*\([\s\S]*?<BlackSharkPanel \/>/);
+  assert.match(layoutSource, /text-\[15px\] font-semibold tracking-\[-0\.01em\] text-foreground/);
+  assert.match(layoutSource, /text-\[13px\] leading-\[1\.45\] text-muted-foreground/);
+  assert.match(fanControlSource, /powerSpoofConfigure/);
+  assert.match(fanControlSource, /powerSpoofEnabledBadge/);
 });
 
 test('aligns thermal metrics and keeps hardware model pills at the right edge', () => {
@@ -129,4 +152,29 @@ test('aligns thermal metrics and keeps hardware model pills at the right edge', 
   assert.match(source, /shadow-black\/15 backdrop-blur-md/);
   assert.match(source, /data-theme-ui="settings-overview-metrics"/);
   assert.match(source, /grid-cols-\[1rem_2\.25rem_minmax\(3\.25rem,1fr\)_1rem_2\.25rem_minmax\(3\.25rem,1fr\)\]/);
+});
+
+test('synchronizes persistent history controls across System Settings and Curve header', () => {
+  assert.match(systemSettingsSource, /useTemperatureHistory/);
+  assert.match(systemSettingsSource, /HISTORY_RETENTION_HOUR_OPTIONS/);
+  assert.match(systemSettingsSource, /controlPanel\.system\.temperatureHistoryTitle/);
+  assert.match(systemSettingsSource, /controlPanel\.system\.temperatureHistoryRetentionTitle/);
+
+  const historySectionStart = fanCurveSource.indexOf('data-theme-card="curve-history"');
+  const displayDialogStart = fanCurveSource.indexOf('data-theme-ui="history-display-dialog"');
+  assert.ok(historySectionStart >= 0 && displayDialogStart > historySectionStart);
+  const historyHeaderAndSummary = fanCurveSource.slice(historySectionStart, displayDialogStart);
+  const displayDialogBody = fanCurveSource.slice(displayDialogStart);
+
+  assert.match(historyHeaderAndSummary, /fanCurve\.history\.retention\.label/);
+  assert.match(historyHeaderAndSummary, /HISTORY_RETENTION_HOUR_OPTIONS/);
+  assert.doesNotMatch(displayDialogBody, /fanCurve\.history\.retention\.label/);
+});
+
+test('prevents settings panels from trapping bottom scroll or showing click focus outlines', () => {
+  assert.match(source, /overflow-clip/);
+  assert.match(source, /id=\{`settings-panel-\$\{id\}`\}[\s\S]*?tabIndex=\{-1\}/);
+  assert.match(appShellSource, /<main[^>]*overflow-clip/);
+  assert.match(styles, /\.app-scroll-root\s*\{[\s\S]*?overflow-anchor:\s*none/);
+  assert.match(styles, /\[data-theme-ui="setting-section"\],[\s\S]*?overflow:\s*clip/);
 });

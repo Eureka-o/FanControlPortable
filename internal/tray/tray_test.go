@@ -1,6 +1,7 @@
 package tray
 
 import (
+	"math"
 	"reflect"
 	"strings"
 	"sync/atomic"
@@ -172,5 +173,16 @@ func TestTrayStatusSnapshotKeyDetectsDisplayChanges(t *testing.T) {
 	notPolledB.GPUPowerWatts = 20
 	if makeTrayStatusSnapshotKey(notPolledA, sig) != makeTrayStatusSnapshotKey(notPolledB, sig) {
 		t.Fatal("notPolled GPU state should ignore stale GPU temperature/power differences")
+	}
+}
+
+func TestFormatPowerWattsHidesSubThresholdNoise(t *testing.T) {
+	for _, watts := range []float64{0, -1, 0.02, 0.049, math.NaN()} {
+		if got := formatPowerWatts(watts); got != "-- W" {
+			t.Fatalf("formatPowerWatts(%v) = %q, want \"-- W\"", watts, got)
+		}
+	}
+	if got := formatPowerWatts(0.06); got != "0.1 W" {
+		t.Fatalf("formatPowerWatts(0.06) = %q, want \"0.1 W\"", got)
 	}
 }

@@ -2,13 +2,14 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
 } from "react";
-import { motion, AnimatePresence, type Variants } from "framer-motion";
+import { m, AnimatePresence, type Variants } from "framer-motion";
 import {
   Copy,
   Download,
@@ -30,8 +31,14 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Usb,
+  Cpu,
+  Gauge,
+  Puzzle,
+  SlidersHorizontal,
+  Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import type { AppTab } from "../store/app-store-logic";
 import {
   Environment,
   Quit,
@@ -71,18 +78,74 @@ const ABOUT_TAB = {
   icon: Info,
 } as const;
 
-type ActiveTab = (typeof MAIN_TAB_ITEMS)[number]["id"] | typeof ABOUT_TAB.id;
+export interface PluginSidebarTab {
+  id: string;
+  label: string;
+  icon?: string;
+  iconAssetUrl?: string;
+}
 
-const DOCK_COLLAPSED_WIDTH = 64;
-const DOCK_EXPANDED_WIDTH = 192;
+type ActiveTab = AppTab;
+
+const PLUGIN_ICON_MAP: Record<string, LucideIcon> = {
+  fan: Fan,
+  cpu: Cpu,
+  gauge: Gauge,
+  blocks: Boxes,
+  sparkles: Sparkles,
+  sliders: SlidersHorizontal,
+  zap: Zap,
+  puzzle: Puzzle,
+};
+
+function resolvePluginIcon(name?: string): LucideIcon {
+  const key = String(name || "").trim().toLowerCase();
+  return PLUGIN_ICON_MAP[key] || Puzzle;
+}
+
+export const DOCK_COLLAPSED_WIDTH = 64;
+export const DOCK_EXPANDED_WIDTH = 192;
 const DOCK_EXPANDED_STORAGE_KEY = "fancontrol.dock.expanded";
 
-function readStoredDockExpanded(): boolean {
+export function readStoredDockExpanded(): boolean {
   try {
     return window.localStorage.getItem(DOCK_EXPANDED_STORAGE_KEY) === "1";
   } catch {
     return false;
   }
+}
+
+export function DockBrandMark() {
+  return (
+    <div
+      data-app-ui="brand-mark"
+      role="img"
+      className="relative h-10 w-full overflow-hidden"
+      style={NO_DRAG_STYLE}
+    >
+      <span className="sr-only">{BRAND.name}</span>
+      <img
+        data-app-ui="brand-compact"
+        src="/brand/fancontrol-fc-mark-v1-dark.png"
+        alt=""
+        draggable={false}
+        className="dark:hidden"
+      />
+      <img
+        data-app-ui="brand-compact"
+        src="/brand/fancontrol-fc-mark-v1.png"
+        alt=""
+        draggable={false}
+        className="hidden dark:block"
+      />
+      <span data-app-ui="brand-wordmark" aria-hidden="true">
+        <span data-brand-part="f" />
+        <span data-brand-part="an" />
+        <span data-brand-part="c" />
+        <span data-brand-part="ontrol" />
+      </span>
+    </div>
+  );
 }
 
 const TAB_TRANSITION_ORDER: ActiveTab[] = [
@@ -102,7 +165,7 @@ function getTabTransitionDirection(fromTab: ActiveTab, toTab: ActiveTab) {
 const TAB_CONTENT_VARIANTS: Variants = {
   enter: (direction: number) => ({
     opacity: 0,
-    y: direction === 0 ? 8 : direction * 18,
+    y: direction === 0 ? 4 : direction * 8,
   }),
   center: {
     opacity: 1,
@@ -114,7 +177,7 @@ const TAB_CONTENT_VARIANTS: Variants = {
   },
   exit: (direction: number) => ({
     opacity: 0,
-    y: direction === 0 ? -6 : direction * -14,
+    y: direction === 0 ? -4 : direction * -6,
     transition: {
       duration: 0.15,
       ease: [0.22, 1, 0.36, 1],
@@ -125,6 +188,7 @@ const TAB_CONTENT_VARIANTS: Variants = {
 interface AppShellProps {
   activeTab: ActiveTab;
   onTabChange: (tab: ActiveTab) => void;
+  onTabPrefetch?: (tab: ActiveTab) => void;
   isConnected: boolean;
   monitorOnlyActive?: boolean;
   runtimeDeviceProfile?: types.DeviceProfile | null;
@@ -140,6 +204,8 @@ interface AppShellProps {
   controlContent: ReactNode;
   devicesContent: ReactNode;
   aboutContent: ReactNode;
+  pluginTabs?: PluginSidebarTab[];
+  renderPluginContent?: (pluginId: string) => ReactNode;
 }
 
 function getTempColor(temp?: number) {
@@ -197,7 +263,7 @@ function TitleBarButton({
         onClick();
       }}
       className={clsx(
-        "flex h-8 w-10 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors",
+        "flex h-8 w-10 cursor-pointer items-center justify-center rounded-[8px] text-muted-foreground transition-all duration-150 active:scale-[0.94]",
         danger
           ? "hover:bg-red-500 hover:text-white"
           : "hover:bg-foreground/10 hover:text-foreground",
@@ -215,6 +281,7 @@ function TitleBar({
   closeLabel,
   isMaximised,
   leftSlot,
+  homeSlot,
   leftOffset,
   onMinimise,
   onToggleMaximise,
@@ -226,6 +293,7 @@ function TitleBar({
   closeLabel: string;
   isMaximised: boolean;
   leftSlot?: ReactNode;
+  homeSlot?: ReactNode;
   leftOffset: number;
   onMinimise: () => void;
   onToggleMaximise: () => void;
@@ -241,13 +309,21 @@ function TitleBar({
       }}
       onDoubleClick={onToggleMaximise}
     >
-      <div className="flex h-full min-w-0 flex-1 items-center px-3 pt-1">
+      <div className="relative flex h-full min-w-0 flex-1 items-center px-3 pt-0.5">
         <div
           data-app-ui="titlebar-info"
           className="glacier-titlebar-info flex min-w-0 items-center"
         >
           {leftSlot}
         </div>
+        {homeSlot && (
+          <div
+            data-app-ui="titlebar-home-heading"
+            className="glacier-titlebar-home-heading pointer-events-none absolute inset-y-0 left-5 flex min-w-0 items-center pt-0.5 sm:left-6 lg:left-7"
+          >
+            {homeSlot}
+          </div>
+        )}
       </div>
       <div
         data-app-ui="titlebar-controls"
@@ -357,12 +433,15 @@ function StatusBadges({
         className={clsx(
           baseClass,
           isConnected
-            ? "border-primary/20 bg-primary/10 text-primary"
-            : "border-border bg-card text-muted-foreground",
+            ? "border-primary/25 bg-primary/10 text-primary"
+            : "border-border/75 bg-card text-muted-foreground",
         )}
       >
         {isConnected ? (
-          <ConnectedIcon className="h-3.5 w-3.5" />
+          <>
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500 ring-2 ring-emerald-500/25" />
+            <ConnectedIcon className="h-3.5 w-3.5 text-primary" />
+          </>
         ) : (
           <WifiOff className="h-3.5 w-3.5" />
         )}
@@ -376,11 +455,11 @@ function StatusBadges({
         className={clsx(
           baseClass,
           autoControl
-            ? "border-primary/20 bg-primary/10 text-primary"
-            : "border-border bg-card text-muted-foreground",
+            ? "border-primary/25 bg-primary/10 text-primary"
+            : "border-border/75 bg-card text-muted-foreground",
         )}
       >
-        <Sparkles className="h-3.5 w-3.5" />
+        <Sparkles className={clsx("h-3.5 w-3.5", autoControl && "text-primary")} />
         {autoControl
           ? t("appShell.status.smartControl")
           : t("appShell.status.manualMode")}
@@ -392,7 +471,7 @@ function StatusBadges({
             data-app-ui="titlebar-status-card"
             className={clsx(
               baseClass,
-              "border-border bg-card font-semibold shadow-sm shadow-black/5",
+              "border-border/75 bg-card font-semibold shadow-sm shadow-black/5",
             )}
           >
             <Thermometer
@@ -409,11 +488,11 @@ function StatusBadges({
             data-app-ui="titlebar-status-card"
             className={clsx(
               baseClass,
-              "border-border bg-card font-semibold text-primary shadow-sm shadow-black/5",
+              "border-border/75 bg-card font-semibold text-primary shadow-sm shadow-black/5",
             )}
           >
             <span
-              className={clsx("inline-flex", fanSpinDuration && "animate-spin")}
+              className={clsx("inline-flex text-primary", fanSpinDuration && "animate-spin")}
               style={fanSpinStyle}
             >
               <Fan className="h-3.5 w-3.5" />
@@ -426,6 +505,64 @@ function StatusBadges({
     </div>
   );
 }
+
+const TitleBarHomeHeading = memo(function TitleBarHomeHeading({
+  isConnected,
+  runtimeDeviceProfile,
+  config,
+}: {
+  isConnected: boolean;
+  runtimeDeviceProfile?: types.DeviceProfile | null;
+  config: types.AppConfig;
+}) {
+  const { t } = useTranslation();
+  const fanDataTransport = useAppStore(
+    (state) => ((state.fanData as any)?.transport as string) || "",
+  );
+  const rawTransport = String(
+    runtimeDeviceProfile?.transport ||
+      fanDataTransport ||
+      (config as any).deviceTransport ||
+      "",
+  )
+    .trim()
+    .toLowerCase();
+  const transportKey =
+    rawTransport === "ble" ||
+    rawTransport === "wifi" ||
+    rawTransport === "serial" ||
+    rawTransport === "hid" ||
+    rawTransport === "usb"
+      ? rawTransport
+      : "";
+  const TransportIcon =
+    transportKey === "ble"
+      ? Bluetooth
+      : transportKey === "usb" || transportKey === "hid" || transportKey === "serial"
+        ? Usb
+        : Wifi;
+
+  return (
+    <div className="flex min-w-0 items-center gap-2 text-xs leading-none">
+      <span className="font-semibold tracking-[-0.015em] text-foreground/88">
+        {BRAND.name}
+      </span>
+      <span className="text-muted-foreground/35" aria-hidden="true">/</span>
+      <span className="font-medium text-muted-foreground">
+        {t("appShell.tabs.status")}
+      </span>
+      {isConnected && transportKey && (
+        <>
+          <span className="text-muted-foreground/35" aria-hidden="true">·</span>
+          <span className="inline-flex min-w-0 items-center gap-1 text-[11px] font-medium text-muted-foreground/85">
+            <TransportIcon className="h-3 w-3 shrink-0 text-primary/80" />
+            <span className="truncate">{t(`advancedDevices.transport.${transportKey}`)}</span>
+          </span>
+        </>
+      )}
+    </div>
+  );
+});
 
 /* ──────────────────────────────────────────────────────────────
  * OverlayScrollbar — floating thumb, never reserves width.
@@ -467,7 +604,7 @@ function OverlayScrollbar({
     const ratio = clientHeight / scrollHeight;
     const thumbHeight = Math.max(28, trackHeight * ratio);
     const maxThumbTop = trackHeight - thumbHeight;
-    const top = (scrollTop / overflow) * maxThumbTop;
+    const top = Math.min(1, Math.max(0, scrollTop / overflow)) * maxThumbTop;
     thumb.style.height = `${thumbHeight}px`;
     thumb.style.transform = `translateY(${top}px)`;
   }, [scrollRef]);
@@ -594,18 +731,22 @@ function OverlayScrollbar({
 
 function DockButton({
   icon: Icon,
+  iconAssetUrl,
   label,
   expanded,
   onClick,
+  onPrefetch,
   isActive = false,
   tabId,
   role,
   ariaExpanded,
 }: {
   icon: LucideIcon;
+  iconAssetUrl?: string;
   label: string;
   expanded: boolean;
   onClick: () => void;
+  onPrefetch?: () => void;
   isActive?: boolean;
   tabId?: string;
   role?: "tab";
@@ -620,6 +761,8 @@ function DockButton({
       aria-label={label}
       aria-selected={role === "tab" ? isActive : undefined}
       aria-expanded={ariaExpanded}
+      onPointerEnter={onPrefetch}
+      onFocus={onPrefetch}
       onPointerDown={(event) => {
         event.preventDefault();
         event.currentTarget.blur();
@@ -650,12 +793,22 @@ function DockButton({
         data-app-ui="sidebar-item-icon"
         className="relative z-10 flex w-16 shrink-0 items-center justify-center not-italic"
       >
-        <Icon className="h-4.5 w-4.5" />
+        {iconAssetUrl ? (
+          <img
+            src={iconAssetUrl}
+            alt=""
+            draggable={false}
+            className="h-5 w-5 rounded-[5px] object-contain"
+          />
+        ) : (
+          <Icon className="h-4.5 w-4.5" />
+        )}
       </i>
       <i
         data-app-ui="sidebar-item-label"
         className={clsx(
-          "relative z-10 min-w-0 flex-1 truncate pr-4 text-sm font-medium not-italic transition-[opacity,transform] duration-300 ease-out",
+          "relative z-10 min-w-0 flex-1 truncate pr-4 text-sm not-italic transition-[opacity,transform] duration-300 ease-out",
+          isActive ? "font-semibold" : "font-medium",
           expanded
             ? "translate-x-0 opacity-100 delay-100"
             : "-translate-x-2 opacity-0 delay-0",
@@ -683,6 +836,7 @@ function DockButton({
 export default function AppShell({
   activeTab,
   onTabChange,
+  onTabPrefetch,
   isConnected,
   monitorOnlyActive = false,
   runtimeDeviceProfile,
@@ -698,6 +852,8 @@ export default function AppShell({
   controlContent,
   devicesContent,
   aboutContent,
+  pluginTabs = [],
+  renderPluginContent,
 }: AppShellProps) {
   const { t } = useTranslation();
   const [isWindowsChrome, setIsWindowsChrome] = useState(
@@ -707,8 +863,25 @@ export default function AppShell({
   );
   const [isMaximised, setIsMaximised] = useState(false);
   const [dockExpanded, setDockExpanded] = useState(readStoredDockExpanded);
+  const [visibleBridgeWarning, setVisibleBridgeWarning] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const previousActiveTabRef = useRef<ActiveTab>(activeTab);
+
+  useEffect(() => {
+    const normalized = bridgeWarning?.trim() || null;
+    if (!normalized) {
+      setVisibleBridgeWarning(null);
+      return;
+    }
+    if (visibleBridgeWarning) {
+      setVisibleBridgeWarning(normalized);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setVisibleBridgeWarning(normalized);
+    }, 2500);
+    return () => window.clearTimeout(timer);
+  }, [bridgeWarning, visibleBridgeWarning]);
 
   const syncWindowState = useCallback(async () => {
     try {
@@ -804,19 +977,32 @@ export default function AppShell({
     onTabChange(tab);
   };
 
-  const contentMap: Record<ActiveTab, ReactNode> = {
-    status: statusContent,
-    curve: curveContent,
-    control: controlContent,
-    devices: devicesContent,
-    about: aboutContent,
-  };
+  const dockWidth = dockExpanded ? DOCK_EXPANDED_WIDTH : DOCK_COLLAPSED_WIDTH;
+  const visibleMainTabCount = monitorOnlyActive ? MAIN_TAB_ITEMS.length - 1 : MAIN_TAB_ITEMS.length;
+  const dynamicPluginIndex = activeTab.startsWith("plugin:")
+    ? pluginTabs.findIndex((p) => `plugin:${p.id}` === activeTab)
+    : -1;
+  const indicatorInlineStyle: CSSProperties | undefined =
+    dynamicPluginIndex >= 0
+      ? ({
+          "--sidebar-active-offset": `${(visibleMainTabCount + dynamicPluginIndex) * 3}rem`,
+        } as CSSProperties)
+      : undefined;
+
+  const activeContent = activeTab.startsWith("plugin:")
+    ? renderPluginContent?.(activeTab.slice("plugin:".length)) ?? statusContent
+    : ({
+        status: statusContent,
+        curve: curveContent,
+        control: controlContent,
+        devices: devicesContent,
+        about: aboutContent,
+      } as Record<string, ReactNode>)[activeTab] ?? statusContent;
   const transitionDirection = getTabTransitionDirection(
     previousActiveTabRef.current,
     activeTab,
   );
   const windowBlurMode = String((config as any)?.windowBlur || "acrylic");
-  const dockWidth = dockExpanded ? DOCK_EXPANDED_WIDTH : DOCK_COLLAPSED_WIDTH;
   const dockToggleLabel = t(
     dockExpanded ? "appShell.sidebar.collapse" : "appShell.sidebar.expand",
   );
@@ -861,6 +1047,13 @@ export default function AppShell({
               compact
             />
           }
+          homeSlot={
+            <TitleBarHomeHeading
+              isConnected={isConnected}
+              runtimeDeviceProfile={runtimeDeviceProfile}
+              config={config}
+            />
+          }
           onMinimise={() => WindowMinimise()}
           onToggleMaximise={handleToggleMaximise}
           onClose={() => Quit()}
@@ -878,37 +1071,14 @@ export default function AppShell({
           className="flex h-[76px] shrink-0 items-center overflow-hidden"
           style={DRAG_STYLE}
         >
-          <div
-            data-app-ui="brand-mark"
-            role="img"
-            className="relative h-10 w-full overflow-hidden"
-            style={NO_DRAG_STYLE}
-          >
-            <span className="sr-only">{BRAND.name}</span>
-            <img
-              data-app-ui="brand-compact"
-              src="/brand/fancontrol-fc-mark-v1-dark.png"
-              alt=""
-              draggable={false}
-              className="dark:hidden"
-            />
-            <img
-              data-app-ui="brand-compact"
-              src="/brand/fancontrol-fc-mark-v1.png"
-              alt=""
-              draggable={false}
-              className="hidden dark:block"
-            />
-            <span data-app-ui="brand-wordmark" aria-hidden="true">
-              <span data-brand-part="f" />
-              <span data-brand-part="an" />
-              <span data-brand-part="c" />
-              <span data-brand-part="ontrol" />
-            </span>
-          </div>
+          <DockBrandMark />
         </div>
 
-        <div data-app-ui="sidebar-active-indicator" aria-hidden="true" />
+        <div
+          data-app-ui="sidebar-active-indicator"
+          style={indicatorInlineStyle}
+          aria-hidden="true"
+        />
 
         <nav
           className="flex flex-1 flex-col gap-1"
@@ -924,9 +1094,26 @@ export default function AppShell({
               isActive={activeTab === tab.id}
               tabId={tab.id}
               role="tab"
+              onPrefetch={() => onTabPrefetch?.(tab.id)}
               onClick={() => handleTabChange(tab.id)}
             />
           ))}
+          {pluginTabs.map((tab) => {
+            const tabKey = `plugin:${tab.id}` as ActiveTab;
+            return (
+              <DockButton
+                key={tabKey}
+                icon={resolvePluginIcon(tab.icon)}
+                iconAssetUrl={tab.iconAssetUrl}
+                label={tab.label}
+                expanded={dockExpanded}
+                isActive={activeTab === tabKey}
+                tabId={tabKey}
+                role="tab"
+                onClick={() => handleTabChange(tabKey)}
+              />
+            );
+          })}
         </nav>
 
         <div className="flex flex-col gap-1 pb-5" style={NO_DRAG_STYLE}>
@@ -937,6 +1124,7 @@ export default function AppShell({
             isActive={activeTab === ABOUT_TAB.id}
             tabId={ABOUT_TAB.id}
             role="tab"
+            onPrefetch={() => onTabPrefetch?.(ABOUT_TAB.id)}
             onClick={() => handleTabChange(ABOUT_TAB.id)}
           />
           <DockButton
@@ -959,7 +1147,7 @@ export default function AppShell({
             style={DRAG_STYLE}
           >
             <div
-              className="mx-auto flex min-h-9 max-w-[1120px] min-[1680px]:max-w-[1280px] min-[2200px]:max-w-[1480px] items-center justify-start gap-3"
+              className="mx-auto flex min-h-9 max-w-[1360px] min-[1680px]:max-w-[1520px] min-[2200px]:max-w-[1720px] items-center justify-start gap-3"
               style={NO_DRAG_STYLE}
             >
               <StatusBadges
@@ -981,12 +1169,12 @@ export default function AppShell({
             className="app-scroll-root app-scroll-root--hide-native h-full"
             style={NO_DRAG_STYLE}
           >
-            <div className="min-h-full px-4 pb-6 pt-4 sm:px-5 lg:px-6">
+            <div className={clsx("flex min-h-full flex-col px-4 sm:px-5 lg:px-6", isWindowsChrome ? "pb-4 pt-2" : "pb-6 pt-4")}>
               {/* Alerts */}
-              <div className="mx-auto max-w-[1120px] min-[1680px]:max-w-[1280px] min-[2200px]:max-w-[1480px]">
+              <div className="mx-auto w-full max-w-[1360px] min-[1680px]:max-w-[1520px] min-[2200px]:max-w-[1720px]">
                 <AnimatePresence>
                   {error && (
-                    <motion.div
+                    <m.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: "auto" }}
                       exit={{ opacity: 0, height: 0 }}
@@ -1010,11 +1198,11 @@ export default function AppShell({
                           </button>
                         )}
                       </div>
-                    </motion.div>
+                    </m.div>
                   )}
 
-                  {bridgeWarning && (
-                    <motion.div
+                  {visibleBridgeWarning && (
+                    <m.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: "auto" }}
                       exit={{ opacity: 0, height: 0 }}
@@ -1023,7 +1211,7 @@ export default function AppShell({
                       <div className="mb-3 flex items-start gap-3 rounded-lg border border-amber-300/50 bg-amber-50/80 px-4 py-2.5 text-amber-800 dark:border-amber-700/40 dark:bg-amber-900/15 dark:text-amber-200">
                         <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
                         <p className="flex-1 text-sm leading-relaxed">
-                          {bridgeWarning}
+                          {visibleBridgeWarning}
                         </p>
                         {onExportDiagnostics && (
                           <button
@@ -1041,35 +1229,38 @@ export default function AppShell({
                         <button
                           type="button"
                           aria-label={t("appShell.bridgeWarning.closeAria")}
-                          onClick={onDismissBridgeWarning}
+                          onClick={() => {
+                            setVisibleBridgeWarning(null);
+                            onDismissBridgeWarning();
+                          }}
                           className="cursor-pointer rounded p-0.5 transition hover:bg-amber-200/60 dark:hover:bg-amber-800/40"
                         >
                           <X className="h-3.5 w-3.5" />
                         </button>
                       </div>
-                    </motion.div>
+                    </m.div>
                   )}
                 </AnimatePresence>
               </div>
 
               {/* Tab content */}
-              <main className="mx-auto w-full max-w-[1120px] min-[1680px]:max-w-[1280px] min-[2200px]:max-w-[1480px] min-w-0 overflow-hidden">
+              <main className="mx-auto flex w-full max-w-[1360px] min-[1680px]:max-w-[1520px] min-[2200px]:max-w-[1720px] min-w-0 flex-1 flex-col overflow-clip">
                 <AnimatePresence
                   mode="wait"
                   initial={false}
                   custom={transitionDirection}
                 >
-                  <motion.div
+                  <m.div
                     key={activeTab}
                     custom={transitionDirection}
                     variants={TAB_CONTENT_VARIANTS}
                     initial="enter"
                     animate="center"
                     exit="exit"
-                    className="w-full min-w-0 px-1 pb-2 will-change-transform"
+                    className="flex w-full min-w-0 flex-1 flex-col px-1 pb-2"
                   >
-                    {contentMap[activeTab]}
-                  </motion.div>
+                    {activeContent}
+                  </m.div>
                 </AnimatePresence>
               </main>
             </div>

@@ -463,7 +463,7 @@ func (r *HistoryRecorder) serializeLocked() ([]byte, error) {
 }
 
 func normalizePowerWatts(value float64) float64 {
-	if value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0.05 {
 		return 0
 	}
 	return value

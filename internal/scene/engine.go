@@ -66,7 +66,10 @@ type Engine struct {
 	lastActive int
 	// primed 表示是否已经有过一次判定。
 	// 首次判定即使结果是基准也不产生动作：启动时重放一次基准没有意义，还会白写一轮设备。
-	primed bool
+	primed     bool
+	prevActive int
+	prevPrimed bool
+	canRevert  bool
 }
 
 // Update 用当前前台进程名推进一次判定。
@@ -78,17 +81,26 @@ func (e *Engine) Update(rules []types.SceneRule, foreground string) (Action, boo
 	if !e.primed {
 		// 首次判定：基准不产生动作（否则白写一轮设备）；命中规则必须产生动作，
 		// 因为启动时那个进程可能已经在前台。
-		e.primed = true
-		e.lastActive = active
 		if active == ActiveBaseline {
+			e.primed = true
+			e.lastActive = active
+			e.canRevert = false
 			return Action{}, false
 		}
+		e.prevActive = e.lastActive
+		e.prevPrimed = e.primed
+		e.canRevert = true
+		e.primed = true
+		e.lastActive = active
 		return e.buildAction(rules, active, foreground), true
 	}
 
 	if active == e.lastActive {
 		return Action{}, false
 	}
+	e.prevActive = e.lastActive
+	e.prevPrimed = e.primed
+	e.canRevert = true
 	e.lastActive = active
 	return e.buildAction(rules, active, foreground), true
 }
@@ -104,9 +116,20 @@ func (e *Engine) buildAction(rules []types.SceneRule, active int, foreground str
 	return act
 }
 
+// RevertLast 把引擎状态回退到上一次返回动作之前（用于设备下发失败后的重试）。
+func (e *Engine) RevertLast() {
+	if !e.canRevert {
+		return
+	}
+	e.lastActive = e.prevActive
+	e.primed = e.prevPrimed
+	e.canRevert = false
+}
+
 // Reset 清空内部状态（例如规则表被外部整体替换后调用），
 // 使下一次 Update 重新做一次完整判定。
 func (e *Engine) Reset() {
 	e.lastActive = ActiveBaseline
 	e.primed = false
+	e.canRevert = false
 }

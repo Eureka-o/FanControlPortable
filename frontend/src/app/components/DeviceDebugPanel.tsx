@@ -109,12 +109,14 @@ export default function DeviceDebugPanel({ config, isConnected, onConfigChange }
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+      <div data-theme-card="device-debug" className="overflow-hidden rounded-[20px] border border-border/75 bg-card shadow-sm">
         <CollapsibleTrigger asChild>
-          <button type="button" className="flex w-full cursor-pointer items-center justify-between px-4 py-3 transition-colors hover:bg-muted/40">
-            <div className="flex items-center gap-2">
-              <Bug className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-semibold text-foreground">{t('controlPanel.debug.panelTitle')}</span>
+          <button type="button" onMouseDown={(event) => event.preventDefault()} className="flex w-full cursor-pointer items-center justify-between px-5 py-4 outline-none transition-colors hover:bg-muted/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50">
+            <div className="flex items-center gap-3">
+              <div data-theme-ui="setting-row-icon" data-icon-tone="default" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-muted/70 text-muted-foreground shadow-inner shadow-white/20">
+                <Bug className="h-4 w-4" />
+              </div>
+              <span className="text-[15px] font-semibold tracking-[-0.01em] text-foreground">{t('controlPanel.debug.panelTitle')}</span>
             </div>
             <ChevronDown className={clsx('h-4 w-4 text-muted-foreground transition-transform duration-200', open && 'rotate-180')} />
           </button>
@@ -122,15 +124,15 @@ export default function DeviceDebugPanel({ config, isConnected, onConfigChange }
 
         <CollapsibleContent>
           <div className="space-y-3 border-t border-border/60 p-4">
-            <div className="flex items-center justify-between rounded-xl bg-muted/50 px-3 py-2.5">
-              <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between rounded-xl bg-muted/35 px-3.5 py-2.5">
+              <div className="flex items-center gap-2.5">
                 <Bug className="h-4 w-4 text-muted-foreground" />
                 <div>
-                  <div className="text-sm font-medium">{t('controlPanel.debug.modeTitle')}</div>
-                  <div className="text-[11px] text-muted-foreground">{t('controlPanel.debug.modeDescription')}</div>
+                  <div className="text-[14px] font-semibold">{t('controlPanel.debug.modeTitle')}</div>
+                  <div className="text-[13px] text-muted-foreground">{t('controlPanel.debug.modeDescription')}</div>
                 </div>
               </div>
-              <ToggleSwitch enabled={config.debugMode} onChange={toggleDebugMode} size="sm" color="purple" />
+              <ToggleSwitch enabled={config.debugMode} onChange={toggleDebugMode} size="sm" color="blue" />
             </div>
 
             <Button variant="secondary" size="sm" onClick={fetchDebugInfo} loading={debugInfoLoading} className="w-full">
@@ -156,7 +158,7 @@ export default function DeviceDebugPanel({ config, isConnected, onConfigChange }
             </div>
 
             {debugInfo && (
-              <div className="min-h-56 max-h-[min(55vh,30rem)] w-full cursor-text overflow-auto rounded-xl border border-border bg-background overscroll-contain select-text">
+              <div className="min-h-56 max-h-[min(55vh,30rem)] w-full cursor-text overflow-auto rounded-xl border border-border bg-background select-text">
                 <pre className="min-w-max whitespace-pre p-3 font-mono text-xs leading-5 text-foreground/90">{JSON.stringify(debugInfo, null, 2)}</pre>
               </div>
             )}

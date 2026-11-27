@@ -1,4 +1,6 @@
 Unicode true
+SetCompressor /SOLID lzma
+SetCompressorDictSize 32
 
 ####
 ## Please note: Template replacements don't work in this file. They are provided with default defines like
@@ -91,8 +93,8 @@ Unicode true
 !endif
 
 # Windows version resources require four numeric parts.
-VIProductVersion "2.9.1.0"
-VIFileVersion    "2.9.1.0"
+VIProductVersion "${INFO_PRODUCTVERSION}.0"
+VIFileVersion    "${INFO_PRODUCTVERSION}.0"
 
 VIAddVersionKey "CompanyName"     "${INFO_COMPANYNAME}"
 VIAddVersionKey "FileDescription" "${INFO_PRODUCTNAME} Installer"
@@ -107,7 +109,6 @@ ManifestDPIAware true
 !define MUI_ICON "..\icon.ico"
 !define MUI_UNICON "..\icon.ico"
 # !define MUI_WELCOMEFINISHPAGE_BITMAP "resources\leftimage.bmp" #Include this to add a bitmap on the left side of the Welcome Page. Must be a size of 164x314
-!define MUI_FINISHPAGE_NOAUTOCLOSE # Wait on the INSTFILES page so the user can take a look into the details of the installation steps
 !define MUI_FINISHPAGE_RUN "$INSTDIR\${PRODUCT_EXECUTABLE}"
 !define MUI_FINISHPAGE_RUN_TEXT "$(FC_STR_FINISHPAGE_RUN)"
 !define MUI_ABORTWARNING # This will warn the user if they exit from the installer.
@@ -298,6 +299,8 @@ FunctionEnd
 
 # Function to stop running application instances
 Function StopRunningInstances
+    Push $R9
+    StrCpy $R9 "0"
     DetailPrint "$(FC_STR_CHECKING_PROCESSES)"
 
     ClearErrors
@@ -305,8 +308,9 @@ Function StopRunningInstances
     Pop $0
     Pop $1
     ${If} $0 == 0
+        StrCpy $R9 "1"
         DetailPrint "$(FC_STR_CLOSE_CORE)"
-        Sleep 2000
+        Sleep 600
     ${EndIf}
 
     nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "FanControl Core.exe" /T'
@@ -318,8 +322,9 @@ Function StopRunningInstances
     Pop $0
     Pop $1
     ${If} $0 == 0
+        StrCpy $R9 "1"
         DetailPrint "$(FC_STR_CLOSE_APP)"
-        Sleep 2000
+        Sleep 600
     ${EndIf}
 
     # Force kill if still running (ignore errors)
@@ -330,18 +335,30 @@ Function StopRunningInstances
     nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "FanControl TempBridge.exe" /T'
     Pop $0
     Pop $1
+    ${If} $0 == 0
+        StrCpy $R9 "1"
+    ${EndIf}
 
     nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "${LEGACY_CORE_EXECUTABLE}" /T'
     Pop $0
     Pop $1
+    ${If} $0 == 0
+        StrCpy $R9 "1"
+    ${EndIf}
 
     nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "${LEGACY_PRODUCT_EXECUTABLE}" /T'
     Pop $0
     Pop $1
+    ${If} $0 == 0
+        StrCpy $R9 "1"
+    ${EndIf}
 
     nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "${LEGACY_BRIDGE_EXECUTABLE}" /T'
     Pop $0
     Pop $1
+    ${If} $0 == 0
+        StrCpy $R9 "1"
+    ${EndIf}
 
     DetailPrint "$(FC_STR_CLEAN_TASKS)"
     nsExec::ExecToStack '"$SYSDIR\schtasks.exe" /delete /tn "FanControl" /f'
@@ -351,10 +368,13 @@ Function StopRunningInstances
     Pop $0
     Pop $1
 
-    # Wait a moment for processes to fully terminate
-    DetailPrint "$(FC_STR_WAIT_TERMINATE)"
-    Sleep 2000
+    # Wait briefly only when running instances were found and signaled
+    ${If} $R9 == "1"
+        DetailPrint "$(FC_STR_WAIT_TERMINATE)"
+        Sleep 500
+    ${EndIf}
 
+    Pop $R9
     DetailPrint "$(FC_STR_PROCESS_DONE)"
 FunctionEnd
 
@@ -714,6 +734,9 @@ SectionEnd
 Section "uninstall"
     !insertmacro wails.setShellContext
 
+    Push $R9
+    StrCpy $R9 "0"
+
     # Stop running instances before uninstalling
     DetailPrint "$(FC_STR_UNINSTALL_STOP)"
 
@@ -721,7 +744,10 @@ Section "uninstall"
     nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "FanControl Core.exe" /T'
     Pop $0
     Pop $1
-    Sleep 1000
+    ${If} $0 == 0
+        StrCpy $R9 "1"
+        Sleep 500
+    ${EndIf}
     nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "FanControl Core.exe" /T'
     Pop $0
     Pop $1
@@ -731,7 +757,10 @@ Section "uninstall"
     nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "${PRODUCT_EXECUTABLE}" /T'
     Pop $0
     Pop $1
-    Sleep 1000
+    ${If} $0 == 0
+        StrCpy $R9 "1"
+        Sleep 500
+    ${EndIf}
     nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "${PRODUCT_EXECUTABLE}" /T'
     Pop $0
     Pop $1
@@ -740,7 +769,10 @@ Section "uninstall"
     nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "FanControl TempBridge.exe" /T'
     Pop $0
     Pop $1
-    Sleep 500
+    ${If} $0 == 0
+        StrCpy $R9 "1"
+        Sleep 300
+    ${EndIf}
     nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "FanControl TempBridge.exe" /T'
     Pop $0
     Pop $1
@@ -748,12 +780,21 @@ Section "uninstall"
     nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "${LEGACY_CORE_EXECUTABLE}" /T'
     Pop $0
     Pop $1
+    ${If} $0 == 0
+        StrCpy $R9 "1"
+    ${EndIf}
     nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "${LEGACY_PRODUCT_EXECUTABLE}" /T'
     Pop $0
     Pop $1
+    ${If} $0 == 0
+        StrCpy $R9 "1"
+    ${EndIf}
     nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "${LEGACY_BRIDGE_EXECUTABLE}" /T'
     Pop $0
     Pop $1
+    ${If} $0 == 0
+        StrCpy $R9 "1"
+    ${EndIf}
 
     # PawnIO owns the shared R0 driver lifecycle; do not stop/delete it from uninstall.
 
@@ -775,37 +816,45 @@ Section "uninstall"
     Delete "$SMSTARTUP\FanControl.lnk"
     Delete "$SMSTARTUP\${LEGACY_PRODUCTNAME}.lnk"
 
-    # Wait for processes to fully terminate
-    Sleep 2000
+    # Wait briefly only if running processes were stopped
+    ${If} $R9 == "1"
+        Sleep 500
+    ${EndIf}
+    Pop $R9
 
-    # Remove application data directories
+    # Remove WebView2 runtime cache and temporary installer artifacts (user config is confirmed below)
     DetailPrint "$(FC_STR_REMOVE_APPDATA)"
     RMDir /r "$AppData\${PRODUCT_EXECUTABLE}" # Remove the WebView2 DataPath
-    RMDir /r "$APPDATA\FanControl"
-    RMDir /r "$LOCALAPPDATA\FanControl"
     RMDir /r "$TEMP\FanControl"
-    RMDir /r "$APPDATA\${LEGACY_PRODUCTNAME}"
-    RMDir /r "$LOCALAPPDATA\${LEGACY_PRODUCTNAME}"
     RMDir /r "$TEMP\${LEGACY_PRODUCTNAME}"
 
-    # Remove installation directory and all contents
+    # Remove installation directory payload files
     DetailPrint "$(FC_STR_REMOVE_INSTALL_FILES)"
+    Delete "$INSTDIR\${PRODUCT_EXECUTABLE}"
+    Delete "$INSTDIR\FanControl Core.exe"
+    Delete "$INSTDIR\libusb-1.0.dll"
+    Delete "$INSTDIR\${LEGACY_PRODUCT_EXECUTABLE}"
+    Delete "$INSTDIR\${LEGACY_CORE_EXECUTABLE}"
+    Delete "$INSTDIR\${LEGACY_BRIDGE_EXECUTABLE}"
 
-    # Remove bridge directory.
+    # Remove bridge, bundled driver helper, temporary staging, and logs directories
     DetailPrint "$(FC_STR_REMOVE_BRIDGE)"
     RMDir /r "$INSTDIR\bridge"
+    RMDir /r "$INSTDIR\drivers\PawnIO"
+    RMDir "$INSTDIR\drivers"
+    RMDir /r "$INSTDIR\.bundled-themes"
 
     # Remove logs directory
     DetailPrint "$(FC_STR_REMOVE_LOGS)"
     RMDir /r "$INSTDIR\logs"
 
-    # Remove the install root only when no user-managed files remain.
-    DetailPrint "$(FC_STR_REMOVE_DIR)"
-    RMDir $INSTDIR
-
-    # Remove shortcuts
+    # Remove shortcuts (desktop shortcut is created under current user context during install)
     DetailPrint "$(FC_STR_REMOVE_SHORTCUTS)"
     Call un.CleanupLegacyShortcuts
+    SetShellVarContext current
+    Delete "$DESKTOP\${INFO_PRODUCTNAME}.lnk"
+    Delete "$DESKTOP\${LEGACY_PRODUCTNAME}.lnk"
+    !insertmacro wails.setShellContext
     Delete "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk"
     Delete "$DESKTOP\${INFO_PRODUCTNAME}.lnk"
     Delete "$SMSTARTUP\FanControl.lnk"
@@ -816,13 +865,22 @@ Section "uninstall"
 
     !insertmacro wails.deleteUninstaller
 
+    # Remove the install root only when no user-managed files remain.
+    DetailPrint "$(FC_STR_REMOVE_DIR)"
+    RMDir $INSTDIR
+
     DetailPrint "$(FC_STR_UNINSTALL_COMPLETE)"
 
-    # Optional: Ask user if they want to remove configuration files
+    # Optional: Ask user if they want to remove configuration files (skip prompt on silent uninstall)
+    IfSilent skip_config
     MessageBox MB_YESNO|MB_ICONQUESTION "$(FC_STR_UNINSTALL_REMOVE_CONFIG)" IDNO skip_config
     RMDir /r "$APPDATA\FanControl"
     RMDir /r "$LOCALAPPDATA\FanControl"
     RMDir /r "$APPDATA\${LEGACY_PRODUCTNAME}"
     RMDir /r "$LOCALAPPDATA\${LEGACY_PRODUCTNAME}"
+    RMDir /r "$INSTDIR\config"
+    Delete "$INSTDIR\config.json"
+    Delete "$INSTDIR\settings.ini"
+    RMDir $INSTDIR
     skip_config:
 SectionEnd

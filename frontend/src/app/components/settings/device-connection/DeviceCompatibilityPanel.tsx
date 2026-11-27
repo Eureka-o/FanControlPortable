@@ -1,8 +1,9 @@
 'use client';
 
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, m } from 'framer-motion';
 import { CheckCircle2, ChevronDown, ChevronRight, Usb, Wifi } from 'lucide-react';
 import clsx from 'clsx';
+import { Input } from '@/components/ui/input';
 import { Button, ToggleSwitch } from '../../ui';
 import { CompatibilitySubmenuRow } from '../SettingLayout';
 
@@ -51,16 +52,17 @@ export function DeviceCompatibilityPanel({
     <div data-theme-ui="setting-row" className="px-5 py-4 transition-colors duration-200 hover:bg-muted/18">
       <button
         type="button"
+        onMouseDown={(event) => event.preventDefault()}
         onClick={() => onCompatibilityOpenChange((value) => !value)}
-        className="flex w-full cursor-pointer flex-col gap-4 text-left sm:flex-row sm:items-center sm:justify-between"
+        className="flex w-full cursor-pointer flex-col gap-4 rounded-xl text-left outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:flex-row sm:items-center sm:justify-between"
       >
         <div className="flex min-w-0 flex-1 items-center gap-3">
-          <div data-theme-ui="setting-row-icon" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-muted-foreground shadow-inner shadow-white/20">
+          <div data-theme-ui="setting-row-icon" data-icon-tone="purple" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-muted/70 text-muted-foreground shadow-inner shadow-white/20">
             <Wifi className={clsx('h-4 w-4', (wifiCompatibilityEnabled || serialCompatibilityEnabled) ? 'text-emerald-500' : 'text-primary')} />
           </div>
           <div className="min-w-0">
-            <div className="text-base font-medium text-foreground">{t('controlPanel.system.deviceConnection.compatibilityTitle')}</div>
-            <div className="text-sm text-muted-foreground line-clamp-2">{t('controlPanel.system.deviceConnection.compatibilityDescription')}</div>
+            <div className="text-[15px] font-semibold tracking-[-0.01em] text-foreground">{t('controlPanel.system.deviceConnection.compatibilityTitle')}</div>
+            <div className="mt-0.5 text-[13px] leading-[1.45] text-muted-foreground line-clamp-2">{t('controlPanel.system.deviceConnection.compatibilityDescription')}</div>
           </div>
         </div>
         <ChevronDown className={clsx('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', compatibilityOpen && 'rotate-180')} />
@@ -68,7 +70,7 @@ export function DeviceCompatibilityPanel({
 
       <AnimatePresence initial={false}>
         {compatibilityOpen && (
-          <motion.div
+          <m.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
@@ -83,7 +85,7 @@ export function DeviceCompatibilityPanel({
                 below={(
                   <AnimatePresence initial={false}>
                     {wifiCompatibilityEnabled && (
-                      <motion.div
+                      <m.div
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
                         exit={{ opacity: 0, height: 0 }}
@@ -101,7 +103,7 @@ export function DeviceCompatibilityPanel({
                                 onChange={(enabled) => void onWiFiConnectionPriorityChange(enabled)}
                                 loading={loadingKey === 'wifiConnectionPriority'}
                                 size="sm"
-                                color="green"
+                                color="blue"
                               />
                             </div>
                           </div>
@@ -125,7 +127,7 @@ export function DeviceCompatibilityPanel({
 
                             <AnimatePresence initial={false}>
                               {manualAddOpen && (
-                                <motion.div
+                                <m.div
                                   initial={{ opacity: 0, height: 0 }}
                                   animate={{ opacity: 1, height: 'auto' }}
                                   exit={{ opacity: 0, height: 0 }}
@@ -133,7 +135,7 @@ export function DeviceCompatibilityPanel({
                                 >
                                   <div data-theme-ui="compatibility-nested-panel" className="mt-3 flex w-full flex-col gap-2 rounded-lg border border-border/50 bg-background/45 p-3 sm:flex-row sm:items-center">
                                     <CheckCircle2 className="hidden h-4 w-4 shrink-0 text-primary sm:block" />
-                                    <input
+                                    <Input
                                       value={deviceIpInput}
                                       onChange={(event) => onDeviceIpInputChange(event.target.value)}
                                       onKeyDown={(event) => {
@@ -141,7 +143,7 @@ export function DeviceCompatibilityPanel({
                                       }}
                                       placeholder={t('controlPanel.system.deviceConnection.addressPlaceholder')}
                                       aria-label={t('controlPanel.system.deviceConnection.addressPlaceholder')}
-                                      className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none ring-offset-background transition-colors focus-visible:ring-2 focus-visible:ring-ring"
+                                      className="min-w-0 flex-1"
                                     />
                                     <Button
                                       variant="primary"
@@ -153,7 +155,7 @@ export function DeviceCompatibilityPanel({
                                       {t('controlPanel.system.deviceConnection.wifiManualSaveAction')}
                                     </Button>
                                   </div>
-                                </motion.div>
+                                </m.div>
                               )}
                             </AnimatePresence>
                           </div>
@@ -169,12 +171,12 @@ export function DeviceCompatibilityPanel({
                                 onChange={(enabled) => void onWiFiDynamicIPCompatibilityChange(enabled)}
                                 loading={loadingKey === 'wifiDynamicIPCompatibility'}
                                 size="sm"
-                                color="green"
+                                color="blue"
                               />
                             </div>
                           </div>
                         </div>
-                      </motion.div>
+                      </m.div>
                     )}
                   </AnimatePresence>
                 )}
@@ -184,7 +186,7 @@ export function DeviceCompatibilityPanel({
                   onChange={(enabled) => void onWiFiCompatibilityChange(enabled)}
                   loading={loadingKey === 'wifiCompatibility'}
                   size="sm"
-                  color="green"
+                  color="blue"
                 />
               </CompatibilitySubmenuRow>
 
@@ -198,11 +200,11 @@ export function DeviceCompatibilityPanel({
                   onChange={(enabled) => void onSerialCompatibilityChange(enabled)}
                   loading={loadingKey === 'serialCompatibility'}
                   size="sm"
-                  color="green"
+                  color="blue"
                 />
               </CompatibilitySubmenuRow>
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </div>

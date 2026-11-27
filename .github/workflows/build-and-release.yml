@@ -222,7 +222,9 @@ jobs:
       - name: Install Wails CLI and go-winres
         shell: pwsh
         run: |
-          go install github.com/wailsapp/wails/v2/cmd/wails@latest
+          $wailsVersion = (Select-String -Path 'go.mod' -Pattern 'github\.com/wailsapp/wails/v2\s+(v[^\s]+)' | ForEach-Object { $_.Matches[0].Groups[1].Value } | Select-Object -First 1)
+          if ([string]::IsNullOrWhiteSpace($wailsVersion)) { throw 'Could not resolve Wails version from go.mod' }
+          go install "github.com/wailsapp/wails/v2/cmd/wails@$wailsVersion"
           go install github.com/tc-hib/go-winres@latest
           Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $env:USERPROFILE 'go\bin')
 

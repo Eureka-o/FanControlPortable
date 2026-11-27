@@ -31,3 +31,17 @@ func (a *CoreApp) getSmartControlDecision() smartcontrol.Decision {
 	a.smartControlDecisionMu.RUnlock()
 	return snapshot
 }
+
+func (a *CoreApp) updateSmartControlDecisionWriteResult(timestamp string, ok bool) {
+	if a == nil || timestamp == "" {
+		return
+	}
+	a.smartControlDecisionMu.Lock()
+	if a.smartControlDecision.Timestamp == timestamp {
+		a.smartControlDecision.WriteSucceeded = ok
+		if !ok {
+			a.smartControlDecision.GateReason = "write-failed"
+		}
+	}
+	a.smartControlDecisionMu.Unlock()
+}

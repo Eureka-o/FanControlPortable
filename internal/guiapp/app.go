@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/Eureka-o/FanControlPortable/internal/config"
 	"github.com/Eureka-o/FanControlPortable/internal/ipc"
@@ -25,13 +26,71 @@ type App struct {
 	updateMutex       sync.Mutex
 	updateControl     *updateDownloadControl
 	shuttingDown      atomic.Bool
+	stopCh            chan struct{}
+	stopOnce          sync.Once
 
 	// 缓存的状态
-	isConnected bool
-	currentTemp types.TemperatureData
+	isConnected       bool
+	currentTemp       types.TemperatureData
+	latestFanData     *types.FanData
+	latestHostEffects *types.BlackSharkHostEffects
+	windowHidden           atomic.Bool
+	sensorCatalogWanted    atomic.Bool
+	telemetryDirty         atomic.Bool
+	historyDirty           atomic.Bool
+	startedAt              time.Time
+	lastIdleMemTrimNs      atomic.Int64
+	lastUserActivityNs     atomic.Int64
+	lastImageTransferNs    atomic.Int64
+	memReclaimDeferUntilNs atomic.Int64
+	memReclaimRunning      atomic.Bool
+	memReclaimFn           func(trimWorkingSet bool)
+	emitEvent              func(eventName string, optionalData ...any)
 
 	// 自定义主题管理器（发现/播种/读取安装目录与用户目录下的主题）
-	themeManager *theme.Manager
+	themeManager       *theme.Manager
+	pluginDevDirsMu    sync.RWMutex
+	pluginDevDirsCache []string
+}
+
+func (a *App) SetCachedPluginDevDirs(paths []string) {
+	if a == nil {
+		return
+	}
+	a.pluginDevDirsMu.Lock()
+	a.pluginDevDirsCache = append([]string(nil), paths...)
+	a.pluginDevDirsMu.Unlock()
+}
+
+func (a *App) CachedPluginDevDirs() []string {
+	if a == nil {
+		return nil
+	}
+	a.pluginDevDirsMu.RLock()
+	defer a.pluginDevDirsMu.RUnlock()
+	return append([]string(nil), a.pluginDevDirsCache...)
+}
+
+func (a *App) shutdownChan() <-chan struct{} {
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
+	if a.stopCh == nil {
+		a.stopCh = make(chan struct{})
+	}
+	return a.stopCh
+}
+
+func (a *App) signalShutdown() {
+	a.shuttingDown.Store(true)
+	a.mutex.Lock()
+	if a.stopCh == nil {
+		a.stopCh = make(chan struct{})
+	}
+	ch := a.stopCh
+	a.mutex.Unlock()
+	a.stopOnce.Do(func() {
+		close(ch)
+	})
 }
 
 // 为了与前端 API 兼容，重新导出类型

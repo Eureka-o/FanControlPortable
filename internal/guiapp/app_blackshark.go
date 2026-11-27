@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/Eureka-o/FanControlPortable/internal/deviceproto"
 	"github.com/Eureka-o/FanControlPortable/internal/ipc"
-	"github.com/Eureka-o/FanControlPortable/internal/screenimg"
 	"github.com/Eureka-o/FanControlPortable/internal/types"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 	"os"
@@ -695,15 +694,6 @@ func (a *App) GetScreenImageInfo() ScreenImageInfoPayload {
 	var out ScreenImageInfoPayload
 	if err := json.Unmarshal(resp.Data, &out); err != nil {
 		return ScreenImageInfoPayload{}
-	}
-	// 认图：CRC 反查内置预设，唯一所有者在 screenimg.PresetByCRC。
-	// 认不出来（不是内置预设）时就如实说不认识，由界面提供「从设备读回」的入口。
-	if out.HasImage && out.CRC != 0 {
-		if pos, preset, ok := screenimg.PresetByCRC(out.CRC); ok {
-			out.PresetMatched = true
-			out.PresetOfficialPosition = pos
-			out.PresetName = preset.Name
-		}
 	}
 	return out
 }

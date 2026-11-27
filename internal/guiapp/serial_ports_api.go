@@ -1,11 +1,23 @@
 package guiapp
 
-import "github.com/Eureka-o/FanControlPortable/internal/deviceprofileexec"
+import (
+	"encoding/json"
+	"time"
+
+	"github.com/Eureka-o/FanControlPortable/internal/ipc"
+)
 
 func (a *App) ListSerialPorts() []SerialPortInfo {
-	ports, err := deviceprofileexec.ListSerialPorts()
-	if err != nil {
-		guiLogger.Warnf("list serial ports failed: %v", err)
+	resp, err := a.sendRequestWithTimeout(ipc.ReqListSerialPorts, nil, 10*time.Second)
+	if err != nil || resp == nil || !resp.Success {
+		if err != nil {
+			guiLogger.Warnf("list serial ports failed: %v", err)
+		}
+		return []SerialPortInfo{}
+	}
+	var ports []SerialPortInfo
+	if err := json.Unmarshal(resp.Data, &ports); err != nil {
+		guiLogger.Warnf("decode serial ports failed: %v", err)
 		return []SerialPortInfo{}
 	}
 	return ports

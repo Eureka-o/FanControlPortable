@@ -4,22 +4,22 @@
 把它们识别成「系统设置 → 界面主题」里可选的主题。
 
 > 内置的「浅色 / 深色 / 跟随系统」三种基础主题不在这里，它们由程序自带；
-> 这里放的是**可自由编辑**的自定义主题。官方示例 `fancontrol-classic`（冰川蓝）就是其中之一。
+> 官方自定义主题已独立托管在 [FanControl-Plugins](https://github.com/Eureka-o/FanControl-Plugins) 仓库并通过软件内「系统设置 → 界面主题 → 主题管理 → 主题下载」按需获取，也可自由删除。
 
 ## 目录在哪
 
 - 安装目录下的 `themes\` 文件夹（一般就是本文件夹）。
 - 旧版本用户目录中的主题只作为兼容迁移来源读取；新主题统一放在安装目录的 `themes\`。
 
-可以在应用的「界面主题」设置项旁点击「打开主题文件夹」按钮，直接定位到这里。
+可以在应用的「界面主题 → 主题管理」中点击「本地目录」，直接定位到这里。
 
 ## 一个主题 = 一个文件夹
 
-每个主题是一个子文件夹，里面包含两个文件：
+每个主题是一个子文件夹，里面至少包含 `theme.json` 与 `theme.css`：
 
 ```
 themes/
-└─ fancontrol-classic/  ← 文件夹名建议与 theme.json 里的 id 一致
+└─ mytheme/             ← 文件夹名建议与 theme.json 里的 id 一致
    ├─ theme.json        ← 主题清单（名字、id、基于浅色还是深色）
    └─ theme.css         ← 主题样式（改这里就能改外观）
 ```
@@ -50,22 +50,5 @@ html[data-theme="mytheme"] {
 }
 ```
 
-`fancontrol-classic/theme.css` 里有非常详细的中文注释，演示了从「只换颜色」到「毛玻璃 / 网格背景 /
-扫描动画」等各种程度的定制，是最好的参考与起点。
+> 完整的主题制作指南、Basic / Advanced 主题模板以及字体子集生成工具均已迁至官方主题/插件仓库 `FanControl-Plugins`（`docs/` 与 `tools/` 目录）。
 
-## 怎么做自己的主题
-
-1. 把 `fancontrol-classic` 整个文件夹复制一份，重命名（例如 `mytheme`）。
-2. 编辑 `mytheme/theme.json`：把 `id` 改成 `mytheme`、`name` 改成你喜欢的名字。
-3. 编辑 `mytheme/theme.css`：把里面所有 `html[data-theme="fancontrol-classic"]` 替换成
-   `html[data-theme="mytheme"]`，然后按注释修改颜色/样式。
-4. 回到应用「系统设置 → 界面主题」，选中你的主题即可。修改 CSS 后，重新选择一次
-   主题或重启应用即可看到更新。
-
-## 可用的「界面钩子」类名
-
-界面里预留了一批以 `glacier-` 为前缀的类名，你的主题可以直接选中它们做深度定制
-（详见 `fancontrol-classic/theme.css` 顶部的列表与注释）。另外有一个特殊类：
-
-- `.theme-fancontrol-only`：默认全局隐藏，只有在选中本主题（或你复制出的主题）时才显示；`.theme-thrm-only` 继续作为旧主题兼容别名，
-  用于放置「仅该主题才出现」的装饰元素。

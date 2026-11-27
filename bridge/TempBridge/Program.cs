@@ -27,10 +27,16 @@ namespace FanControl.TempBridge
         public string SelectedGpuDevice { get; set; }
         public string CpuModel { get; set; }
         public string GpuModel { get; set; }
+        public bool GpuMonitoringActive { get; set; }
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public TemperatureSensor[] CpuSensors { get; set; }
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public TemperatureSensor[] GpuSensors { get; set; }
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public PowerSensor[] CpuPowerSensors { get; set; }
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public PowerSensor[] GpuPowerSensors { get; set; }
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public TemperatureGpuDevice[] GpuDevices { get; set; }
         public long UpdateTime { get; set; }
         public bool Success { get; set; }
@@ -106,6 +112,8 @@ namespace FanControl.TempBridge
         public string GpuPowerSensor { get; set; }
         public string GpuReadMode { get; set; }
         public bool GpuLowPowerProtection { get; set; }
+        public bool OmitSensorLists { get; set; }
+        public bool ForcePollGpu { get; set; }
 
         public TemperatureSelection()
         {
@@ -174,7 +182,7 @@ namespace FanControl.TempBridge
 
     class HardwareSensorTopology
     {
-        public string Signature { get; set; }
+        public ulong SignatureHash { get; set; }
         public string CpuModel { get; set; }
         public System.Collections.Generic.List<SensorBinding> CpuSensors { get; set; }
         public System.Collections.Generic.List<SensorBinding> CpuPowerSensors { get; set; }
@@ -182,7 +190,6 @@ namespace FanControl.TempBridge
 
         public HardwareSensorTopology()
         {
-            Signature = string.Empty;
             CpuModel = string.Empty;
             CpuSensors = new System.Collections.Generic.List<SensorBinding>();
             CpuPowerSensors = new System.Collections.Generic.List<SensorBinding>();
@@ -277,7 +284,9 @@ namespace FanControl.TempBridge
         private const int InitRetryDelayMs = 2000;
         private const int ConsecutiveFailuresBeforeReinit = 5;
         private const int MaxReasonableTemperature = 150;
-        private const int MemoryTrimIntervalSeconds = 60;
+        private const int MemoryTrimIntervalSeconds = 165;
+        private const int StartupMemoryTrimDelaySeconds = 35;
+        private const int MemoryTrimDeferSeconds = 15;
         private const int IntelMsrRuntimeFailureThreshold = 3;
         private const int IntelMsrProbeRetryCooldownSeconds = 15;
         private const int IntelRaplProbeRetryCooldownSeconds = 30;
@@ -296,6 +305,8 @@ namespace FanControl.TempBridge
         private const string GpuReadStateUnavailable = "unavailable";
         private const string GpuReadStateError = "error";
         private static Computer computer;
+        private static readonly UpdateVisitor UpdateVisitorWithGpu = new UpdateVisitor(true);
+        private static readonly UpdateVisitor UpdateVisitorCpuOnly = new UpdateVisitor(false);
         private static bool running = true;
         private static readonly object lockObject = new object();
         private static readonly object windowsThermalCounterLock = new object();
@@ -305,7 +316,13 @@ namespace FanControl.TempBridge
         private static int hardwareMonitorInitFailures;
         private static DateTime nextHardwareMonitorInitUtc = DateTime.MinValue;
         private static string lastHardwareMonitorError = string.Empty;
+        private static readonly DateTime startedUtc = DateTime.UtcNow;
         private static DateTime lastMemoryTrimUtc = DateTime.MinValue;
+        private static DateTime memoryTrimDeferUntilUtc = DateTime.MinValue;
+        private static bool startupMemoryTrimmed = false;
+        private static bool pendingGpuSleepMemoryTrim = false;
+        private static bool lastCommandInteractive = false;
+        private static bool lastShouldPollGpuTracked = false;
         private static bool currentGpuMonitoringEnabled = false;
         private static HardwareSensorTopology sensorTopology;
         private static readonly object hardwareProfileLock = new object();
@@ -342,6 +359,8 @@ namespace FanControl.TempBridge
             Console.OutputEncoding = Utf8NoBom;
             bool msrSelfTest = HasArg(args, "--self-test-msr");
             bool powerSelectionSelfTest = HasArg(args, "--self-test-power-selection");
+            bool gpuActivitySelfTest = HasArg(args, "--self-test-gpu-activity");
+            bool memoryTrimSelfTest = HasArg(args, "--self-test-memory-trim");
             bool diagnosticMode = ShouldRunDiagnosticMode(args);
             bool pipeMode = ShouldRunPipeMode(args);
             try
@@ -354,6 +373,17 @@ namespace FanControl.TempBridge
                 if (msrSelfTest)
                 {
                     RunIntelMsrSelfTest();
+                    return;
+                }
+                if (gpuActivitySelfTest)
+                {
+                    var gpuStatus = GpuActivityDetector.Detect();
+                    Console.WriteLine($"GPU activity self-test OK: hasDiscrete={gpuStatus.HasDiscreteGpu} active={gpuStatus.IsActive} detail={gpuStatus.Detail}");
+                    return;
+                }
+                if (memoryTrimSelfTest)
+                {
+                    RunMemoryTrimSelfTest();
                     return;
                 }
                 if (diagnosticMode)
@@ -405,6 +435,7 @@ namespace FanControl.TempBridge
                 sensorTopology = null;
                 DisposeWindowsThermalCounter();
                 ResetIntelMsrFallback();
+                GpuActivityDetector.DisposeResources();
                 if (singleInstanceMutex != null)
                 {
                     singleInstanceMutex.Dispose();
@@ -655,7 +686,7 @@ namespace FanControl.TempBridge
                     currentGpuMonitoringEnabled = includeGpu;
 
                     computer.Open();
-                    computer.Accept(new UpdateVisitor(includeGpu));
+                    computer.Accept(includeGpu ? UpdateVisitorWithGpu : UpdateVisitorCpuOnly);
                     sensorTopology = BuildSensorTopology(computer, includeGpu);
 
                     bool hasAnyTemperature = HasAnyTemperatureSensor(computer);
@@ -1379,7 +1410,62 @@ namespace FanControl.TempBridge
                 IsGpuHardware(HardwareType.Cpu))
                 throw new InvalidOperationException("GPU hardware classification self-test failed");
 
+            var forcedSel = NormalizeTemperatureSelection(new TemperatureSelection
+            {
+                GpuReadMode = "auto",
+                ForcePollGpu = true
+            });
+            string forcedState;
+            if (!ShouldPollGpu(forcedSel, out forcedState) || forcedState != GpuReadStateActive)
+                throw new InvalidOperationException("ForcePollGpu should force active GPU read in auto mode");
+
+            var neverSel = NormalizeTemperatureSelection(new TemperatureSelection
+            {
+                GpuReadMode = "never",
+                ForcePollGpu = true
+            });
+            string neverState;
+            if (ShouldPollGpu(neverSel, out neverState) || neverState != GpuReadStateNotPolled)
+                throw new InvalidOperationException("GpuReadMode=never must disable ForcePollGpu");
+
             Console.WriteLine("Power sensor selection self-test OK");
+        }
+
+        static void RunMemoryTrimSelfTest()
+        {
+            DateTime t0 = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            bool compactGen2;
+            DateTime nextDefer;
+
+            if (EvaluateMemoryTrimDecision(t0.AddSeconds(StartupMemoryTrimDelaySeconds - 1), t0, DateTime.MinValue, DateTime.MinValue, false, false, false, false, out compactGen2, out nextDefer))
+                throw new InvalidOperationException("Memory trim must not run before StartupMemoryTrimDelaySeconds");
+
+            if (!EvaluateMemoryTrimDecision(t0.AddSeconds(StartupMemoryTrimDelaySeconds), t0, DateTime.MinValue, DateTime.MinValue, false, false, false, false, out compactGen2, out nextDefer) || !compactGen2)
+                throw new InvalidOperationException("Memory trim must compact Gen2 at startup delay");
+
+            DateTime firstTrim = t0.AddSeconds(StartupMemoryTrimDelaySeconds);
+            DateTime periodicDue = firstTrim.AddSeconds(MemoryTrimIntervalSeconds);
+            if (EvaluateMemoryTrimDecision(periodicDue, t0, firstTrim, DateTime.MinValue, true, false, false, true, out compactGen2, out nextDefer))
+                throw new InvalidOperationException("Busy state must defer periodic memory trim");
+            if (nextDefer != periodicDue.AddSeconds(MemoryTrimDeferSeconds))
+                throw new InvalidOperationException($"Unexpected defer target: {nextDefer:O}");
+
+            if (EvaluateMemoryTrimDecision(periodicDue.AddSeconds(5), t0, firstTrim, nextDefer, true, false, false, false, out compactGen2, out nextDefer))
+                throw new InvalidOperationException("Deferral window must hold before deadline");
+
+            if (!EvaluateMemoryTrimDecision(nextDefer, t0, firstTrim, nextDefer, true, false, false, false, out compactGen2, out nextDefer) || !compactGen2 || nextDefer != DateTime.MinValue)
+                throw new InvalidOperationException("Memory trim must execute once deferral expires and idle resumes");
+
+            if (!EvaluateMemoryTrimDecision(firstTrim.AddSeconds(5), t0, firstTrim, DateTime.MinValue, true, true, false, false, out compactGen2, out nextDefer) || !compactGen2)
+                throw new InvalidOperationException("Pending discrete GPU sleep trim must run when idle");
+
+            if (!EvaluateMemoryTrimDecision(firstTrim, t0, firstTrim, DateTime.MinValue, true, false, true, true, out compactGen2, out nextDefer) || !compactGen2)
+                throw new InvalidOperationException("Forced trim must bypass schedule and busy guard");
+
+            var sw = Stopwatch.StartNew();
+            ExecuteMemoryTrim(true);
+            sw.Stop();
+            Console.WriteLine($"Memory trim self-test OK (liveTrimMs={sw.ElapsedMilliseconds})");
         }
 
         internal static bool IsGpuHardware(HardwareType hardwareType)
@@ -1483,6 +1569,12 @@ namespace FanControl.TempBridge
 
             if (IsGpuReadExplicitlyRequested(selection))
             {
+                return true;
+            }
+
+            if (selection.ForcePollGpu)
+            {
+                gpuReadState = GpuReadStateActive;
                 return true;
             }
 
@@ -1636,9 +1728,15 @@ namespace FanControl.TempBridge
             {
                 foreach (ManagementObject item in results)
                 {
-                    string name = Convert.ToString(item["Name"]) ?? string.Empty;
-                    string pnp = Convert.ToString(item["PNPDeviceID"]) ?? string.Empty;
-                    ulong adapterRam = ReadUInt64(item["AdapterRAM"]);
+                    string name;
+                    string pnp;
+                    ulong adapterRam;
+                    using (item)
+                    {
+                        name = Convert.ToString(item["Name"]) ?? string.Empty;
+                        pnp = Convert.ToString(item["PNPDeviceID"]) ?? string.Empty;
+                        adapterRam = ReadUInt64(item["AdapterRAM"]);
+                    }
                     if (IsVirtualVideoController(name, pnp))
                     {
                         continue;
@@ -1819,19 +1917,105 @@ namespace FanControl.TempBridge
             return EnsurePawnIoReady();
         }
 
-        static void TrimWorkingSetIfIdle(bool force = false)
+        static bool IsMemoryTrimBusy()
+        {
+            return lastCommandInteractive
+                || gpuReadCoordinator.IsProbeRunning
+                || Volatile.Read(ref hardwareMonitorReinitializeQueued) != 0;
+        }
+
+        static bool EvaluateMemoryTrimDecision(
+            DateTime nowUtc,
+            DateTime started,
+            DateTime lastTrim,
+            DateTime deferUntil,
+            bool startupTrimmed,
+            bool pendingGpuSleepTrim,
+            bool force,
+            bool busy,
+            out bool compactGen2,
+            out DateTime nextDeferUntil)
+        {
+            if (force)
+            {
+                compactGen2 = true;
+                nextDeferUntil = DateTime.MinValue;
+                return true;
+            }
+
+            bool startupDue = !startupTrimmed && (nowUtc - started).TotalSeconds >= StartupMemoryTrimDelaySeconds;
+            DateTime referenceUtc = lastTrim == DateTime.MinValue ? started : lastTrim;
+            bool periodicDue = (nowUtc - referenceUtc).TotalSeconds >= MemoryTrimIntervalSeconds;
+
+            if (!startupDue && !pendingGpuSleepTrim && !periodicDue)
+            {
+                compactGen2 = false;
+                nextDeferUntil = DateTime.MinValue;
+                return false;
+            }
+
+            if (deferUntil != DateTime.MinValue && nowUtc < deferUntil)
+            {
+                compactGen2 = false;
+                nextDeferUntil = deferUntil;
+                return false;
+            }
+
+            if (busy)
+            {
+                compactGen2 = false;
+                nextDeferUntil = nowUtc.AddSeconds(MemoryTrimDeferSeconds);
+                return false;
+            }
+
+            compactGen2 = true;
+            nextDeferUntil = DateTime.MinValue;
+            return true;
+        }
+
+        static void TrimWorkingSetIfIdle(bool force = false, bool busy = false)
         {
             DateTime now = DateTime.UtcNow;
-            if (!force && (now - lastMemoryTrimUtc).TotalSeconds < MemoryTrimIntervalSeconds)
+            bool compactGen2;
+            DateTime nextDeferUntil;
+            if (!EvaluateMemoryTrimDecision(
+                now,
+                startedUtc,
+                lastMemoryTrimUtc,
+                memoryTrimDeferUntilUtc,
+                startupMemoryTrimmed,
+                pendingGpuSleepMemoryTrim,
+                force,
+                busy,
+                out compactGen2,
+                out nextDeferUntil))
             {
+                memoryTrimDeferUntilUtc = nextDeferUntil;
                 return;
             }
 
+            startupMemoryTrimmed = true;
+            pendingGpuSleepMemoryTrim = false;
             lastMemoryTrimUtc = now;
+            memoryTrimDeferUntilUtc = DateTime.MinValue;
+            ExecuteMemoryTrim(compactGen2);
+        }
 
+        static void ExecuteMemoryTrim(bool compactGen2)
+        {
             try
             {
-                GC.Collect(0, GCCollectionMode.Optimized, false);
+                if (compactGen2)
+                {
+                    System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
+                    GC.Collect(2, GCCollectionMode.Forced, true, true);
+                    GC.WaitForPendingFinalizers();
+                    GC.Collect(2, GCCollectionMode.Optimized, true, true);
+                }
+                else
+                {
+                    GC.Collect(0, GCCollectionMode.Optimized, true);
+                }
                 using (var currentProcess = Process.GetCurrentProcess())
                 {
                     SetProcessWorkingSetSize(currentProcess.Handle, TrimWorkingSetSentinel, TrimWorkingSetSentinel);
@@ -1888,12 +2072,12 @@ namespace FanControl.TempBridge
                     string responseJson = JsonConvert.SerializeObject(response);
                     writer.WriteLine(responseJson);
                     writer.Flush();
-                    TrimWorkingSetIfIdle();
                     if (string.Equals(command.Type, "Exit", StringComparison.Ordinal))
                     {
                         running = false;
                         break;
                     }
+                    TrimWorkingSetIfIdle(false, IsMemoryTrimBusy());
                 }
                 catch (Exception ex)
                 {
@@ -1917,6 +2101,7 @@ namespace FanControl.TempBridge
                 {
                     case "GetTemperature":
                         var selection = ParseTemperatureSelection(command.Data);
+                        lastCommandInteractive = !selection.OmitSensorLists || selection.ForcePollGpu;
                         var data = GetTemperatureData(selection);
                         return new Response
                         {
@@ -1926,6 +2111,7 @@ namespace FanControl.TempBridge
                         };
 
                     case "Ping":
+                        lastCommandInteractive = true;
                         return new Response
                         {
                             Success = true,
@@ -1933,15 +2119,18 @@ namespace FanControl.TempBridge
                         };
 
                     case "RestartPawnIO":
+                        lastCommandInteractive = true;
                         return HandleRestartPawnIO();
 
                     case "Exit":
+                        lastCommandInteractive = true;
                         return new Response
                         {
                             Success = true
                         };
 
                     default:
+                        lastCommandInteractive = true;
                         return new Response
                         {
                             Success = false,
@@ -2049,10 +2238,13 @@ namespace FanControl.TempBridge
             }
             selection.GpuReadMode = NormalizeGpuReadMode(selection.GpuReadMode);
             selection.GpuLowPowerProtection = !string.Equals(selection.GpuReadMode, "always", StringComparison.OrdinalIgnoreCase);
-            if (string.Equals(selection.GpuReadMode, "never", StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(selection.TempSource, "gpu", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(selection.GpuReadMode, "never", StringComparison.OrdinalIgnoreCase))
             {
-                selection.TempSource = "cpu";
+                selection.ForcePollGpu = false;
+                if (string.Equals(selection.TempSource, "gpu", StringComparison.OrdinalIgnoreCase))
+                {
+                    selection.TempSource = "cpu";
+                }
             }
             return selection;
         }
@@ -2093,6 +2285,11 @@ namespace FanControl.TempBridge
             return string.IsNullOrWhiteSpace(sensorKey) ? "auto" : sensorKey;
         }
 
+        private static readonly string[] PreferredCpuTempNames = { "Average", "Package", "Tctl", "Tdie", "Core", "Windows" };
+        private static readonly string[] PreferredGpuTempNames = { "Average", "GPU Core", "Core", "Edge", "Junction", "Hot Spot", "Temperature" };
+        private static readonly string[] PreferredCpuPowerNames = { "CPU Package", "Package Power", "CPU PPT", "PPT", "Package" };
+        private static readonly string[] PreferredGpuPowerNames = { "GPU Power", "Total", "Package", "Board", "Chip" };
+
         static TemperatureData GetTemperatureDataUnsafe(TemperatureSelection selection)
         {
             selection = NormalizeTemperatureSelection(selection);
@@ -2104,49 +2301,34 @@ namespace FanControl.TempBridge
 
             string hardwareError = string.Empty;
             string cpuModel = string.Empty;
+            int cpuTemp = 0;
             double cpuPowerWatts = 0;
+            int gpuTemp = 0;
+            double gpuPowerWatts = 0;
             string gpuModel = string.Empty;
+            string selectedGpuDeviceKey = selection.GpuDevice;
             string gpuReadState = GpuReadStateUnavailable;
-            var cpuSensors = new System.Collections.Generic.List<TemperatureSensor>();
-            var cpuPowerSensors = new System.Collections.Generic.List<PowerSensor>();
-            var gpuCandidates = new System.Collections.Generic.List<GpuCandidate>();
             bool shouldPollGpu = ShouldPollGpu(selection, out gpuReadState);
+            if (lastShouldPollGpuTracked && !shouldPollGpu)
+            {
+                pendingGpuSleepMemoryTrim = true;
+            }
+            lastShouldPollGpuTracked = shouldPollGpu;
 
             try
             {
                 EnsureHardwareMonitorGpuMode(shouldPollGpu);
+                result.GpuMonitoringActive = currentGpuMonitoringEnabled;
 
                 if (computer != null)
                 {
-                    computer.Accept(new UpdateVisitor(shouldPollGpu));
-                    string topologySignature = BuildHardwareTopologySignature(computer);
-                    if (sensorTopology == null || !string.Equals(sensorTopology.Signature, topologySignature, StringComparison.Ordinal))
+                    computer.Accept(shouldPollGpu ? UpdateVisitorWithGpu : UpdateVisitorCpuOnly);
+                    if (sensorTopology == null || !selection.OmitSensorLists)
                     {
-                        sensorTopology = BuildSensorTopology(computer, currentGpuMonitoringEnabled, topologySignature);
-                    }
-
-                    if (sensorTopology != null)
-                    {
-                        cpuModel = sensorTopology.CpuModel;
-                        cpuSensors = ReadTemperatureSensors(sensorTopology.CpuSensors);
-                        cpuPowerSensors = ReadPowerSensors(sensorTopology.CpuPowerSensors);
-                        if (shouldPollGpu)
+                        ulong topologySignature = BuildHardwareTopologySignature(computer);
+                        if (sensorTopology == null || sensorTopology.SignatureHash != topologySignature)
                         {
-                            foreach (GpuSensorTopology gpu in sensorTopology.Gpus)
-                            {
-                                var sensors = ReadTemperatureSensors(gpu.Sensors);
-                                var powerSensors = ReadPowerSensors(gpu.PowerSensors);
-                                gpuCandidates.Add(new GpuCandidate
-                                {
-                                    Key = gpu.Key,
-                                    Model = gpu.Model,
-                                    Vendor = gpu.Vendor,
-                                    HardwareType = gpu.HardwareType,
-                                    Sensors = sensors,
-                                    PowerSensors = powerSensors,
-                                    PowerWatts = SelectPowerWatts(powerSensors, selection.GpuPowerSensor, new[] { "GPU Power", "Total", "Package", "Board", "Chip" }, true),
-                                });
-                            }
+                            sensorTopology = BuildSensorTopology(computer, currentGpuMonitoringEnabled, topologySignature);
                         }
                     }
                 }
@@ -2161,89 +2343,223 @@ namespace FanControl.TempBridge
                 lastHardwareMonitorError = ex.Message;
             }
 
-            if (string.IsNullOrWhiteSpace(cpuModel))
-                cpuModel = windowsCpuModel;
+            result.GpuMonitoringActive = currentGpuMonitoringEnabled;
 
-            if ((cpuSensors.Count == 0 || cpuPowerSensors.Count == 0) &&
-                IsIntelCpuModel(cpuModel))
+            if (selection.OmitSensorLists)
             {
-                string msrMessage;
-                if (EnsureIntelMsrFallback(cpuModel, out msrMessage))
+                bool hasAnyCpuTemp = false;
+                bool hasAnyCpuPower = false;
+                if (sensorTopology != null)
                 {
-                    int msrTemperature;
-                    if (cpuSensors.Count == 0 && TryReadIntelMsrTemperature(out msrTemperature))
+                    cpuModel = sensorTopology.CpuModel;
+                    TrySelectTemperatureFromBindings(sensorTopology.CpuSensors, selection.CpuSensor, PreferredCpuTempNames, out cpuTemp, out hasAnyCpuTemp);
+                    TrySelectPowerWattsFromBindings(sensorTopology.CpuPowerSensors, selection.CpuPowerSensor, PreferredCpuPowerNames, false, true, out cpuPowerWatts, out hasAnyCpuPower);
+                }
+
+                if (string.IsNullOrWhiteSpace(cpuModel))
+                    cpuModel = windowsCpuModel;
+
+                if ((!hasAnyCpuTemp || !hasAnyCpuPower) && IsIntelCpuModel(cpuModel))
+                {
+                    string msrMessage;
+                    if (EnsureIntelMsrFallback(cpuModel, out msrMessage))
                     {
-                        cpuSensors.Add(new TemperatureSensor
+                        int msrTemperature;
+                        if (!hasAnyCpuTemp && TryReadIntelMsrTemperature(out msrTemperature))
                         {
-                            Key = "cpu/msr/package-temperature",
-                            Name = "CPU Package (MSR)",
-                            Value = msrTemperature,
-                        });
-                    }
+                            hasAnyCpuTemp = true;
+                            cpuTemp = msrTemperature;
+                        }
 
-                    double msrPower;
-                    if (cpuPowerSensors.Count == 0 &&
-                        TryInitializeIntelRaplFallback(DateTime.UtcNow) &&
-                        TryReadIntelMsrPower(out msrPower))
-                    {
-                        cpuPowerSensors.Add(new PowerSensor
+                        double msrPower;
+                        if (!hasAnyCpuPower &&
+                            TryInitializeIntelRaplFallback(DateTime.UtcNow) &&
+                            TryReadIntelMsrPower(out msrPower))
                         {
-                            Key = "cpu/msr/package-power",
-                            Name = "CPU Package (MSR)",
-                            Value = msrPower,
-                        });
+                            hasAnyCpuPower = true;
+                            cpuPowerWatts = Math.Round(msrPower, 1);
+                        }
                     }
-                }
-                else if (cpuSensors.Count == 0)
-                {
-                    hardwareError = msrMessage;
-                    lastHardwareMonitorError = msrMessage;
-                }
-            }
-
-            if (cpuSensors.Count == 0)
-            {
-                var fallbackCpuSensor = TryReadWindowsCpuTemperatureSensor();
-                if (fallbackCpuSensor != null)
-                {
-                    cpuSensors.Add(fallbackCpuSensor);
-                    if (string.IsNullOrWhiteSpace(cpuModel))
+                    else if (!hasAnyCpuTemp)
                     {
-                        cpuModel = "Windows Thermal Zone";
+                        hardwareError = msrMessage;
+                        lastHardwareMonitorError = msrMessage;
                     }
                 }
-            }
 
-            AppendCpuCoresSumPowerSensor(cpuPowerSensors);
-
-            cpuPowerWatts = SelectPowerWatts(cpuPowerSensors, selection.CpuPowerSensor, new[] { "CPU Package", "Package Power", "CPU PPT", "PPT", "Package" }, false);
-
-            var selectedGpu = SelectGpuCandidate(gpuCandidates, selection.GpuDevice, selection.GpuSensor, selection.GpuPowerSensor);
-            if (shouldPollGpu && gpuCandidates.Count > 0)
-            {
-                ReconcileHardwareProfileWithSensorsOnce(gpuCandidates);
-            }
-            var gpuSensors = selectedGpu != null ? selectedGpu.Sensors : new System.Collections.Generic.List<TemperatureSensor>();
-            var gpuPowerSensors = selectedGpu != null ? selectedGpu.PowerSensors : new System.Collections.Generic.List<PowerSensor>();
-            gpuModel = selectedGpu != null ? selectedGpu.Model : string.Empty;
-            double gpuPowerWatts = selectedGpu != null ? selectedGpu.PowerWatts : 0;
-            var hardwareProfileGpuDevices = Array.Empty<TemperatureGpuDevice>();
-            if (selectedGpu == null || gpuCandidates.Count == 0)
-            {
-                var hardwareProfile = GetHardwareProfile();
-                hardwareProfileGpuDevices = BuildTemperatureGpuDevicesFromHardwareProfile(hardwareProfile);
-                if (string.IsNullOrWhiteSpace(gpuModel))
+                if (!hasAnyCpuTemp)
                 {
-                    gpuModel = ResolveGpuModelFromHardwareProfile(hardwareProfile);
+                    var fallbackCpuSensor = TryReadWindowsCpuTemperatureSensor();
+                    if (fallbackCpuSensor != null)
+                    {
+                        cpuTemp = fallbackCpuSensor.Value;
+                        if (string.IsNullOrWhiteSpace(cpuModel))
+                        {
+                            cpuModel = "Windows Thermal Zone";
+                        }
+                    }
                 }
-            }
-            if (shouldPollGpu)
-            {
-                gpuReadState = selectedGpu != null ? GpuReadStateActive : GpuReadStateUnavailable;
-            }
 
-            int cpuTemp = SelectTemperature(cpuSensors, selection.CpuSensor, new[] { "Average", "Package", "Tctl", "Tdie", "Core", "Windows" });
-            int gpuTemp = SelectTemperature(gpuSensors, selection.GpuSensor, new[] { "Average", "GPU Core", "Core", "Edge", "Junction", "Hot Spot", "Temperature" });
+                GpuSensorTopology selectedGpuTopo = null;
+                if (shouldPollGpu && sensorTopology != null && sensorTopology.Gpus.Count > 0)
+                {
+                    ReconcileHardwareProfileFromTopologyOnce(sensorTopology.Gpus);
+                    if (TrySelectGpuFromTopology(sensorTopology.Gpus, selection, out selectedGpuTopo, out gpuTemp, out gpuPowerWatts))
+                    {
+                        gpuModel = selectedGpuTopo.Model;
+                        selectedGpuDeviceKey = selectedGpuTopo.Key;
+                    }
+                }
+
+                if (selectedGpuTopo == null)
+                {
+                    var hardwareProfile = GetHardwareProfile();
+                    if (string.IsNullOrWhiteSpace(gpuModel))
+                    {
+                        gpuModel = ResolveGpuModelFromHardwareProfile(hardwareProfile);
+                    }
+                }
+                if (shouldPollGpu)
+                {
+                    gpuReadState = selectedGpuTopo != null ? GpuReadStateActive : GpuReadStateUnavailable;
+                }
+
+                result.CpuSensors = null;
+                result.GpuSensors = null;
+                result.CpuPowerSensors = null;
+                result.GpuPowerSensors = null;
+                result.GpuDevices = null;
+            }
+            else
+            {
+                var cpuSensors = new System.Collections.Generic.List<TemperatureSensor>();
+                var cpuPowerSensors = new System.Collections.Generic.List<PowerSensor>();
+                var gpuCandidates = new System.Collections.Generic.List<GpuCandidate>();
+
+                if (sensorTopology != null)
+                {
+                    cpuModel = sensorTopology.CpuModel;
+                    cpuSensors = ReadTemperatureSensors(sensorTopology.CpuSensors);
+                    cpuPowerSensors = ReadPowerSensors(sensorTopology.CpuPowerSensors);
+                    if (shouldPollGpu)
+                    {
+                        foreach (GpuSensorTopology gpu in sensorTopology.Gpus)
+                        {
+                            var sensors = ReadTemperatureSensors(gpu.Sensors);
+                            var powerSensors = ReadPowerSensors(gpu.PowerSensors);
+                            gpuCandidates.Add(new GpuCandidate
+                            {
+                                Key = gpu.Key,
+                                Model = gpu.Model,
+                                Vendor = gpu.Vendor,
+                                HardwareType = gpu.HardwareType,
+                                Sensors = sensors,
+                                PowerSensors = powerSensors,
+                                PowerWatts = SelectPowerWatts(powerSensors, selection.GpuPowerSensor, PreferredGpuPowerNames, true),
+                            });
+                        }
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(cpuModel))
+                    cpuModel = windowsCpuModel;
+
+                if ((cpuSensors.Count == 0 || cpuPowerSensors.Count == 0) &&
+                    IsIntelCpuModel(cpuModel))
+                {
+                    string msrMessage;
+                    if (EnsureIntelMsrFallback(cpuModel, out msrMessage))
+                    {
+                        int msrTemperature;
+                        if (cpuSensors.Count == 0 && TryReadIntelMsrTemperature(out msrTemperature))
+                        {
+                            cpuSensors.Add(new TemperatureSensor
+                            {
+                                Key = "cpu/msr/package-temperature",
+                                Name = "CPU Package (MSR)",
+                                Value = msrTemperature,
+                            });
+                        }
+
+                        double msrPower;
+                        if (cpuPowerSensors.Count == 0 &&
+                            TryInitializeIntelRaplFallback(DateTime.UtcNow) &&
+                            TryReadIntelMsrPower(out msrPower))
+                        {
+                            cpuPowerSensors.Add(new PowerSensor
+                            {
+                                Key = "cpu/msr/package-power",
+                                Name = "CPU Package (MSR)",
+                                Value = msrPower,
+                            });
+                        }
+                    }
+                    else if (cpuSensors.Count == 0)
+                    {
+                        hardwareError = msrMessage;
+                        lastHardwareMonitorError = msrMessage;
+                    }
+                }
+
+                if (cpuSensors.Count == 0)
+                {
+                    var fallbackCpuSensor = TryReadWindowsCpuTemperatureSensor();
+                    if (fallbackCpuSensor != null)
+                    {
+                        cpuSensors.Add(fallbackCpuSensor);
+                        if (string.IsNullOrWhiteSpace(cpuModel))
+                        {
+                            cpuModel = "Windows Thermal Zone";
+                        }
+                    }
+                }
+
+                AppendCpuCoresSumPowerSensor(cpuPowerSensors);
+
+                cpuPowerWatts = SelectPowerWatts(cpuPowerSensors, selection.CpuPowerSensor, PreferredCpuPowerNames, false);
+
+                var selectedGpu = SelectGpuCandidate(gpuCandidates, selection.GpuDevice, selection.GpuSensor, selection.GpuPowerSensor);
+                if (shouldPollGpu && gpuCandidates.Count > 0)
+                {
+                    ReconcileHardwareProfileWithSensorsOnce(gpuCandidates);
+                }
+                var gpuSensors = selectedGpu != null ? selectedGpu.Sensors : new System.Collections.Generic.List<TemperatureSensor>();
+                var gpuPowerSensors = selectedGpu != null ? selectedGpu.PowerSensors : new System.Collections.Generic.List<PowerSensor>();
+                gpuModel = selectedGpu != null ? selectedGpu.Model : string.Empty;
+                gpuPowerWatts = selectedGpu != null ? selectedGpu.PowerWatts : 0;
+                selectedGpuDeviceKey = selectedGpu != null ? selectedGpu.Key : selection.GpuDevice;
+                var hardwareProfileGpuDevices = Array.Empty<TemperatureGpuDevice>();
+                if (selectedGpu == null || gpuCandidates.Count == 0)
+                {
+                    var hardwareProfile = GetHardwareProfile();
+                    hardwareProfileGpuDevices = BuildTemperatureGpuDevicesFromHardwareProfile(hardwareProfile);
+                    if (string.IsNullOrWhiteSpace(gpuModel))
+                    {
+                        gpuModel = ResolveGpuModelFromHardwareProfile(hardwareProfile);
+                    }
+                }
+                if (shouldPollGpu)
+                {
+                    gpuReadState = selectedGpu != null ? GpuReadStateActive : GpuReadStateUnavailable;
+                }
+
+                cpuTemp = SelectTemperature(cpuSensors, selection.CpuSensor, PreferredCpuTempNames);
+                gpuTemp = SelectTemperature(gpuSensors, selection.GpuSensor, PreferredGpuTempNames);
+
+                result.CpuSensors = cpuSensors.ToArray();
+                result.GpuSensors = gpuSensors.ToArray();
+                result.CpuPowerSensors = cpuPowerSensors.ToArray();
+                result.GpuPowerSensors = gpuPowerSensors.ToArray();
+                var runtimeGpuDevices = gpuCandidates.Select(candidate => new TemperatureGpuDevice
+                {
+                    Key = candidate.Key,
+                    Name = candidate.Model,
+                    Vendor = candidate.Vendor,
+                    Sensors = candidate.Sensors != null ? candidate.Sensors.ToArray() : Array.Empty<TemperatureSensor>(),
+                    PowerSensors = candidate.PowerSensors != null ? candidate.PowerSensors.ToArray() : Array.Empty<PowerSensor>()
+                }).ToArray();
+                result.GpuDevices = runtimeGpuDevices.Length > 0 ? runtimeGpuDevices : hardwareProfileGpuDevices;
+            }
 
             result.CpuTemp = cpuTemp;
             result.GpuTemp = gpuTemp;
@@ -2252,22 +2568,9 @@ namespace FanControl.TempBridge
             result.GpuReadState = gpuReadState;
             result.MaxTemp = Math.Max(cpuTemp, gpuTemp);
             result.ControlTemp = ResolveControlTemp(cpuTemp, gpuTemp, selection.TempSource);
-            result.SelectedGpuDevice = selectedGpu != null ? selectedGpu.Key : selection.GpuDevice;
+            result.SelectedGpuDevice = selectedGpuDeviceKey;
             result.CpuModel = cpuModel;
             result.GpuModel = gpuModel;
-            result.CpuSensors = cpuSensors.ToArray();
-            result.GpuSensors = gpuSensors.ToArray();
-            result.CpuPowerSensors = cpuPowerSensors.ToArray();
-            result.GpuPowerSensors = gpuPowerSensors.ToArray();
-            var runtimeGpuDevices = gpuCandidates.Select(candidate => new TemperatureGpuDevice
-            {
-                Key = candidate.Key,
-                Name = candidate.Model,
-                Vendor = candidate.Vendor,
-                Sensors = candidate.Sensors != null ? candidate.Sensors.ToArray() : Array.Empty<TemperatureSensor>(),
-                PowerSensors = candidate.PowerSensors != null ? candidate.PowerSensors.ToArray() : Array.Empty<PowerSensor>()
-            }).ToArray();
-            result.GpuDevices = runtimeGpuDevices.Length > 0 ? runtimeGpuDevices : hardwareProfileGpuDevices;
 
             string temperatureErrorDetail = !string.IsNullOrWhiteSpace(hardwareError)
                 ? hardwareError
@@ -2299,6 +2602,32 @@ namespace FanControl.TempBridge
             }
 
             ReconcileHardwareProfileWithSensors(gpuCandidates);
+        }
+
+        static void ReconcileHardwareProfileFromTopologyOnce(System.Collections.Generic.IReadOnlyList<GpuSensorTopology> gpus)
+        {
+            if (gpus == null || gpus.Count == 0 ||
+                Interlocked.Exchange(ref hardwareProfileSensorReconcileAttempted, 1) == 1)
+            {
+                return;
+            }
+
+            var candidates = new System.Collections.Generic.List<GpuCandidate>(gpus.Count);
+            foreach (GpuSensorTopology gpu in gpus)
+            {
+                if (gpu == null)
+                {
+                    continue;
+                }
+                candidates.Add(new GpuCandidate
+                {
+                    Key = gpu.Key,
+                    Model = gpu.Model,
+                    Vendor = gpu.Vendor,
+                    HardwareType = gpu.HardwareType
+                });
+            }
+            ReconcileHardwareProfileWithSensors(candidates);
         }
 
         static string BuildTemperatureReadError(string hardwareError)
@@ -2466,8 +2795,9 @@ namespace FanControl.TempBridge
             try
             {
                 using (var searcher = new ManagementObjectSearcher(@"root\WMI", "SELECT CurrentTemperature FROM MSAcpi_ThermalZoneTemperature"))
+                using (var results = searcher.Get())
                 {
-                    foreach (ManagementObject obj in searcher.Get())
+                    foreach (ManagementObject obj in results)
                     {
                         using (obj)
                         {
@@ -2591,11 +2921,11 @@ namespace FanControl.TempBridge
             }
         }
 
-        static HardwareSensorTopology BuildSensorTopology(Computer comp, bool includeGpu, string topologySignature = null)
+        static HardwareSensorTopology BuildSensorTopology(Computer comp, bool includeGpu, ulong? topologySignature = null)
         {
             var topology = new HardwareSensorTopology
             {
-                Signature = topologySignature ?? BuildHardwareTopologySignature(comp)
+                SignatureHash = topologySignature ?? BuildHardwareTopologySignature(comp)
             };
             int gpuIndex = 0;
 
@@ -2629,41 +2959,54 @@ namespace FanControl.TempBridge
             return topology;
         }
 
-        static string BuildHardwareTopologySignature(Computer comp)
+        static ulong BuildHardwareTopologySignature(Computer comp)
         {
-            var builder = new StringBuilder();
+            const ulong fnvOffset = 14695981039346656037UL;
+            ulong hash = fnvOffset;
             foreach (IHardware hardware in comp.Hardware)
             {
-                AppendHardwareTopologySignature(hardware, builder);
+                AppendHardwareTopologyHash(hardware, ref hash);
             }
-            return builder.ToString();
+            return hash;
         }
 
-        static void AppendHardwareTopologySignature(IHardware hardware, StringBuilder builder)
+        static ulong MixHash(ulong hash, ulong value)
         {
-            builder.Append((int)hardware.HardwareType)
-                .Append(':')
-                .Append(hardware.Name ?? string.Empty)
-                .Append('|');
+            const ulong fnvPrime = 1099511628211UL;
+            return (hash ^ value) * fnvPrime;
+        }
+
+        static ulong MixStringHash(ulong hash, string text)
+        {
+            if (text != null)
+            {
+                for (int i = 0; i < text.Length; i++)
+                {
+                    hash = MixHash(hash, text[i]);
+                }
+            }
+            return MixHash(hash, 0xFFFFUL);
+        }
+
+        static void AppendHardwareTopologyHash(IHardware hardware, ref ulong hash)
+        {
+            hash = MixHash(hash, (ulong)(int)hardware.HardwareType);
+            hash = MixStringHash(hash, hardware.Name);
             foreach (ISensor sensor in hardware.Sensors)
             {
                 if (sensor.SensorType == SensorType.Temperature || sensor.SensorType == SensorType.Power)
                 {
                     // Sensor instances can appear after the first GPU update (notably Intel iGPU telemetry).
                     // Include identity, not Value, so the binding cache is invalidated without rebuilding per sample.
-                    builder.Append((int)sensor.SensorType)
-                        .Append(':')
-                        .Append(sensor.Index)
-                        .Append(':')
-                        .Append(sensor.Name ?? string.Empty)
-                        .Append(':')
-                        .Append(System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(sensor))
-                        .Append('|');
+                    hash = MixHash(hash, (ulong)(int)sensor.SensorType);
+                    hash = MixHash(hash, (ulong)(uint)sensor.Index);
+                    hash = MixStringHash(hash, sensor.Name);
+                    hash = MixHash(hash, (ulong)(uint)System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(sensor));
                 }
             }
             foreach (IHardware subHardware in hardware.SubHardware)
             {
-                AppendHardwareTopologySignature(subHardware, builder);
+                AppendHardwareTopologyHash(subHardware, ref hash);
             }
         }
 
@@ -2951,7 +3294,12 @@ namespace FanControl.TempBridge
                 return 0;
             }
 
-            switch (candidate.HardwareType)
+            return GetGpuHardwarePriority(candidate.HardwareType);
+        }
+
+        static int GetGpuHardwarePriority(HardwareType hardwareType)
+        {
+            switch (hardwareType)
             {
                 case HardwareType.GpuNvidia:
                     return 300;
@@ -2962,6 +3310,352 @@ namespace FanControl.TempBridge
                 default:
                     return 0;
             }
+        }
+
+        static bool TryReadValidTemperatureBinding(SensorBinding binding, out int temperature)
+        {
+            temperature = 0;
+            if (binding == null || binding.Sensor == null || !binding.Sensor.Value.HasValue)
+            {
+                return false;
+            }
+
+            int temp = (int)Math.Round(binding.Sensor.Value.Value);
+            if (temp <= 0 || temp >= MaxReasonableTemperature)
+            {
+                return false;
+            }
+
+            temperature = temp;
+            return true;
+        }
+
+        static bool TryReadValidPowerBinding(SensorBinding binding, out double watts)
+        {
+            watts = 0;
+            if (binding == null || binding.Sensor == null || !binding.Sensor.Value.HasValue)
+            {
+                return false;
+            }
+
+            double value = binding.Sensor.Value.Value;
+            if (value < 0 || value > 1000)
+            {
+                return false;
+            }
+
+            watts = Math.Round(value, 1);
+            return true;
+        }
+
+        static void TrySelectTemperatureFromBindings(
+            System.Collections.Generic.IReadOnlyList<SensorBinding> bindings,
+            string selectedKey,
+            string[] preferredSensorNames,
+            out int temperature,
+            out bool hasAnyValid)
+        {
+            temperature = 0;
+            hasAnyValid = false;
+            if (bindings == null || bindings.Count == 0)
+            {
+                return;
+            }
+
+            bool exactCheck = !string.Equals(selectedKey, "auto", StringComparison.OrdinalIgnoreCase);
+            bool hasPreferred = false;
+            int preferredTemp = 0;
+            int firstTemp = 0;
+
+            for (int i = 0; i < bindings.Count; i++)
+            {
+                SensorBinding binding = bindings[i];
+                int value;
+                if (!TryReadValidTemperatureBinding(binding, out value))
+                {
+                    continue;
+                }
+
+                if (!hasAnyValid)
+                {
+                    hasAnyValid = true;
+                    firstTemp = value;
+                }
+
+                if (exactCheck && string.Equals(binding.Key, selectedKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    temperature = value;
+                    return;
+                }
+
+                if (!hasPreferred && ContainsAnyKeyword(binding.Name, preferredSensorNames))
+                {
+                    hasPreferred = true;
+                    preferredTemp = value;
+                }
+            }
+
+            if (hasPreferred)
+            {
+                temperature = preferredTemp;
+                return;
+            }
+
+            if (hasAnyValid)
+            {
+                temperature = firstTemp;
+            }
+        }
+
+        static void TrySelectPowerWattsFromBindings(
+            System.Collections.Generic.IReadOnlyList<SensorBinding> bindings,
+            string selectedKey,
+            string[] preferredSensorNames,
+            bool allowFallbackToFirst,
+            bool supportCpuCoresSum,
+            out double watts,
+            out bool hasAnyValid)
+        {
+            watts = 0;
+            hasAnyValid = false;
+            if (bindings == null || bindings.Count == 0)
+            {
+                return;
+            }
+
+            bool exactCheck = !string.Equals(selectedKey, "auto", StringComparison.OrdinalIgnoreCase);
+            bool selectCoresSum = supportCpuCoresSum && string.Equals(selectedKey, "cpu/cores-sum", StringComparison.OrdinalIgnoreCase);
+            double coresSum = 0;
+            int coresCount = 0;
+
+            int bestPreferredIndex = int.MaxValue;
+            double bestPreferredWatts = 0;
+            bool hasFallback = false;
+            double fallbackWatts = 0;
+
+            for (int i = 0; i < bindings.Count; i++)
+            {
+                SensorBinding binding = bindings[i];
+                double value;
+                if (!TryReadValidPowerBinding(binding, out value))
+                {
+                    continue;
+                }
+
+                hasAnyValid = true;
+                string name = binding.Name ?? string.Empty;
+
+                if (selectCoresSum &&
+                    name.IndexOf("Core #", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                    name.IndexOf("Limit", StringComparison.OrdinalIgnoreCase) < 0 &&
+                    name.IndexOf("Package", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    coresSum += value;
+                    coresCount++;
+                }
+
+                if (exactCheck && !selectCoresSum &&
+                    string.Equals(binding.Key, selectedKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    watts = Math.Round(value, 1);
+                    return;
+                }
+
+                if (value > 0 && name.IndexOf("Limit", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    if (!hasFallback)
+                    {
+                        hasFallback = true;
+                        fallbackWatts = Math.Round(value, 1);
+                    }
+
+                    if (preferredSensorNames != null)
+                    {
+                        int limit = bestPreferredIndex < preferredSensorNames.Length ? bestPreferredIndex : preferredSensorNames.Length;
+                        for (int p = 0; p < limit; p++)
+                        {
+                            string preferred = preferredSensorNames[p];
+                            if (!string.IsNullOrEmpty(preferred) &&
+                                name.IndexOf(preferred, StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                bestPreferredIndex = p;
+                                bestPreferredWatts = Math.Round(value, 1);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (selectCoresSum && coresCount > 0)
+            {
+                watts = Math.Round(coresSum, 1);
+                return;
+            }
+
+            if (bestPreferredIndex < int.MaxValue)
+            {
+                watts = bestPreferredWatts;
+                return;
+            }
+
+            if (allowFallbackToFirst && hasFallback)
+            {
+                watts = fallbackWatts;
+            }
+        }
+
+        static int CountValidTemperatureBindings(System.Collections.Generic.IReadOnlyList<SensorBinding> bindings, string matchKey, out bool matchedKey)
+        {
+            matchedKey = false;
+            if (bindings == null || bindings.Count == 0)
+            {
+                return 0;
+            }
+
+            bool checkKey = !string.IsNullOrEmpty(matchKey);
+            int count = 0;
+            for (int i = 0; i < bindings.Count; i++)
+            {
+                int ignored;
+                if (!TryReadValidTemperatureBinding(bindings[i], out ignored))
+                {
+                    continue;
+                }
+                count++;
+                if (checkKey && string.Equals(bindings[i].Key, matchKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    matchedKey = true;
+                }
+            }
+            return count;
+        }
+
+        static bool HasMatchingValidPowerBinding(System.Collections.Generic.IReadOnlyList<SensorBinding> bindings, string matchKey)
+        {
+            if (bindings == null || bindings.Count == 0 || string.IsNullOrEmpty(matchKey))
+            {
+                return false;
+            }
+
+            for (int i = 0; i < bindings.Count; i++)
+            {
+                double ignored;
+                if (TryReadValidPowerBinding(bindings[i], out ignored) &&
+                    string.Equals(bindings[i].Key, matchKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        static bool TrySelectGpuFromTopology(
+            System.Collections.Generic.IReadOnlyList<GpuSensorTopology> gpus,
+            TemperatureSelection selection,
+            out GpuSensorTopology selectedTopology,
+            out int gpuTemp,
+            out double gpuPowerWatts)
+        {
+            selectedTopology = null;
+            gpuTemp = 0;
+            gpuPowerWatts = 0;
+            if (gpus == null || gpus.Count == 0)
+            {
+                return false;
+            }
+
+            if (!string.Equals(selection.GpuDevice, "auto", StringComparison.OrdinalIgnoreCase))
+            {
+                for (int i = 0; i < gpus.Count; i++)
+                {
+                    GpuSensorTopology gpu = gpus[i];
+                    if (gpu != null && string.Equals(gpu.Key, selection.GpuDevice, StringComparison.OrdinalIgnoreCase))
+                    {
+                        selectedTopology = gpu;
+                        break;
+                    }
+                }
+            }
+
+            if (selectedTopology == null && !string.Equals(selection.GpuSensor, "auto", StringComparison.OrdinalIgnoreCase))
+            {
+                for (int i = 0; i < gpus.Count; i++)
+                {
+                    GpuSensorTopology gpu = gpus[i];
+                    bool matched;
+                    if (gpu != null && CountValidTemperatureBindings(gpu.Sensors, selection.GpuSensor, out matched) >= 0 && matched)
+                    {
+                        selectedTopology = gpu;
+                        break;
+                    }
+                }
+            }
+
+            if (selectedTopology == null && !string.Equals(selection.GpuPowerSensor, "auto", StringComparison.OrdinalIgnoreCase))
+            {
+                for (int i = 0; i < gpus.Count; i++)
+                {
+                    GpuSensorTopology gpu = gpus[i];
+                    if (gpu != null && HasMatchingValidPowerBinding(gpu.PowerSensors, selection.GpuPowerSensor))
+                    {
+                        selectedTopology = gpu;
+                        break;
+                    }
+                }
+            }
+
+            if (selectedTopology == null)
+            {
+                GpuSensorTopology bestWithSensors = null;
+                int bestWithPriority = -1;
+                int bestWithCount = -1;
+
+                GpuSensorTopology bestFallback = null;
+                int bestFallbackPriority = -1;
+                int bestFallbackCount = -1;
+
+                for (int i = 0; i < gpus.Count; i++)
+                {
+                    GpuSensorTopology gpu = gpus[i];
+                    if (gpu == null)
+                    {
+                        continue;
+                    }
+
+                    bool ignored;
+                    int validCount = CountValidTemperatureBindings(gpu.Sensors, null, out ignored);
+                    int priority = GetGpuHardwarePriority(gpu.HardwareType);
+
+                    if (bestFallback == null || priority > bestFallbackPriority || (priority == bestFallbackPriority && validCount > bestFallbackCount))
+                    {
+                        bestFallback = gpu;
+                        bestFallbackPriority = priority;
+                        bestFallbackCount = validCount;
+                    }
+
+                    if (validCount > 0 &&
+                        (bestWithSensors == null || priority > bestWithPriority || (priority == bestWithPriority && validCount > bestWithCount)))
+                    {
+                        bestWithSensors = gpu;
+                        bestWithPriority = priority;
+                        bestWithCount = validCount;
+                    }
+                }
+
+                selectedTopology = bestWithSensors ?? bestFallback;
+            }
+
+            if (selectedTopology == null)
+            {
+                return false;
+            }
+
+            bool hasTemp;
+            bool hasPower;
+            TrySelectTemperatureFromBindings(selectedTopology.Sensors, selection.GpuSensor, PreferredGpuTempNames, out gpuTemp, out hasTemp);
+            TrySelectPowerWattsFromBindings(selectedTopology.PowerSensors, selection.GpuPowerSensor, PreferredGpuPowerNames, true, false, out gpuPowerWatts, out hasPower);
+            return true;
         }
 
             static int ResolveControlTemp(int cpuTemp, int gpuTemp, string source)

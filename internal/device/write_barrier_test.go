@@ -66,3 +66,55 @@ func TestBlockWritesCancelsInFlightWiFiConnect(t *testing.T) {
 		t.Fatal("canceled WiFi connect did not finish")
 	}
 }
+
+func TestDisconnectCancelsPendingSpeedPush(t *testing.T) {
+	manager := NewManager(nil)
+	manager.isConnected = true
+	manager.deviceType = types.DeviceTransportWiFi
+
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	firstDone := make(chan bool, 1)
+	manager.PushSpeedAsync(
+		func() bool {
+			close(firstStarted)
+			<-releaseFirst
+			return true
+		},
+		func(ok bool) {
+			firstDone <- ok
+		},
+	)
+	<-firstStarted
+
+	pendingRan := make(chan struct{})
+	pendingDone := make(chan bool, 1)
+	manager.PushSpeedAsync(
+		func() bool {
+			close(pendingRan)
+			return true
+		},
+		func(ok bool) {
+			pendingDone <- ok
+		},
+	)
+
+	manager.DisconnectSilently()
+	close(releaseFirst)
+
+	select {
+	case <-firstDone:
+	case <-time.After(time.Second):
+		t.Fatal("in-flight push did not complete")
+	}
+	select {
+	case <-pendingRan:
+		t.Fatal("pending speed push ran after DisconnectSilently()")
+	case <-time.After(50 * time.Millisecond):
+	}
+	select {
+	case <-pendingDone:
+		t.Fatal("canceled pending push still called done callback unexpectedly")
+	default:
+	}
+}

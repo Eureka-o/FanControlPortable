@@ -9,7 +9,6 @@ import (
 	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
 	"github.com/Eureka-o/FanControlPortable/internal/ipc"
 	"github.com/Eureka-o/FanControlPortable/internal/types"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 func mergeTemperatureMetadata(previous, incoming types.TemperatureData) types.TemperatureData {
@@ -52,17 +51,11 @@ func coreServiceUnavailableMessage(detail string) string {
 }
 
 func (a *App) emitCoreServiceError(detail string) {
-	if a.ctx == nil {
-		return
-	}
-	runtime.EventsEmit(a.ctx, "core-service-error", coreServiceUnavailableMessage(detail))
+	a.emit("core-service-error", coreServiceUnavailableMessage(detail))
 }
 
 func (a *App) emitCoreServiceOK() {
-	if a.ctx == nil {
-		return
-	}
-	runtime.EventsEmit(a.ctx, "core-service-ok", nil)
+	a.emit("core-service-ok", nil)
 }
 
 func decodeDeviceConnectedPayload(data json.RawMessage) (map[string]any, error) {
@@ -75,22 +68,40 @@ func decodeDeviceConnectedPayload(data json.RawMessage) (map[string]any, error) 
 
 // handleCoreEvent 处理核心服务推送的事件
 func (a *App) handleCoreEvent(event ipc.Event) {
-	if a.ctx == nil {
+	if a == nil || (a.ctx == nil && a.emitEvent == nil) {
 		return
 	}
+
+	hidden := a.windowHidden.Load()
 
 	switch event.Type {
 	case ipc.EventFanDataUpdate:
 		var fanData types.FanData
 		if err := json.Unmarshal(event.Data, &fanData); err == nil {
-			runtime.EventsEmit(a.ctx, "fan-data-update", fanData)
+			a.mutex.Lock()
+			copied := fanData
+			a.latestFanData = &copied
+			a.mutex.Unlock()
+			if hidden {
+				a.telemetryDirty.Store(true)
+				return
+			}
+			a.emit("fan-data-update", fanData)
 		}
 
 	case ipc.EventBlackSharkHostEffects:
 		// 主机侧灯效状态：核心推、界面订阅，取代界面每秒轮询。
 		var hostFx types.BlackSharkHostEffects
 		if err := json.Unmarshal(event.Data, &hostFx); err == nil {
-			runtime.EventsEmit(a.ctx, "blackshark-host-effects", hostFx)
+			a.mutex.Lock()
+			copied := hostFx
+			a.latestHostEffects = &copied
+			a.mutex.Unlock()
+			if hidden {
+				a.telemetryDirty.Store(true)
+				return
+			}
+			a.emit("blackshark-host-effects", hostFx)
 		}
 
 	case ipc.EventBlackSharkConnectionSnapshot:
@@ -100,7 +111,7 @@ func (a *App) handleCoreEvent(event ipc.Event) {
 		// （LCD 屏保恢复、写入失败回退都依赖这条推送到达）。
 		var payload map[string]any
 		if err := json.Unmarshal(event.Data, &payload); err == nil {
-			runtime.EventsEmit(a.ctx, "blackshark-connection-snapshot", payload)
+			a.emit("blackshark-connection-snapshot", payload)
 		}
 
 	case ipc.EventTemperatureUpdate:
@@ -110,24 +121,33 @@ func (a *App) handleCoreEvent(event ipc.Event) {
 			temp = mergeTemperatureMetadata(a.currentTemp, temp)
 			a.currentTemp = temp
 			a.mutex.Unlock()
-			runtime.EventsEmit(a.ctx, "temperature-update", temp)
+			if hidden {
+				a.telemetryDirty.Store(true)
+				return
+			}
+			a.emit("temperature-update", temp)
 		}
 
 	case ipc.EventTemperatureHistoryUpdate:
+		if hidden {
+			a.historyDirty.Store(true)
+			return
+		}
 		var point types.TemperatureHistoryPoint
 		if err := json.Unmarshal(event.Data, &point); err == nil {
-			runtime.EventsEmit(a.ctx, "temperature-history-update", point)
+			a.emit("temperature-history-update", point)
 		}
 
 	case ipc.EventScreenImageTransferProgress:
 		// 屏幕图片传输进度：核心推（设备层每 16 帧一次），图传弹窗的进度条订阅它。
 		// 注意这里是个白名单 switch —— 新事件不加分支就会被静默丢掉（前端只会停在 0%）。
+		a.lastImageTransferNs.Store(time.Now().UnixNano())
 		var progress struct {
 			Sent  int `json:"sent"`
 			Total int `json:"total"`
 		}
 		if err := json.Unmarshal(event.Data, &progress); err == nil {
-			runtime.EventsEmit(a.ctx, "screen-image-transfer-progress", progress)
+			a.emit("screen-image-transfer-progress", progress)
 		}
 
 	case ipc.EventDeviceConnected:
@@ -139,52 +159,70 @@ func (a *App) handleCoreEvent(event ipc.Event) {
 		a.mutex.Lock()
 		a.isConnected = true
 		a.mutex.Unlock()
-		runtime.EventsEmit(a.ctx, "device-connected", deviceInfo)
+		a.emit("device-connected", deviceInfo)
 
 	case ipc.EventDeviceDisconnected:
 		a.mutex.Lock()
 		a.isConnected = false
 		a.mutex.Unlock()
-		runtime.EventsEmit(a.ctx, "device-disconnected", nil)
+		a.emit("device-disconnected", nil)
 
 	case ipc.EventDeviceError:
 		var errMsg string
 		json.Unmarshal(event.Data, &errMsg)
-		runtime.EventsEmit(a.ctx, "device-error", errMsg)
+		a.emit("device-error", errMsg)
 
 	case ipc.EventConfigUpdate:
 		var cfg types.AppConfig
 		if err := json.Unmarshal(event.Data, &cfg); err == nil {
-			runtime.EventsEmit(a.ctx, "config-update", cfg)
+			a.emit("config-update", cfg)
 		}
 
 	case ipc.EventSystemResume:
 		var payload map[string]any
 		if err := json.Unmarshal(event.Data, &payload); err == nil {
-			runtime.EventsEmit(a.ctx, "system-resume", payload)
+			a.emit("system-resume", payload)
 		}
 
 	case ipc.EventHotkeyTriggered:
 		var payload map[string]any
 		if err := json.Unmarshal(event.Data, &payload); err == nil {
-			runtime.EventsEmit(a.ctx, "hotkey-triggered", payload)
+			a.emit("hotkey-triggered", payload)
 		}
 
 	case ipc.EventLegionPowerModeUpdate:
 		var payload map[string]any
 		if err := json.Unmarshal(event.Data, &payload); err == nil {
-			runtime.EventsEmit(a.ctx, "legion-power-mode-update", payload)
+			a.emit("legion-power-mode-update", payload)
+		}
+
+	case ipc.EventPluginsUpdate:
+		var payload json.RawMessage
+		if err := json.Unmarshal(event.Data, &payload); err == nil {
+			a.emit("plugins-update", payload)
+		}
+
+	case ipc.EventPluginEvent:
+		var payload json.RawMessage
+		if err := json.Unmarshal(event.Data, &payload); err == nil {
+			a.emit("plugin-event", payload)
 		}
 
 	case ipc.EventHealthPing:
+		if hidden {
+			return
+		}
 		var timestamp int64
 		json.Unmarshal(event.Data, &timestamp)
-		runtime.EventsEmit(a.ctx, "health-ping", timestamp)
+		a.emit("health-ping", timestamp)
 
 	case ipc.EventHeartbeat:
+		if hidden {
+			return
+		}
 		var timestamp int64
 		json.Unmarshal(event.Data, &timestamp)
-		runtime.EventsEmit(a.ctx, "heartbeat", timestamp)
+		a.emit("heartbeat", timestamp)
 
 	case "show-window":
 		a.ShowWindow()
@@ -208,6 +246,7 @@ func ipcRequestRetryable(reqType ipc.RequestType) bool {
 		ipc.ReqExportFanCurveProfiles, ipc.ReqGetAvailableGears,
 		ipc.ReqGetTemperature, ipc.ReqGetTemperatureHistory,
 		ipc.ReqTestTemperatureReading, ipc.ReqGetBridgeProgramStatus,
+		ipc.ReqSetSensorCatalogActive,
 		ipc.ReqCheckWindowsAutoStart, ipc.ReqIsRunningAsAdmin,
 		ipc.ReqGetAutoStartMethod, ipc.ReqGetDebugInfo, ipc.ReqGetBlackSharkInfo,
 		ipc.ReqExportDiagnostics, ipc.ReqGetDeviceDebugFrames,
@@ -245,6 +284,9 @@ func (a *App) recoverIPCConnection(failedGeneration uint64) error {
 func (a *App) sendRequestWithTimeout(reqType ipc.RequestType, data any, timeout time.Duration) (*ipc.Response, error) {
 	if timeout <= 0 {
 		timeout = 10 * time.Second
+	}
+	if reqType != ipc.ReqPing {
+		a.lastUserActivityNs.Store(time.Now().UnixNano())
 	}
 	if !a.ipcClient.IsConnected() {
 		if err := a.ensureIPCConnected(); err != nil {

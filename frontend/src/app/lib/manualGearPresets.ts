@@ -37,9 +37,9 @@ const MANUAL_LEVEL_LABEL_KEYS: Record<string, string> = {
 export const MANUAL_GEAR_PRESETS: ManualGearPreset[] = [
   {
     gear: '静音',
-    colorClass: 'text-emerald-500',
-    borderClass: 'border-emerald-500/50',
-    bgClass: 'bg-emerald-500/12',
+    colorClass: 'text-emerald-600 dark:text-emerald-400',
+    borderClass: 'border-emerald-500/45',
+    bgClass: 'bg-emerald-500/10',
     levels: [
       { level: '低', rpm: 25 },
       { level: '中', rpm: 40 },
@@ -48,9 +48,9 @@ export const MANUAL_GEAR_PRESETS: ManualGearPreset[] = [
   },
   {
     gear: '标准',
-    colorClass: 'text-blue-500',
-    borderClass: 'border-blue-500/50',
-    bgClass: 'bg-blue-500/12',
+    colorClass: 'text-primary',
+    borderClass: 'border-primary/45',
+    bgClass: 'bg-primary/10',
     levels: [
       { level: '低', rpm: 45 },
       { level: '中', rpm: 55 },
@@ -59,9 +59,9 @@ export const MANUAL_GEAR_PRESETS: ManualGearPreset[] = [
   },
   {
     gear: '强劲',
-    colorClass: 'text-purple-500',
-    borderClass: 'border-purple-500/50',
-    bgClass: 'bg-purple-500/12',
+    colorClass: 'text-indigo-600 dark:text-indigo-400',
+    borderClass: 'border-indigo-500/45',
+    bgClass: 'bg-indigo-500/10',
     levels: [
       { level: '低', rpm: 65 },
       { level: '中', rpm: 75 },
@@ -70,9 +70,9 @@ export const MANUAL_GEAR_PRESETS: ManualGearPreset[] = [
   },
   {
     gear: '超频',
-    colorClass: 'text-orange-500',
-    borderClass: 'border-orange-500/50',
-    bgClass: 'bg-orange-500/12',
+    colorClass: 'text-amber-600 dark:text-amber-400',
+    borderClass: 'border-amber-500/45',
+    bgClass: 'bg-amber-500/10',
     levels: [
       { level: '低', rpm: 85 },
       { level: '中', rpm: 95 },
@@ -84,9 +84,9 @@ export const MANUAL_GEAR_PRESETS: ManualGearPreset[] = [
 export const MANUAL_GEAR_RPM_PRESETS: ManualGearPreset[] = [
   {
     gear: '静音',
-    colorClass: 'text-emerald-500',
-    borderClass: 'border-emerald-500/50',
-    bgClass: 'bg-emerald-500/12',
+    colorClass: 'text-emerald-600 dark:text-emerald-400',
+    borderClass: 'border-emerald-500/45',
+    bgClass: 'bg-emerald-500/10',
     levels: [
       { level: '低', rpm: 1300 },
       { level: '中', rpm: 1700 },
@@ -95,9 +95,9 @@ export const MANUAL_GEAR_RPM_PRESETS: ManualGearPreset[] = [
   },
   {
     gear: '标准',
-    colorClass: 'text-blue-500',
-    borderClass: 'border-blue-500/50',
-    bgClass: 'bg-blue-500/12',
+    colorClass: 'text-primary',
+    borderClass: 'border-primary/45',
+    bgClass: 'bg-primary/10',
     levels: [
       { level: '低', rpm: 2100 },
       { level: '中', rpm: 2400 },
@@ -106,9 +106,9 @@ export const MANUAL_GEAR_RPM_PRESETS: ManualGearPreset[] = [
   },
   {
     gear: '强劲',
-    colorClass: 'text-purple-500',
-    borderClass: 'border-purple-500/50',
-    bgClass: 'bg-purple-500/12',
+    colorClass: 'text-indigo-600 dark:text-indigo-400',
+    borderClass: 'border-indigo-500/45',
+    bgClass: 'bg-indigo-500/10',
     levels: [
       { level: '低', rpm: 2800 },
       { level: '中', rpm: 3000 },
@@ -117,9 +117,9 @@ export const MANUAL_GEAR_RPM_PRESETS: ManualGearPreset[] = [
   },
   {
     gear: '超频',
-    colorClass: 'text-orange-500',
-    borderClass: 'border-orange-500/50',
-    bgClass: 'bg-orange-500/12',
+    colorClass: 'text-amber-600 dark:text-amber-400',
+    borderClass: 'border-amber-500/45',
+    bgClass: 'bg-amber-500/10',
     levels: [
       { level: '低', rpm: 3500 },
       { level: '中', rpm: 3700 },
@@ -152,10 +152,10 @@ const getBlackSharkCoreRpmRange = (): { min: number; max: number } | null =>
 
 /** 黑鲨四档的展示信息；转速一律来自 `coreBlackSharkRpms`，不要往这里写数值。 */
 const BLACKSHARK_GEAR_PRESENTATION: Omit<ManualGearPreset, 'levels'>[] = [
-  { gear: '静音', colorClass: 'text-emerald-500', borderClass: 'border-emerald-500/50', bgClass: 'bg-emerald-500/12' },
-  { gear: '标准', colorClass: 'text-blue-500', borderClass: 'border-blue-500/50', bgClass: 'bg-blue-500/12' },
-  { gear: '强劲', colorClass: 'text-purple-500', borderClass: 'border-purple-500/50', bgClass: 'bg-purple-500/12' },
-  { gear: '超频', colorClass: 'text-orange-500', borderClass: 'border-orange-500/50', bgClass: 'bg-orange-500/12' },
+  { gear: '静音', colorClass: 'text-emerald-600 dark:text-emerald-400', borderClass: 'border-emerald-500/45', bgClass: 'bg-emerald-500/10' },
+  { gear: '标准', colorClass: 'text-primary', borderClass: 'border-primary/45', bgClass: 'bg-primary/10' },
+  { gear: '强劲', colorClass: 'text-indigo-600 dark:text-indigo-400', borderClass: 'border-indigo-500/45', bgClass: 'bg-indigo-500/10' },
+  { gear: '超频', colorClass: 'text-amber-600 dark:text-amber-400', borderClass: 'border-amber-500/45', bgClass: 'bg-amber-500/10' },
 ];
 
 const BLACKSHARK_LEVEL_NAMES = ['低', '中', '高'];
@@ -172,30 +172,30 @@ const blackSharkPresetsFromCore = (): ManualGearPreset[] =>
 export const BS1_MANUAL_GEAR_PRESETS: ManualGearPreset[] = [
   {
     gear: '静音',
-    colorClass: 'text-emerald-500',
-    borderClass: 'border-emerald-500/50',
-    bgClass: 'bg-emerald-500/12',
+    colorClass: 'text-emerald-600 dark:text-emerald-400',
+    borderClass: 'border-emerald-500/45',
+    bgClass: 'bg-emerald-500/10',
     levels: [{ level: '中', rpm: 40 }],
   },
   {
     gear: '标准',
-    colorClass: 'text-blue-500',
-    borderClass: 'border-blue-500/50',
-    bgClass: 'bg-blue-500/12',
+    colorClass: 'text-primary',
+    borderClass: 'border-primary/45',
+    bgClass: 'bg-primary/10',
     levels: [{ level: '中', rpm: 55 }],
   },
   {
     gear: '强劲',
-    colorClass: 'text-purple-500',
-    borderClass: 'border-purple-500/50',
-    bgClass: 'bg-purple-500/12',
+    colorClass: 'text-indigo-600 dark:text-indigo-400',
+    borderClass: 'border-indigo-500/45',
+    bgClass: 'bg-indigo-500/10',
     levels: [{ level: '中', rpm: 75 }],
   },
   {
     gear: '超频',
-    colorClass: 'text-orange-500',
-    borderClass: 'border-orange-500/50',
-    bgClass: 'bg-orange-500/12',
+    colorClass: 'text-amber-600 dark:text-amber-400',
+    borderClass: 'border-amber-500/45',
+    bgClass: 'bg-amber-500/10',
     levels: [{ level: '中', rpm: 95 }],
   },
 ];

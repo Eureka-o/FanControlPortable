@@ -7,6 +7,60 @@ import (
 	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
+func (a *CoreApp) isSensorCatalogActive() bool {
+	return a != nil && a.sensorCatalogActive.Load()
+}
+
+func (a *CoreApp) isGpuSensorProbeActive() bool {
+	return a != nil && a.gpuSensorProbeActive.Load()
+}
+
+func (a *CoreApp) clearSensorCatalogLeases() {
+	if a == nil {
+		return
+	}
+	a.sensorCatalogActive.Store(false)
+	a.gpuSensorProbeActive.Store(false)
+	a.mutex.Lock()
+	stripSensorLists(&a.currentTemp)
+	a.mutex.Unlock()
+}
+
+func (a *CoreApp) readAndStoreImmediateTemperature(includeSensorLists, forcePollGpu bool) types.TemperatureData {
+	if a == nil || a.tempReader == nil || a.configManager == nil {
+		return types.TemperatureData{}
+	}
+	cfg := a.configManager.Get()
+	selection := types.TemperatureSelection{
+		TempSource:            cfg.TempSource,
+		GpuDevice:             cfg.GpuDevice,
+		CpuSensor:             cfg.CpuSensor,
+		GpuSensor:             cfg.GpuSensor,
+		CpuPowerSensor:        cfg.CpuPowerSensor,
+		GpuPowerSensor:        cfg.GpuPowerSensor,
+		GpuReadMode:           cfg.GpuReadMode,
+		GpuLowPowerProtection: cfg.GpuLowPowerProtection,
+		OmitSensorLists:       !includeSensorLists,
+		ForcePollGpu:          forcePollGpu && types.NormalizeGPUReadMode(cfg.GpuReadMode) != types.GPUReadModeNever,
+	}
+	temp := a.tempReader.Read(selection)
+
+	a.mutex.Lock()
+	previousTemp := a.currentTemp
+	temp = mergeTemperatureHardwareMetadata(previousTemp, temp)
+	if !includeSensorLists {
+		stripSensorLists(&temp)
+	}
+	a.currentTemp = temp
+	a.mutex.Unlock()
+
+	if a.ipcServer != nil && a.ipcServer.HasInteractiveClients() {
+		eventTemp := compactTemperatureEventPayload(temp, previousTemp)
+		a.ipcServer.BroadcastEvent(ipc.EventTemperatureUpdate, eventTemp)
+	}
+	return temp
+}
+
 func (a *CoreApp) handleTemperatureIPCRequest(req ipc.Request) (ipc.Response, bool) {
 	switch req.Type {
 	case ipc.ReqGetTemperature:
@@ -16,6 +70,9 @@ func (a *CoreApp) handleTemperatureIPCRequest(req ipc.Request) (ipc.Response, bo
 		return a.dataResponse(temp), true
 
 	case ipc.ReqGetTemperatureHistory:
+		if a.tempHistory == nil {
+			return a.dataResponse(types.TemperatureHistoryPayload{}), true
+		}
 		return a.dataResponse(a.tempHistory.Snapshot()), true
 
 	case ipc.ReqSetTemperatureHistoryEnabled:
@@ -69,6 +126,31 @@ func (a *CoreApp) handleTemperatureIPCRequest(req ipc.Request) (ipc.Response, bo
 	case ipc.ReqGetBridgeProgramStatus:
 		status := a.bridgeManager.GetStatus()
 		return a.dataResponse(status), true
+
+	case ipc.ReqSetSensorCatalogActive:
+		var params ipc.SetBoolParams
+		if err := json.Unmarshal(req.Data, &params); err != nil {
+			return a.errorResponse("解析参数失败: " + err.Error()), true
+		}
+		if !params.Enabled {
+			a.clearSensorCatalogLeases()
+			return a.successResponse(true), true
+		}
+		a.sensorCatalogActive.Store(true)
+		temp := a.readAndStoreImmediateTemperature(true, a.isGpuSensorProbeActive())
+		return a.dataResponse(temp), true
+
+	case ipc.ReqProbeGpuSensors:
+		cfg := a.configManager.Get()
+		a.sensorCatalogActive.Store(true)
+		if types.NormalizeGPUReadMode(cfg.GpuReadMode) == types.GPUReadModeNever {
+			a.gpuSensorProbeActive.Store(false)
+			temp := a.readAndStoreImmediateTemperature(true, false)
+			return a.dataResponse(temp), true
+		}
+		a.gpuSensorProbeActive.Store(true)
+		temp := a.readAndStoreImmediateTemperature(true, true)
+		return a.dataResponse(temp), true
 
 	case ipc.ReqRestartPawnIO:
 		result, err := a.bridgeManager.RestartPawnIO()

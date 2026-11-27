@@ -3,6 +3,7 @@ package guiapp
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/Eureka-o/FanControlPortable/internal/ipc"
 )
@@ -63,5 +64,55 @@ func (a *App) TestTemperatureReading() TemperatureData {
 	}
 	var temp TemperatureData
 	json.Unmarshal(resp.Data, &temp)
+	return temp
+}
+
+// SetSensorCatalogActive 声明设置页传感器目录是否打开；开启时立即返回全量传感器，关闭或隐藏窗口时释放租约。
+func (a *App) SetSensorCatalogActive(enabled bool) TemperatureData {
+	if a == nil {
+		return TemperatureData{}
+	}
+	a.sensorCatalogWanted.Store(enabled)
+	return a.syncSensorCatalogLease(enabled)
+}
+
+func (a *App) syncSensorCatalogLease(enabled bool) TemperatureData {
+	if a == nil || a.ipcClient == nil || a.shuttingDown.Load() {
+		return TemperatureData{}
+	}
+	resp, err := a.sendRequest(ipc.ReqSetSensorCatalogActive, ipc.SetBoolParams{Enabled: enabled})
+	if !enabled || err != nil || !resp.Success {
+		return TemperatureData{}
+	}
+	var temp TemperatureData
+	if err := json.Unmarshal(resp.Data, &temp); err != nil {
+		return TemperatureData{}
+	}
+	if temp.UpdateTime > 0 {
+		a.mutex.Lock()
+		a.currentTemp = temp
+		a.mutex.Unlock()
+	}
+	return temp
+}
+
+// ProbeGpuSensors 在低功耗保护下按需临时读取一次休眠独显的完整传感器列表。
+func (a *App) ProbeGpuSensors() TemperatureData {
+	if a == nil || a.ipcClient == nil || a.shuttingDown.Load() {
+		return TemperatureData{}
+	}
+	resp, err := a.sendRequestWithTimeout(ipc.ReqProbeGpuSensors, nil, 15*time.Second)
+	if err != nil || !resp.Success {
+		return TemperatureData{}
+	}
+	var temp TemperatureData
+	if err := json.Unmarshal(resp.Data, &temp); err != nil {
+		return TemperatureData{}
+	}
+	if temp.UpdateTime > 0 {
+		a.mutex.Lock()
+		a.currentTemp = temp
+		a.mutex.Unlock()
+	}
 	return temp
 }

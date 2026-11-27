@@ -23,6 +23,7 @@ import (
 	"github.com/Eureka-o/FanControlPortable/internal/temperature"
 	"github.com/Eureka-o/FanControlPortable/internal/tray"
 	"github.com/Eureka-o/FanControlPortable/internal/types"
+	"github.com/Eureka-o/FanControlPortable/internal/version"
 )
 
 // CoreApp 核心应用结构
@@ -32,6 +33,7 @@ type CoreApp struct {
 	deviceManager    *device.Manager
 	bridgeManager    *bridge.Manager
 	tempReader       *temperature.Reader
+	historyPath      string
 	tempHistory      *temperature.HistoryRecorder
 	configManager    *config.Manager
 	trayManager      *tray.Manager
@@ -51,6 +53,9 @@ type CoreApp struct {
 	monitoringDone                   chan struct{}
 	monitoringStopping               bool
 	stopping                         atomic.Bool
+	memReleaseRunning                atomic.Bool
+	sensorCatalogActive              atomic.Bool
+	gpuSensorProbeActive             atomic.Bool
 	currentTemp                      types.TemperatureData
 	deviceSettings                   *types.DeviceSettings
 	lastSuccessfulDeviceReadAt       time.Time
@@ -118,6 +123,7 @@ type CoreApp struct {
 	blackSharkStateRefreshing     atomic.Bool
 	lastResumeRecoveryUnix        int64
 	lastHealthReconnectUnix       int64
+	healthReconnectFailures       atomic.Int32
 	healthConsecutiveFailureCount int32
 	healthTransportMu             sync.Mutex
 	healthTransportStates         map[string]healthTransportState
@@ -149,7 +155,9 @@ type CoreApp struct {
 	// 引擎会误判成没有变化从而不做任何事，用 revision 变化强制 Reset。
 	sceneRevision     uint64
 	sceneConfig       types.AppConfig
+	sceneRetryAfter   time.Time
 	sceneLoopOnce     sync.Once
+	sceneWake         chan struct{}
 	trayConfigMu      sync.Mutex
 	trayConfig        types.AppConfig
 	trayConfigRev     uint64
@@ -157,6 +165,7 @@ type CoreApp struct {
 	trayCurveOptions  []tray.CurveOption
 	trayActiveCurveID string
 	cleanupChan       chan bool
+	cleanupOnce       sync.Once
 	quitChan          chan bool
 
 	mutex                 sync.RWMutex
@@ -253,19 +262,18 @@ func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 			}
 		}
 	}
-	historyRetentionHours := types.NormalizeTemperatureHistoryRetentionHours(configMgr.Get().HistoryRetentionHours)
-	historyPointsPerHour := int(time.Hour / temperature.DefaultHistorySampleInterval)
-	tempHistory := temperature.NewHistoryRecorder(historyPath, historyPointsPerHour*historyRetentionHours, temperature.DefaultHistorySampleInterval, customLogger)
 	trayMgr := tray.NewManager(customLogger, iconData)
 	autostartMgr := autostart.NewManager(customLogger)
 	pluginMgr := plugins.NewManager(customLogger)
+	pluginMgr.SetPluginsDir(filepath.Join(installDir, "plugins"), version.Get())
+	pluginMgr.SetConfigDir(installDir)
 
 	app := &CoreApp{
 		ctx:                context.Background(),
 		deviceManager:      deviceMgr,
 		bridgeManager:      bridgeMgr,
 		tempReader:         tempReader,
-		tempHistory:        tempHistory,
+		historyPath:        historyPath,
 		currentTemp:        types.TemperatureData{BridgeOk: true},
 		configManager:      configMgr,
 		trayManager:        trayMgr,
@@ -279,7 +287,7 @@ func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 		isAutoStartLaunch:  isAutoStart,
 		debugMode:          debugMode,
 		guiLastResponse:    time.Now().Unix(),
-		cleanupChan:        make(chan bool, 1),
+		cleanupChan:        make(chan bool),
 		quitChan:           make(chan bool, 1),
 		guiMonitorEnabled:  true,
 		connectionFlights:  newConnectionFlightRecorder(defaultConnectionFlightCapacity, nil),
@@ -294,4 +302,43 @@ func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 	app.hotkeyManager = hotkeysvc.NewManager(customLogger, app.handleHotkeyAction)
 
 	return app
+}
+
+func (a *CoreApp) initStartupTemperatureHistory(cfg *types.AppConfig) bool {
+	if a == nil || cfg == nil {
+		return false
+	}
+	retentionHours := types.NormalizeTemperatureHistoryRetentionHours(cfg.HistoryRetentionHours)
+	pointsPerHour := int(time.Hour / temperature.DefaultHistorySampleInterval)
+	if pointsPerHour <= 0 {
+		pointsPerHour = temperature.DefaultHistoryCapacity
+	}
+	if a.tempHistory == nil {
+		historyPath := a.historyPath
+		if historyPath == "" {
+			historyPath = filepath.Join(config.GetInstallDir(), temperature.DefaultHistoryRelativePath)
+		}
+		var historyLogger types.Logger
+		if a.logger != nil {
+			historyLogger = a.logger
+		}
+		a.tempHistory = temperature.NewHistoryRecorder(
+			historyPath,
+			pointsPerHour*retentionHours,
+			temperature.DefaultHistorySampleInterval,
+			historyLogger,
+		)
+	}
+	if cfg.HistoryEnabled != nil {
+		desired := *cfg.HistoryEnabled
+		if a.tempHistory.IsEnabled() != desired {
+			if err := a.tempHistory.SetEnabled(desired); err != nil && a.logger != nil {
+				a.logger.Error("同步温度历史开关状态失败: %v", err)
+			}
+		}
+		return false
+	}
+	migrated := a.tempHistory.IsEnabled()
+	cfg.HistoryEnabled = &migrated
+	return true
 }

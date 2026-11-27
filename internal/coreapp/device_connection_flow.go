@@ -32,6 +32,7 @@ func (f deviceConnectionFlow) setRuntimeConnected() {
 	f.app.deviceSettings = nil
 	f.app.mutex.Unlock()
 	f.app.connectionFlights.record(connectionFlightEvent{Stage: connectionFlightStageConnected})
+	f.app.wakeSceneLoop()
 }
 
 func (f deviceConnectionFlow) setRuntimeReady(settings *types.DeviceSettings) {
@@ -40,6 +41,7 @@ func (f deviceConnectionFlow) setRuntimeReady(settings *types.DeviceSettings) {
 	f.app.deviceSettings = settings
 	f.app.mutex.Unlock()
 	f.app.connectionFlights.record(connectionFlightEvent{Stage: connectionFlightStageReady})
+	f.app.wakeSceneLoop()
 }
 
 func (f deviceConnectionFlow) setRuntimeDisconnected(reason string) bool {

@@ -45,6 +45,9 @@ const (
 	ReqGetCurrentFanData      RequestType = "GetCurrentFanData"
 	ReqRefreshDeviceSettings  RequestType = "RefreshDeviceSettings"
 	ReqTransferDeviceImage    RequestType = "TransferDeviceImage"
+	ReqScanBLEDevices         RequestType = "ScanBLEDevices"
+	ReqProbeBLEGATT           RequestType = "ProbeBLEGATT"
+	ReqListSerialPorts        RequestType = "ListSerialPorts"
 
 	// 配置相关
 	ReqGetConfig                  RequestType = "GetConfig"
@@ -94,6 +97,8 @@ const (
 	ReqTestTemperatureReading              RequestType = "TestTemperatureReading"
 	ReqTestBridgeProgram                   RequestType = "TestBridgeProgram"
 	ReqGetBridgeProgramStatus              RequestType = "GetBridgeProgramStatus"
+	ReqSetSensorCatalogActive              RequestType = "SetSensorCatalogActive"
+	ReqProbeGpuSensors                     RequestType = "ProbeGpuSensors"
 	ReqRestartPawnIO                       RequestType = "RestartPawnIO"
 	ReqReinstallPawnIO                     RequestType = "ReinstallPawnIO"
 
@@ -202,6 +207,18 @@ const (
 	// ReqDeleteScreenHistory 删除本机缓存里的一张历史图片（直接删文件，不进回收站）。
 	ReqDeleteScreenHistory RequestType = "DeleteScreenHistory"
 
+	// 插件与扩展相关
+	ReqGetPlugins               RequestType = "GetPlugins"
+	ReqRefreshPlugins           RequestType = "RefreshPlugins"
+	ReqSetPluginEnabled         RequestType = "SetPluginEnabled"
+	ReqInvokePlugin             RequestType = "InvokePlugin"
+	ReqRestartPlugin            RequestType = "RestartPlugin"
+	ReqGetPluginSettings        RequestType = "GetPluginSettings"
+	ReqSavePluginSettings       RequestType = "SavePluginSettings"
+	ReqGetPluginLogs            RequestType = "GetPluginLogs"
+	ReqSetPluginDevPaths        RequestType = "SetPluginDevPaths"
+	ReqMarkPluginPendingRestart RequestType = "MarkPluginPendingRestart"
+
 	// 系统相关
 	ReqPing              RequestType = "Ping"
 	ReqIsAutoStartLaunch RequestType = "IsAutoStartLaunch"
@@ -263,6 +280,8 @@ const (
 	EventHotkeyTriggered             = "hotkey-triggered"
 	EventLegionPowerModeUpdate       = "legion-power-mode-update"
 	EventLegionFnQSupportUpdate      = "legion-fnq-support-update"
+	EventPluginsUpdate               = "plugins-update"
+	EventPluginEvent                 = "plugin-event"
 	EventHealthPing                  = "health-ping"
 	EventHeartbeat                   = "heartbeat"
 )
@@ -1188,10 +1207,13 @@ type ScreenPresetInfo struct {
 
 // ScreenImageInfo 设备当前保存的屏保图像信息（0xC5 回读）。
 type ScreenImageInfo struct {
-	HasImage  bool   `json:"hasImage"`
-	Timestamp uint32 `json:"timestamp"`
-	Size      uint32 `json:"size"`
-	CRC       uint16 `json:"crc"`
+	HasImage               bool   `json:"hasImage"`
+	Timestamp              uint32 `json:"timestamp"`
+	Size                   uint32 `json:"size"`
+	CRC                    uint16 `json:"crc"`
+	PresetMatched          bool   `json:"presetMatched,omitempty"`
+	PresetOfficialPosition int    `json:"presetOfficialPosition,omitempty"`
+	PresetName             string `json:"presetName,omitempty"`
 }
 
 // ScreenHistoryItem 是本机屏幕图片缓存（`<安装目录>/screen-images/`）里的一张历史画布。
@@ -1438,4 +1460,34 @@ type ExportFanCurveProfilesParams struct {
 // ImportFanCurveProfilesParams 导入曲线方案参数
 type ImportFanCurveProfilesParams struct {
 	Code string `json:"code"`
+}
+
+type SetPluginEnabledParams struct {
+	PluginID string `json:"pluginId"`
+	Enabled  bool   `json:"enabled"`
+}
+
+type PluginIDParams struct {
+	PluginID string `json:"pluginId"`
+}
+
+type InvokePluginParams struct {
+	PluginID string          `json:"pluginId"`
+	Method   string          `json:"method"`
+	Payload  json.RawMessage `json:"payload,omitempty"`
+}
+
+type SavePluginSettingsParams struct {
+	PluginID string         `json:"pluginId"`
+	Settings map[string]any `json:"settings"`
+}
+
+type SetPluginDevPathsParams struct {
+	Paths []string `json:"paths"`
+}
+
+type PluginEventPayload struct {
+	PluginID string          `json:"pluginId"`
+	Event    string          `json:"event"`
+	Payload  json.RawMessage `json:"payload,omitempty"`
 }

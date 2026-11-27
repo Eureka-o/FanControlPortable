@@ -1,8 +1,8 @@
 # FanControl
 
-FanControl 是面向 Windows 的多设备散热控制工具，用于连接和控制外置散热器、风扇控制器和 DIY 主控。它支持设备扫描、风扇曲线、手动转速、托盘后台运行、主题系统和配置继承。
+FanControl 是面向 Windows 的多设备散热控制工具，用于连接和控制外置散热器、风扇控制器和 DIY 主控。它支持设备扫描、风扇曲线、手动转速、插件扩展、在线主题与插件市场、托盘后台运行以及配置继承。
 
-FanControl is a Windows tool for controlling external coolers, fan controllers, and DIY boards. It provides device discovery, fan curves, manual speed control, tray operation, themes, and configuration migration.
+FanControl is a Windows tool for controlling external coolers, fan controllers, and DIY boards. It provides device discovery, fan curves, manual speed control, plugins, an online plugin/theme store, tray operation, and configuration migration.
 
 当前版本内置 Slim 压风散热器 Pro、飞智（FlyDigi）BS 系列和黑鲨（Black Shark）风神 Pro 的设备档案。WiFi 与虚拟串口/COM 仍可通过兼容模式手动配置；黑鲨风神 Pro 仅支持 USB 有线和 BLE。
 
@@ -15,7 +15,8 @@ The current build includes profiles for Slim 压风散热器 Pro, FlyDigi BS-ser
 - 系统 / System：Windows 10 或 Windows 11（64 位） / Windows 10 or Windows 11 (64-bit).
 - 内置设备 / Built-in devices：Slim 压风散热器 Pro、飞智（FlyDigi）BS1/BS2/BS2PRO/BS3/BS3PRO、黑鲨（Black Shark）风神 Pro。
 - 兼容设备 / Compatibility devices：WiFi 与虚拟串口/COM 设备可手动添加地址或扫描发现 / WiFi and virtual serial/COM devices can be added manually or discovered by scanning.
-- 主题 / Themes：内置基础主题和高级主题，也支持导入第三方主题 / Built-in basic and advanced themes, with support for imported third-party themes.
+- 插件 / Plugins：内置轻量扩展与官方「插件市场」（提供 RTSS OSD 叠加层转速显示、HP OMEN 笔记本控制等扩展），支持独立启停、本地包导入与按需安装 / Built-in extensions and the Official Plugin Store (including RTSS OSD overlay telemetry and HP OMEN laptop control), supporting toggling, local `.zip` import, and on-demand installation.
+- 主题 / Themes：主程序内置「浅色 / 深色 / 跟随系统」三种基础主题；官方自定义主题可通过「主题管理 / 主题市场」按需下载与更新，也支持导入第三方主题（模板与 DIY 制作指南见 [FanControl-Plugins](https://github.com/Eureka-o/FanControl-Plugins)） / Light, Dark, and Follow System themes are built in; official custom themes can be installed and updated on demand via Theme Management / Theme Store, with support for importing third-party themes (see [FanControl-Plugins](https://github.com/Eureka-o/FanControl-Plugins) for templates and DIY guides).
 
 ## 已适配设备 / Supported devices
 
@@ -37,8 +38,8 @@ FlyDigi and Black Shark devices are matched through built-in profiles first. The
 
 ## 下载文件 / Downloads
 
-- `FanControl-2.9.1-amd64-installer.exe`：安装版，升级时保留已有配置 / Installer; preserves existing configuration during upgrades.
-- `FanControl-2.9.1-portable.zip`：便携版，解压后运行 `FanControl.exe` / Portable package; extract and run `FanControl.exe`.
+- `FanControl-3.0.0-amd64-installer.exe`：安装版，升级时保留已有配置 / Installer; preserves existing configuration during upgrades.
+- `FanControl-3.0.0-portable.zip`：便携版，解压后运行 `FanControl.exe` / Portable package; extract and run `FanControl.exe`.
 
 首次启动时如 Windows 弹出权限确认，请选择允许。软件可能需要管理员权限读取硬件温度或安装温度读取组件。
 
@@ -55,28 +56,32 @@ When Windows asks for permission on first launch, allow it. Administrator access
 ## 主要功能 / Features
 
 - 实时查看 CPU/GPU 温度、功耗和散热器转速 / View CPU/GPU temperature, power, and cooler speed in real time.
-- 按曲线自动调节，也可以手动设定固定转速 / Use curve-based automatic control or set a fixed manual speed.
+- 独显休眠时默认跳过读取避免唤醒，并支持在温度基准设置中临时唤醒探测传感器 / Skip discrete GPU polling while sleeping to avoid wakeups, with on-demand temporary sensor probing in settings.
+- 按曲线自动调节或设定固定转速，提供节点微调、整体偏移、步进吸附、`Ctrl+Z` 撤销、多方案管理与学习偏移写回曲线功能 / Curve-based automatic or manual speed control with precision point tuning, global shift, snap-to-step, `Ctrl+Z` undo, multi-profile management, and applying learned offsets back to base curves.
 - 曲线方案、手动挡位和学习结果按设备独立保存 / Keep curves, manual gears, and learning data scoped to each device.
 - 统一的原生设备扫描与兼容设备入口 / Use one discovery flow for native and compatibility devices.
+- 提供「插件与扩展」与官方「插件市场」，支持 RTSS OSD 转速叠加与 HP OMEN 控制等按需扩展 / Built-in Plugins & Extensions and Official Plugin Store for on-demand extensions such as RTSS OSD telemetry and HP OMEN control.
+- 提供「主题管理」与「主题市场」，支持官方自定义主题在线安装、更新、免重启切换与本地包导入 / Theme Management and Theme Store for online custom theme installation, updates, hot-switching, and local imports.
 - 最小化到托盘后继续后台运行 / Continue running in the system tray when minimized.
-- 安装版和便携版升级时尽量保留配置、历史数据和主题 / Preserve configuration, history, and themes across installer or portable upgrades where possible.
+- 安装版和便携版升级时保留配置、历史数据和已有主题 / Preserve configuration, history, and existing themes across installer or portable upgrades.
 
 ## 最新版本 / Latest version
 
-当前构建版本：`2.9.1` / Current build: `2.9.1`
+当前构建版本：`3.0.0` / Current build: `3.0.0`
 
-- 减少最小化托盘与闲置状态的后台轮询，独显休眠后不重建传感器监控，温度历史改用异步定期保存 / Reduced background polling while idle or in tray, stopped reinitializing hardware monitoring across dGPU sleep transitions, and switched periodic history saves to async writes.
-- 控制设置、图表与非当前语言包改为按需加载，缩小每秒温控刷新引起的界面重绘范围 / Loaded secondary pages, charts, and inactive locales on demand and narrowed per-second telemetry updates to limit UI repaints.
-- 关机或注销时退出飞智 HID 实时转速模式以交回固件智能启停，并优化 WiFi/蓝牙重连优先级与低温段通用曲线范围 / Exited FlyDigi HID real-time RPM mode on shutdown/logoff to restore firmware smart start-stop, and refined reconnect scheduling and generic curve padding.
-- 按软件界面与设置用字重建初音未来、小八 Plus、蜡笔小新主题字体子集以补齐缺字，同时压缩主题与内置预设资源，安装包与便携包均减小约 4 MB / Rebuilt Miku, Xiaoba Plus, and Crayon Shin-chan font subsets for complete UI glyph coverage and compressed theme/preset assets, reducing installer and portable packages by about 4 MB.
+- 新增「插件与扩展」及官方「插件市场」，支持启停管理、日志查看、本地 `.zip` 导入，首发提供 **RTSS OSD** 屏幕转速显示与 **HP OMEN** 双风扇/性能功耗控制插件 / Added Plugins & Extensions and the Official Plugin Store with toggles, logs, local `.zip` import, and launch plugins for **RTSS OSD** and **HP OMEN**.
+- 将 9 套官方自定义主题从安装包中拆分为按需获取，新增「主题管理」与「主题市场」支持筛选、一键更新与免重启切换，并显著减小安装包与便携包体积 / Decoupled the 9 official custom themes into on-demand downloads via Theme Management and Theme Store with filtering, batch updates, hot-switching, and smaller distribution packages.
+- 重构首页状态卡片、仪表盘比例与分组设置页，新增曲线节点微调、整体微调、步进吸附、`Ctrl+Z` 撤销、低转速提示、方案管理升级及一键将学习偏移应用到曲线 / Redesigned homepage status cards, gauges, and grouped settings, and added point tuning, global shift, snap-to-step, `Ctrl+Z` undo, low-RPM guidance, upgraded profile management, and applying learned offsets to curves.
+- 新增独显休眠原因提示与临时传感器探测、菜单防截断及折叠动效，修复休眠唤醒无法调速与退出后温度辅助进程残留问题，并精简安装与卸载等待流程 / Added dGPU sleep notices with temporary sensor probing, non-clipping menus, collapse transitions, sleep-resume fan recovery, clean helper shutdown on exit, and streamlined install/uninstall flows.
 
-完整记录请查看 [GitHub Releases](https://github.com/Eureka-o/FanControlPortable/releases) 或 `docs/release-notes/`。
+完整记录请查看 [GitHub Releases](https://github.com/Eureka-o/FanControlPortable/releases) 或 [docs/release-notes/](docs/release-notes/)。
 
-See [GitHub Releases](https://github.com/Eureka-o/FanControlPortable/releases) or `docs/release-notes/` for the complete changelog.
+See [GitHub Releases](https://github.com/Eureka-o/FanControlPortable/releases) or [docs/release-notes/](docs/release-notes/) for the complete changelog.
 
 ## 升级与配置继承 / Upgrade and migration
 
 - 升级会保留 WiFi IP、风扇曲线、启用方案、学习数据、设备档案、主题、托盘设置和开机启动设置 / Upgrades preserve WiFi IPs, fan curves, active profiles, learning data, device profiles, themes, tray settings, and autostart settings.
+- 官方自定义主题现改为按需下载；从旧版本升级后现有本地主题仍可继续使用，后续可在「设置 → 系统设置 → 主题管理 / 主题市场」安装或更新 / Official custom themes are now downloaded on demand; existing local themes remain usable after upgrading and can be installed or updated under Settings → System → Theme Management / Theme Store.
 - 便携版更新前请退出 FanControl，再解压新版覆盖旧文件夹；不要删除 `config` 目录 / Before updating a portable build, exit FanControl and extract the new package over the old folder; keep the `config` directory.
 - 关闭窗口不等于退出软件；需要完全退出时，请使用托盘菜单中的「退出」/ Closing the window leaves FanControl in the tray; use the tray **Exit** command to quit completely.
 

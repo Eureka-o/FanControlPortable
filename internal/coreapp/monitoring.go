@@ -2,6 +2,7 @@ package coreapp
 
 import (
 	"context"
+	"math"
 	"runtime/debug"
 	"sync/atomic"
 	"time"
@@ -12,7 +13,40 @@ import (
 	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
-const temperatureSafetyFallbackThreshold = 3
+const (
+	temperatureSafetyFallbackThreshold = 3
+	idleGpuBridgeRecycleDelay          = 2 * time.Minute
+	idleGpuBridgeRecycleCooldown       = 5 * time.Minute
+)
+
+func shouldRecycleIdleGpuBridge(
+	temp types.TemperatureData,
+	selection types.TemperatureSelection,
+	sensorCatalogActive, gpuProbeActive, recoveryRunning bool,
+	idleSince, lastRecycle, now time.Time,
+) (time.Time, bool) {
+	selection = types.NormalizeTemperatureSelection(selection)
+	eligible := temp.BridgeOk &&
+		temp.TelemetryFresh &&
+		temp.BridgeGpuMonitoringActive &&
+		temp.GPUReadState == types.GPUReadStateNotPolled &&
+		selection.GpuReadMode == types.GPUReadModeAuto &&
+		selection.TempSource != types.TempSourceGPU &&
+		!sensorCatalogActive &&
+		!gpuProbeActive
+	if !eligible {
+		return time.Time{}, false
+	}
+	if idleSince.IsZero() {
+		idleSince = now
+	}
+	if !recoveryRunning &&
+		now.Sub(idleSince) >= idleGpuBridgeRecycleDelay &&
+		(lastRecycle.IsZero() || now.Sub(lastRecycle) >= idleGpuBridgeRecycleCooldown) {
+		return time.Time{}, true
+	}
+	return idleSince, false
+}
 
 type temperatureSafetyFallback struct {
 	invalidSamples int
@@ -33,6 +67,15 @@ func (s *temperatureSafetyFallback) observe(autoControl, inputReady bool) (apply
 	// Keep applying the fallback while telemetry is unavailable so the target
 	// can ramp toward the safe ceiling instead of jumping there in one write.
 	return s.invalidSamples >= temperatureSafetyFallbackThreshold, false
+}
+
+func advanceTemperatureEMA(prev float64, ready bool, sampleTemp int, sampleCount int) (float64, int) {
+	if !ready || sampleCount <= 1 {
+		return float64(sampleTemp), sampleTemp
+	}
+	alpha := 2.0 / float64(sampleCount+1)
+	next := alpha*float64(sampleTemp) + (1.0-alpha)*prev
+	return next, int(math.Round(next))
 }
 
 func (s *temperatureSafetyFallback) markApplied() {
@@ -84,8 +127,62 @@ const idleTemperatureMonitorInterval = 5 * time.Second
 
 const monitorOnlyTemperatureInterval = 2 * time.Second
 
-// idleMemoryReleaseCooldown 限制 GUI 断开后归还内存的最小间隔，避免频繁开关 GUI 时反复触发 GC。
-const idleMemoryReleaseCooldown = 30 * time.Second
+const (
+	// idleMemoryReleaseCooldown 限制 GUI 断开后与启动稳态归还内存的最小间隔，避免频繁开关 GUI 时反复触发 GC。
+	idleMemoryReleaseCooldown = 30 * time.Second
+	// periodicMemoryReleaseInterval 与 GUI(170s)、TempBridge(165s) 错开，且避开 60s 历史落盘节拍。
+	periodicMemoryReleaseInterval = 155 * time.Second
+	memoryReleaseBusyDefer        = 20 * time.Second
+	recentBulkDeviceOpGuard       = 15 * time.Second
+)
+
+func (a *CoreApp) isMemoryReleaseBusy(now time.Time) bool {
+	if a == nil {
+		return false
+	}
+	if a.stopping.Load() ||
+		a.memReleaseRunning.Load() ||
+		a.blackSharkImageTransferActive() ||
+		a.wifiScanRunning.Load() ||
+		a.reconnectInProgress.Load() ||
+		a.resumeRecoveryRunning.Load() ||
+		a.temperatureBridgeRecoveryRunning.Load() ||
+		a.systemSuspended.Load() ||
+		a.noiseDiagnosticLeaseActive() ||
+		a.isSensorCatalogActive() ||
+		a.isGpuSensorProbeActive() ||
+		a.blackSharkStateRefreshing.Load() {
+		return true
+	}
+	if end := a.bulkDeviceOpEndUnix.Load(); end > 0 && now.Sub(time.Unix(0, end)) < recentBulkDeviceOpGuard {
+		return true
+	}
+	return false
+}
+
+func evaluateCoreMemoryRelease(
+	now, startedAt, lastRelease, deferUntil time.Time,
+	startupReleased, prevHasClients, hasClients, busy bool,
+) (run bool, trimWorkingSet bool, nextDeferUntil time.Time) {
+	startupDue := !startupReleased && !hasClients && now.Sub(startedAt) >= idleMemoryReleaseCooldown
+	disconnectDue := prevHasClients && !hasClients && (lastRelease.IsZero() || now.Sub(lastRelease) >= idleMemoryReleaseCooldown)
+	ref := lastRelease
+	if ref.IsZero() {
+		ref = startedAt
+	}
+	periodicDue := !ref.IsZero() && now.Sub(ref) >= periodicMemoryReleaseInterval
+
+	if !startupDue && !disconnectDue && !periodicDue {
+		return false, false, time.Time{}
+	}
+	if !deferUntil.IsZero() && now.Before(deferUntil) {
+		return false, false, deferUntil
+	}
+	if busy {
+		return false, false, now.Add(memoryReleaseBusyDefer)
+	}
+	return true, !hasClients, time.Time{}
+}
 
 const (
 	consecutiveBridgeFailureRestartThreshold = 2
@@ -183,7 +280,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 
 	// 温度采样使用 EMA 平滑。
 	sampleCount := max(cfg.TempSampleCount, 1)
-	tempEMA := 0
+	tempEMA := 0.0
 	tempEMAReady := false
 
 	rawTempHistory := make([]int, 0, 6)
@@ -239,6 +336,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	bridgeRestartAttempts := 0
 	lastBridgeRestart := time.Time{}
 	lastWiFiOverviewRefresh := time.Time{}
+	var lastAsyncWiFiWriteUnixNano atomic.Int64
 	var wifiOverviewRefreshRunning atomic.Bool
 	var smartCfg types.SmartControlConfig
 	smartCfgRevision := cfgRevision - 1
@@ -268,6 +366,11 @@ func (a *CoreApp) startTemperatureMonitoring() {
 
 	prevHasClients := a.ipcServer != nil && a.ipcServer.HasInteractiveClients()
 	var lastMemRelease time.Time
+	var memReleaseDeferUntil time.Time
+	startedAt := time.Now()
+	startupMemReleased := false
+	var gpuIdleRecycleSince time.Time
+	var lastGpuBridgeRecycle time.Time
 
 	for {
 		select {
@@ -290,6 +393,11 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			wifiOverviewInterval = wifiOverviewRefreshInterval(hasClientsForOverview, cfg.AutoControl)
 			if a.monitorOnlyActive() || deviceType != types.DeviceTransportWiFi {
 				continue
+			}
+			if ts := lastAsyncWiFiWriteUnixNano.Swap(0); ts > 0 {
+				if asyncAt := time.Unix(0, ts); asyncAt.After(lastWiFiOverviewRefresh) {
+					lastWiFiOverviewRefresh = asyncAt
+				}
 			}
 			if shouldRefreshWiFiOverviewState(deviceType, now, lastWiFiOverviewRefresh, false, wifiOverviewInterval) {
 				lastWiFiOverviewRefresh = now
@@ -342,15 +450,14 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				selectionRevision = cfgRevision
 			}
 
-			// 后台空闲（无 GUI 连接且未开启智能控温）时放慢采样；智能控温或前台打开时保持原频率。
+			// 后台空闲（无 GUI 连接且未开启可用智能控温，或设备未连上）时放慢采样；智能控温可下发或前台打开时保持原频率。
 			hasClients := a.ipcServer != nil && a.ipcServer.HasInteractiveClients()
-			updateInterval = monitorOnlySamplingInterval(activeTemperatureMonitorInterval(cfg.TempUpdateRate, hasClients, cfg.AutoControl), a.monitorOnlyActive())
-			// GUI 断开瞬间把会话期间膨胀的堆内存归还操作系统，降低核心常驻后台时的 RSS。
-			if prevHasClients && !hasClients && now.Sub(lastMemRelease) > idleMemoryReleaseCooldown {
-				lastMemRelease = now
-				a.safeGo("release-idle-memory", func() { debug.FreeOSMemory() })
+			if !hasClients && (a.isSensorCatalogActive() || a.isGpuSensorProbeActive()) {
+				a.clearSensorCatalogLeases()
 			}
-			prevHasClients = hasClients
+			autoControlActive := cfg.AutoControl && a.deviceControlReady()
+			updateInterval = monitorOnlySamplingInterval(activeTemperatureMonitorInterval(cfg.TempUpdateRate, hasClients, autoControlActive), a.monitorOnlyActive())
+			wasConnected := prevHasClients
 			wifiDeviceActive := !a.monitorOnlyActive() && a.deviceManager != nil && a.deviceManager.GetDeviceType() == types.DeviceTransportWiFi
 			if wifiDeviceActive && !wifiOverviewTimerArmed {
 				wifiOverviewTimer.Reset(wifiOverviewRefreshInterval(hasClients, cfg.AutoControl))
@@ -360,7 +467,11 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				wifiOverviewTimerArmed = false
 			}
 
-			temp := a.tempReader.Read(cachedSelection)
+			wantSensorLists := hasClients && a.isSensorCatalogActive()
+			readSelection := cachedSelection
+			readSelection.OmitSensorLists = !wantSensorLists
+			readSelection.ForcePollGpu = wantSensorLists && a.isGpuSensorProbeActive()
+			temp := a.tempReader.Read(readSelection)
 			staleBridgeTelemetry := false
 			if temp.BridgeOk {
 				bridgeFailureCount = 0
@@ -399,8 +510,28 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			a.mutex.Lock()
 			previousTemp := a.currentTemp
 			temp = mergeTemperatureHardwareMetadata(previousTemp, temp)
+			if !wantSensorLists {
+				stripSensorLists(&temp)
+			}
 			a.currentTemp = temp
 			a.mutex.Unlock()
+
+			var recycleIdleGpuBridge bool
+			gpuIdleRecycleSince, recycleIdleGpuBridge = shouldRecycleIdleGpuBridge(
+				temp,
+				readSelection,
+				a.isSensorCatalogActive(),
+				a.isGpuSensorProbeActive(),
+				a.temperatureBridgeRecoveryRunning.Load(),
+				gpuIdleRecycleSince,
+				lastGpuBridgeRecycle,
+				now,
+			)
+			if recycleIdleGpuBridge {
+				lastGpuBridgeRecycle = now
+				a.logInfo("独显已持续休眠，静默回收温度桥接中的显卡监控资源")
+				a.recoverTemperatureBridge("idle-gpu-recycle")
+			}
 
 			// 黑鲨参照源：cpu/gpu 固定，max 动态取更高项（带迟滞 + 最小间隔）。
 			// 与上面那条推送同频挂在这里，理由相同：主机采样只应有一个来源。
@@ -408,6 +539,9 @@ func (a *CoreApp) startTemperatureMonitoring() {
 
 			fanData := a.deviceManager.GetCurrentFanData()
 			historyPoint, recorded := a.tempHistory.Add(temp, fanData)
+			if a.pluginManager != nil {
+				a.pluginManager.PublishSystemTelemetry(&temp)
+			}
 
 			// 广播温度更新（无 GUI 客户端时跳过差分与序列化，降低后台每 tick 开销）
 			if hasClients {
@@ -487,9 +621,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				target = rampTemperatureSafetyFallbackTarget(target, lastTargetRPM, smartCfg.RampUpLimit, smartCfg.RampDownLimit)
 				if target > 0 {
 					// 安全回退是"重要写入"：先作废还排着队的例行目标，否则那条旧目标随后会把安全值盖掉。
-					if a.deviceManager.IsBlackSharkActive() {
-						a.deviceManager.CancelPendingSpeedPush()
-					}
+					a.deviceManager.CancelPendingSpeedPush()
 					// 必须按固定形态下发（`false`）：变频形态下主机不下发转速，回退会被静默吞掉并假报成功。
 					writeSucceeded := a.setTargetSpeedWithMode(target, speedUnit, false)
 					gateReason := "write-failed"
@@ -556,23 +688,22 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				if smartCfg.FilterTransientSpike {
 					sampleTemp, sampleSpikeSuppressed = smartcontrol.FilterTransientSample(temp.ControlTemp, rawTempHistory, smartCfg.Hysteresis)
 				}
-				rawTempHistory = append(rawTempHistory, temp.ControlTemp)
-				if len(rawTempHistory) > 6 {
-					rawTempHistory = rawTempHistory[len(rawTempHistory)-6:]
-				}
-
-				if !tempEMAReady {
-					tempEMA = sampleTemp
-					tempEMAReady = true
+				if len(rawTempHistory) >= 6 {
+					copy(rawTempHistory, rawTempHistory[len(rawTempHistory)-5:])
+					rawTempHistory = append(rawTempHistory[:5], temp.ControlTemp)
 				} else {
-					n := sampleCount
-					tempEMA = (2*sampleTemp + (n-1)*tempEMA) / (n + 1)
+					rawTempHistory = append(rawTempHistory, temp.ControlTemp)
 				}
-				avgTemp := tempEMA
 
-				recentAvgTemps = append(recentAvgTemps, avgTemp)
-				if len(recentAvgTemps) > 24 {
-					recentAvgTemps = recentAvgTemps[len(recentAvgTemps)-24:]
+				var avgTemp int
+				tempEMA, avgTemp = advanceTemperatureEMA(tempEMA, tempEMAReady, sampleTemp, sampleCount)
+				tempEMAReady = true
+
+				if len(recentAvgTemps) >= 24 {
+					copy(recentAvgTemps, recentAvgTemps[len(recentAvgTemps)-23:])
+					recentAvgTemps = append(recentAvgTemps[:23], avgTemp)
+				} else {
+					recentAvgTemps = append(recentAvgTemps, avgTemp)
 				}
 
 				controlTemp := avgTemp
@@ -596,17 +727,19 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				} else {
 					lastSmartTelemetryUsable = true
 				}
-				recentControlTemps = append(recentControlTemps, controlTemp)
-				if len(recentControlTemps) > 24 {
-					recentControlTemps = recentControlTemps[len(recentControlTemps)-24:]
+				if len(recentControlTemps) >= 24 {
+					copy(recentControlTemps, recentControlTemps[len(recentControlTemps)-23:])
+					recentControlTemps = append(recentControlTemps[:23], controlTemp)
+				} else {
+					recentControlTemps = append(recentControlTemps, controlTemp)
 				}
 
 				prevTargetRPM := lastTargetRPM
 				if a.autoPushFailed.Swap(false) && prevTargetRPM > 0 {
-					// 上一拍的异步 Mission 失败了 ⇒ 把去重状态放回"未确认"，逼这一拍重试。
+					// 上一拍的异步下发失败了 ⇒ 把去重状态放回"未确认"，逼这一拍重试。
 					lastTargetRPM = -1
 					prevTargetRPM = -1
-					a.logError("智能控温速度下发失败，将在下个周期重试")
+					a.logDebug("检测到上一拍异步速度下发失败，重置去重状态以重试")
 				}
 
 				actualSpeed := 0
@@ -618,10 +751,15 @@ func (a *CoreApp) startTemperatureMonitoring() {
 
 				effectivePower := smartcontrol.EffectivePower{}
 				if advancedSampleUsable {
-					effectivePower = effectiveTemperaturePower(temp)
-					risePredictionSamples = append(risePredictionSamples, newSmartControlRisePredictionSample(now, temp, controlTemp, effectivePower, prevTargetRPM, actualSpeed, actualSpeedValid))
-					if len(risePredictionSamples) > 12 {
-						risePredictionSamples = risePredictionSamples[len(risePredictionSamples)-12:]
+					if !cfg.PowerSpoofEnabled {
+						effectivePower = effectiveTemperaturePower(temp)
+					}
+					nextSample := newSmartControlRisePredictionSample(now, temp, controlTemp, effectivePower, prevTargetRPM, actualSpeed, actualSpeedValid)
+					if len(risePredictionSamples) >= 12 {
+						copy(risePredictionSamples, risePredictionSamples[len(risePredictionSamples)-11:])
+						risePredictionSamples = append(risePredictionSamples[:11], nextSample)
+					} else {
+						risePredictionSamples = append(risePredictionSamples, nextSample)
 					}
 				}
 				// 黑鲨两条路径都吃不到升温预测的价值：跟随形态主机不下发转速（设备按自己的
@@ -685,7 +823,6 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				}
 				noiseLeaseActive := a.noiseDiagnosticLeaseActive()
 				shouldWrite := targetRPM > 0 && !noiseLeaseActive && !blackSharkHostDebounce && (forceSend || shouldSendTargetSpeed(targetRPM, prevTargetRPM, smartCfg.MinRPMChange, fanData, speedUnit))
-				writeSucceeded := false
 				gateReason := "minimum-change"
 				switch {
 				case targetRPM <= 0:
@@ -699,36 +836,44 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				case shouldWrite:
 					gateReason = "target-change"
 				}
-				if shouldWrite {
-					if a.deviceManager.IsBlackSharkActive() {
-						// 黑鲨：例行下发走异步 Mission（对齐官方 StartExecuteAsynchronization），
-						// 不让设备 I/O 占住采集线程。写入闭包必须调 a.setTargetSpeed ——
-						// 只有核心层知道黑鲨的变频/固定分流与变频的实现方；设备层的 SetTargetSpeed
-						// 在主机侧调速下发 form=0 固定值。设备侧跟随时这个闭包什么都不发
-						// （曲线已写进设备、主机只推温度），主机侧调速时它负责真正下发那一拍转速。
-						a.deviceManager.PushSpeedAsync(
-							func() bool { return a.setTargetSpeed(targetRPM, speedUnit) },
-							func(ok bool) {
-								if !ok {
-									a.autoPushFailed.Store(true)
-								}
-							},
-						)
-						lastTargetRPM = targetRPM
-					} else {
-						// 其它设备：保持原有同步行为不变。
-						writeSucceeded = a.setTargetSpeed(targetRPM, speedUnit)
-						if writeSucceeded {
-							lastTargetRPM = targetRPM
-							if a.deviceManager.GetDeviceType() == types.DeviceTransportWiFi {
-								lastWiFiOverviewRefresh = now
-							}
-						} else {
-							lastTargetRPM = -1
-							gateReason = "write-failed"
-							a.logError("智能控温速度下发失败，将在下个周期重试: %d%s", displaySpeedForLog(targetRPM, speedUnit), types.FanSpeedDisplaySuffix(speedUnit))
-						}
+
+				confidence := "basic"
+				if advancedSampleUsable {
+					confidence = "medium"
+					if actualSpeedValid {
+						confidence = "high"
 					}
+				}
+				decision.Timestamp = now.UTC().Format(time.RFC3339Nano)
+				decision.WriteAttempted = shouldWrite
+				decision.WriteSucceeded = false
+				decision.GateReason = gateReason
+				decision.Confidence = confidence
+				a.setSmartControlDecision(decision)
+
+				if shouldWrite {
+					writeTarget := targetRPM
+					writeUnit := speedUnit
+					writeDeviceType := a.deviceManager.GetDeviceType()
+					writeDecisionTS := decision.Timestamp
+					writeAt := now
+					// 所有设备统一走异步队列合并下发：只保留最新目标并串行写入，
+					// 避免设备 I/O 卡住主温度采集与遥测上报线程。
+					a.deviceManager.PushSpeedAsync(
+						func() bool { return a.setTargetSpeed(writeTarget, writeUnit) },
+						func(ok bool) {
+							a.updateSmartControlDecisionWriteResult(writeDecisionTS, ok)
+							if ok {
+								if writeDeviceType == types.DeviceTransportWiFi {
+									lastAsyncWiFiWriteUnixNano.Store(writeAt.UnixNano())
+								}
+								return
+							}
+							a.autoPushFailed.Store(true)
+							a.logError("智能控温速度下发失败，将在下个周期重试: %d%s", displaySpeedForLog(writeTarget, writeUnit), types.FanSpeedDisplaySuffix(writeUnit))
+						},
+					)
+					lastTargetRPM = targetRPM
 				}
 
 				// 曲线跟随形态下主机不下发转速（见上面 PushSpeedAsync 的注释）⇒ TargetRPM 会一直停在
@@ -757,19 +902,6 @@ func (a *CoreApp) startTemperatureMonitoring() {
 						deviceCurrentRPM, prevTargetRPM, deviceTargetRPM, smartCfg.MinRPMChange, speedUnit)
 				}
 				lastGateReason = gateReason
-
-				confidence := "basic"
-				if advancedSampleUsable {
-					confidence = "medium"
-					if actualSpeedValid {
-						confidence = "high"
-					}
-				}
-				decision.WriteAttempted = shouldWrite
-				decision.WriteSucceeded = writeSucceeded
-				decision.GateReason = gateReason
-				decision.Confidence = confidence
-				a.setSmartControlDecision(decision)
 
 				if smartCfg.Learning && advancedSampleUsable && !predictionActive && !targetLimited && !axisNoiseAdjusted && !a.noiseDiagnosticLeaseActive() {
 					steady := steadyObserver.ObserveWithEffectivePowerAt(now, controlTemp, observedRPM, effectivePower, controlCurve, smartCfg)
@@ -835,6 +967,34 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				lastAutoControl = false
 				lastTargetRPM = -1
 			}
+
+			memBusy := a.isMemoryReleaseBusy(now) || recycleIdleGpuBridge || staleBridgeTelemetry
+			if runMemRelease, trimWS, nextDefer := evaluateCoreMemoryRelease(
+				now,
+				startedAt,
+				lastMemRelease,
+				memReleaseDeferUntil,
+				startupMemReleased,
+				wasConnected,
+				hasClients,
+				memBusy,
+			); runMemRelease {
+				startupMemReleased = true
+				lastMemRelease = now
+				memReleaseDeferUntil = time.Time{}
+				if a.memReleaseRunning.CompareAndSwap(false, true) {
+					a.safeGo("release-memory", func() {
+						defer a.memReleaseRunning.Store(false)
+						debug.FreeOSMemory()
+						if trimWS {
+							trimProcessWorkingSet()
+						}
+					})
+				}
+			} else {
+				memReleaseDeferUntil = nextDefer
+			}
+			prevHasClients = hasClients
 
 			timer.Reset(updateInterval)
 		}
@@ -956,26 +1116,44 @@ func effectiveTemperaturePower(temp types.TemperatureData) smartcontrol.Effectiv
 
 	cpuTempValid := validSmartControlTemperature(temp.CPUTemp)
 	gpuTempValid := validSmartControlTemperature(temp.GPUTemp) && temp.GPUReadState != types.GPUReadStateNotPolled
+	cpuValid := cpuTempValid && smartcontrol.IsValidPowerWatts(temp.CPUPowerWatts)
+	gpuValid := gpuTempValid && smartcontrol.IsValidPowerWatts(temp.GPUPowerWatts)
+	cpuWatts := 0.0
+	if cpuValid {
+		cpuWatts = temp.CPUPowerWatts
+	}
+	gpuWatts := 0.0
+	if gpuValid {
+		gpuWatts = temp.GPUPowerWatts
+	}
+
 	switch types.NormalizeTempSource(temp.ControlSource) {
 	case types.TempSourceCPU:
 		if !cpuTempValid {
 			return smartcontrol.EffectivePower{}
 		}
+		return smartcontrol.EffectivePower{
+			CPUWatts: cpuWatts,
+			CPUValid: cpuValid,
+		}
 	case types.TempSourceGPU:
 		if !gpuTempValid {
 			return smartcontrol.EffectivePower{}
+		}
+		return smartcontrol.EffectivePower{
+			GPUWatts: gpuWatts,
+			GPUValid: gpuValid,
 		}
 	default:
 		if !cpuTempValid && !gpuTempValid {
 			return smartcontrol.EffectivePower{}
 		}
-	}
-
-	return smartcontrol.EffectivePower{
-		CPUWatts: temp.CPUPowerWatts,
-		GPUWatts: temp.GPUPowerWatts,
-		CPUValid: cpuTempValid && temp.CPUPowerWatts > 0,
-		GPUValid: gpuTempValid && temp.GPUPowerWatts > 0,
+		return smartcontrol.EffectivePower{
+			CPUWatts: cpuWatts,
+			GPUWatts: gpuWatts,
+			CPUValid: cpuValid,
+			GPUValid: gpuValid,
+		}
 	}
 }
 

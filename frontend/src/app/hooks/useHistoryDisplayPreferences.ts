@@ -15,6 +15,7 @@ export interface HistoryDisplayPreferences {
   homeVisible: HistorySeriesVisibility;
   order: HistorySeriesKey[];
   showStatistics: boolean;
+  splitTooltipByChart: boolean;
   showTimelineEvents: boolean;
   timelineEventVisible: HistoryTimelineEventVisibility;
 }
@@ -88,6 +89,7 @@ export function normalizeHistoryDisplayPreferences(input?: Partial<HistoryDispla
     homeVisible,
     order: uniqueOrder,
     showStatistics: typeof input?.showStatistics === 'boolean' ? input.showStatistics : true,
+    splitTooltipByChart: typeof input?.splitTooltipByChart === 'boolean' ? input.splitTooltipByChart : true,
     showTimelineEvents: typeof input?.showTimelineEvents === 'boolean' ? input.showTimelineEvents : true,
     timelineEventVisible,
   };
@@ -190,6 +192,10 @@ export function useHistoryDisplayPreferences() {
     updatePreferences((current) => ({ ...current, showStatistics }));
   }, [updatePreferences]);
 
+  const setSplitTooltipByChart = useCallback((splitTooltipByChart: boolean) => {
+    updatePreferences((current) => ({ ...current, splitTooltipByChart }));
+  }, [updatePreferences]);
+
   const setShowTimelineEvents = useCallback((showTimelineEvents: boolean) => {
     updatePreferences((current) => ({ ...current, showTimelineEvents }));
   }, [updatePreferences]);
@@ -251,9 +257,11 @@ export function useHistoryDisplayPreferences() {
     resetPreferences,
     showStatistics: preferences.showStatistics,
     setShowStatistics,
+    splitTooltipByChart: preferences.splitTooltipByChart,
+    setSplitTooltipByChart,
     showTimelineEvents: preferences.showTimelineEvents,
     setShowTimelineEvents,
     timelineEventVisibility: preferences.timelineEventVisible,
     toggleTimelineEventVisible,
-  }), [moveSeries, preferences, reorderSeries, resetPreferences, setHomeSeriesVisible, setSeriesVisible, setShowStatistics, setShowTimelineEvents, toggleHomeSeriesVisible, toggleSeriesVisible, toggleTimelineEventVisible]);
+  }), [moveSeries, preferences, reorderSeries, resetPreferences, setHomeSeriesVisible, setSeriesVisible, setShowStatistics, setShowTimelineEvents, setSplitTooltipByChart, toggleHomeSeriesVisible, toggleSeriesVisible, toggleTimelineEventVisible]);
 }

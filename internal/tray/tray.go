@@ -651,11 +651,15 @@ func (m *Manager) runTrayActionAsync(action string, inFlight *int32, fn func()) 
 }
 
 func formatPowerWatts(watts float64) string {
-	if watts <= 0 || math.IsNaN(watts) || math.IsInf(watts, 0) {
+	if watts < 0.05 || math.IsNaN(watts) || math.IsInf(watts, 0) {
 		return "-- W"
 	}
 	if watts < 10 {
-		return fmt.Sprintf("%.1f W", math.Round(watts*10)/10)
+		rounded := math.Round(watts*10) / 10
+		if rounded <= 0 {
+			return "-- W"
+		}
+		return fmt.Sprintf("%.1f W", rounded)
 	}
 	return fmt.Sprintf("%.0f W", math.Round(watts))
 }

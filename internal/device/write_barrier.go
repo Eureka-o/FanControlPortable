@@ -13,3 +13,7 @@ func (m *Manager) UnblockWrites() {
 	m.writesBlocked.Store(false)
 	m.mutex.Unlock()
 }
+
+func (m *Manager) WritesBlocked() bool {
+	return m != nil && m.writesBlocked.Load()
+}

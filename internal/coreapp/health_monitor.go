@@ -8,7 +8,10 @@ import (
 	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
-const healthReconnectCooldown = 90 * time.Second
+const (
+	healthReconnectCooldown    = 90 * time.Second
+	healthReconnectCooldownMax = 5 * time.Minute
+)
 
 // 传输刷新连续失败阈值：超过此次数才触发断连，避免单次抖动误判。
 const healthConsecutiveFailureThreshold = 3
@@ -151,6 +154,7 @@ func (a *CoreApp) checkDeviceHealth() {
 	}
 
 	if healthOK {
+		a.healthReconnectFailures.Store(0)
 		a.recordHealthTransportSuccess(transport, time.Now())
 		atomic.StoreInt32(&a.healthConsecutiveFailureCount, 0)
 		a.maybeTakeOverBlackSharkUSB()
@@ -217,12 +221,23 @@ func (a *CoreApp) maybeTakeOverBlackSharkUSB() {
 	a.requestReconnect("blackshark-usb-takeover", []time.Duration{0})
 }
 
+func healthReconnectBackoff(failures int32) time.Duration {
+	switch {
+	case failures <= 0:
+		return healthReconnectCooldown
+	case failures == 1:
+		return 3 * time.Minute
+	default:
+		return healthReconnectCooldownMax
+	}
+}
+
 func (a *CoreApp) shouldRunHealthReconnect(now time.Time) bool {
 	lastUnix := atomic.LoadInt64(&a.lastHealthReconnectUnix)
 	if lastUnix == 0 {
 		return true
 	}
-	return now.Sub(time.Unix(0, lastUnix)) >= healthReconnectCooldown
+	return now.Sub(time.Unix(0, lastUnix)) >= healthReconnectBackoff(a.healthReconnectFailures.Load())
 }
 
 func (a *CoreApp) shouldBackoffHealthTransport(transport string, now time.Time) bool {

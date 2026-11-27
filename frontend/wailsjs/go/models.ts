@@ -384,6 +384,8 @@ export namespace guiapp {
 	    update_available: boolean;
 	    installer_url: string;
 	    installer_sha256: string;
+	    resolved_source?: string;
+	    latency_ms?: number;
 
 	    static createFrom(source: any = {}) {
 	        return new UpdateRelease(source);
@@ -398,6 +400,8 @@ export namespace guiapp {
 	        this.update_available = source["update_available"];
 	        this.installer_url = source["installer_url"];
 	        this.installer_sha256 = source["installer_sha256"];
+	        this.resolved_source = source["resolved_source"];
+	        this.latency_ms = source["latency_ms"];
 	    }
 	}
 
@@ -430,6 +434,319 @@ export namespace ipc {
 
 }
 
+export namespace marketplace {
+
+	export class CatalogPluginView {
+	    id: string;
+	    name: string;
+	    version: string;
+	    description: string;
+	    author: string;
+	    category: string;
+	    runtime: string;
+	    uiSlot: string;
+	    platform: string;
+	    minCoreVersion?: string;
+	    protocolVersion: number;
+	    hostApiVersion?: number;
+	    capabilities?: string[];
+	    restartRequired: boolean;
+	    downloadUrl: string;
+	    sha256: string;
+	    size: number;
+	    homepage?: string;
+	    iconUrl?: string;
+	    installedVersion?: string;
+	    installStatus: string;
+	    compatible: boolean;
+	    reason?: string;
+	    pendingRestart?: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new CatalogPluginView(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.version = source["version"];
+	        this.description = source["description"];
+	        this.author = source["author"];
+	        this.category = source["category"];
+	        this.runtime = source["runtime"];
+	        this.uiSlot = source["uiSlot"];
+	        this.platform = source["platform"];
+	        this.minCoreVersion = source["minCoreVersion"];
+	        this.protocolVersion = source["protocolVersion"];
+	        this.hostApiVersion = source["hostApiVersion"];
+	        this.capabilities = source["capabilities"];
+	        this.restartRequired = source["restartRequired"];
+	        this.downloadUrl = source["downloadUrl"];
+	        this.sha256 = source["sha256"];
+	        this.size = source["size"];
+	        this.homepage = source["homepage"];
+	        this.iconUrl = source["iconUrl"];
+	        this.installedVersion = source["installedVersion"];
+	        this.installStatus = source["installStatus"];
+	        this.compatible = source["compatible"];
+	        this.reason = source["reason"];
+	        this.pendingRestart = source["pendingRestart"];
+	    }
+	}
+	export class CatalogThemeView {
+	    id: string;
+	    name: string;
+	    version: string;
+	    base: string;
+	    layer: string;
+	    author: string;
+	    description: string;
+	    minCoreVersion?: string;
+	    previewUrl?: string;
+	    downloadUrl: string;
+	    sha256: string;
+	    size: number;
+	    installedVersion?: string;
+	    installedSource?: string;
+	    installedBuiltin?: boolean;
+	    installStatus: string;
+	    compatible: boolean;
+	    reason?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new CatalogThemeView(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.version = source["version"];
+	        this.base = source["base"];
+	        this.layer = source["layer"];
+	        this.author = source["author"];
+	        this.description = source["description"];
+	        this.minCoreVersion = source["minCoreVersion"];
+	        this.previewUrl = source["previewUrl"];
+	        this.downloadUrl = source["downloadUrl"];
+	        this.sha256 = source["sha256"];
+	        this.size = source["size"];
+	        this.installedVersion = source["installedVersion"];
+	        this.installedSource = source["installedSource"];
+	        this.installedBuiltin = source["installedBuiltin"];
+	        this.installStatus = source["installStatus"];
+	        this.compatible = source["compatible"];
+	        this.reason = source["reason"];
+	    }
+	}
+	export class CatalogView {
+	    catalogUrl: string;
+	    resolvedSource?: string;
+	    latencyMs?: number;
+	    updatedAt: string;
+	    plugins: CatalogPluginView[];
+	    themes: CatalogThemeView[];
+
+	    static createFrom(source: any = {}) {
+	        return new CatalogView(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.catalogUrl = source["catalogUrl"];
+	        this.resolvedSource = source["resolvedSource"];
+	        this.latencyMs = source["latencyMs"];
+	        this.updatedAt = source["updatedAt"];
+	        this.plugins = this.convertValues(source["plugins"], CatalogPluginView);
+	        this.themes = this.convertValues(source["themes"], CatalogThemeView);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class InstallResult {
+	    kind: string;
+	    id: string;
+	    name: string;
+	    version: string;
+	    runtime?: string;
+	    restartRequired: boolean;
+	    message?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new InstallResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.version = source["version"];
+	        this.runtime = source["runtime"];
+	        this.restartRequired = source["restartRequired"];
+	        this.message = source["message"];
+	    }
+	}
+
+}
+
+export namespace plugins {
+
+	export class SettingOption {
+	    label: string;
+	    value: string;
+
+	    static createFrom(source: any = {}) {
+	        return new SettingOption(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.label = source["label"];
+	        this.value = source["value"];
+	    }
+	}
+	export class SettingField {
+	    key: string;
+	    title: string;
+	    description?: string;
+	    type: string;
+	    default?: any;
+	    options?: SettingOption[];
+	    min?: number;
+	    max?: number;
+	    step?: number;
+
+	    static createFrom(source: any = {}) {
+	        return new SettingField(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.title = source["title"];
+	        this.description = source["description"];
+	        this.type = source["type"];
+	        this.default = source["default"];
+	        this.options = this.convertValues(source["options"], SettingOption);
+	        this.min = source["min"];
+	        this.max = source["max"];
+	        this.step = source["step"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class PluginInfo {
+	    id: string;
+	    name: string;
+	    kind: string;
+	    runtime?: string;
+	    uiSlot?: string;
+	    category?: string;
+	    version?: string;
+	    description?: string;
+	    capabilities?: string[];
+	    frontend?: string;
+	    style?: string;
+	    icon?: string;
+	    state: string;
+	    enabled: boolean;
+	    running: boolean;
+	    supported: boolean;
+	    restartRequired?: boolean;
+	    pendingRestart?: boolean;
+	    devMode?: boolean;
+	    reason?: string;
+	    lastError?: string;
+	    path?: string;
+	    settings?: SettingField[];
+
+	    static createFrom(source: any = {}) {
+	        return new PluginInfo(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.kind = source["kind"];
+	        this.runtime = source["runtime"];
+	        this.uiSlot = source["uiSlot"];
+	        this.category = source["category"];
+	        this.version = source["version"];
+	        this.description = source["description"];
+	        this.capabilities = source["capabilities"];
+	        this.frontend = source["frontend"];
+	        this.style = source["style"];
+	        this.icon = source["icon"];
+	        this.state = source["state"];
+	        this.enabled = source["enabled"];
+	        this.running = source["running"];
+	        this.supported = source["supported"];
+	        this.restartRequired = source["restartRequired"];
+	        this.pendingRestart = source["pendingRestart"];
+	        this.devMode = source["devMode"];
+	        this.reason = source["reason"];
+	        this.lastError = source["lastError"];
+	        this.path = source["path"];
+	        this.settings = this.convertValues(source["settings"], SettingField);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+
+}
+
 export namespace theme {
 
 	export class Meta {
@@ -442,6 +759,7 @@ export namespace theme {
 	    layer?: string;
 	    contract?: string;
 	    source: string;
+	    builtin?: boolean;
 
 	    static createFrom(source: any = {}) {
 	        return new Meta(source);
@@ -458,6 +776,7 @@ export namespace theme {
 	        this.layer = source["layer"];
 	        this.contract = source["contract"];
 	        this.source = source["source"];
+	        this.builtin = source["builtin"];
 	    }
 	}
 
@@ -1407,6 +1726,26 @@ export namespace types {
 		    return a;
 		}
 	}
+	export class RTSSConfig {
+	    enabled: boolean;
+	    updateIntervalMs: number;
+	    positionMode: string;
+	    positionX: number;
+	    positionY: number;
+
+	    static createFrom(source: any = {}) {
+	        return new RTSSConfig(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.updateIntervalMs = source["updateIntervalMs"];
+	        this.positionMode = source["positionMode"];
+	        this.positionX = source["positionX"];
+	        this.positionY = source["positionY"];
+	    }
+	}
 	export class LegionFnQSupportCache {
 	    checked: boolean;
 	    supported: boolean;
@@ -1472,6 +1811,10 @@ export namespace types {
 	export class AppConfig {
 	    legionFnQ: LegionFnQConfig;
 	    legionFnQSupport: LegionFnQSupportCache;
+	    rtss: RTSSConfig;
+	    plugins?: Record<string, boolean>;
+	    pluginDevPaths?: string[];
+	    pluginCatalogUrl?: string;
 	    nativeAutoBLEScanUnix?: number;
 	    activeDeviceProfileId: string;
 	    activeDeviceProfileIdsByTransport?: Record<string, string>;
@@ -1524,6 +1867,7 @@ export namespace types {
 	    brightness: number;
 	    tempUpdateRate: number;
 	    tempSampleCount: number;
+	    temperatureHistoryEnabled?: boolean;
 	    temperatureHistoryRetentionHours: number;
 	    tempSource: string;
 	    gpuDevice: string;
@@ -1552,6 +1896,10 @@ export namespace types {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.legionFnQ = this.convertValues(source["legionFnQ"], LegionFnQConfig);
 	        this.legionFnQSupport = this.convertValues(source["legionFnQSupport"], LegionFnQSupportCache);
+	        this.rtss = this.convertValues(source["rtss"], RTSSConfig);
+	        this.plugins = source["plugins"];
+	        this.pluginDevPaths = source["pluginDevPaths"];
+	        this.pluginCatalogUrl = source["pluginCatalogUrl"];
 	        this.nativeAutoBLEScanUnix = source["nativeAutoBLEScanUnix"];
 	        this.activeDeviceProfileId = source["activeDeviceProfileId"];
 	        this.activeDeviceProfileIdsByTransport = source["activeDeviceProfileIdsByTransport"];
@@ -1604,6 +1952,7 @@ export namespace types {
 	        this.brightness = source["brightness"];
 	        this.tempUpdateRate = source["tempUpdateRate"];
 	        this.tempSampleCount = source["tempSampleCount"];
+	        this.temperatureHistoryEnabled = source["temperatureHistoryEnabled"];
 	        this.temperatureHistoryRetentionHours = source["temperatureHistoryRetentionHours"];
 	        this.tempSource = source["tempSource"];
 	        this.gpuDevice = source["gpuDevice"];
@@ -2127,6 +2476,7 @@ export namespace types {
 	    error: string;
 	    telemetrySource?: string;
 	    telemetryFailureStage?: string;
+	    gpuMonitoringActive?: boolean;
 
 	    static createFrom(source: any = {}) {
 	        return new BridgeTemperatureData(source);
@@ -2155,6 +2505,7 @@ export namespace types {
 	        this.error = source["error"];
 	        this.telemetrySource = source["telemetrySource"];
 	        this.telemetryFailureStage = source["telemetryFailureStage"];
+	        this.gpuMonitoringActive = source["gpuMonitoringActive"];
 	    }
 
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -2794,6 +3145,7 @@ export namespace types {
 	        this.unit = source["unit"];
 	    }
 	}
+
 
 
 

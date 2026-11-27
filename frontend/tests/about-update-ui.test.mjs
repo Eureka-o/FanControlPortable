@@ -40,7 +40,7 @@ test('uses a compact segmented action group and no auto-check helper text', () =
 });
 
 test('lets the update action wrap intact when the expanded dock narrows the page', () => {
-  assert.match(source, /max-w-\[980px\]/);
+  assert.match(source, /data-page-reveal="cards" className="w-full space-y-4"/);
   assert.doesNotMatch(source, /data-about-actions className="[^"]*lg:flex-nowrap/);
   assert.match(source, /data-update-actions className="[^"]*shrink-0/);
 });

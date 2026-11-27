@@ -1,14 +1,24 @@
 package coreapp
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
+	"github.com/Eureka-o/FanControlPortable/internal/config"
 	hotkeysvc "github.com/Eureka-o/FanControlPortable/internal/hotkey"
 	"github.com/Eureka-o/FanControlPortable/internal/ipc"
+	"github.com/Eureka-o/FanControlPortable/internal/plugins"
 	"github.com/Eureka-o/FanControlPortable/internal/plugins/fnqpowermode"
 	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
+
+const rtssExternalPluginID = "rtss-osd"
 
 func (a *CoreApp) registerPlugins() {
 	if a.pluginManager == nil {
@@ -135,7 +145,11 @@ func (a *CoreApp) handleLegionPowerModeChange(state fnqpowermode.PowerModeState)
 }
 
 func (a *CoreApp) applyPluginConfig(cfg types.AppConfig) {
-	if a.monitorOnlyActive() || a.pluginManager == nil || !a.legionFnQSupported.Load() {
+	if a.pluginManager == nil {
+		return
+	}
+
+	if a.monitorOnlyActive() || !a.legionFnQSupported.Load() {
 		return
 	}
 
@@ -149,6 +163,294 @@ func (a *CoreApp) applyPluginConfig(cfg types.AppConfig) {
 	if err := a.pluginManager.Stop(fnqpowermode.PluginID); err != nil {
 		a.logError("failed to stop Lenovo Legion Fn+Q plugin: %v", err)
 	}
+}
+
+func cloneBoolMap(source map[string]bool) map[string]bool {
+	if source == nil {
+		return nil
+	}
+	out := make(map[string]bool, len(source))
+	for k, v := range source {
+		out[k] = v
+	}
+	return out
+}
+
+func normalizeUpdatedRTSSConfig(next, previous types.RTSSConfig) types.RTSSConfig {
+	// Older GUI clients do not send the nested RTSS object. Preserve stored settings.
+	if next == (types.RTSSConfig{}) {
+		next = previous
+	}
+	normalized, _ := types.NormalizeRTSSConfig(next)
+	return normalized
+}
+
+func (a *CoreApp) pluginEnabledMap(cfg types.AppConfig) map[string]bool {
+	out := cloneBoolMap(cfg.Plugins)
+	if out == nil {
+		out = map[string]bool{}
+	}
+	rtssCfg, _ := types.NormalizeRTSSConfig(cfg.RTSS)
+	if a.pluginManager != nil && a.pluginManager.HasExternal(rtssExternalPluginID) {
+		if _, explicit := cfg.Plugins[rtssExternalPluginID]; !explicit {
+			out[rtssExternalPluginID] = rtssCfg.Enabled
+		}
+	}
+	out[fnqpowermode.PluginID] = cfg.LegionFnQ.Enabled && a.legionFnQSupported.Load()
+	return out
+}
+
+func (a *CoreApp) buildPluginSnapshot(cfg types.AppConfig) []plugins.PluginInfo {
+	if a == nil || a.pluginManager == nil {
+		return []plugins.PluginInfo{}
+	}
+	list := a.pluginManager.Snapshot(a.pluginEnabledMap(cfg))
+	hasFnQ := false
+	for i := range list {
+		if list[i].ID == fnqpowermode.PluginID {
+			hasFnQ = true
+			if !a.legionFnQSupported.Load() {
+				list[i].Supported = false
+				list[i].Enabled = false
+				list[i].State = plugins.StateUnsupported
+				list[i].Reason = "仅支持联想拯救者设备"
+			}
+		}
+	}
+	if !hasFnQ {
+		supported := a.legionFnQSupported.Load()
+		state := plugins.StateUnsupported
+		reason := "仅支持联想拯救者设备"
+		if !a.legionFnQSupportChecked.Load() && !supported {
+			reason = "正在检测或当前设备不支持 Fn+Q"
+		}
+		if supported {
+			state = plugins.StateDisabled
+			reason = ""
+		}
+		list = append(list, plugins.PluginInfo{
+			ID:           fnqpowermode.PluginID,
+			Name:         fnqpowermode.PluginName,
+			Kind:         plugins.KindBuiltin,
+			Category:     "hardware",
+			Version:      "1.0.0",
+			Description:  "Listen for Lenovo Legion Fn+Q power mode changes",
+			Capabilities: []string{"power-mode", "fan-takeover"},
+			State:        state,
+			Enabled:      supported && cfg.LegionFnQ.Enabled,
+			Supported:    supported,
+			Reason:       reason,
+		})
+	}
+	return list
+}
+
+func (a *CoreApp) GetPlugins() []plugins.PluginInfo {
+	if a == nil || a.configManager == nil {
+		return []plugins.PluginInfo{}
+	}
+	return a.buildPluginSnapshot(a.configManager.Get())
+}
+
+func (a *CoreApp) RefreshPlugins() []plugins.PluginInfo {
+	if a == nil || a.pluginManager == nil || a.configManager == nil {
+		return []plugins.PluginInfo{}
+	}
+	a.pluginManager.RefreshExternal()
+	cfg := a.configManager.Get()
+	a.seedExternalRTSSSettingsIfMissing(cfg)
+	snapshot := a.buildPluginSnapshot(cfg)
+	if a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent(ipc.EventPluginsUpdate, snapshot)
+	}
+	return snapshot
+}
+
+func (a *CoreApp) seedExternalRTSSSettingsIfMissing(cfg types.AppConfig) {
+	if a == nil || a.pluginManager == nil || !a.pluginManager.HasExternal(rtssExternalPluginID) {
+		return
+	}
+	dir, err := plugins.PluginDataDir(a.pluginConfigDir(cfg), rtssExternalPluginID)
+	if err != nil {
+		return
+	}
+	settingsPath := filepath.Join(dir, "settings.json")
+	if _, statErr := os.Stat(settingsPath); statErr == nil {
+		return
+	}
+	rtssCfg, _ := types.NormalizeRTSSConfig(cfg.RTSS)
+	seed := map[string]any{
+		"osdActive":        true,
+		"updateIntervalMs": fmt.Sprintf("%d", rtssCfg.UpdateIntervalMS),
+		"positionMode":     rtssCfg.PositionMode,
+		"positionX":        rtssCfg.PositionX,
+		"positionY":        rtssCfg.PositionY,
+	}
+	if err := plugins.SavePluginSettings(a.pluginConfigDir(cfg), rtssExternalPluginID, seed); err != nil {
+		a.logError("初始化外置 RTSS 设置失败: %v", err)
+	}
+}
+
+func (a *CoreApp) SetPluginEnabled(pluginID string, enabled bool) ([]plugins.PluginInfo, error) {
+	if a == nil || a.configManager == nil {
+		return nil, fmt.Errorf("配置管理器未初始化")
+	}
+	pluginID = strings.TrimSpace(pluginID)
+	if pluginID == "" {
+		return nil, fmt.Errorf("插件 ID 不能为空")
+	}
+
+	if pluginID == fnqpowermode.PluginID && enabled && !a.legionFnQSupported.Load() {
+		return nil, fmt.Errorf("Lenovo Legion Fn+Q 仅支持拯救者设备")
+	}
+
+	hasExternal := a.pluginManager != nil && a.pluginManager.HasExternal(pluginID)
+
+	if pluginID != fnqpowermode.PluginID {
+		snapshot := a.GetPlugins()
+		var found *plugins.PluginInfo
+		for i := range snapshot {
+			if snapshot[i].ID == pluginID {
+				found = &snapshot[i]
+				break
+			}
+		}
+		if found == nil {
+			return nil, fmt.Errorf("未找到插件: %s", pluginID)
+		}
+		if found.State == plugins.StateIncompatible && enabled {
+			if found.Reason != "" {
+				return nil, fmt.Errorf("%s", found.Reason)
+			}
+			return nil, fmt.Errorf("插件 %s 当前不兼容", pluginID)
+		}
+	}
+
+	committed, err := a.commitConfigMutation(func(current *types.AppConfig) {
+		if current.Plugins == nil {
+			current.Plugins = map[string]bool{}
+		}
+		current.Plugins[pluginID] = enabled
+		if pluginID == fnqpowermode.PluginID {
+			current.LegionFnQ.Enabled = enabled
+			current.LegionFnQ = types.NormalizeLegionFnQConfig(current.LegionFnQ)
+		}
+	}, func(cfg types.AppConfig) {
+		a.applyPluginConfig(cfg)
+		if (hasExternal || pluginID != fnqpowermode.PluginID) && a.pluginManager != nil {
+			if _, extErr := a.pluginManager.SetExternalEnabled(pluginID, enabled); extErr != nil {
+				a.logError("应用外部插件开关失败 (%s): %v", pluginID, extErr)
+			}
+		}
+		a.broadcastPluginsUpdate(cfg)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return a.buildPluginSnapshot(committed), nil
+}
+
+func (a *CoreApp) pluginConfigDir(cfg types.AppConfig) string {
+	if strings.TrimSpace(cfg.ConfigPath) != "" {
+		return filepath.Dir(cfg.ConfigPath)
+	}
+	return config.GetInstallDir()
+}
+
+func (a *CoreApp) InvokePlugin(pluginID, method string, payload json.RawMessage) (json.RawMessage, error) {
+	if a == nil || a.pluginManager == nil {
+		return nil, fmt.Errorf("插件管理器未初始化")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	return a.pluginManager.Invoke(ctx, strings.TrimSpace(pluginID), strings.TrimSpace(method), payload)
+}
+
+func (a *CoreApp) RestartPlugin(pluginID string) ([]plugins.PluginInfo, error) {
+	if a == nil || a.pluginManager == nil || a.configManager == nil {
+		return nil, fmt.Errorf("插件管理器未初始化")
+	}
+	pluginID = strings.TrimSpace(pluginID)
+	if err := a.pluginManager.RestartExternal(pluginID); err != nil {
+		return nil, err
+	}
+	cfg := a.configManager.Get()
+	a.broadcastPluginsUpdate(cfg)
+	return a.buildPluginSnapshot(cfg), nil
+}
+
+func (a *CoreApp) GetPluginSettings(pluginID string) (map[string]any, error) {
+	if a == nil || a.configManager == nil || a.pluginManager == nil {
+		return nil, fmt.Errorf("插件管理器未初始化")
+	}
+	pluginID = strings.TrimSpace(pluginID)
+	schema, _ := a.pluginManager.ExternalSchema(pluginID)
+	cfg := a.configManager.Get()
+	return plugins.LoadPluginSettings(a.pluginConfigDir(cfg), pluginID, schema)
+}
+
+func (a *CoreApp) SavePluginSettings(pluginID string, settings map[string]any) error {
+	if a == nil || a.configManager == nil || a.pluginManager == nil {
+		return fmt.Errorf("插件管理器未初始化")
+	}
+	pluginID = strings.TrimSpace(pluginID)
+	cfg := a.configManager.Get()
+	if err := plugins.SavePluginSettings(a.pluginConfigDir(cfg), pluginID, settings); err != nil {
+		return err
+	}
+	a.pluginManager.NotifySettingsChanged(pluginID, settings)
+	return nil
+}
+
+func (a *CoreApp) GetPluginLogs(pluginID string) []string {
+	if a == nil || a.pluginManager == nil {
+		return []string{}
+	}
+	return a.pluginManager.Logs(strings.TrimSpace(pluginID))
+}
+
+func (a *CoreApp) SetPluginDevPaths(paths []string) ([]plugins.PluginInfo, error) {
+	if a == nil || a.configManager == nil || a.pluginManager == nil {
+		return nil, fmt.Errorf("插件管理器未初始化")
+	}
+	cleaned := make([]string, 0, len(paths))
+	seen := make(map[string]bool)
+	for _, p := range paths {
+		trimmed := strings.TrimSpace(p)
+		if trimmed == "" || seen[trimmed] {
+			continue
+		}
+		seen[trimmed] = true
+		cleaned = append(cleaned, trimmed)
+	}
+	committed, err := a.commitConfigMutation(func(current *types.AppConfig) {
+		current.PluginDevPaths = cleaned
+	}, func(cfg types.AppConfig) {
+		a.pluginManager.SetDevPluginDirs(cfg.PluginDevPaths)
+		a.pluginManager.RefreshExternal()
+		a.broadcastPluginsUpdate(cfg)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return a.buildPluginSnapshot(committed), nil
+}
+
+func (a *CoreApp) MarkPluginPendingRestart(pluginID string) []plugins.PluginInfo {
+	if a == nil || a.pluginManager == nil || a.configManager == nil {
+		return []plugins.PluginInfo{}
+	}
+	a.pluginManager.MarkPendingRestart(strings.TrimSpace(pluginID))
+	cfg := a.configManager.Get()
+	a.broadcastPluginsUpdate(cfg)
+	return a.buildPluginSnapshot(cfg)
+}
+
+func (a *CoreApp) broadcastPluginsUpdate(cfg types.AppConfig) {
+	if a == nil || a.ipcServer == nil || a.pluginManager == nil {
+		return
+	}
+	a.ipcServer.BroadcastEvent(ipc.EventPluginsUpdate, a.buildPluginSnapshot(cfg))
 }
 
 func (a *CoreApp) applyLegionFnQFanMapping(state fnqpowermode.PowerModeState) {

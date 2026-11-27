@@ -249,9 +249,17 @@ export default function SystemThemeSync() {
       applyBuiltinMode('system', event.matches);
     };
 
+    const handleThemesUpdated = () => {
+      const liveThemeMode = themeMode || readThemeBootstrapSnapshot()?.mode || 'system';
+      if (!isBuiltinMode(liveThemeMode)) {
+        void applyCustomTheme(liveThemeMode, () => cancelled);
+      }
+    };
+    window.addEventListener('fancontrol:themes-updated', handleThemesUpdated);
     media.addEventListener('change', handleChange);
     return () => {
       cancelled = true;
+      window.removeEventListener('fancontrol:themes-updated', handleThemesUpdated);
       media.removeEventListener('change', handleChange);
     };
   }, [themeMode]);

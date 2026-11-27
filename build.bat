@@ -104,15 +104,18 @@ if not exist "build\windows\icon.ico" (
     echo WARNING: build\windows\icon.ico not found, executable/installer icon may be incorrect
 )
 
-REM Keep built-in themes in build/bin so both NSIS and portable packages ship them.
-echo Syncing built-in themes...
+REM Custom themes are decoupled from installer/portable packages and downloaded on demand.
+echo Preparing empty themes directory...
 if exist "!BUILD_BIN!\themes" rmdir /s /q "!BUILD_BIN!\themes"
-xcopy /E /I /Y "themes" "!BUILD_BIN!\themes" >nul
+mkdir "!BUILD_BIN!\themes"
 if errorlevel 1 exit /b 1
+if exist "themes\README.md" (
+    copy /y "themes\README.md" "!BUILD_BIN!\themes\README.md" >nul
+)
 
 REM Build main application with wails
 echo Building main application...
-set "GOFLAGS=-buildvcs=false"
+set "GOFLAGS=-buildvcs=false -trimpath"
 set "WAILS_BINDINGS_SNAPSHOT=%TEMP%\fancontrol-wails-bindings-!RANDOM!.json"
 powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\check_generated_bindings.ps1" -SnapshotPath "!WAILS_BINDINGS_SNAPSHOT!" -Mode Capture
 if errorlevel 1 exit /b 1

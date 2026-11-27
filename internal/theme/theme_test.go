@@ -317,9 +317,9 @@ func TestReadCSSRewritesRelativeThemeAssets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCSS failed: %v", err)
 	}
-	// 相对资产路径改写为 /theme-assets/ 路由 URL，不再内联为 data: URL。
-	if !strings.Contains(css, `url("/theme-assets/xiaoba/hero.webp")`) {
-		t.Fatalf("expected relative asset URL to be rewritten to route URL, got %q", css)
+	// 相对资产路径改写为带版本参数的 /theme-assets/ 路由 URL，不再内联为 data: URL。
+	if !strings.Contains(css, `url("/theme-assets/xiaoba/hero.webp?v=1.0.0")`) {
+		t.Fatalf("expected relative asset URL to be rewritten to versioned route URL, got %q", css)
 	}
 	// data: 和绝对路径 URL 保持不变。
 	if !strings.Contains(css, "data:image/png") || !strings.Contains(css, `url("/absolute.webp")`) {
@@ -338,13 +338,23 @@ func TestReadCSSRewritesThemeAssetRouteURLs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCSS failed: %v", err)
 	}
-	// 同主题的 /theme-assets/ URL 重新生成后应与原 URL 等效（不内联为 data:）。
-	if !strings.Contains(css, `url("/theme-assets/xiaoba/decorations/star.svg")`) {
-		t.Fatalf("same-theme asset route URL should remain as route URL, got %q", css)
+	// 同主题的 /theme-assets/ URL 重新生成后应带版本参数且保持路由 URL。
+	if !strings.Contains(css, `url("/theme-assets/xiaoba/decorations/star.svg?v=1.0.0")`) {
+		t.Fatalf("same-theme asset route URL should include version query, got %q", css)
 	}
 	// 其他主题的 URL 不处理，保持原样。
 	if !strings.Contains(css, `url("/theme-assets/other/star.svg")`) {
 		t.Fatalf("other theme asset route should stay unchanged, got %q", css)
+	}
+
+	writeTheme(t, installDir, "unversioned", "Unversioned", "", `a{background:url("hero.webp")}`)
+	writeThemeAsset(t, installDir, "unversioned", "hero.webp", []byte("webp"))
+	unversionedCSS, err := manager.ReadCSS("unversioned")
+	if err != nil {
+		t.Fatalf("ReadCSS unversioned failed: %v", err)
+	}
+	if !strings.Contains(unversionedCSS, `url("/theme-assets/unversioned/hero.webp")`) {
+		t.Fatalf("empty version should omit ?v query, got %q", unversionedCSS)
 	}
 }
 
@@ -386,6 +396,33 @@ func TestReadAssetRejectsTraversal(t *testing.T) {
 
 	if _, err := manager.ReadAsset("xiaoba", "../theme.css"); err == nil {
 		t.Fatal("expected traversal asset path to be rejected")
+	}
+}
+
+func TestListMarksBuiltinEvenWhenInstalledOnDisk(t *testing.T) {
+	root := t.TempDir()
+	installDir := filepath.Join(root, "install", "themes")
+	writeTheme(t, installDir, "xiaoba", "Xiaoba", "1.2.0", "/* disk */")
+	writeTheme(t, installDir, "cyberpunk2077", "Cyberpunk 2077", "1.2.1", "/* custom */")
+	manager := NewManager(installDir, nil, builtinThemeFS("xiaoba", "Xiaoba", "1.0.0", "/* builtin */"))
+
+	if !manager.IsBuiltin("xiaoba") {
+		t.Fatal("expected xiaoba to report IsBuiltin=true")
+	}
+	if manager.IsBuiltin("cyberpunk2077") {
+		t.Fatal("expected cyberpunk2077 to report IsBuiltin=false")
+	}
+
+	items := manager.List()
+	found := map[string]Meta{}
+	for _, item := range items {
+		found[item.ID] = item
+	}
+	if !found["xiaoba"].Builtin || found["xiaoba"].Source != SourceInstall {
+		t.Fatalf("expected xiaoba Builtin=true and Source=install, got %+v", found["xiaoba"])
+	}
+	if found["cyberpunk2077"].Builtin {
+		t.Fatalf("expected cyberpunk2077 Builtin=false, got %+v", found["cyberpunk2077"])
 	}
 }
 

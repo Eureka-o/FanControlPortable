@@ -2423,21 +2423,67 @@ func (a *CoreApp) handleSceneIPCRequest(req ipc.Request) (ipc.Response, bool) {
 // 情景判定循环。
 const scenePollInterval = time.Second
 
+// wakeSceneLoop notifies the scene loop when rule config or BlackShark connection changes.
+func (a *CoreApp) wakeSceneLoop() {
+	if a == nil {
+		return
+	}
+	if ch := a.sceneWake; ch != nil {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func (a *CoreApp) shouldRunSceneTicker() bool {
+	if a == nil || a.stopping.Load() || !a.canTickScene() {
+		return false
+	}
+	if a.configManager == nil {
+		return false
+	}
+	return len(a.monitoringConfigSnapshot().SceneRules) > 0
+}
+
 // startSceneLoop 启动情景循环。
 //
-// 与健康监控同样的模式：单独 ticker + safeGo + cleanupChan 退出。
+// 与健康监控同样的模式：单独 ticker + safeGo + cleanupChan 退出；
+// 未连黑鲨或规则为空时自动停表等待唤醒，避免无意义每秒空醒。
 func (a *CoreApp) startSceneLoop() {
 	a.sceneLoopOnce.Do(func() {
-		a.sceneTicker = time.NewTicker(scenePollInterval)
+		a.sceneWake = make(chan struct{}, 1)
+		ticker := time.NewTicker(scenePollInterval)
+		a.sceneTicker = ticker
 		a.safeGo("sceneLoop", func() {
-			defer a.sceneTicker.Stop()
+			defer ticker.Stop()
+			tickerRunning := a.shouldRunSceneTicker()
+			if !tickerRunning {
+				ticker.Stop()
+			}
 			for {
 				select {
-				case <-a.sceneTicker.C:
+				case <-ticker.C:
 					if a.stopping.Load() {
 						return
 					}
-					a.tickScene()
+					if !a.tickScene() && tickerRunning {
+						ticker.Stop()
+						tickerRunning = false
+					}
+				case <-a.sceneWake:
+					if a.stopping.Load() {
+						return
+					}
+					if a.shouldRunSceneTicker() {
+						if !tickerRunning {
+							ticker.Reset(scenePollInterval)
+							tickerRunning = true
+						}
+					} else if tickerRunning {
+						ticker.Stop()
+						tickerRunning = false
+					}
 				case <-a.cleanupChan:
 					a.logInfo("情景循环已停止")
 					return
@@ -2448,24 +2494,49 @@ func (a *CoreApp) startSceneLoop() {
 	})
 }
 
-// tickScene 采样一次前台进程并（必要时）施加动作。
-func (a *CoreApp) tickScene() {
-	// 情景只对黑鲨有意义：它的「效果」就是黑鲨的档位与灯效模式。
-	if a.deviceManager == nil || !a.deviceManager.IsBlackSharkActive() {
-		return
+const sceneApplyFailureBackoff = 10 * time.Second
+
+func (a *CoreApp) canTickScene() bool {
+	if a == nil || a.deviceManager == nil {
+		return false
+	}
+	return a.canTickSceneForActive(a.deviceManager.IsBlackSharkActive())
+}
+
+func (a *CoreApp) canTickSceneForActive(blackSharkActive bool) bool {
+	if a == nil || !blackSharkActive {
+		return false
+	}
+	return !a.systemSuspended.Load() &&
+		!a.resumeRecoveryRunning.Load() &&
+		!a.reconnectInProgress.Load() &&
+		!a.blackSharkImageTransferActive() &&
+		!a.noiseDiagnosticLeaseActive()
+}
+
+// tickScene 采样一次前台进程并（必要时）施加动作；若当前无需继续轮询则返回 false 以停表省电。
+func (a *CoreApp) tickScene() bool {
+	// 情景只对黑鲨有意义：它的「效果」就是黑鲨的档位与灯效模式；
+	// 在挂起、重连、图传或噪音诊断独占期间避免抢写设备。
+	if !a.canTickScene() {
+		return false
 	}
 	revision := a.configManager.Revision()
 	if revision != a.sceneRevision {
 		a.sceneConfig, revision = a.configManager.GetWithRevision()
 		a.sceneRevision = revision
+		a.sceneRetryAfter = time.Time{}
 		a.sceneEngine.Reset()
 		a.logDebug("情景：配置已变更（revision=%d），重新判定", revision)
 	}
 	cfg := a.sceneConfig
 
-	// 没有规则：连前台进程都不必读，零开销。
+	// 没有规则：连前台进程都不必读，直接停表等唤醒。
 	if len(cfg.SceneRules) == 0 {
-		return
+		return false
+	}
+	if !a.sceneRetryAfter.IsZero() && time.Now().Before(a.sceneRetryAfter) {
+		return true
 	}
 
 	fg, err := scene.GetForegroundProcessName()
@@ -2473,41 +2544,49 @@ func (a *CoreApp) tickScene() {
 		// 读不到前台进程时跳过这一轮，绝不当作「没有匹配」：
 		// 否则一次权限抖动就会把情景误撤销，那比晚一秒切换糟得多。
 		a.logDebug("情景：本次读不到前台进程（跳过，不撤销）: %v", err)
-		return
+		return true
 	}
 
 	act, changed := a.sceneEngine.Update(cfg.SceneRules, fg)
 	if !changed {
-		return
+		return true
 	}
-	a.applyScene(act, cfg)
+	if !a.applyScene(act, cfg) {
+		a.sceneEngine.RevertLast()
+		a.sceneRetryAfter = time.Now().Add(sceneApplyFailureBackoff)
+		return true
+	}
+	a.sceneRetryAfter = time.Time{}
+	return true
 }
 
-// applyScene 把引擎给出的动作落到设备上。
-func (a *CoreApp) applyScene(act scene.Action, cfg types.AppConfig) {
+// applyScene 把引擎给出的动作落到设备上，全部请求成功时返回 true。
+func (a *CoreApp) applyScene(act scene.Action, cfg types.AppConfig) bool {
 	if a.deviceManager == nil {
-		return
+		return false
 	}
 	if act.RuleIndex == scene.ActiveBaseline {
 		// 回落基准：只有在配置里明确写了基准档位时才动设备；
 		// 没写就什么都不做，不去猜测用户原来想要哪一档。
 		if cfg.SceneBaselineGear <= 0 {
 			a.logInfo("情景：已无匹配规则（前台=%s）；未配置基准档位，保持现状", act.Foreground)
-			return
+			return true
 		}
 		if !a.applyBlackSharkGear(cfg.SceneBaselineGear) {
 			a.logError("情景：回落到基准档位 %d 失败", cfg.SceneBaselineGear)
-			return
+			return false
 		}
 		a.logInfo("情景：已回落到基准档位 %d（前台=%s）", cfg.SceneBaselineGear, act.Foreground)
-		return
+		return true
 	}
 
 	name := act.Foreground
+	allOK := true
 	if act.Gear > 0 {
 		if !a.applyBlackSharkGear(act.Gear) {
 			// 一条失败不要中断另一条：档位失败时灯效仍然值得施加。
 			a.logError("情景「%s」：施加档位 %d 失败", name, act.Gear)
+			allOK = false
 		} else {
 			a.logInfo("情景「%s」：已施加档位 %d", name, act.Gear)
 		}
@@ -2515,11 +2594,13 @@ func (a *CoreApp) applyScene(act scene.Action, cfg types.AppConfig) {
 	if act.RgbMode > 0 {
 		if !a.deviceManager.SelectBlackSharkRgbMode(act.RgbMode) {
 			a.logError("情景「%s」：切换灯效模式 %d 失败", name, act.RgbMode)
+			allOK = false
 		} else {
 			a.wakeBlackSharkHostFx()
 			a.logInfo("情景「%s」：已切换灯效模式 %d", name, act.RgbMode)
 		}
 	}
+	return allOK
 }
 
 // GetSceneRules 返回情景规则与基准档位（供界面读取）。
@@ -2555,6 +2636,7 @@ func (a *CoreApp) SetSceneRules(rules []types.SceneRule, baseline int) ([]string
 	if len(rules) > 0 {
 		a.startSceneLoop()
 	}
+	a.wakeSceneLoop()
 	// 规则换了：判定循环会在下一拍发现配置版本号变化并自行重置引擎（见 tickScene）。
 	// 这里不要再直接动 sceneEngine —— 它不是并发安全的，而本函数跑在 IPC 线程上。
 	a.logInfo("情景规则已保存：%d 条，基准档位 %d，校验提示 %d 条",
@@ -3237,12 +3319,20 @@ func (a *CoreApp) GetScreenImageInfo() (ipc.ScreenImageInfo, error) {
 		// 读不到不是错误：设备可能从未设过屏保图。用 HasImage=false 表达。
 		return ipc.ScreenImageInfo{HasImage: false}, nil
 	}
-	return ipc.ScreenImageInfo{
+	res := ipc.ScreenImageInfo{
 		HasImage:  info.Size > 0,
 		Timestamp: info.Timestamp,
 		Size:      info.Size,
 		CRC:       info.CRC,
-	}, nil
+	}
+	if res.HasImage && res.CRC != 0 {
+		if pos, preset, ok := screenimg.PresetByCRC(res.CRC); ok {
+			res.PresetMatched = true
+			res.PresetOfficialPosition = pos
+			res.PresetName = preset.Name
+		}
+	}
+	return res, nil
 }
 
 // broadcastScreenImageTransferProgress 把上传进度推给界面（图传弹窗里的进度条）。

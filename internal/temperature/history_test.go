@@ -236,7 +236,7 @@ func TestHistoryRecorderLoadsV1BinarySnapshot(t *testing.T) {
 func TestNormalizePowerWattsDropsInvalidValues(t *testing.T) {
 	t.Parallel()
 
-	for _, value := range []float64{-1, math.NaN(), math.Inf(1), math.Inf(-1)} {
+	for _, value := range []float64{-1, 0, 0.04, math.NaN(), math.Inf(1), math.Inf(-1)} {
 		if got := normalizePowerWatts(value); got != 0 {
 			t.Fatalf("expected invalid power %.2f to normalize to 0, got %.2f", value, got)
 		}

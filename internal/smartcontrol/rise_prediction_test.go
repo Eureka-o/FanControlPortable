@@ -142,3 +142,63 @@ func TestEvaluateTemperatureRisePredictionStillBoostsSustainedRiseWithoutPower(t
 		t.Fatal("temperature-only boost should not report power assistance")
 	}
 }
+
+func TestEvaluateTemperatureRisePredictionFallsBackToTempRiseAcrossMaxDomainSwitchAndIgnoresNoise(t *testing.T) {
+	cfg := types.GetDefaultSmartControlConfigForUnit(types.GetDefaultFanCurve(), types.FanSpeedUnitPercent)
+	cfg.TemperatureRisePrediction = true
+	start := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
+
+	noiseResult := EvaluateTemperatureRisePrediction(400, []RisePredictionSample{
+		{SampledAt: start, ControlTemp: 60, CPUTemp: 60, CPUPowerWatts: 0.05, CPUPowerValid: true, ControlSource: "cpu"},
+		{SampledAt: start.Add(2 * time.Second), ControlTemp: 60, CPUTemp: 60, CPUPowerWatts: 40, CPUPowerValid: true, ControlSource: "cpu"},
+	}, cfg, types.FanSpeedUnitPercent)
+	if noiseResult.RampUpMultiplier != 1 || noiseResult.PowerAssisted {
+		t.Fatalf("sub-threshold initial power noise must not trigger rapid power assist: %#v", noiseResult)
+	}
+
+	fallbackResult := EvaluateTemperatureRisePrediction(400, []RisePredictionSample{
+		{SampledAt: start, ControlTemp: 55, CPUTemp: 55, GPUTemp: 50, GPUPowerWatts: 30, GPUPowerValid: true, ControlSource: "max"},
+		{SampledAt: start.Add(2 * time.Second), ControlTemp: 56, CPUTemp: 56, GPUTemp: 54, GPUPowerWatts: 35, GPUPowerValid: true, ControlSource: "max"},
+		{SampledAt: start.Add(4 * time.Second), ControlTemp: 58, CPUTemp: 56, GPUTemp: 58, GPUPowerWatts: 65, GPUPowerValid: true, ControlSource: "max"},
+		{SampledAt: start.Add(6 * time.Second), ControlTemp: 60, CPUTemp: 57, GPUTemp: 60, GPUPowerWatts: 90, GPUPowerValid: true, ControlSource: "max"},
+	}, cfg, types.FanSpeedUnitPercent)
+	if fallbackResult.Target <= 400 || fallbackResult.Boost <= 0 || fallbackResult.RampUpMultiplier != predictionConfirmedRampMultiplier {
+		t.Fatalf("max domain switch with sustained rise must fall back to temperature boost = %#v", fallbackResult)
+	}
+}
+
+func TestEvaluateTemperatureRisePredictionSustainedPowerRampAndFallbacks(t *testing.T) {
+	cfg := types.GetDefaultSmartControlConfigForUnit(types.GetDefaultFanCurve(), types.FanSpeedUnitPercent)
+	cfg.TemperatureRisePrediction = true
+	start := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
+
+	// Sustained 4-frame power ramp (>=30W total and >=6 W/s) without a single >=25W jump.
+	sustainedPower := EvaluateTemperatureRisePrediction(400, []RisePredictionSample{
+		{SampledAt: start, ControlTemp: 55, CPUTemp: 55, CPUPowerWatts: 25, CPUPowerValid: true, ControlSource: "cpu", PreviousTarget: 400, ActualSpeed: 400, ActualSpeedValid: true},
+		{SampledAt: start.Add(2 * time.Second), ControlTemp: 55, CPUTemp: 55, CPUPowerWatts: 38, CPUPowerValid: true, ControlSource: "cpu", PreviousTarget: 400, ActualSpeed: 400, ActualSpeedValid: true},
+		{SampledAt: start.Add(4 * time.Second), ControlTemp: 56, CPUTemp: 56, CPUPowerWatts: 52, CPUPowerValid: true, ControlSource: "cpu", PreviousTarget: 400, ActualSpeed: 400, ActualSpeedValid: true},
+		{SampledAt: start.Add(6 * time.Second), ControlTemp: 56, CPUTemp: 56, CPUPowerWatts: 65, CPUPowerValid: true, ControlSource: "cpu", PreviousTarget: 400, ActualSpeed: 400, ActualSpeedValid: true},
+	}, cfg, types.FanSpeedUnitPercent)
+	if !sustainedPower.PowerAssisted || sustainedPower.RampUpMultiplier != predictionPowerRampMultiplier {
+		t.Fatalf("sustained multi-frame power ramp = %#v, want PowerAssisted ramp", sustainedPower)
+	}
+
+	// ControlSource="max" where CPU dominates temperature but CPU power is unreadable -> falls back to readable GPU power.
+	maxGpuFallback := EvaluateTemperatureRisePrediction(400, []RisePredictionSample{
+		{SampledAt: start, ControlTemp: 62, CPUTemp: 62, GPUTemp: 55, CPUPowerValid: false, GPUPowerWatts: 25, GPUPowerValid: true, ControlSource: "max"},
+		{SampledAt: start.Add(2 * time.Second), ControlTemp: 62, CPUTemp: 62, GPUTemp: 56, CPUPowerValid: false, GPUPowerWatts: 70, GPUPowerValid: true, ControlSource: "max"},
+	}, cfg, types.FanSpeedUnitPercent)
+	if !maxGpuFallback.PowerAssisted || maxGpuFallback.RampUpMultiplier != predictionPowerRampMultiplier {
+		t.Fatalf("max mode with unreadable CPU power must fall back to GPU power ramp = %#v", maxGpuFallback)
+	}
+
+	// Pure temperature rapid rise (+3C over 4s, no power sensors) triggers pre-boost ramp assist.
+	rapidTempNoPower := EvaluateTemperatureRisePrediction(400, []RisePredictionSample{
+		{SampledAt: start, ControlTemp: 50, CPUTemp: 50, ControlSource: "cpu"},
+		{SampledAt: start.Add(2 * time.Second), ControlTemp: 51, CPUTemp: 51, ControlSource: "cpu"},
+		{SampledAt: start.Add(4 * time.Second), ControlTemp: 53, CPUTemp: 53, ControlSource: "cpu"},
+	}, cfg, types.FanSpeedUnitPercent)
+	if rapidTempNoPower.RampUpMultiplier != predictionPowerRampMultiplier || rapidTempNoPower.PowerAssisted {
+		t.Fatalf("rapid temperature rise without power = %#v, want non-power ramp assist", rapidTempNoPower)
+	}
+}

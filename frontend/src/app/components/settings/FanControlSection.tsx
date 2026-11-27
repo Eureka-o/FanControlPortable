@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, m } from 'framer-motion';
 import {
   ArrowRight,
   BarChart3,
@@ -28,7 +28,9 @@ import {
 } from '../../lib/fan-speed';
 import { useLocale } from '../../lib/i18n';
 import { apiService } from '../../services/api';
+import { Input } from '@/components/ui/input';
 import {
+  Badge,
   Button,
   Dialog,
   DialogContent,
@@ -325,9 +327,10 @@ export default function FanControlSection({
 
   return (
     <>
-      <Section title={t('controlPanel.fan.sectionTitle')} icon={Settings}>
+      <Section title={t('controlPanel.fan.sectionTitle')} icon={Settings} iconTone="blue">
         <SettingRow
-          icon={config.autoControl ? <Play className="h-4 w-4 text-emerald-500" /> : <Pause className="h-4 w-4" />}
+          icon={config.autoControl ? <Play className="h-4 w-4 text-primary" /> : <Pause className="h-4 w-4" />}
+          iconTone="blue"
           title={t('controlPanel.fan.autoControlTitle')}
           description={t('controlPanel.fan.autoControlDescription')}
           disabled={(config as any).customSpeedEnabled}
@@ -338,13 +341,13 @@ export default function FanControlSection({
             disabled={(config as any).customSpeedEnabled}
             loading={loadingStates.autoControl}
             size="sm"
-            color="green"
+            color="blue"
           />
         </SettingRow>
 
         <AnimatePresence>
           {config.autoControl && (
-            <motion.div
+            <m.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
@@ -352,10 +355,11 @@ export default function FanControlSection({
             >
               <SettingRow
                 icon={<BarChart3 className="h-4 w-4" />}
+                iconTone="purple"
                 title={t('controlPanel.fan.sampleSmoothingTitle')}
                 description={t('controlPanel.fan.sampleSmoothingDescription')}
               >
-                <div className="w-32">
+                <div className="w-40">
                   <Select
                     value={(config as any).tempSampleCount || 1}
                     onChange={(value: string | number) => handleSampleCountChange(value)}
@@ -364,7 +368,7 @@ export default function FanControlSection({
                   />
                 </div>
               </SettingRow>
-            </motion.div>
+            </m.div>
           )}
         </AnimatePresence>
 
@@ -381,22 +385,33 @@ export default function FanControlSection({
 
         <SettingRow
           icon={<Eye className={clsx('h-4 w-4', (config as any).powerSpoofEnabled ? 'text-amber-500' : 'text-muted-foreground')} />}
-          title={t('controlPanel.fan.powerSpoofTitle')}
+          iconTone="amber"
+          title={(
+            <span className="inline-flex flex-wrap items-center gap-2">
+              <span>{t('controlPanel.fan.powerSpoofTitle')}</span>
+              {(config as any).powerSpoofEnabled && (
+                <Badge variant="warning">{t('controlPanel.fan.powerSpoofEnabledBadge')}</Badge>
+              )}
+            </span>
+          )}
           description={t('controlPanel.fan.powerSpoofDescription')}
         >
-          <button
+          <Button
             type="button"
+            variant="secondary"
+            size="sm"
             onClick={openPowerSpoofDialog}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            icon={<Settings2 className="h-3.5 w-3.5" />}
             title={t('controlPanel.fan.powerSpoofOpenSettings')}
             aria-label={t('controlPanel.fan.powerSpoofOpenSettings')}
           >
-            <Settings2 className="h-4 w-4" />
-          </button>
+            {t('controlPanel.fan.powerSpoofConfigure')}
+          </Button>
         </SettingRow>
 
         <SettingRow
-          icon={<TriangleAlert className={clsx('h-4 w-4', (config.smartControl as any)?.filterTransientSpike !== false ? 'text-blue-500' : 'text-muted-foreground')} />}
+          icon={<TriangleAlert className={clsx('h-4 w-4', (config.smartControl as any)?.filterTransientSpike !== false ? 'text-primary' : 'text-muted-foreground')} />}
+          iconTone="emerald"
           title={t('controlPanel.fan.transientSpikeFilterTitle')}
           description={t('controlPanel.fan.transientSpikeFilterDescription')}
         >
@@ -411,18 +426,22 @@ export default function FanControlSection({
         </SettingRow>
 
         {supportsCustomSpeed && (
-          <div className="px-5 py-4">
-            <div className="flex items-center justify-between">
+          <div data-theme-ui="setting-row" className="px-5 py-4 transition-colors duration-200 hover:bg-muted/18">
+            <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
-                <div className={clsx(
-                  'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors',
-                  (config as any).customSpeedEnabled ? 'bg-amber-500/15 text-amber-600' : 'bg-muted text-muted-foreground',
-                )}>
+                <div
+                  data-theme-ui="setting-row-icon"
+                  data-icon-tone="amber"
+                  className={clsx(
+                    'flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] shadow-inner shadow-white/20 transition-colors',
+                    (config as any).customSpeedEnabled ? 'bg-amber-500/15 text-amber-600' : 'bg-muted/70 text-muted-foreground',
+                  )}
+                >
                   <Flame className="h-4 w-4" />
                 </div>
                 <div>
-                  <div className="text-base font-medium text-foreground">{t('controlPanel.fan.customSpeedTitle')}</div>
-                  <div className="text-sm text-muted-foreground">{t('controlPanel.fan.customSpeedDescription')}</div>
+                  <div className="text-[15px] font-semibold tracking-[-0.01em] text-foreground">{t('controlPanel.fan.customSpeedTitle')}</div>
+                  <div className="mt-0.5 text-[13px] leading-[1.45] text-muted-foreground">{t('controlPanel.fan.customSpeedDescription')}</div>
                 </div>
               </div>
               <ToggleSwitch
@@ -437,21 +456,25 @@ export default function FanControlSection({
 
             <AnimatePresence>
               {(config as any).customSpeedEnabled && (
-                <motion.div
+                <m.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
                   className="overflow-hidden"
                 >
-                  <div className="mt-3 flex items-center gap-3 rounded-xl border border-amber-300/40 bg-amber-50/50 p-3.5 dark:bg-amber-900/10">
-                    <input
-                      type="number"
-                      value={customSpeedInput}
-                      onChange={(event) => setCustomSpeedInput(event.target.value)}
-                      className="flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-transparent focus:ring-2 focus:ring-amber-500/50"
-                      step={overviewSpeedRange.step}
-                    />
-                    <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">{overviewSpeedLabel}</span>
+                  <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/8 p-3">
+                    <div className="relative flex-1">
+                      <Input
+                        type="number"
+                        value={customSpeedInput}
+                        onChange={(event) => setCustomSpeedInput(event.target.value)}
+                        className="h-9 bg-background/85 pr-14 tabular-nums"
+                        step={overviewSpeedRange.step}
+                      />
+                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] font-semibold text-amber-700 dark:text-amber-300">
+                        {overviewSpeedLabel}
+                      </span>
+                    </div>
                     <Button variant="primary" size="sm" onClick={() => handleCustomSpeedApply(true, customSpeedInput)} className="bg-amber-600 text-white hover:bg-amber-700">
                       {t('common.actions.apply')}
                     </Button>
@@ -459,7 +482,7 @@ export default function FanControlSection({
                   <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">
                     {t('controlPanel.fan.customSpeedRangeHint', { min: customSpeedMinLabel, max: customSpeedMaxLabel })}
                   </p>
-                </motion.div>
+                </m.div>
               )}
             </AnimatePresence>
           </div>

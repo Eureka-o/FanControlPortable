@@ -25,6 +25,7 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		a.handleWindowIPCRequest,
 		a.handleSceneIPCRequest,
 		a.handleScreenIPCRequest,
+		a.handlePluginIPCRequest,
 		a.handleDebugIPCRequest,
 		a.handleSystemIPCRequest,
 		a.handleBlackSharkIPCRequest,

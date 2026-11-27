@@ -800,3 +800,68 @@ func TestMutationCallbackCannotRetainManagerState(t *testing.T) {
 		})
 	}
 }
+
+func TestSaveBeforeLoadOrSetRefusesToOverwriteExistingConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("USERPROFILE", dir)
+	t.Setenv("HOME", dir)
+
+	cfgPath := filepath.Join(dir, "config", "config.json")
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0755); err != nil {
+		t.Fatalf("mkdir config: %v", err)
+	}
+	original := []byte(`{"themeMode":"dune","fanCurveProfiles":[{"id":"p1","name":"性能","curve":[{"temperature":20,"rpm":1200},{"temperature":110,"rpm":2500}]}]}`)
+	if err := os.WriteFile(cfgPath, original, 0644); err != nil {
+		t.Fatalf("write original config: %v", err)
+	}
+
+	manager := NewManager(dir, nil)
+	if err := manager.Save(); err == nil {
+		t.Fatal("Save() before Load/Set succeeded, want error")
+	}
+	if err := manager.Update(types.GetDefaultConfig(false)); err == nil {
+		t.Fatal("Update() before Load/Set succeeded, want error")
+	}
+	if _, err := manager.MutateAndSave(func(cfg *types.AppConfig) { cfg.ThemeMode = "light" }); err == nil {
+		t.Fatal("MutateAndSave() before Load/Set succeeded, want error")
+	}
+
+	got, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("read config after blocked writes: %v", err)
+	}
+	if string(got) != string(original) {
+		t.Fatalf("on-disk config changed after blocked writes: got=%s want=%s", got, original)
+	}
+}
+
+func TestUpdateCreatesBackupBeforeOverwritingConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("USERPROFILE", dir)
+	t.Setenv("HOME", dir)
+
+	manager := NewManager(dir, nil)
+	first := manager.Load(false)
+	first.ThemeMode = "dune"
+	if err := manager.Update(first); err != nil {
+		t.Fatalf("Update(first) error = %v", err)
+	}
+	second := manager.Get()
+	second.ThemeMode = "xiaoba-deluxe"
+	if err := manager.Update(second); err != nil {
+		t.Fatalf("Update(second) error = %v", err)
+	}
+
+	bakPath := filepath.Join(dir, "config", "config.json.bak")
+	bakData, err := os.ReadFile(bakPath)
+	if err != nil {
+		t.Fatalf("read backup config: %v", err)
+	}
+	var bakCfg types.AppConfig
+	if err := json.Unmarshal(bakData, &bakCfg); err != nil {
+		t.Fatalf("unmarshal backup config: %v", err)
+	}
+	if bakCfg.ThemeMode != "dune" {
+		t.Fatalf("backup ThemeMode = %q, want dune", bakCfg.ThemeMode)
+	}
+}

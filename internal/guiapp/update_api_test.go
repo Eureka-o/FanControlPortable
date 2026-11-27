@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/Eureka-o/FanControlPortable/internal/ghmirror"
 )
 
 func TestValidateUpdateURL(t *testing.T) {
@@ -395,5 +397,127 @@ func TestShouldBypassUpdateProxyOnlyOnFinalRetry(t *testing.T) {
 	}
 	if !shouldBypassUpdateProxy(3, 3) {
 		t.Fatal("final retry did not fall back to a direct connection")
+	}
+}
+
+func TestCheckLatestReleaseRacesMirrorsAndPicksFastest(t *testing.T) {
+	slowOrigin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(250 * time.Millisecond):
+			_, _ = w.Write([]byte(`{"tag_name":"v9.9.9","assets":[{"name":"FanControl-9.9.9-amd64-installer.exe","browser_download_url":"https://github.com/Eureka-o/FanControlPortable/releases/download/v9.9.9/FanControl-9.9.9-amd64-installer.exe","digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}]}`))
+		}
+	}))
+	defer slowOrigin.Close()
+
+	badMirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("<html>502</html>"))
+	}))
+	defer badMirror.Close()
+
+	fastMirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(25 * time.Millisecond)
+		_, _ = w.Write([]byte(`{"tag_name":"v9.9.9","html_url":"https://github.com/Eureka-o/FanControlPortable/releases/tag/v9.9.9","body":"ok","assets":[{"name":"FanControl-9.9.9-amd64-installer.exe","browser_download_url":"https://github.com/Eureka-o/FanControlPortable/releases/download/v9.9.9/FanControl-9.9.9-amd64-installer.exe","digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}]}`))
+	}))
+	defer fastMirror.Close()
+
+	origBuilder := updateCandidateBuilder
+	updateCandidateBuilder = func(endpoint string) []ghmirror.Candidate {
+		return []ghmirror.Candidate{
+			{Name: "origin", Label: "GitHub 源站", URL: slowOrigin.URL},
+			{Name: "bad-mirror", Label: "故障镜像", URL: badMirror.URL},
+			{Name: "fast-mirror", Label: "低延迟镜像", URL: fastMirror.URL},
+		}
+	}
+	t.Cleanup(func() { updateCandidateBuilder = origBuilder })
+
+	rel, err := checkLatestRelease(context.Background(), &http.Client{Timeout: 2 * time.Second}, "stable", "https://api.github.com/fake", "https://api.github.com/fake")
+	if err != nil {
+		t.Fatalf("checkLatestRelease failed: %v", err)
+	}
+	if rel.ResolvedSource != "低延迟镜像" || rel.LatencyMs <= 0 || rel.TagName != "v9.9.9" {
+		t.Fatalf("unexpected release race outcome: %+v", rel)
+	}
+}
+
+func TestDownloadUpdateInstallerRanksMirrorsAndFallsBackOnBadHash(t *testing.T) {
+	payload := append([]byte{'M', 'Z'}, bytes.Repeat([]byte("fancontrol-installer-binary"), 1024)...)
+	digest := fmt.Sprintf("%x", sha256.Sum256(payload))
+
+	badMirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("corrupted-installer"))
+	}))
+	defer badMirror.Close()
+
+	goodMirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(25 * time.Millisecond)
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(payload)))
+		_, _ = w.Write(payload)
+	}))
+	defer goodMirror.Close()
+
+	origBuilder := updateCandidateBuilder
+	origClientBuilder := updateHTTPClientBuilder
+	updateCandidateBuilder = func(rawURL string) []ghmirror.Candidate {
+		return []ghmirror.Candidate{
+			{Name: "bad-mirror", Label: "损坏镜像", URL: badMirror.URL + "/FanControl.exe"},
+			{Name: "good-mirror", Label: "可用镜像", URL: goodMirror.URL + "/FanControl.exe"},
+		}
+	}
+	updateHTTPClientBuilder = func(timeout, _ time.Duration, _ bool) *http.Client {
+		return &http.Client{Timeout: timeout}
+	}
+	t.Cleanup(func() {
+		updateCandidateBuilder = origBuilder
+		updateHTTPClientBuilder = origClientBuilder
+	})
+
+	app := &App{}
+	control, err := app.beginUpdateDownload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.finishUpdateDownload(control)
+
+	updateDir := t.TempDir()
+	installerPath, err := app.downloadUpdateInstaller(
+		"https://github.com/Eureka-o/FanControlPortable/releases/download/v9.9.9/FanControl-9.9.9-amd64-installer.exe",
+		updateDir,
+		digest,
+		control,
+	)
+	if err != nil {
+		t.Fatalf("downloadUpdateInstaller failed: %v", err)
+	}
+	got, err := os.ReadFile(installerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("installer bytes mismatch: got %d bytes want %d", len(got), len(payload))
+	}
+}
+
+func TestLiveUpdateMirrorRaceCheck(t *testing.T) {
+	if os.Getenv("FANCONTROL_TEST_LIVE_MARKETPLACE") != "1" {
+		t.Skip("set FANCONTROL_TEST_LIVE_MARKETPLACE=1 to run live GitHub/mirror update check")
+	}
+	app := &App{}
+	rel, err := app.CheckLatestRelease("stable")
+	if err != nil {
+		t.Fatalf("CheckLatestRelease failed: %v", err)
+	}
+	t.Logf("Updater CheckLatestRelease winner=%s (%d ms), tag=%s, installer=%s", rel.ResolvedSource, rel.LatencyMs, rel.TagName, rel.InstallerURL)
+	if rel.TagName == "" || rel.InstallerURL == "" {
+		t.Fatalf("expected non-empty release tag and installer URL: %+v", rel)
+	}
+	cands := ghmirror.BuildCandidates(rel.InstallerURL)
+	ranked := ghmirror.RankByLatency(context.Background(), cands, newUpdateHTTPClient(5*time.Second, 4*time.Second, false), "FanControl-Updater")
+	for _, r := range ranked {
+		t.Logf("  Updater installer candidate: %s probed=%v latency=%d ms url=%s", r.Name, r.Probed, r.LatencyMs, r.URL)
+	}
+	if len(ranked) == 0 || !ranked[0].Probed {
+		t.Fatalf("expected at least one healthy probed installer route, got %+v", ranked)
 	}
 }

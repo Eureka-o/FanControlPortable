@@ -1,6 +1,6 @@
 'use client';
 
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { Loader2 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
@@ -312,19 +312,68 @@ interface NumberInputProps {
   label?: string;
   className?: string;
   suffix?: string;
+  deferClamp?: boolean;
+  invalid?: boolean;
+  textValue?: string;
+  onTextChange?: (raw: string) => void;
   onFocus?: () => void;
   onBlur?: () => void;
 }
 
 export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
-  ({ value, onChange, min, max, step = 1, disabled = false, label, className, suffix, onFocus, onBlur }, ref) => {
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      let nextValue = Number(e.target.value);
-      if (Number.isNaN(nextValue)) nextValue = min ?? 0;
-      if (min !== undefined) nextValue = Math.max(min, nextValue);
-      if (max !== undefined) nextValue = Math.min(max, nextValue);
-      onChange(nextValue);
+  ({ value, onChange, min, max, step = 1, disabled = false, label, className, suffix, deferClamp = false, invalid = false, textValue, onTextChange, onFocus, onBlur }, ref) => {
+    const [draftText, setDraftText] = useState(() => String(value));
+    const [isFocused, setIsFocused] = useState(false);
+
+    useEffect(() => {
+      if (!isFocused && textValue === undefined) {
+        setDraftText(String(value));
+      }
+    }, [isFocused, textValue, value]);
+
+    const clampValue = (numeric: number) => {
+      let clamped = numeric;
+      if (min !== undefined) clamped = Math.max(min, clamped);
+      if (max !== undefined) clamped = Math.min(max, clamped);
+      return clamped;
     };
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const raw = e.target.value;
+      if (textValue === undefined) {
+        setDraftText(raw);
+      }
+      onTextChange?.(raw);
+      if (raw.trim() === '') {
+        return;
+      }
+      const nextValue = Number(raw);
+      if (!Number.isFinite(nextValue)) {
+        return;
+      }
+      onChange(deferClamp ? nextValue : clampValue(nextValue));
+    };
+
+    const handleFocus = () => {
+      setIsFocused(true);
+      onFocus?.();
+    };
+
+    const handleBlur = () => {
+      setIsFocused(false);
+      if (!deferClamp && textValue === undefined) {
+        const trimmed = draftText.trim();
+        const parsed = trimmed === '' ? NaN : Number(trimmed);
+        const committed = Number.isFinite(parsed) ? clampValue(parsed) : clampValue(value);
+        setDraftText(String(committed));
+        if (committed !== value) {
+          onChange(committed);
+        }
+      }
+      onBlur?.();
+    };
+
+    const displayedValue = textValue !== undefined ? textValue : draftText;
 
     return (
       <div className={clsx('w-full', className)}>
@@ -333,15 +382,19 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
           <Input
             ref={ref}
             type="number"
-            value={value}
+            value={displayedValue}
             onChange={handleChange}
-            onFocus={onFocus}
-            onBlur={onBlur}
+            onFocus={handleFocus}
+            onBlur={handleBlur}
             min={min}
             max={max}
             step={step}
             disabled={disabled}
-            className={clsx(suffix && 'pr-12')}
+            aria-invalid={invalid || undefined}
+            className={clsx(
+              suffix && 'pr-12',
+              invalid && 'border-destructive focus-visible:border-destructive focus-visible:ring-destructive/30',
+            )}
           />
           {suffix && <span className="pointer-events-none absolute right-3 text-sm text-muted-foreground">{suffix}</span>}
         </div>

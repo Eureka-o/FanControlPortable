@@ -6,7 +6,9 @@ import {
   appendTimelineEvent,
   cancelPendingTabChange,
   completePendingTabChange,
+  isBridgeStartingTelemetry,
   requestTabChange,
+  resolveBridgeWarning,
 } from '../src/app/store/app-store-logic.ts';
 
 test('keeps the curve page mounted while a dirty draft awaits navigation confirmation', () => {
@@ -63,4 +65,25 @@ test('keeps recent timeline events while deduplicating repeated backend notifica
 
   const many = Array.from({ length: 105 }, (_, index) => ({ timestamp: index * 3_000, type: 'resume' }));
   assert.equal(many.reduce(appendTimelineEvent, []).length, 100);
+});
+
+test('suppresses transient startup bridge warm-up warnings while keeping real errors', () => {
+  assert.equal(resolveBridgeWarning({ bridgeOk: true, bridgeMessage: 'ignored' }, 'fallback'), null);
+
+  const byStage = { bridgeOk: false, telemetryFailureStage: 'starting', bridgeMessage: '桥接程序正在启动中' };
+  assert.equal(isBridgeStartingTelemetry(byStage), true);
+  assert.equal(resolveBridgeWarning(byStage, 'fallback'), null);
+
+  const byMessage = { bridgeOk: false, bridgeMessage: '桥接程序正在启动中' };
+  assert.equal(isBridgeStartingTelemetry(byMessage), true);
+  assert.equal(resolveBridgeWarning(byMessage, 'fallback'), null);
+
+  const realTimeout = {
+    bridgeOk: false,
+    telemetryFailureStage: 'timeout',
+    bridgeMessage: '读取 GetTemperature 响应超时',
+  };
+  assert.equal(isBridgeStartingTelemetry(realTimeout), false);
+  assert.equal(resolveBridgeWarning(realTimeout, 'fallback'), '读取 GetTemperature 响应超时');
+  assert.equal(resolveBridgeWarning({ bridgeOk: false }, 'fallback'), 'fallback');
 });

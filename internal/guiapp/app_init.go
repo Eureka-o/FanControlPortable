@@ -21,6 +21,8 @@ func New(themeManager *theme.Manager) *App {
 	}
 	return &App{
 		ipcClient:    ipc.NewClient(nil),
+		stopCh:       make(chan struct{}),
+		startedAt:    time.Now(),
 		currentTemp:  types.TemperatureData{BridgeOk: true},
 		themeManager: themeManager,
 	}
@@ -29,6 +31,9 @@ func New(themeManager *theme.Manager) *App {
 // Startup 应用启动时调用
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
+	if a.startedAt.IsZero() {
+		a.startedAt = time.Now()
+	}
 	if err := restoreWindowState(ctx); err != nil {
 		guiLogger.Warnf("restore window state failed: %v", err)
 	}

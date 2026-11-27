@@ -94,3 +94,59 @@ func TestAllowsLongTermOffsetLearningKeepsSafetyImmediate(t *testing.T) {
 		t.Fatal("completed long-term quiet learning should be allowed")
 	}
 }
+
+func TestNoPowerDownDampingAndRPMSafetyFloor(t *testing.T) {
+	cfg := types.SmartControlConfig{
+		TargetTemp:     70,
+		Hysteresis:     2,
+		LearnRate:      5,
+		MaxLearnOffset: 200,
+	}
+
+	lightPowerDown := solveLearnStepForUnitWithPower(55, 0, false, cfg, types.FanSpeedUnitRPM, 25, true, 1)
+	noPowerDown := solveLearnStepForUnitWithPower(55, 0, false, cfg, types.FanSpeedUnitRPM, 0, false, 1)
+	if noPowerDown >= 0 || lightPowerDown >= 0 {
+		t.Fatalf("expected negative down steps, got noPower=%d lightPower=%d", noPowerDown, lightPowerDown)
+	}
+	if -noPowerDown >= -lightPowerDown {
+		t.Fatalf("no-power downward learning must be more conservative than light-power: noPower=%d lightPower=%d", noPowerDown, lightPowerDown)
+	}
+
+	noPowerHeat := solveLearnStepForUnitWithPower(78, 0, false, cfg, types.FanSpeedUnitRPM, 0, false, 1)
+	withPowerHeat := solveLearnStepForUnitWithPower(78, 0, false, cfg, types.FanSpeedUnitRPM, 80, true, 1)
+	if noPowerHeat <= 0 || noPowerHeat > withPowerHeat {
+		t.Fatalf("no-power upward safety step = %d (withPower=%d)", noPowerHeat, withPowerHeat)
+	}
+
+	curve := []types.FanCurvePoint{
+		{Temperature: 20, RPM: 700},
+		{Temperature: 40, RPM: 850},
+		{Temperature: 60, RPM: 1400},
+	}
+	prevOffsets := []int{0, 0, 0}
+	offsets, changed := LearnSteadyOffsetForUnitWithPowerAndNoiseGain(1, 35, 0, false, 0, false, curve, prevOffsets, cfg, types.FanSpeedUnitRPM, 1)
+	if !changed {
+		t.Fatal("expected RPM curve to learn downward step toward safety floor")
+	}
+	if curve[1].RPM+offsets[1] < rpmLearningSafetyFloor {
+		t.Fatalf("effective RPM %d fell below safety floor %d", curve[1].RPM+offsets[1], rpmLearningSafetyFloor)
+	}
+}
+
+func TestSingleSamplePowerSpikeDoesNotDiscardLongTermSteadyProgress(t *testing.T) {
+	curve := []types.FanCurvePoint{{Temperature: 60, RPM: 2000}}
+	cfg := types.SmartControlConfig{LearnWindow: 3, LearnDelay: 0, MinRPMChange: 50}
+	steadyPower := EffectivePower{CPUWatts: 50, CPUValid: true}
+	spikePower := EffectivePower{CPUWatts: 50, GPUWatts: 35, CPUValid: true, GPUValid: true}
+	observer := NewLegacyRPMStableObserver(len(curve))
+	start := time.Unix(0, 0)
+
+	observeSteadySegment(observer, start, steadyPower, curve, cfg)
+	observeSteadySegment(observer, start.Add(45*time.Second), steadyPower, curve, cfg)
+	// Brief single-sample GPU wake/spike resets only the active short buffer, not accumulated steady windows.
+	observer.ObserveWithEffectivePowerAt(start.Add(75*time.Second), 60, 2000, spikePower, curve, cfg)
+	third := observeSteadySegment(observer, start.Add(90*time.Second), steadyPower, curve, cfg)
+	if !third.LearningReady {
+		t.Fatalf("expected accumulated long-term steady aggregate to survive transient power spike: %#v", third)
+	}
+}

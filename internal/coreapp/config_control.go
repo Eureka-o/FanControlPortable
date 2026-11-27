@@ -8,6 +8,7 @@ import (
 	"github.com/Eureka-o/FanControlPortable/internal/curveprofiles"
 	"github.com/Eureka-o/FanControlPortable/internal/deviceproto"
 	"github.com/Eureka-o/FanControlPortable/internal/ipc"
+	"github.com/Eureka-o/FanControlPortable/internal/plugins/fnqpowermode"
 	"github.com/Eureka-o/FanControlPortable/internal/smartcontrol"
 	"github.com/Eureka-o/FanControlPortable/internal/types"
 	"runtime"
@@ -121,6 +122,12 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 
 	oldCfg := a.configManager.Get()
 	monitorOnlyChanged := oldCfg.MonitorOnly != cfg.MonitorOnly
+	if oldCfg.HistoryEnabled != nil {
+		historyEnabled := *oldCfg.HistoryEnabled
+		cfg.HistoryEnabled = &historyEnabled
+	} else {
+		cfg.HistoryEnabled = nil
+	}
 	cfg.HistoryRetentionHours = types.NormalizeTemperatureHistoryRetentionHours(oldCfg.HistoryRetentionHours)
 	oldConnectionKey := deviceProfileConnectionKey(oldCfg)
 	if len(cfg.FanCurveProfiles) == 0 && len(oldCfg.FanCurveProfiles) > 0 {
@@ -190,6 +197,20 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	if a.legionFnQSupportChecked.Load() && !a.legionFnQSupported.Load() && (cfg.LegionFnQ.Enabled || cfg.LegionFnQ.TakeOverFan) {
 		return fmt.Errorf("Lenovo Legion Fn+Q 仅支持拯救者设备")
 	}
+	cfg.RTSS = normalizeUpdatedRTSSConfig(cfg.RTSS, oldCfg.RTSS)
+	if cfg.Plugins == nil && len(oldCfg.Plugins) > 0 {
+		cfg.Plugins = cloneBoolMap(oldCfg.Plugins)
+	}
+	if cfg.Plugins == nil {
+		cfg.Plugins = map[string]bool{}
+	}
+	if cfg.PluginDevPaths == nil && len(oldCfg.PluginDevPaths) > 0 {
+		cfg.PluginDevPaths = append([]string(nil), oldCfg.PluginDevPaths...)
+	}
+	if strings.TrimSpace(cfg.PluginCatalogURL) == "" && strings.TrimSpace(oldCfg.PluginCatalogURL) != "" {
+		cfg.PluginCatalogURL = oldCfg.PluginCatalogURL
+	}
+	cfg.Plugins[fnqpowermode.PluginID] = cfg.LegionFnQ.Enabled
 	normalizeHotkeyConfig(&cfg)
 	normalizeManualGearMemoryConfig(&cfg)
 	types.NormalizeManualGearRPMForUnit(&cfg, unit)
@@ -204,9 +225,11 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 		a.applyPluginConfig(committed)
 		a.mutex.Unlock()
 		locked = false
+		a.broadcastPluginsUpdate(committed)
 		if len(committed.SceneRules) > 0 {
 			a.startSceneLoop()
 		}
+		a.wakeSceneLoop()
 
 		if configConnectionChanged || a.deviceManager == nil {
 			if configConnectionChanged {
@@ -231,14 +254,51 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 }
 
 func (a *CoreApp) SetTemperatureHistoryEnabled(enabled bool) error {
-	if err := a.tempHistory.SetEnabled(enabled); err != nil {
+	a.mutex.Lock()
+	if a.configManager == nil {
+		a.mutex.Unlock()
+		if a.tempHistory == nil {
+			return fmt.Errorf("历史记录器尚未初始化")
+		}
+		return a.tempHistory.SetEnabled(enabled)
+	}
+	oldCfg := a.configManager.Get()
+	var previousEnabled *bool
+	if oldCfg.HistoryEnabled != nil {
+		prev := *oldCfg.HistoryEnabled
+		previousEnabled = &prev
+	}
+	cfg := oldCfg
+	next := enabled
+	cfg.HistoryEnabled = &next
+	if err := a.configManager.Update(cfg); err != nil {
+		a.mutex.Unlock()
 		return err
+	}
+	committed := a.configManager.Get()
+	a.mutex.Unlock()
+
+	if a.tempHistory != nil {
+		if err := a.tempHistory.SetEnabled(enabled); err != nil {
+			a.mutex.Lock()
+			rollbackCfg := a.configManager.Get()
+			rollbackCfg.HistoryEnabled = previousEnabled
+			_ = a.configManager.Update(rollbackCfg)
+			a.mutex.Unlock()
+			return err
+		}
+	}
+	if a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, committed)
 	}
 	return nil
 }
 
 func (a *CoreApp) SetTemperatureHistoryRetentionHours(hours int) error {
 	hours = types.NormalizeTemperatureHistoryRetentionHours(hours)
+	if a.tempHistory == nil {
+		return fmt.Errorf("历史记录器尚未初始化")
+	}
 	previous := a.tempHistory.RetentionHours()
 	if err := a.tempHistory.SetRetentionHours(hours); err != nil {
 		return err
@@ -367,6 +427,7 @@ func (a *CoreApp) applyCurrentGearSetting() error {
 
 	// 黑鲨由 SetManualGearRPM 内部路由到 SetBlackSharkFixedSpeedForGear（按档位下发固定转速），
 	// 与「点一下挡位」走的是同一条路 —— 开关智能变频时的下发结果因此与手动点挡位完全一致。
+	a.deviceManager.CancelPendingSpeedPush()
 	if !a.deviceManager.SetManualGearRPM(setGear, level, rpm) {
 		return fmt.Errorf("手动挡位下发失败")
 	}
@@ -439,6 +500,9 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 	a.mutex.Unlock()
 
 	if enabled && wasConnected {
+		if a.deviceManager != nil {
+			a.deviceManager.CancelPendingSpeedPush()
+		}
 		// 用户显式设固定转速 ⇒ 固定转速意图（黑鲨走 form=0），不是变频。
 		if !a.setTargetSpeedWithMode(configSpeedToTargetUnit(rpm, unit), unit, false) {
 			return fmt.Errorf("当前设备拒绝自定义速度下发，请确认设备仍已连接并支持 %s 控制", types.FanSpeedDisplaySuffix(unit))

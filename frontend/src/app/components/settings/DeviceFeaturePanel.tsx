@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, m } from 'framer-motion';
 import { Clock3, Lightbulb, Power, RotateCw, Sparkles, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
@@ -16,28 +16,6 @@ type SelectOption<T extends string | number> = {
   description?: string;
   disabled?: boolean;
 };
-
-function GroupHeader({
-  icon,
-  title,
-  description,
-}: {
-  icon: ReactNode;
-  title: string;
-  description?: string;
-}) {
-  return (
-    <div className="flex min-w-0 items-start gap-3 bg-muted/10 px-5 py-3">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <div className="text-sm font-semibold text-foreground">{title}</div>
-        {description && <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{description}</div>}
-      </div>
-    </div>
-  );
-}
 
 export default function DeviceFeaturePanel({
   config,
@@ -81,17 +59,21 @@ export default function DeviceFeaturePanel({
   const hasSmartStartStopFeatures = supportsSmartStartStop;
   const deviceName = deviceProfile?.displayName || deviceProfile?.model || t('deviceStatus.device.unknown');
 
-  if (!hasBasicFeatures && !hasSmartStartStopFeatures && !lightingControls && !refreshing && !children) {
+  const hasPrimaryContent = Boolean(children || refreshing || hasBasicFeatures || hasSmartStartStopFeatures);
+
+  if (!hasPrimaryContent && !lightingControls) {
     return null;
   }
 
   return (
-    <Section title={t('controlPanel.device.sectionTitle')} icon={Zap}>
-      {children}
+    <div className="space-y-5">
+      {hasPrimaryContent && (
+        <Section title={t('controlPanel.device.sectionTitle')} icon={Zap} iconTone="blue">
+          {children}
 
       <AnimatePresence initial={false}>
         {refreshing && (
-          <motion.div
+          <m.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
@@ -101,7 +83,7 @@ export default function DeviceFeaturePanel({
               <RotateCw className="h-3.5 w-3.5 animate-spin" />
               <span>{t('controlPanel.device.contextRefreshing', { device: deviceName })}</span>
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
 
@@ -110,6 +92,7 @@ export default function DeviceFeaturePanel({
           {supportsGearLight && (
             <SettingRow
               icon={<Lightbulb className={clsx('h-4 w-4', config.gearLight ? 'text-yellow-500' : '')} />}
+              iconTone="amber"
               title={t('controlPanel.device.gearLightTitle')}
               description={t('controlPanel.device.gearLightDescription')}
               disabled={!isConnected}
@@ -120,6 +103,7 @@ export default function DeviceFeaturePanel({
                 disabled={!isConnected}
                 loading={loadingStates.gearLight}
                 size="sm"
+                color="blue"
               />
             </SettingRow>
           )}
@@ -127,6 +111,7 @@ export default function DeviceFeaturePanel({
           {supportsPowerOnStart && (
             <SettingRow
               icon={<Power className={clsx('h-4 w-4', config.powerOnStart ? 'text-primary' : '')} />}
+              iconTone="blue"
               title={t('controlPanel.device.powerOnStartTitle')}
               description={t('controlPanel.device.powerOnStartDescription')}
               disabled={!isConnected}
@@ -137,6 +122,7 @@ export default function DeviceFeaturePanel({
                 disabled={!isConnected}
                 loading={loadingStates.powerOnStart}
                 size="sm"
+                color="blue"
               />
             </SettingRow>
           )}
@@ -150,6 +136,7 @@ export default function DeviceFeaturePanel({
             <>
               <SettingRow
                 icon={<Zap className="h-4 w-4" />}
+                iconTone="emerald"
                 title={t('controlPanel.device.smartStartStopTitle')}
                 description={t('controlPanel.device.smartStartStopDescription')}
                 disabled={!isConnected}
@@ -167,7 +154,7 @@ export default function DeviceFeaturePanel({
               </SettingRow>
               <AnimatePresence initial={false}>
                 {supportsWiFiSmartStartStopStandbySpeed && (config.smartStartStop || 'off') === 'delayed' && (
-                  <motion.div
+                  <m.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
@@ -176,6 +163,7 @@ export default function DeviceFeaturePanel({
                     <CompatibilitySubmenu>
                       <CompatibilitySubmenuRow
                         icon={<Clock3 className="h-4 w-4 text-primary" />}
+                        iconTone="emerald"
                         title={t('controlPanel.device.wifiSmartStartStopStandbySpeed')}
                         description={t('controlPanel.device.wifiSmartStartStopStandbySpeedDescription')}
                       >
@@ -191,7 +179,7 @@ export default function DeviceFeaturePanel({
                         </div>
                       </CompatibilitySubmenuRow>
                     </CompatibilitySubmenu>
-                  </motion.div>
+                  </m.div>
                 )}
               </AnimatePresence>
             </>
@@ -199,16 +187,19 @@ export default function DeviceFeaturePanel({
         </>
       )}
 
-      {lightingControls && (
-        <>
-          <GroupHeader
-            icon={<Sparkles className="h-4 w-4" />}
-            title={t('controlPanel.device.groups.lighting')}
-            description={t('controlPanel.device.groups.lightingDescription')}
-          />
-          <div className="px-5 py-4">{lightingControls}</div>
-        </>
+        </Section>
       )}
-    </Section>
+
+      {lightingControls && (
+        <Section
+          title={t('controlPanel.device.groups.lighting')}
+          description={t('controlPanel.device.groups.lightingDescription')}
+          icon={Sparkles}
+          iconTone="purple"
+        >
+          <div className="p-5">{lightingControls}</div>
+        </Section>
+      )}
+    </div>
   );
 }

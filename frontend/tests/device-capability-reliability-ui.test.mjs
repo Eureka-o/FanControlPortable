@@ -13,9 +13,14 @@ test('keeps device capability tags out of the home header', () => {
   assert.doesNotMatch(status, /capabilityLabels/);
 });
 
-test('keeps the temperature status card focused on temperature only', () => {
+test('keeps the homepage running details deduplicated and free of internal telemetry states', () => {
   assert.doesNotMatch(status, /deviceStatus\.telemetryState/);
+  assert.doesNotMatch(status, /data-theme-card="work-mode"/);
   assert.match(status, /ShieldCheck/);
+  assert.match(status, /data-theme-card="temperature-state"/);
+  assert.match(status, /data-theme-card="control-mode"/);
+  assert.match(status, /data-theme-card="cpu-power"/);
+  assert.match(status, /data-theme-card="gpu-power"/);
 });
 
 test('announces asynchronous scan progress without changing the connection flow', () => {
@@ -31,6 +36,8 @@ test('keeps connected device details in the settings overview instead of a secon
 test('gives compatibility rows more room without changing their controls', () => {
   assert.match(compatibility, /className="space-y-3 pt-4"/);
   assert.match(compatibility, /data-theme-ui="compatibility-divider"/);
+  assert.match(compatibility, /onMouseDown=\{\(event\) => event\.preventDefault\(\)\}/);
+  assert.match(compatibility, /outline-none focus:outline-none focus-visible:ring-2/);
   assert.match(compatibility, /onWiFiCompatibilityChange/);
   assert.match(compatibility, /wifiConnectionPriorityEnabled/);
   assert.match(compatibility, /onWiFiConnectionPriorityChange/);

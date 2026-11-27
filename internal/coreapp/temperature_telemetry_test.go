@@ -86,3 +86,65 @@ func TestMergeTemperatureHardwareMetadataKeepsGPUDevicesDuringTransientEmptyRead
 		t.Fatalf("gpu devices = %#v, want previous gpu device metadata", merged.GpuDevices)
 	}
 }
+
+func TestMergeTemperatureHardwareMetadataKeepsMetadataWhenOmitSensorListsReturnsNil(t *testing.T) {
+	previous := types.TemperatureData{
+		CpuModel:        "Ultra 5",
+		GpuModel:        "RTX 5060",
+		CpuSensors:      []types.TemperatureSensor{{Key: "cpu/pkg", Name: "CPU Package", Value: 52}},
+		GpuSensors:      []types.TemperatureSensor{{Key: "gpu/core", Name: "GPU Core", Value: 44}},
+		CpuPowerSensors: []types.PowerSensor{{Key: "cpu/pwr", Name: "CPU Package", Value: 22.1}},
+		GpuPowerSensors: []types.PowerSensor{{Key: "gpu/pwr", Name: "GPU Power", Value: 12.3}},
+		GpuDevices:      []types.TemperatureGPUDevice{{Key: "gpu0", Name: "RTX 5060", Vendor: "nvidia"}},
+	}
+
+	merged := mergeTemperatureHardwareMetadata(previous, types.TemperatureData{
+		CPUTemp:         55,
+		GPUTemp:         46,
+		GPUReadState:    types.GPUReadStateActive,
+		CpuSensors:      nil,
+		GpuSensors:      nil,
+		CpuPowerSensors: nil,
+		GpuPowerSensors: nil,
+		GpuDevices:      nil,
+	})
+
+	if merged.CpuModel != "Ultra 5" || merged.GpuModel != "RTX 5060" {
+		t.Fatalf("models = %q / %q, want preserved", merged.CpuModel, merged.GpuModel)
+	}
+	if len(merged.CpuSensors) != 1 || len(merged.GpuSensors) != 1 ||
+		len(merged.CpuPowerSensors) != 1 || len(merged.GpuPowerSensors) != 1 ||
+		len(merged.GpuDevices) != 1 {
+		t.Fatalf("nil metadata slices from omitSensorLists should preserve previous metadata: %#v", merged)
+	}
+}
+
+func TestStripSensorListsAndClearSensorCatalogLeases(t *testing.T) {
+	app := &CoreApp{}
+	app.sensorCatalogActive.Store(true)
+	app.gpuSensorProbeActive.Store(true)
+	app.currentTemp = types.TemperatureData{
+		CPUTemp:         52,
+		GPUTemp:         41,
+		CpuModel:        "Ultra 5",
+		GpuModel:        "RTX 5060",
+		CpuSensors:      []types.TemperatureSensor{{Key: "cpu/pkg", Name: "CPU Package", Value: 52}},
+		GpuSensors:      []types.TemperatureSensor{{Key: "gpu/core", Name: "GPU Core", Value: 41}},
+		CpuPowerSensors: []types.PowerSensor{{Key: "cpu/pwr", Name: "CPU Package", Value: 21.5}},
+		GpuPowerSensors: []types.PowerSensor{{Key: "gpu/pwr", Name: "GPU Power", Value: 9.2}},
+		GpuDevices:      []types.TemperatureGPUDevice{{Key: "gpu0", Name: "RTX 5060", Vendor: "nvidia"}},
+	}
+
+	app.clearSensorCatalogLeases()
+	if app.isSensorCatalogActive() || app.isGpuSensorProbeActive() {
+		t.Fatal("expected sensor catalog and gpu probe leases to be cleared")
+	}
+	if app.currentTemp.CPUTemp != 52 || app.currentTemp.CpuModel != "Ultra 5" || app.currentTemp.GpuModel != "RTX 5060" {
+		t.Fatalf("scalar telemetry/models should be preserved: %+v", app.currentTemp)
+	}
+	if app.currentTemp.CpuSensors != nil || app.currentTemp.GpuSensors != nil ||
+		app.currentTemp.CpuPowerSensors != nil || app.currentTemp.GpuPowerSensors != nil ||
+		app.currentTemp.GpuDevices != nil {
+		t.Fatalf("sensor slices should be nil after clearSensorCatalogLeases: %+v", app.currentTemp)
+	}
+}

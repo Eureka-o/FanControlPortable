@@ -1,4 +1,5 @@
-export type AppTab = 'status' | 'curve' | 'control' | 'devices' | 'about';
+export type BuiltinTab = 'status' | 'curve' | 'control' | 'devices' | 'about';
+export type AppTab = BuiltinTab | `plugin:${string}`;
 export type TimelineEventType = 'disconnect' | 'reconnect' | 'resume' | 'profile';
 
 export interface TimelineEvent {
@@ -54,4 +55,32 @@ export class LatestRequestGate {
   isCurrent(generation: number) {
     return generation === this.generation;
   }
+}
+
+export interface BridgeTelemetryLike {
+  bridgeOk?: boolean;
+  bridgeMessage?: string | null;
+  telemetryFailureStage?: string | null;
+}
+
+export function isBridgeStartingTelemetry(temp?: BridgeTelemetryLike | null): boolean {
+  if (!temp || temp.bridgeOk !== false) {
+    return false;
+  }
+  const stage = temp.telemetryFailureStage?.trim().toLowerCase() ?? '';
+  if (stage === 'starting') {
+    return true;
+  }
+  const message = temp.bridgeMessage?.trim() ?? '';
+  return message.includes('桥接程序正在启动中');
+}
+
+export function resolveBridgeWarning(
+  temp?: BridgeTelemetryLike | null,
+  fallbackMessage = '',
+): string | null {
+  if (!temp || temp.bridgeOk !== false || isBridgeStartingTelemetry(temp)) {
+    return null;
+  }
+  return temp.bridgeMessage?.trim() || fallbackMessage || null;
 }

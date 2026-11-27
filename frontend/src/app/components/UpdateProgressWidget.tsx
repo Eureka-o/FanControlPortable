@@ -2,7 +2,7 @@
 
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, m } from 'framer-motion';
 import { Minus, Pause, Play, RotateCcw, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -263,7 +263,7 @@ export default function UpdateProgressWidget() {
   return (
     <AnimatePresence>
       {stage !== 'idle' && (
-        <motion.aside
+        <m.aside
           ref={widgetRef}
           role="status"
           aria-live="polite"
@@ -365,7 +365,7 @@ export default function UpdateProgressWidget() {
               </div>
             </div>
           )}
-        </motion.aside>
+        </m.aside>
       )}
     </AnimatePresence>
   );

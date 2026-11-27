@@ -73,3 +73,62 @@ func TestIPCRequestRetryableOnlyForReadOnlyRequests(t *testing.T) {
 		})
 	}
 }
+
+func TestWindowHiddenSuppressesTelemetryAndFlushesLatestOnRestore(t *testing.T) {
+	type emittedEvent struct {
+		name string
+		data any
+	}
+	var emitted []emittedEvent
+	app := &App{
+		emitEvent: func(eventName string, optionalData ...any) {
+			var payload any
+			if len(optionalData) > 0 {
+				payload = optionalData[0]
+			}
+			emitted = append(emitted, emittedEvent{name: eventName, data: payload})
+		},
+	}
+
+	app.SetWindowHidden(true)
+	app.handleCoreEvent(ipc.Event{Type: ipc.EventTemperatureUpdate, Data: []byte(`{"cpuTemp":71,"updateTime":101}`)})
+	app.handleCoreEvent(ipc.Event{Type: ipc.EventTemperatureUpdate, Data: []byte(`{"cpuTemp":74,"updateTime":102}`)})
+	app.handleCoreEvent(ipc.Event{Type: ipc.EventFanDataUpdate, Data: []byte(`{"currentRpm":1850}`)})
+	app.handleCoreEvent(ipc.Event{Type: ipc.EventTemperatureHistoryUpdate, Data: []byte(`{"timestamp":102,"cpuTemp":74}`)})
+	app.handleCoreEvent(ipc.Event{Type: ipc.EventBlackSharkHostEffects, Data: []byte(`{"mode":"steady"}`)})
+	app.handleCoreEvent(ipc.Event{Type: ipc.EventHeartbeat, Data: []byte(`102`)})
+	app.handleCoreEvent(ipc.Event{Type: ipc.EventHealthPing, Data: []byte(`102`)})
+	if len(emitted) != 0 {
+		t.Fatalf("expected telemetry/heartbeat events to be suppressed while hidden, got %+v", emitted)
+	}
+
+	// Non-telemetry lifecycle/config events must still deliver while hidden.
+	app.handleCoreEvent(ipc.Event{Type: ipc.EventDeviceConnected, Data: []byte(`{"model":"BS3PRO"}`)})
+	app.handleCoreEvent(ipc.Event{Type: ipc.EventConfigUpdate, Data: []byte(`{"autoControl":true}`)})
+	if len(emitted) != 2 || emitted[0].name != "device-connected" || emitted[1].name != "config-update" {
+		t.Fatalf("expected lifecycle/config events to pass through while hidden, got %+v", emitted)
+	}
+
+	// Restoring visibility flushes latest temperature, fan data, and host effects once.
+	emitted = nil
+	app.SetWindowHidden(false)
+	if len(emitted) != 3 {
+		t.Fatalf("expected 3 flushed telemetry events on restore, got %+v", emitted)
+	}
+	if emitted[0].name != "temperature-update" {
+		t.Fatalf("expected first flushed event temperature-update, got %q", emitted[0].name)
+	}
+	if temp, ok := emitted[0].data.(types.TemperatureData); !ok || temp.CPUTemp != 74 {
+		t.Fatalf("expected latest merged cpuTemp=74 on restore, got %#v", emitted[0].data)
+	}
+	if emitted[1].name != "fan-data-update" || emitted[2].name != "blackshark-host-effects" {
+		t.Fatalf("unexpected flush order/names: %+v", emitted)
+	}
+
+	// Calling SetWindowHidden(false) again without new hidden telemetry does not re-emit.
+	emitted = nil
+	app.SetWindowHidden(false)
+	if len(emitted) != 0 {
+		t.Fatalf("expected duplicate restore not to re-flush, got %+v", emitted)
+	}
+}

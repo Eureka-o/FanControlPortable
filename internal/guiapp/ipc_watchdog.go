@@ -2,13 +2,17 @@ package guiapp
 
 import (
 	"time"
-
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 const ipcWatchdogInterval = 5 * time.Second
 
 func (a *App) startIPCWatchdog() {
+	stopCh := a.shutdownChan()
+	var ctxDone <-chan struct{}
+	if a.ctx != nil {
+		ctxDone = a.ctx.Done()
+	}
+
 	go func() {
 		defer func() {
 			if recovered := recover(); recovered != nil {
@@ -17,12 +21,20 @@ func (a *App) startIPCWatchdog() {
 		}()
 		ticker := time.NewTicker(ipcWatchdogInterval)
 		defer ticker.Stop()
-		for range ticker.C {
-			if a.shuttingDown.Load() {
+		for {
+			select {
+			case <-stopCh:
 				return
-			}
-			if a.ctx != nil && !a.ipcClient.IsConnected() {
-				a.reconnectCore()
+			case <-ctxDone:
+				return
+			case <-ticker.C:
+				if a.shuttingDown.Load() {
+					return
+				}
+				if a.ctx != nil && !a.ipcClient.IsConnected() {
+					a.reconnectCore()
+				}
+				a.maybeRunPeriodicMemoryReclaim(time.Now())
 			}
 		}
 	}()
@@ -43,7 +55,5 @@ func (a *App) reconnectCore() {
 }
 
 func (a *App) emitCoreResynced() {
-	if a.ctx != nil {
-		runtime.EventsEmit(a.ctx, "core-resynced", nil)
-	}
+	a.emit("core-resynced", nil)
 }

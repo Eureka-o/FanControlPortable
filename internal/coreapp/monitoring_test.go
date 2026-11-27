@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Eureka-o/FanControlPortable/internal/smartcontrol"
 	"github.com/Eureka-o/FanControlPortable/internal/types"
 )
 
@@ -50,6 +51,14 @@ func TestActiveTemperatureMonitorIntervalReturnsFromIdleToForeground(t *testing.
 	}
 	if got := activeTemperatureMonitorInterval(1, true, false); got != time.Second {
 		t.Fatalf("foreground interval = %v, want 1s", got)
+	}
+	// When autoControl is enabled in config but no device is connected/ready (autoControlActive = false),
+	// background polling should still back off to idleTemperatureMonitorInterval.
+	if got := activeTemperatureMonitorInterval(1, false, false); got != idleTemperatureMonitorInterval {
+		t.Fatalf("disconnected autoControl idle interval = %v, want %v", got, idleTemperatureMonitorInterval)
+	}
+	if got := activeTemperatureMonitorInterval(1, false, true); got != time.Second {
+		t.Fatalf("connected autoControl background interval = %v, want 1s", got)
 	}
 }
 
@@ -139,6 +148,19 @@ func TestEffectiveTemperaturePowerIsolatesMissingCpuPowerAndBadCpuTemperature(t 
 	badControl.ControlTemp = badCPU.CPUTemp
 	if got := effectiveTemperaturePower(badControl); got.CPUValid || got.GPUValid {
 		t.Fatalf("bad control temperature must not enter prediction or learning: %#v", got)
+	}
+
+	tinyNoise := base
+	tinyNoise.CPUPowerWatts = 0.04
+	if got := effectiveTemperaturePower(tinyNoise); got.CPUValid || got.CPUWatts != 0 || !got.GPUValid {
+		t.Fatalf("sub-threshold CPU power noise must be treated as invalid: %#v", got)
+	}
+
+	cpuOnlyControl := base
+	cpuOnlyControl.ControlSource = types.TempSourceCPU
+	cpuOnlyControl.CPUPowerWatts = 0
+	if got := effectiveTemperaturePower(cpuOnlyControl); got.CPUValid || got.GPUValid || got.GPUWatts != 0 {
+		t.Fatalf("CPU-only control with unreadable CPU power must not borrow GPU power: %#v", got)
 	}
 }
 
@@ -568,5 +590,222 @@ func TestBridgeRestartCooldown(t *testing.T) {
 		if got := bridgeRestartCooldown(tt.attempts); got != tt.want {
 			t.Fatalf("bridgeRestartCooldown(%d) = %s, want %s", tt.attempts, got, tt.want)
 		}
+	}
+}
+
+func TestAdvanceTemperatureEMAConvergesOnSmallPositiveStep(t *testing.T) {
+	if _, got := advanceTemperatureEMA(0, false, 50, 6); got != 50 {
+		t.Fatalf("initial sample = %d, want 50", got)
+	}
+	if _, got := advanceTemperatureEMA(50, true, 51, 1); got != 51 {
+		t.Fatalf("sampleCount=1 step = %d, want 51", got)
+	}
+
+	for _, sampleCount := range []int{4, 6} {
+		ema := 50.0
+		var display int
+		for i := 0; i < 12; i++ {
+			ema, display = advanceTemperatureEMA(ema, true, 51, sampleCount)
+		}
+		if display != 51 {
+			t.Fatalf("sampleCount=%d +1C EMA converged to %d (%v), want 51", sampleCount, display, ema)
+		}
+	}
+}
+
+func TestUpdateSmartControlDecisionWriteResultMatchesTimestampOnly(t *testing.T) {
+	app := &CoreApp{}
+	const ts1 = "2026-11-26T08:00:00Z"
+	const ts2 = "2026-11-26T08:00:01Z"
+
+	app.setSmartControlDecision(smartcontrol.Decision{
+		Timestamp:      ts1,
+		WriteAttempted: true,
+		GateReason:     "target-change",
+	})
+	app.updateSmartControlDecisionWriteResult(ts1, true)
+	got := app.getSmartControlDecision()
+	if !got.WriteSucceeded || got.GateReason != "target-change" {
+		t.Fatalf("decision after async success = %+v, want WriteSucceeded=true GateReason=target-change", got)
+	}
+
+	app.setSmartControlDecision(smartcontrol.Decision{
+		Timestamp:      ts2,
+		WriteAttempted: true,
+		GateReason:     "forced",
+	})
+	app.updateSmartControlDecisionWriteResult(ts1, false)
+	gotStale := app.getSmartControlDecision()
+	if gotStale.Timestamp != ts2 || gotStale.GateReason != "forced" || gotStale.WriteSucceeded {
+		t.Fatalf("stale timestamp overwrote newer decision: %+v", gotStale)
+	}
+
+	app.updateSmartControlDecisionWriteResult(ts2, false)
+	gotFail := app.getSmartControlDecision()
+	if gotFail.WriteSucceeded || gotFail.GateReason != "write-failed" {
+		t.Fatalf("decision after async failure = %+v, want WriteSucceeded=false GateReason=write-failed", gotFail)
+	}
+}
+
+func TestShouldRecycleIdleGpuBridge(t *testing.T) {
+	baseNow := time.Unix(1_717_000_000, 0)
+	baseTemp := types.TemperatureData{
+		BridgeOk:                  true,
+		TelemetryFresh:            true,
+		BridgeGpuMonitoringActive: true,
+		GPUReadState:              types.GPUReadStateNotPolled,
+	}
+	autoSel := types.TemperatureSelection{
+		TempSource:            types.TempSourceMax,
+		GpuReadMode:           types.GPUReadModeAuto,
+		GpuLowPowerProtection: true,
+	}
+
+	idleSince, recycle := shouldRecycleIdleGpuBridge(baseTemp, autoSel, false, false, false, time.Time{}, time.Time{}, baseNow)
+	if recycle || !idleSince.Equal(baseNow) {
+		t.Fatalf("first idle tick = (%v, %v), want (%v, false)", idleSince, recycle, baseNow)
+	}
+
+	// Not yet elapsed delay
+	idleSince2, recycle2 := shouldRecycleIdleGpuBridge(baseTemp, autoSel, false, false, false, idleSince, time.Time{}, baseNow.Add(idleGpuBridgeRecycleDelay-time.Second))
+	if recycle2 || !idleSince2.Equal(baseNow) {
+		t.Fatalf("before delay = (%v, %v), want (%v, false)", idleSince2, recycle2, baseNow)
+	}
+
+	// Paused when sensor catalog or gpu probe active
+	if gotSince, gotRecycle := shouldRecycleIdleGpuBridge(baseTemp, autoSel, true, false, false, idleSince, time.Time{}, baseNow.Add(idleGpuBridgeRecycleDelay)); gotRecycle || !gotSince.IsZero() {
+		t.Fatalf("sensorCatalogActive = (%v, %v), want (zero, false)", gotSince, gotRecycle)
+	}
+
+	// Skipped when gpuReadMode != auto or TempSource == gpu or !TelemetryFresh
+	alwaysSel := autoSel
+	alwaysSel.GpuReadMode = types.GPUReadModeAlways
+	if gotSince, gotRecycle := shouldRecycleIdleGpuBridge(baseTemp, alwaysSel, false, false, false, idleSince, time.Time{}, baseNow.Add(idleGpuBridgeRecycleDelay)); gotRecycle || !gotSince.IsZero() {
+		t.Fatalf("gpuReadMode always = (%v, %v), want (zero, false)", gotSince, gotRecycle)
+	}
+
+	// Triggers at delay when cooldown clear
+	gotSince, gotRecycle := shouldRecycleIdleGpuBridge(baseTemp, autoSel, false, false, false, idleSince, time.Time{}, baseNow.Add(idleGpuBridgeRecycleDelay))
+	if !gotRecycle || !gotSince.IsZero() {
+		t.Fatalf("at delay = (%v, %v), want (zero, true)", gotSince, gotRecycle)
+	}
+
+	// Honors cooldown after recent recycle
+	lastRecycle := baseNow.Add(idleGpuBridgeRecycleDelay)
+	if gotSinceC, gotRecycleC := shouldRecycleIdleGpuBridge(baseTemp, autoSel, false, false, false, baseNow, lastRecycle, lastRecycle.Add(idleGpuBridgeRecycleCooldown-time.Second)); gotRecycleC || !gotSinceC.Equal(baseNow) {
+		t.Fatalf("within cooldown = (%v, %v), want (%v, false)", gotSinceC, gotRecycleC, baseNow)
+	}
+}
+
+func TestEvaluateCoreMemoryReleaseScheduleAndBusyDeferral(t *testing.T) {
+	startedAt := time.Unix(1_717_000_000, 0)
+
+	// Too early after startup: no release
+	if run, _, nextDefer := evaluateCoreMemoryRelease(startedAt.Add(29*time.Second), startedAt, time.Time{}, time.Time{}, false, false, false, false); run || !nextDefer.IsZero() {
+		t.Fatalf("before startup cooldown = (%v, %v), want (false, zero)", run, nextDefer)
+	}
+
+	// Headless startup release after 30s trims working set
+	run, trimWS, nextDefer := evaluateCoreMemoryRelease(startedAt.Add(idleMemoryReleaseCooldown), startedAt, time.Time{}, time.Time{}, false, false, false, false)
+	if !run || !trimWS || !nextDefer.IsZero() {
+		t.Fatalf("startup headless release = (%v, %v, %v), want (true, true, zero)", run, trimWS, nextDefer)
+	}
+
+	// Disconnect triggers release with working set trim once cooldown satisfied
+	lastRelease := startedAt.Add(idleMemoryReleaseCooldown)
+	disconnectAt := lastRelease.Add(idleMemoryReleaseCooldown)
+	run, trimWS, _ = evaluateCoreMemoryRelease(disconnectAt, startedAt, lastRelease, time.Time{}, true, true, false, false)
+	if !run || !trimWS {
+		t.Fatalf("disconnect release = (%v, %v), want (true, true)", run, trimWS)
+	}
+
+	// Periodic 155s trigger with GUI connected releases heap without trimming working set
+	periodicAt := lastRelease.Add(periodicMemoryReleaseInterval)
+	run, trimWS, _ = evaluateCoreMemoryRelease(periodicAt, startedAt, lastRelease, time.Time{}, true, true, true, false)
+	if !run || trimWS {
+		t.Fatalf("periodic interactive release = (%v, %v), want (true, false)", run, trimWS)
+	}
+
+	// Busy state defers release by 20s and respects deferUntil
+	run, _, deferUntil := evaluateCoreMemoryRelease(periodicAt, startedAt, lastRelease, time.Time{}, true, false, false, true)
+	if run || !deferUntil.Equal(periodicAt.Add(memoryReleaseBusyDefer)) {
+		t.Fatalf("busy deferral = (%v, %v), want (false, %v)", run, deferUntil, periodicAt.Add(memoryReleaseBusyDefer))
+	}
+	run, _, nextDefer = evaluateCoreMemoryRelease(periodicAt.Add(10*time.Second), startedAt, lastRelease, deferUntil, true, false, false, false)
+	if run || !nextDefer.Equal(deferUntil) {
+		t.Fatalf("inside defer window = (%v, %v), want (false, %v)", run, nextDefer, deferUntil)
+	}
+	run, trimWS, nextDefer = evaluateCoreMemoryRelease(deferUntil, startedAt, lastRelease, deferUntil, true, false, false, false)
+	if !run || !trimWS || !nextDefer.IsZero() {
+		t.Fatalf("after defer window when quiet = (%v, %v, %v), want (true, true, zero)", run, trimWS, nextDefer)
+	}
+}
+
+func TestCoreAppIsMemoryReleaseBusy(t *testing.T) {
+	now := time.Unix(1_717_000_500, 0)
+	app := &CoreApp{}
+	if app.isMemoryReleaseBusy(now) {
+		t.Fatal("fresh app should not be busy")
+	}
+
+	app.sensorCatalogActive.Store(true)
+	if !app.isMemoryReleaseBusy(now) {
+		t.Fatal("sensorCatalogActive should block memory release")
+	}
+	app.sensorCatalogActive.Store(false)
+
+	app.gpuSensorProbeActive.Store(true)
+	if !app.isMemoryReleaseBusy(now) {
+		t.Fatal("gpuSensorProbeActive should block memory release")
+	}
+	app.gpuSensorProbeActive.Store(false)
+
+	app.wifiScanRunning.Store(true)
+	if !app.isMemoryReleaseBusy(now) {
+		t.Fatal("wifiScanRunning should block memory release")
+	}
+	app.wifiScanRunning.Store(false)
+
+	app.reconnectInProgress.Store(true)
+	if !app.isMemoryReleaseBusy(now) {
+		t.Fatal("reconnectInProgress should block memory release")
+	}
+	app.reconnectInProgress.Store(false)
+
+	app.resumeRecoveryRunning.Store(true)
+	if !app.isMemoryReleaseBusy(now) {
+		t.Fatal("resumeRecoveryRunning should block memory release")
+	}
+	app.resumeRecoveryRunning.Store(false)
+
+	app.temperatureBridgeRecoveryRunning.Store(true)
+	if !app.isMemoryReleaseBusy(now) {
+		t.Fatal("temperatureBridgeRecoveryRunning should block memory release")
+	}
+	app.temperatureBridgeRecoveryRunning.Store(false)
+
+	app.blackSharkStateRefreshing.Store(true)
+	if !app.isMemoryReleaseBusy(now) {
+		t.Fatal("blackSharkStateRefreshing should block memory release")
+	}
+	app.blackSharkStateRefreshing.Store(false)
+
+	app.blackSharkImageTransferMu.Lock()
+	app.blackSharkImageTransfers = map[uint64]context.CancelFunc{1: func() {}}
+	app.blackSharkImageTransferMu.Unlock()
+	if !app.isMemoryReleaseBusy(now) {
+		t.Fatal("active image transfer should block memory release")
+	}
+	app.blackSharkImageTransferMu.Lock()
+	app.blackSharkImageTransfers = nil
+	app.blackSharkImageTransferMu.Unlock()
+
+	app.bulkDeviceOpEndUnix.Store(now.Add(-5 * time.Second).UnixNano())
+	if !app.isMemoryReleaseBusy(now) {
+		t.Fatal("recent bulk device op should block memory release")
+	}
+	app.bulkDeviceOpEndUnix.Store(now.Add(-recentBulkDeviceOpGuard - time.Second).UnixNano())
+	if app.isMemoryReleaseBusy(now) {
+		t.Fatal("expired bulk device op guard should no longer block memory release")
 	}
 }

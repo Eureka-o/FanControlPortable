@@ -92,10 +92,167 @@ export interface PowerSensor {
   value: number;
 }
 
+export interface RTSSConfig {
+  enabled: boolean;
+  updateIntervalMs: number;
+  positionMode: 'anchor' | 'custom';
+  positionX: number;
+  positionY: number;
+}
+
+export interface RTSSLayoutStatus {
+  supported: boolean;
+  installed: boolean;
+  installPath: string;
+  configPath: string;
+  layoutPath: string;
+  layoutName: string;
+  backupPath: string;
+  anchorState: string;
+  anchorIndex: number;
+  layerCount: number;
+}
+
+export interface PluginSettingOption {
+  label: string;
+  value: string;
+}
+
+export interface PluginSettingField {
+  key: string;
+  title: string;
+  description?: string;
+  type: 'boolean' | 'string' | 'number' | 'select' | string;
+  default?: unknown;
+  options?: PluginSettingOption[];
+  min?: number;
+  max?: number;
+  step?: number;
+}
+
+export interface PluginInfo {
+  id: string;
+  name: string;
+  kind: 'builtin' | 'external' | string;
+  runtime?: 'builtin' | 'inproc-dll' | 'sidecar' | 'frontend-only' | string;
+  uiSlot?: 'sidebar-page' | 'settings-panel' | 'none' | string;
+  category?: string;
+  version?: string;
+  description?: string;
+  capabilities?: string[];
+  frontend?: string;
+  style?: string;
+  icon?: string;
+  state:
+    | 'ready'
+    | 'disabled'
+    | 'discovered'
+    | 'starting'
+    | 'suspending'
+    | 'suspended'
+    | 'restarting'
+    | 'pending_restart'
+    | 'unsupported'
+    | 'incompatible'
+    | 'failed'
+    | string;
+  enabled: boolean;
+  running: boolean;
+  supported: boolean;
+  restartRequired?: boolean;
+  pendingRestart?: boolean;
+  devMode?: boolean;
+  reason?: string;
+  lastError?: string;
+  path?: string;
+  settings?: PluginSettingField[];
+}
+
+export interface MarketplaceCatalogPlugin {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  category: string;
+  runtime: 'inproc-dll' | 'sidecar' | 'frontend-only' | string;
+  uiSlot: 'sidebar-page' | 'settings-panel' | 'none' | string;
+  platform: string;
+  minCoreVersion?: string;
+  protocolVersion: number;
+  hostApiVersion?: number;
+  capabilities?: string[];
+  restartRequired: boolean;
+  downloadUrl: string;
+  sha256: string;
+  size: number;
+  homepage?: string;
+  iconUrl?: string;
+  installedVersion?: string;
+  installStatus: 'not_installed' | 'installed' | 'update_available' | 'incompatible' | string;
+  compatible: boolean;
+  reason?: string;
+  pendingRestart?: boolean;
+}
+
+export interface MarketplaceCatalogTheme {
+  id: string;
+  name: string;
+  version: string;
+  base: 'light' | 'dark' | string;
+  layer: 'basic' | 'advanced' | string;
+  author: string;
+  description: string;
+  minCoreVersion?: string;
+  previewUrl?: string;
+  downloadUrl: string;
+  sha256: string;
+  size: number;
+  installedVersion?: string;
+  installedSource?: string;
+  installedBuiltin?: boolean;
+  installStatus: 'not_installed' | 'installed' | 'update_available' | 'incompatible' | string;
+  compatible: boolean;
+  reason?: string;
+}
+
+export interface MarketplaceCatalogView {
+  catalogUrl: string;
+  resolvedSource?: string;
+  latencyMs?: number;
+  updatedAt: string;
+  plugins: MarketplaceCatalogPlugin[];
+  themes: MarketplaceCatalogTheme[];
+}
+
+export interface MarketplaceInstallResult {
+  kind: 'plugin' | 'theme' | string;
+  id: string;
+  name: string;
+  version: string;
+  runtime?: string;
+  restartRequired: boolean;
+  message?: string;
+}
+
+export interface MarketplaceProgressEvent {
+  kind: 'plugin' | 'theme' | string;
+  id: string;
+  stage: 'downloading' | 'verifying' | 'extracting' | 'done' | 'error' | string;
+  percent: number;
+  received: number;
+  total: number;
+  message?: string;
+}
+
 // 应用配置
 export interface AppConfig {
   legionFnQ?: LegionFnQConfig;
   legionFnQSupport?: LegionFnQSupportCache;
+  rtss?: RTSSConfig;
+  plugins?: Record<string, boolean>;
+  pluginDevPaths?: string[];
+  pluginCatalogUrl?: string;
   deviceTransport?: string;
   fanControlDeviceIp?: string;
   wifiConnectionPriorityEnabled?: boolean;
@@ -119,6 +276,7 @@ export interface AppConfig {
   brightness: number;          // 亮度
   tempUpdateRate: number;      // 温度更新频率(秒)
 	  tempSampleCount?: number;
+	  temperatureHistoryEnabled?: boolean;
 	  temperatureHistoryRetentionHours?: number;
   tempSource?: 'max' | 'cpu' | 'gpu';
   cpuSensor?: string;
@@ -428,7 +586,7 @@ export interface DebugInfo {
   monitoringTemp: boolean;
   autoStartLaunch: boolean;
   pawnIOInstallerPath?: string;
-  plugins?: Array<{ id: string; name: string; running: boolean; lastError?: string }>;
+  plugins?: PluginInfo[];
   blackSharkFirmware?: BlackSharkFirmwareStatus;
 }
 
@@ -531,6 +689,7 @@ export interface ThemeMeta {
   layer?: 'basic' | 'advanced' | string; // basic | advanced
   contract?: string;
   source: string;      // user | install | builtin
+  builtin?: boolean;
 }
 
 // 设备信息

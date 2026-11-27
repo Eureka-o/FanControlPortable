@@ -1,28 +1,24 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Activity, AlertTriangle, Clock3, Languages, Monitor, Sparkles } from 'lucide-react';
+import { Activity, AlertTriangle, Clock3, History, Languages, Monitor, Palette, Power, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { toast } from 'sonner';
 import { types } from '../../../../wailsjs/go/models';
-import { type ThemeMeta } from '../../types/app';
 import { type AppLocale, useLocale } from '../../lib/i18n';
+import { HISTORY_RETENTION_HOUR_OPTIONS } from '../../lib/temperature-history';
+import { useTemperatureHistory } from '../../hooks/useTemperatureHistory';
 import { apiService } from '../../services/api';
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Select, ToggleSwitch } from '../ui';
 import HotkeySettingsSection from './HotkeySettingsSection';
 import { Section, SettingRow } from './SettingLayout';
+import ThemeManagementPanel from './ThemeManagementPanel';
 
 interface SystemSettingsSectionProps {
   config: types.AppConfig;
   onConfigChange: (config: types.AppConfig) => void;
 }
-
-const THEME_MODE_OPTIONS = [
-  { value: 'light', labelKey: 'controlPanel.options.themeMode.light' },
-  { value: 'dark', labelKey: 'controlPanel.options.themeMode.dark' },
-  { value: 'system', labelKey: 'controlPanel.options.themeMode.system' },
-];
 
 const WINDOW_MATERIAL_OPTIONS = [
   { value: 'acrylic', labelKey: 'controlPanel.options.windowMaterial.acrylic' },
@@ -42,21 +38,20 @@ export default function SystemSettingsSection({
   const { t } = useTranslation();
   const { locale, setLocale } = useLocale();
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
-  const [customThemes, setCustomThemes] = useState<ThemeMeta[]>([]);
   const [monitorOnlyDialogOpen, setMonitorOnlyDialogOpen] = useState(false);
+  const {
+    enabled: temperatureHistoryEnabled,
+    retentionHours: historyRetentionHours,
+    saving: temperatureHistorySaving,
+    setEnabled: setTemperatureHistoryEnabled,
+    setRetentionHours: setHistoryRetentionHours,
+  } = useTemperatureHistory();
 
   const setLoading = (key: string, value: boolean) => setLoadingStates((prev) => ({ ...prev, [key]: value }));
   const reportSettingsError = useCallback((error: unknown) => {
     toast.error(t('controlPanel.alerts.settingsOperationFailed', { error: getErrorMessage(error) }));
   }, [t]);
 
-  const themeModeOptions = useMemo(
-    () => [
-      ...THEME_MODE_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey) })),
-      ...customThemes.map((theme) => ({ value: theme.id, label: theme.name })),
-    ],
-    [customThemes, locale, t],
-  );
   const languageOptions = useMemo(
     () => ([
       { value: 'zh-CN', label: t('common.languages.zh-CN') },
@@ -69,21 +64,13 @@ export default function SystemSettingsSection({
     () => WINDOW_MATERIAL_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey) })),
     [locale, t],
   );
-
-  useEffect(() => {
-    let cancelled = false;
-    apiService
-      .listThemes()
-      .then((themes) => {
-        if (!cancelled) setCustomThemes(themes);
-      })
-      .catch(() => {
-        /* Keep built-in themes when runtime discovery fails. */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const historyRetentionOptions = useMemo(
+    () => HISTORY_RETENTION_HOUR_OPTIONS.map((hours) => ({
+      value: hours,
+      label: t('fanCurve.history.retention.hours', { count: hours }),
+    })),
+    [locale, t],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -106,30 +93,6 @@ export default function SystemSettingsSection({
     };
   }, []);
 
-  const handleThemeModeChange = useCallback(async (mode: string) => {
-    const isBuiltin = mode === 'light' || mode === 'dark' || mode === 'system';
-    const isKnownCustom = customThemes.some((theme) => theme.id === mode);
-    const nextMode = isBuiltin || isKnownCustom ? mode : 'system';
-    const previousThemeIsDark = document.documentElement.classList.contains('dark');
-    if (isBuiltin) {
-      const nextThemeIsDark = nextMode === 'dark' || (nextMode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      document.documentElement.classList.toggle('dark', nextThemeIsDark);
-    }
-    try {
-      const newCfg = types.AppConfig.createFrom({
-        ...config,
-        themeMode: nextMode,
-      });
-      await apiService.updateConfig(newCfg);
-      onConfigChange(newCfg);
-    } catch (error) {
-      if (isBuiltin) {
-        document.documentElement.classList.toggle('dark', previousThemeIsDark);
-      }
-      reportSettingsError(error);
-    }
-  }, [config, customThemes, onConfigChange, reportSettingsError]);
-
   const handleWindowBlurChange = useCallback(async (mode: string) => {
     const previousConfig = config;
     const optimisticCfg = types.AppConfig.createFrom({
@@ -145,14 +108,6 @@ export default function SystemSettingsSection({
       reportSettingsError(error);
     }
   }, [config, onConfigChange, reportSettingsError]);
-
-  const handleOpenThemesFolder = useCallback(async () => {
-    try {
-      await apiService.openThemesFolder();
-    } catch (error) {
-      reportSettingsError(error);
-    }
-  }, [reportSettingsError]);
 
   const handleWindowsAutoStartChange = useCallback(async (enabled: boolean) => {
     setLoading('windowsAutoStart', true);
@@ -207,109 +162,130 @@ export default function SystemSettingsSection({
 
   return (
     <>
-    <Section title={t('controlPanel.system.sectionTitle')} icon={Monitor}>
-      <SettingRow
-        icon={<Monitor className="h-4 w-4" />}
-        title={t('controlPanel.system.themeTitle')}
-        description={t('controlPanel.system.themeDescription')}
-      >
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleOpenThemesFolder}
-            title={t('controlPanel.system.themeOpenFolder')}
-          >
-            {t('controlPanel.system.themeOpenFolder')}
-          </Button>
-          <div className="w-36">
+    <div className="space-y-5">
+      <Section title={t('controlPanel.system.groups.appearance')} icon={Palette} iconTone="purple">
+        <ThemeManagementPanel config={config} onConfigChange={onConfigChange} />
+
+        <SettingRow
+          icon={<Sparkles className={clsx('h-4 w-4', ((config as any).windowBlur || 'acrylic') !== 'off' ? 'text-primary' : '')} />}
+          iconTone="blue"
+          title={t('controlPanel.system.windowBlurTitle')}
+          description={t('controlPanel.system.windowBlurDescription')}
+          tip={t('controlPanel.system.windowBlurTip')}
+        >
+          <div className="w-40">
             <Select
-              value={((config as any).themeMode || 'system') as string}
-              onChange={(value: string | number) => handleThemeModeChange(String(value))}
-              options={themeModeOptions}
+              value={String((config as any).windowBlur || 'acrylic')}
+              onChange={(value: string | number) => handleWindowBlurChange(String(value))}
+              options={windowMaterialOptions}
               size="sm"
             />
           </div>
-        </div>
-      </SettingRow>
+        </SettingRow>
 
-      <SettingRow
-        icon={<Sparkles className={clsx('h-4 w-4', ((config as any).windowBlur || 'acrylic') !== 'off' ? 'text-primary' : '')} />}
-        title={t('controlPanel.system.windowBlurTitle')}
-        description={t('controlPanel.system.windowBlurDescription')}
-        tip={t('controlPanel.system.windowBlurTip')}
-      >
-        <div className="w-36">
-          <Select
-            value={String((config as any).windowBlur || 'acrylic')}
-            onChange={(value: string | number) => handleWindowBlurChange(String(value))}
-            options={windowMaterialOptions}
+        <SettingRow
+          icon={<Languages className="h-4 w-4" />}
+          iconTone="emerald"
+          title={t('controlPanel.system.languageTitle')}
+          description={t('controlPanel.system.languageDescription')}
+        >
+          <div className="w-40">
+            <Select
+              value={locale}
+              onChange={(value: string | number) => setLocale(String(value) as AppLocale)}
+              options={languageOptions}
+              size="sm"
+            />
+          </div>
+        </SettingRow>
+      </Section>
+
+      <Section title={t('controlPanel.system.groups.monitoringAndHotkeys')} icon={Activity} iconTone="blue">
+        <SettingRow
+          icon={<Activity className={clsx('h-4 w-4', config.monitorOnly ? 'text-primary' : '')} />}
+          iconTone="amber"
+          title={t('controlPanel.system.monitorOnlyTitle')}
+          description={t('controlPanel.system.monitorOnlyDescription')}
+          tip={t('controlPanel.system.monitorOnlyTip')}
+        >
+          <ToggleSwitch
+            enabled={config.monitorOnly === true}
+            onChange={handleMonitorOnlyChange}
+            loading={loadingStates.monitorOnly}
             size="sm"
+            color="blue"
           />
-        </div>
-      </SettingRow>
+        </SettingRow>
 
-      <SettingRow
-        icon={<Languages className="h-4 w-4" />}
-        title={t('controlPanel.system.languageTitle')}
-        description={t('controlPanel.system.languageDescription')}
-      >
-        <div className="w-36">
-          <Select
-            value={locale}
-            onChange={(value: string | number) => setLocale(String(value) as AppLocale)}
-            options={languageOptions}
+        <SettingRow
+          icon={<History className={clsx('h-4 w-4', temperatureHistoryEnabled ? 'text-primary' : '')} />}
+          iconTone="blue"
+          title={t('controlPanel.system.temperatureHistoryTitle')}
+          description={t('controlPanel.system.temperatureHistoryDescription')}
+        >
+          <ToggleSwitch
+            enabled={temperatureHistoryEnabled}
+            onChange={(enabled) => { void setTemperatureHistoryEnabled(enabled); }}
+            loading={temperatureHistorySaving}
             size="sm"
+            color="blue"
           />
-        </div>
-      </SettingRow>
+        </SettingRow>
 
-      <SettingRow
-        icon={<Activity className={clsx('h-4 w-4', config.monitorOnly ? 'text-emerald-500' : '')} />}
-        title={t('controlPanel.system.monitorOnlyTitle')}
-        description={t('controlPanel.system.monitorOnlyDescription')}
-        tip={t('controlPanel.system.monitorOnlyTip')}
-      >
-        <ToggleSwitch
-          enabled={config.monitorOnly === true}
-          onChange={handleMonitorOnlyChange}
-          loading={loadingStates.monitorOnly}
-          size="sm"
-          color="green"
-        />
-      </SettingRow>
+        <SettingRow
+          icon={<Clock3 className={clsx('h-4 w-4', temperatureHistoryEnabled ? 'text-primary' : '')} />}
+          iconTone="default"
+          title={t('controlPanel.system.temperatureHistoryRetentionTitle')}
+          description={t('controlPanel.system.temperatureHistoryRetentionDescription')}
+          disabled={!temperatureHistoryEnabled}
+        >
+          <div className="w-40">
+            <Select
+              value={historyRetentionHours}
+              onChange={(value: string | number) => { void setHistoryRetentionHours(Number(value)); }}
+              disabled={temperatureHistorySaving || !temperatureHistoryEnabled}
+              size="sm"
+              options={historyRetentionOptions}
+            />
+          </div>
+        </SettingRow>
 
-      <HotkeySettingsSection config={config} onConfigChange={onConfigChange} />
+        <HotkeySettingsSection config={config} onConfigChange={onConfigChange} />
+      </Section>
 
-      <SettingRow
-        icon={<Monitor className={clsx('h-4 w-4', config.windowsAutoStart ? 'text-emerald-500' : '')} />}
-        title={t('controlPanel.system.autoStartTitle')}
-        description={t('controlPanel.system.autoStartDescription')}
-        tip={t('controlPanel.system.autoStartTip')}
-      >
-        <ToggleSwitch
-          enabled={config.windowsAutoStart}
-          onChange={handleWindowsAutoStartChange}
-          loading={loadingStates.windowsAutoStart}
-          size="sm"
-          color="green"
-        />
-      </SettingRow>
+      <Section title={t('controlPanel.system.groups.startupAndConnection')} icon={Power} iconTone="emerald">
+        <SettingRow
+          icon={<Monitor className={clsx('h-4 w-4', config.windowsAutoStart ? 'text-primary' : '')} />}
+          iconTone="emerald"
+          title={t('controlPanel.system.autoStartTitle')}
+          description={t('controlPanel.system.autoStartDescription')}
+          tip={t('controlPanel.system.autoStartTip')}
+        >
+          <ToggleSwitch
+            enabled={config.windowsAutoStart}
+            onChange={handleWindowsAutoStartChange}
+            loading={loadingStates.windowsAutoStart}
+            size="sm"
+            color="blue"
+          />
+        </SettingRow>
 
-      <SettingRow
-        icon={<Clock3 className={clsx('h-4 w-4', (config as any).ignoreDeviceOnReconnect ? 'text-emerald-500' : '')} />}
-        title={t('controlPanel.system.reconnectTitle')}
-        description={t('controlPanel.system.reconnectDescription')}
-        tip={t('controlPanel.system.reconnectTip')}
-      >
-        <ToggleSwitch
-          enabled={(config as any).ignoreDeviceOnReconnect ?? true}
-          onChange={handleIgnoreDeviceOnReconnectChange}
-          size="sm"
-          color="green"
-        />
-      </SettingRow>
-    </Section>
+        <SettingRow
+          icon={<Clock3 className={clsx('h-4 w-4', (config as any).ignoreDeviceOnReconnect ? 'text-primary' : '')} />}
+          iconTone="blue"
+          title={t('controlPanel.system.reconnectTitle')}
+          description={t('controlPanel.system.reconnectDescription')}
+          tip={t('controlPanel.system.reconnectTip')}
+        >
+          <ToggleSwitch
+            enabled={(config as any).ignoreDeviceOnReconnect ?? true}
+            onChange={handleIgnoreDeviceOnReconnectChange}
+            size="sm"
+            color="blue"
+          />
+        </SettingRow>
+      </Section>
+    </div>
     <Dialog open={monitorOnlyDialogOpen} onOpenChange={(open) => !loadingStates.monitorOnly && setMonitorOnlyDialogOpen(open)}>
       <DialogContent className="max-w-md">
         <DialogHeader>

@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { types } from '../../../wailsjs/go/models';
 import { apiService } from '../services/api';
+import { useAppStore } from '../store/app-store';
 import { buildDiagnosticSteps, deriveNoiseDiagnosticRange, fanSpeedDisplaySuffix, NoiseMeter, analyzeNoiseDiagnostic, type NoiseDiagnosticPoint } from '../lib/noise-diagnostic';
 import { Badge, Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, NumberInput, Select } from './ui/index';
 
@@ -17,7 +18,7 @@ interface NoiseDiagnosticProps {
   config: types.AppConfig;
   onConfigChange: (config: types.AppConfig) => void;
   isConnected: boolean;
-  fanData: types.FanData | null;
+  fanData?: types.FanData | null;
   runtimeDeviceProfile?: types.DeviceProfile | null;
   runtimeDeviceCapabilities?: types.DeviceCapabilities | null;
   deviceModel?: string | null;
@@ -64,11 +65,12 @@ export default function NoiseDiagnostic({
   const cancelRequestedRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
 
+  const storeFlyDigiCapability = useAppStore((state) => state.fanData?.flyDigiCapability);
   const derivedRange = useMemo(() => deriveNoiseDiagnosticRange(
     runtimeDeviceProfile,
     runtimeDeviceCapabilities,
-    (fanData as any)?.flyDigiCapability,
-  ), [fanData, runtimeDeviceCapabilities, runtimeDeviceProfile]);
+    (fanData as any)?.flyDigiCapability ?? storeFlyDigiCapability,
+  ), [fanData, runtimeDeviceCapabilities, runtimeDeviceProfile, storeFlyDigiCapability]);
   const plannedSteps = useMemo(() => range ? buildDiagnosticSteps(range) : [], [range]);
   const estimatedMinutes = Math.max(1, Math.ceil((plannedSteps.length * 18 + 8) / 60));
   const relativeResultPoints = useMemo(() => {

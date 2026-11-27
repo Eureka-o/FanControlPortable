@@ -289,6 +289,8 @@ type TemperatureSelection struct {
 	GpuPowerSensor        string `json:"gpuPowerSensor"`
 	GpuReadMode           string `json:"gpuReadMode"`
 	GpuLowPowerProtection bool   `json:"gpuLowPowerProtection"`
+	OmitSensorLists       bool   `json:"omitSensorLists,omitempty"`
+	ForcePollGpu          bool   `json:"forcePollGpu,omitempty"`
 }
 
 // NormalizeTemperatureSelection 归一化温度选择配置。
@@ -498,9 +500,10 @@ type TemperatureData struct {
 	TelemetrySource       string                 `json:"telemetrySource,omitempty"`
 	CPUTelemetrySource    string                 `json:"cpuTelemetrySource,omitempty"`
 	GPUTelemetrySource    string                 `json:"gpuTelemetrySource,omitempty"`
-	TelemetryFailureStage string                 `json:"telemetryFailureStage,omitempty"`
-	TelemetryState        string                 `json:"telemetryState"` // 前端展示用的遥测可信度
-	TelemetryFresh        bool                   `json:"-"`              // 本轮是否直接读取到有效桥接遥测
+	TelemetryFailureStage     string                 `json:"telemetryFailureStage,omitempty"`
+	TelemetryState            string                 `json:"telemetryState"` // 前端展示用的遥测可信度
+	TelemetryFresh            bool                   `json:"-"`              // 本轮是否直接读取到有效桥接遥测
+	BridgeGpuMonitoringActive bool                   `json:"-"`              // 内部诊断：桥接当前是否已开启 GPU 传感器轮询
 }
 
 // TemperatureHistoryPoint CPU/GPU 温度历史点。
@@ -547,6 +550,7 @@ type BridgeTemperatureData struct {
 	Error                 string                 `json:"error"`
 	TelemetrySource       string                 `json:"telemetrySource,omitempty"`
 	TelemetryFailureStage string                 `json:"telemetryFailureStage,omitempty"`
+	GpuMonitoringActive   bool                   `json:"gpuMonitoringActive,omitempty"`
 }
 
 // BridgeCommand 桥接程序命令
@@ -594,6 +598,68 @@ type LegionFnQSupportCache struct {
 	Supported bool `json:"supported"`
 }
 
+const DefaultRTSSUpdateIntervalMS = 1000
+
+const (
+	RTSSPositionModeAnchor = "anchor"
+	RTSSPositionModeCustom = "custom"
+	defaultRTSSPositionX   = 0
+	defaultRTSSPositionY   = 0
+	minRTSSPosition        = -1000
+	maxRTSSPosition        = 1000
+)
+
+type RTSSConfig struct {
+	Enabled          bool   `json:"enabled"`
+	UpdateIntervalMS int    `json:"updateIntervalMs"`
+	PositionMode     string `json:"positionMode"`
+	PositionX        int    `json:"positionX"`
+	PositionY        int    `json:"positionY"`
+}
+
+func GetDefaultRTSSConfig() RTSSConfig {
+	return RTSSConfig{
+		Enabled:          false,
+		UpdateIntervalMS: DefaultRTSSUpdateIntervalMS,
+		PositionMode:     RTSSPositionModeAnchor,
+		PositionX:        defaultRTSSPositionX,
+		PositionY:        defaultRTSSPositionY,
+	}
+}
+
+func NormalizeRTSSConfig(cfg RTSSConfig) (RTSSConfig, bool) {
+	changed := false
+	switch cfg.UpdateIntervalMS {
+	case 250, 500, 1000, 2000:
+	default:
+		cfg.UpdateIntervalMS = DefaultRTSSUpdateIntervalMS
+		changed = true
+	}
+	if cfg.PositionMode == "" {
+		cfg.PositionMode = RTSSPositionModeAnchor
+		changed = true
+	}
+	if cfg.PositionMode != RTSSPositionModeAnchor && cfg.PositionMode != RTSSPositionModeCustom {
+		cfg.PositionMode = RTSSPositionModeAnchor
+		changed = true
+	}
+	if cfg.PositionX < minRTSSPosition {
+		cfg.PositionX = minRTSSPosition
+		changed = true
+	} else if cfg.PositionX > maxRTSSPosition {
+		cfg.PositionX = maxRTSSPosition
+		changed = true
+	}
+	if cfg.PositionY < minRTSSPosition {
+		cfg.PositionY = minRTSSPosition
+		changed = true
+	} else if cfg.PositionY > maxRTSSPosition {
+		cfg.PositionY = maxRTSSPosition
+		changed = true
+	}
+	return cfg, changed
+}
+
 type SmartControlConfig struct {
 	Enabled                           bool             `json:"enabled"`              // 智能耦合控制开关
 	Learning                          bool             `json:"learning"`             // 学习开关
@@ -627,6 +693,10 @@ type SmartControlConfig struct {
 type AppConfig struct {
 	LegionFnQ        LegionFnQConfig       `json:"legionFnQ"`
 	LegionFnQSupport LegionFnQSupportCache `json:"legionFnQSupport"`
+	RTSS             RTSSConfig            `json:"rtss"`
+	Plugins          map[string]bool       `json:"plugins,omitempty"`
+	PluginDevPaths   []string              `json:"pluginDevPaths,omitempty"`
+	PluginCatalogURL string                `json:"pluginCatalogUrl,omitempty"`
 	// NativeAutoBLEScanUnix 是上一次自动连接真的做过 BLE 扫描的 Unix 秒，0 表示没记录。
 	// 它是 device.Manager.lastAutoBLEScanAt（内存字段）的落盘镜像，用于重启后在冷却窗口内
 	// 跳过注定失败的 BLE 扫描。
@@ -699,6 +769,7 @@ type AppConfig struct {
 	Brightness               int                `json:"brightness"`                       // 亮度
 	TempUpdateRate           int                `json:"tempUpdateRate"`                   // 温度更新频率(秒)
 	TempSampleCount          int                `json:"tempSampleCount"`                  // 温度采样次数(用于平均)
+	HistoryEnabled           *bool              `json:"temperatureHistoryEnabled,omitempty"` // 温度历史后台记录开关
 	HistoryRetentionHours    int                `json:"temperatureHistoryRetentionHours"` // 温度历史后台保留时长(小时)
 	TempSource               string             `json:"tempSource"`                       // 控温温度来源: max/cpu/gpu
 	GpuDevice                string             `json:"gpuDevice"`                        // GPU 设备选择: auto 或设备 key
@@ -1154,6 +1225,7 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 	defaultCurve := GetDefaultFanCurve()
 	defaultTempSelection := GetDefaultTemperatureSelection()
 	defaultDeviceProfiles := append(FlyDigiBuiltInProfiles(), BlackSharkBRB02Profile(), BlackSharkBRB02USBProfile())
+	defaultHistoryEnabled := true
 
 	return AppConfig{
 		DeviceTransport:                   "",
@@ -1199,6 +1271,7 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		Brightness:               100,
 		TempUpdateRate:           2,
 		TempSampleCount:          1,
+		HistoryEnabled:           &defaultHistoryEnabled,
 		HistoryRetentionHours:    DefaultTemperatureHistoryRetentionHours,
 		TempSource:               defaultTempSelection.TempSource,
 		GpuDevice:                defaultTempSelection.GpuDevice,
@@ -1220,5 +1293,7 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		LightStrip:               GetDefaultLightStripConfig(),
 		LegionFnQ:                GetDefaultLegionFnQConfig(),
 		LegionFnQSupport:         LegionFnQSupportCache{},
+		RTSS:                     GetDefaultRTSSConfig(),
+		Plugins:                  map[string]bool{},
 	}
 }

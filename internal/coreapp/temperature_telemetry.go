@@ -103,6 +103,17 @@ func mergeTemperatureHardwareMetadata(previous, incoming types.TemperatureData) 
 	return incoming
 }
 
+func stripSensorLists(temp *types.TemperatureData) {
+	if temp == nil {
+		return
+	}
+	temp.CpuSensors = nil
+	temp.GpuSensors = nil
+	temp.CpuPowerSensors = nil
+	temp.GpuPowerSensors = nil
+	temp.GpuDevices = nil
+}
+
 func temperatureSensorsEqual(current, previous []types.TemperatureSensor) bool {
 	if (current == nil) != (previous == nil) {
 		return false

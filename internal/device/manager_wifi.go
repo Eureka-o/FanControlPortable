@@ -202,6 +202,7 @@ func (m *Manager) disconnect(notify bool) {
 
 func (m *Manager) disconnectWithGeneration(notify bool, expected uint64) bool {
 	m.operationControl.cancelActive()
+	m.CancelPendingSpeedPush()
 	m.mutex.Lock()
 	if expected != 0 && m.connectionGen.Load() != expected {
 		m.mutex.Unlock()

@@ -2,6 +2,7 @@
 
 import type { ComponentType, DragEvent, ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { m } from 'framer-motion';
 import {
   Bluetooth,
   Boxes,
@@ -158,20 +159,20 @@ function Section({
   action?: ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-border bg-card shadow-sm">
-      <div className="flex flex-col gap-3 border-b border-border/60 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
+    <section data-theme-ui="setting-section" className="rounded-[20px] border border-border/75 bg-card shadow-sm">
+      <div data-theme-ui="setting-section-header" className="flex flex-col gap-3 border-b border-border/55 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <Icon className="h-4.5 w-4.5" />
+          <div data-theme-ui="setting-section-icon" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] bg-muted/70 text-primary">
+            <Icon className="h-4 w-4 shrink-0" />
           </div>
           <div className="min-w-0">
-            <h2 className="text-base font-semibold text-foreground">{title}</h2>
-            {description && <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{description}</p>}
+            <h2 className="text-base font-semibold tracking-[-0.015em] text-foreground">{title}</h2>
+            {description && <p className="mt-1 text-[13px] leading-[1.45] text-muted-foreground">{description}</p>}
           </div>
         </div>
         {action && <div className="flex shrink-0 flex-wrap gap-2">{action}</div>}
       </div>
-      <div>{children}</div>
+      <div className="divide-y divide-border/45">{children}</div>
     </section>
   );
 }
@@ -268,14 +269,14 @@ function ProfileRow({
     : t('advancedDevices.status.builtin');
 
   return (
-    <div className="flex flex-col gap-3 border-b border-border/60 px-4 py-3 last:border-b-0 lg:flex-row lg:items-center lg:justify-between">
-      <div className="flex min-w-0 gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-background text-muted-foreground">
+    <div data-theme-ui="setting-row" className="flex flex-col gap-3 px-5 py-4 transition-colors duration-200 hover:bg-muted/25 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex min-w-0 gap-3.5">
+        <div data-theme-ui="setting-row-icon" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] border border-border/70 bg-background text-muted-foreground">
           <Icon className="h-4.5 w-4.5" />
         </div>
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="truncate text-sm font-semibold text-foreground">{displayName}</div>
+            <div className="truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">{displayName}</div>
             {active && isManualCompatibilityTransport(profile.transport) && <Badge variant="success">{t('advancedDevices.status.active')}</Badge>}
             {profile.builtIn ? <Badge variant="info">{builtInLabel}</Badge> : <Badge>{t('advancedDevices.status.user')}</Badge>}
           </div>
@@ -284,7 +285,7 @@ function ProfileRow({
             <span>{formatSpeedRange(profile)}</span>
             {identity && <span className="truncate">{identity}</span>}
           </div>
-          <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{summarizeConnection(profile)}</div>
+          <div className="mt-1 text-[13px] leading-[1.45] text-muted-foreground">{summarizeConnection(profile)}</div>
           <div className="mt-2">
             <CapabilityPills profile={profile} />
           </div>
@@ -342,12 +343,12 @@ function ConnectionCategoryBanner({
   const { t } = useTranslation();
 
   return (
-    <div className="rounded-2xl border border-border bg-card px-4 py-3 shadow-sm">
-      <div className="flex flex-col gap-1 pb-3">
-        <div className="text-sm font-semibold text-foreground">{t('advancedDevices.connectionBanner.title')}</div>
-        <div className="text-xs leading-relaxed text-muted-foreground">{t('advancedDevices.connectionBanner.description')}</div>
+    <div data-theme-card="advanced-compatibility-banner" className="rounded-[20px] border border-border/75 bg-card p-5 shadow-sm">
+      <div className="flex flex-col gap-1 pb-3.5">
+        <div className="text-base font-semibold tracking-[-0.015em] text-foreground">{t('advancedDevices.connectionBanner.title')}</div>
+        <div className="text-[13px] leading-[1.45] text-muted-foreground">{t('advancedDevices.connectionBanner.description')}</div>
       </div>
-      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
         {COMPATIBILITY_TRANSPORT_VALUES.map((transport) => {
           const profile = activeProfileForTransport(profiles, activeIdsByTransport, transport);
           const Icon = transportIcon(transport);
@@ -360,22 +361,22 @@ function ConnectionCategoryBanner({
               type="button"
               disabled={!profile}
               onClick={() => profile && onSelect(profile.id)}
-              className={`min-h-24 rounded-xl border px-3 py-3 text-left transition-colors ${
+              className={`min-h-24 rounded-2xl border px-3.5 py-3 text-left transition-colors ${
                 active
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border bg-background hover:border-primary/45 hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-65'
+                  ? 'border-primary/45 bg-primary/8 text-primary'
+                  : 'border-border/70 bg-muted/30 hover:border-border hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-65'
               }`}
             >
               <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-card text-muted-foreground">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span data-theme-ui="setting-row-icon" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-border/70 bg-card text-muted-foreground">
                     <Icon className="h-4 w-4" />
                   </span>
-                  <span className="truncate text-sm font-semibold">{t(`advancedDevices.transport.${transport}`)}</span>
+                  <span className="truncate text-[14px] font-semibold">{t(`advancedDevices.transport.${transport}`)}</span>
                 </div>
                 {active && <Badge variant="success">{t('advancedDevices.status.active')}</Badge>}
               </div>
-              <div className="mt-2 truncate text-sm text-foreground">
+              <div className="mt-2 truncate text-[14px] font-medium text-foreground">
                 {profile ? displayName : t('advancedDevices.connectionBanner.noDevice')}
               </div>
               <div className="mt-1 truncate text-xs text-muted-foreground">
@@ -396,19 +397,36 @@ function GuardedEntry({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="mx-auto flex min-h-[58vh] max-w-2xl flex-col items-center justify-center px-3 py-10 text-center">
-      <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-300/50 bg-amber-500/10 text-amber-600 dark:border-amber-700/40 dark:text-amber-300">
-        <ShieldAlert className="h-7 w-7" />
-      </div>
-      <h1 className="text-2xl font-semibold tracking-normal text-foreground">{t('advancedDevices.gate.title')}</h1>
-      <p className="mt-3 max-w-xl text-sm leading-7 text-muted-foreground">{t('advancedDevices.gate.description')}</p>
-      <div className="mt-5 rounded-xl border border-amber-300/45 bg-amber-50/80 px-4 py-3 text-left text-sm leading-6 text-amber-900 dark:border-amber-700/40 dark:bg-amber-900/15 dark:text-amber-100">
-        <div className="font-medium">{t('advancedDevices.gate.warningTitle')}</div>
-        <div className="mt-1 text-xs leading-6">{t('advancedDevices.gate.warningBody')}</div>
-      </div>
-      <Button className="mt-6" onClick={onFirstConfirm} icon={<ShieldAlert className="h-4 w-4" />}>
-        {t('advancedDevices.gate.primary')}
-      </Button>
+    <div data-page-reveal="cards" className="mx-auto flex min-h-[58vh] max-w-2xl items-center justify-center px-3 py-10">
+      <m.div
+        data-theme-card="advanced-gate"
+        initial={{ opacity: 0, y: 12, scale: 0.985 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+        className="flex w-full flex-col items-center rounded-[20px] border border-border/75 bg-card px-7 py-9 text-center shadow-sm"
+      >
+        <m.div
+          initial={{ opacity: 0, scale: 0.88 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.22, delay: 0.06, ease: 'easeOut' }}
+          data-theme-ui="setting-row-icon"
+          className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-border/75 bg-muted/50 text-amber-600 dark:text-amber-300"
+        >
+          <ShieldAlert className="h-7 w-7" />
+        </m.div>
+        <h1 className="text-2xl font-semibold tracking-[-0.02em] text-foreground">{t('advancedDevices.gate.title')}</h1>
+        <p className="mt-3 max-w-xl text-sm leading-7 text-muted-foreground">{t('advancedDevices.gate.description')}</p>
+        <div
+          data-theme-ui="setting-subcard"
+          className="mt-5 rounded-2xl border border-border/70 border-l-2 border-l-amber-500/70 bg-muted/35 px-4 py-3 text-left text-sm leading-6 text-foreground/90"
+        >
+          <div className="font-semibold text-foreground">{t('advancedDevices.gate.warningTitle')}</div>
+          <div className="mt-1 text-xs leading-6 text-muted-foreground">{t('advancedDevices.gate.warningBody')}</div>
+        </div>
+        <Button className="mt-6" onClick={onFirstConfirm} icon={<ShieldAlert className="h-4 w-4" />}>
+          {t('advancedDevices.gate.primary')}
+        </Button>
+      </m.div>
     </div>
   );
 }

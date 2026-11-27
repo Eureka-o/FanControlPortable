@@ -5,6 +5,7 @@ import test from 'node:test';
 const source = readFileSync(new URL('../src/app/lib/theme-bootstrap.ts', import.meta.url), 'utf8');
 const syncSource = readFileSync(new URL('../src/app/components/SystemThemeSync.tsx', import.meta.url), 'utf8');
 const settingsSource = readFileSync(new URL('../src/app/components/settings/SystemSettingsSection.tsx', import.meta.url), 'utf8');
+const themePanelSource = readFileSync(new URL('../src/app/components/settings/ThemeManagementPanel.tsx', import.meta.url), 'utf8');
 
 test('does not replay truncated custom theme CSS during startup', () => {
   assert.match(source, /if \(parsed\.cssTruncated\) \{\s*return null;/);
@@ -23,9 +24,9 @@ test('keeps the current theme when custom theme CSS refresh fails', () => {
 });
 
 test('does not change the base theme before custom theme CSS is ready', () => {
-  const handler = settingsSource.slice(
-    settingsSource.indexOf('const handleThemeModeChange'),
-    settingsSource.indexOf('const handleWindowBlurChange'),
+  const handler = themePanelSource.slice(
+    themePanelSource.indexOf('const handleThemeModeChange'),
+    themePanelSource.indexOf('const handleOpenThemesFolder'),
   );
 
   assert.match(handler, /if \(isBuiltin\) \{[\s\S]*?classList\.toggle\('dark', nextThemeIsDark\);[\s\S]*?\}/);

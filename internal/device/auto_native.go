@@ -158,12 +158,31 @@ func (m *Manager) AutoConnectNativeProfilesContext(ctx context.Context, profiles
 		}
 	}
 
+	var hidProbed bool
+	var presentHIDProductIDs map[uint16]bool
 	for _, profile := range candidates {
 		if ctx.Err() != nil {
 			return false, nil
 		}
 		switch profile.Transport {
 		case types.DeviceTransportHID:
+			if !hidProbed {
+				hidProbed = true
+				presentHIDProductIDs = map[uint16]bool{}
+				for _, candidate := range scanFlyDigiHIDDevices(flyDigiHIDProductIDsForProfile(types.LegacyRPMProfileID)) {
+					presentHIDProductIDs[candidate.productID] = true
+				}
+			}
+			hasMatchingHID := false
+			for _, pid := range flyDigiHIDProductIDsForProfile(profile.ID) {
+				if presentHIDProductIDs[pid] {
+					hasMatchingHID = true
+					break
+				}
+			}
+			if !hasMatchingHID {
+				continue
+			}
 			if success, info := m.connectNativeProfileContextIfDisconnected(ctx, profile); success {
 				return true, info
 			}
@@ -408,6 +427,8 @@ func nativeAutoConnectCandidates(profiles []types.DeviceProfile, preferred ...ty
 func scanNativeHIDDevices(profiles []types.DeviceProfile) []map[string]string {
 	devices := make([]map[string]string, 0)
 	seenPaths := map[string]bool{}
+	var allCandidates []flyDigiHIDCandidate
+	scanned := false
 	for _, profile := range profiles {
 		if isLegacyBlackSharkHIDProfileID(profile.ID) {
 			continue
@@ -416,8 +437,18 @@ func scanNativeHIDDevices(profiles []types.DeviceProfile) []map[string]string {
 		if profile.Transport != types.DeviceTransportHID {
 			continue
 		}
-		candidates := scanFlyDigiHIDDevices(flyDigiHIDProductIDsForProfile(profile.ID))
-		for _, candidate := range candidates {
+		if !scanned {
+			allCandidates = scanFlyDigiHIDDevices(flyDigiHIDProductIDsForProfile(types.LegacyRPMProfileID))
+			scanned = true
+		}
+		wantedPIDs := map[uint16]bool{}
+		for _, pid := range flyDigiHIDProductIDsForProfile(profile.ID) {
+			wantedPIDs[pid] = true
+		}
+		for _, candidate := range allCandidates {
+			if !wantedPIDs[candidate.productID] {
+				continue
+			}
 			path := strings.TrimSpace(candidate.path)
 			if path == "" || seenPaths[path] {
 				continue

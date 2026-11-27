@@ -150,6 +150,10 @@ func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
 
 	a.mutex.Unlock()
 
+	if a.pluginManager != nil && fanData != nil {
+		a.pluginManager.PublishFanData(fanData)
+	}
+
 	// 广播风扇数据更新
 	if broadcastFanData && a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventFanDataUpdate, fanData)
@@ -158,6 +162,9 @@ func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
 
 // onDeviceDisconnect 设备断开回调
 func (a *CoreApp) onDeviceDisconnect() {
+	if a.pluginManager != nil {
+		a.pluginManager.NotifyDeviceDisconnected()
+	}
 	a.cancelNoiseDiagnosticLease("设备断开")
 	wasConnected := newDeviceConnectionFlow(a).setRuntimeDisconnected("device-disconnect")
 
@@ -300,6 +307,9 @@ func (a *CoreApp) resetKnownDeviceReconnectAttempts() {
 }
 
 func (a *CoreApp) requestReconnect(reason string, retryDelays []time.Duration) {
+	if reason != "health-check" {
+		a.healthReconnectFailures.Store(0)
+	}
 	if a.monitorOnlyActive() {
 		a.logDebug("仅监控模式已启用，忽略重连请求: %s", reason)
 		return
@@ -539,6 +549,9 @@ func (a *CoreApp) runReconnectLoopWithWake(
 	}
 
 	if ctx.Err() == nil {
+		if reason == "health-check" {
+			a.healthReconnectFailures.Add(1)
+		}
 		a.logError("所有重连尝试均失败，等待下次健康检查")
 	}
 }
@@ -621,7 +634,7 @@ func (a *CoreApp) reconnectDevice(ctx context.Context) reconnectAttemptResult {
 		false,
 		false,
 		func() (bool, map[string]string) {
-			return a.deviceManager.AutoConnectNativeProfilesContext(ctx, cfg.DeviceProfiles)
+			return a.autoConnectNativeWithBLECooldown(ctx, cfg.DeviceProfiles)
 		},
 		func() (bool, map[string]string) {
 			if !compatibilityConnectionEnabled(cfg) {
@@ -881,6 +894,15 @@ func (a *CoreApp) onSystemSuspend() {
 			return
 		}
 
+		a.safeRun("suspend-plugins", func() {
+			if a.pluginManager != nil {
+				a.pluginManager.SuspendAll(2 * time.Second)
+			}
+		})
+		if !a.isCurrentSuspendGeneration(generation) {
+			return
+		}
+
 		a.safeRun("suspend-device-disconnect", func() {
 			a.deviceManager.DisconnectSilently()
 		})
@@ -1066,8 +1088,16 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 			a.startTemperatureMonitoring()
 		})
 	}
+	if !a.monitorOnlyActive() && a.pluginManager != nil {
+		a.safeGo("resume-plugins", func() {
+			a.pluginManager.ResumeAll()
+		})
+	}
 
 	if !wasConnected && !forceReconnect {
+		if !a.monitorOnlyActive() && a.deviceManager != nil {
+			a.deviceManager.UnblockWrites()
+		}
 		a.logInfo("系统恢复时设备原本未连接，仅重置桥接状态")
 		return
 	}
@@ -1076,6 +1106,9 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 		a.deviceManager.DisconnectForRecovery()
 	})
 	newDeviceConnectionFlow(a).setRuntimeDisconnected("system-resume")
+	if !a.monitorOnlyActive() && a.deviceManager != nil {
+		a.deviceManager.UnblockWrites()
+	}
 
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
@@ -1093,9 +1126,19 @@ func (a *CoreApp) refreshTrayAfterResume() {
 		return
 	}
 	a.trayManager.RefreshIcon()
+	cleanupCh := a.cleanupChan
 	a.safeGo("resume-tray-refresh-delayed", func() {
-		time.Sleep(5 * time.Second)
-		a.trayManager.RefreshIcon()
+		timer := time.NewTimer(5 * time.Second)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			if a.stopping.Load() || a.trayManager == nil {
+				return
+			}
+			a.trayManager.RefreshIcon()
+		case <-cleanupCh:
+			return
+		}
 	})
 }
 
@@ -1158,6 +1201,7 @@ func (a *CoreApp) finishSuccessfulDeviceConnection(deviceInfo map[string]string,
 
 	newDeviceConnectionFlow(a).setRuntimeConnected()
 	atomic.StoreInt64(&a.lastHealthReconnectUnix, 0)
+	a.healthReconnectFailures.Store(0)
 	a.recordHealthTransportSuccess(a.deviceManager.GetDeviceType(), time.Now())
 	a.hasSuccessfulConnection.Store(true)
 	a.lastConnectionWasNative.Store(types.IsNativeDeviceTransport(a.deviceManager.GetDeviceType()))

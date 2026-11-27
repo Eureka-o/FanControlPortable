@@ -14,18 +14,12 @@ test('keeps profile selection, creation, and management in the curve header', ()
   assert.match(source, /data-curve-profile-toolbar/);
   assert.match(source, /data-curve-profile-row/);
   assert.match(source, /data-curve-profile-list/);
-  assert.match(source, /px-4 text-center text-xs font-medium/);
+  assert.match(source, /onWheel=\{handleProfileListWheel\}/);
+  assert.match(source, /profileListOverflow\.left/);
+  assert.match(source, /profileListOverflow\.right/);
   assert.match(source, /\[&::\-webkit-scrollbar\]:hidden/);
-  assert.match(source, /group relative flex shrink-0 hover:z-10 focus-within:z-10/);
-  assert.match(source, /absolute -right-\[6px\] -top-\[1px\] z-10 flex h-\[13px\] w-\[13px\]/);
-  assert.match(source, /opacity-0[^']*group-hover:opacity-100/);
-  assert.match(source, /group-hover:border-border group-hover:bg-muted\/65 group-hover:text-foreground/);
-  assert.match(source, /border-border bg-card text-muted-foreground[^\"]*hover:border-destructive\/50 hover:text-destructive/);
-  assert.match(source, /focus-visible:border-destructive\/50 focus-visible:text-destructive/);
-  assert.doesNotMatch(source, /isActive\s*\?\s*'border-destructive\/50 bg-card text-destructive'/);
-  assert.doesNotMatch(source, /bg-destructive\/10|opacity-100 hover:bg/);
-  assert.doesNotMatch(source, /-ml-px flex h-\[13px\]/);
-  assert.match(source, /<X className="h-2 w-2" \/>/);
+  assert.doesNotMatch(source, /absolute -right-\[6px\] -top-\[1px\] z-10 flex h-\[13px\] w-\[13px\]/);
+  assert.doesNotMatch(source, /<X className="h-2 w-2" \/>/);
   assert.match(source, /setCreateProfileDialogOpen\(true\)/);
   assert.match(source, /setManageProfilesDialogOpen\(true\)/);
   assert.doesNotMatch(source, /<FanCurveProfileSelect/);
@@ -46,10 +40,13 @@ test('stacks export and import sections in the profile manager', () => {
   assert.doesNotMatch(source, /grid-cols-1 gap-3 md:grid-cols-2/);
 });
 
-test('keeps profile rename and transfer actions compact and aligned', () => {
-  assert.match(source, /DialogContent className="max-w-\[620px\]"/);
+test('keeps profile rename, duplication, and transfer actions unified in a two-tab manager', () => {
+  assert.match(source, /DialogContent className="max-w-\[640px\]"/);
+  assert.match(source, /manageDialogTab === 'list'/);
+  assert.match(source, /data-profile-manage-list/);
   assert.match(source, /data-profile-rename-row/);
   assert.match(source, /sm:grid-cols-\[minmax\(0,1fr\)_auto\]/);
+  assert.match(source, /duplicateProfile/);
   assert.match(source, /data-profile-transfer-header className="space-y-1"/);
   assert.match(source, /data-profile-export-actions className="grid grid-cols-1 gap-2 sm:grid-cols-2"/);
   assert.match(source, /rows=\{2\}/);
@@ -64,9 +61,9 @@ test('guards profile switches when the current curve has unsaved changes', () =>
 });
 
 test('confirms deletion and keeps creating a profile from the current curve', () => {
+  assert.match(source, /data-profile-manage-list/);
   assert.match(source, /setDeleteProfileDialogOpen\(true\)/);
   assert.match(source, /setPendingDeleteProfileId\(profile\.id\)/);
-  assert.match(source, /group-hover:opacity-100/);
   assert.match(source, /saveFanCurveProfile\('', safeName, localCurve, true\)/);
 });
 
@@ -74,8 +71,8 @@ test('exports by clipboard or file and imports pasted, selected, or dropped cont
   assert.match(source, /navigator\.clipboard\.writeText\(code\)/);
   assert.match(source, /apiService\.exportFanCurveProfilesToFile\(selectedExportProfileIds\)/);
   assert.match(source, /apiService\.exportFanCurveProfiles\(selectedExportProfileIds\)/);
-  assert.match(source, /data-profile-export-picker-trigger/);
   assert.match(source, /data-profile-export-picker/);
+  assert.match(source, /fanCurve\.profiles\.selectAll/);
   assert.match(source, /type="checkbox"/);
   assert.match(source, /setSelectedExportProfileIds\(activeProfileId \? \[activeProfileId\] : \[\]\)/);
   assert.doesNotMatch(source, /fanCurve\.importExport\.current/);
@@ -108,7 +105,7 @@ test('keeps curve jump aligned until the target layout stabilizes', () => {
 });
 
 test('shows only history and never normalizes or saves a curve while disconnected', () => {
-  assert.match(source, /\{!historyOnly && isConnected && \(\s*<>\s*<motion\.div\s*data-theme-card="curve-header"/s);
+  assert.match(source, /\{!historyOnly && isConnected && \(\s*<>\s*<m\.div\s*data-theme-card="curve-header"/s);
   assert.match(source, /historyOnly\?: boolean/);
   assert.match(source, /<\/>,?\s*\)\}\s*<section ref=\{historyDetailsRef\} data-theme-card="curve-history"/s);
   assert.match(source, /if \(!isConnected && focusTarget !== 'history-details'\) \{\s*onFocusHandled\(\);\s*return;/);
@@ -154,7 +151,7 @@ test('lets the history detail page select one time range for both trend charts',
   assert.equal([...chartSource.matchAll(/syncId="historyTrend"/g)].length, 2);
   assert.equal([...source.matchAll(/onMouseDown=\{handleHistoryZoomMouseDown\}/g)].length, 2);
   assert.equal([...source.matchAll(/onMouseMove=\{handleHistoryZoomMouseMove\}/g)].length, 2);
-  assert.equal([...chartSource.matchAll(/<ReferenceArea/g)].length, 2);
+  assert.equal([...chartSource.matchAll(/<ReferenceArea/g)].length, 3);
   assert.equal([...chartSource.matchAll(/fill="var\(--chart-primary\)"/g)].length, 2);
   assert.match(chartSource, /stroke="var\(--chart-primary-active\)"/);
   assert.match(source, /onDoubleClick=\{resetHistoryZoom\}/);
@@ -175,4 +172,66 @@ test('provides positive initial dimensions for every responsive chart', () => {
   for (const container of responsiveContainers) {
     assert.match(container, /initialDimension=\{\{ width: [1-9]\d*, height: [1-9]\d* \}\}/);
   }
+});
+
+test('integrates curve legend hints, collapsible strategy card, diverging learning bars, and responsive history grid', () => {
+  const editorIndex = source.indexOf('data-theme-card="curve-editor"');
+  const learningIndex = source.indexOf('data-theme-card="curve-learning"');
+  const hintsIndex = source.indexOf('data-theme-ui="curve-hints"');
+  assert.ok(editorIndex >= 0 && learningIndex > editorIndex);
+  assert.ok(hintsIndex > editorIndex && hintsIndex < learningIndex);
+  assert.doesNotMatch(source, /data-theme-card="curve-prediction"/);
+  assert.doesNotMatch(source, /fanCurve\.prediction\.badge/);
+  assert.match(source, /\{\!\!smartControl\.learning && !blackSharkGearCurveMode && \(/);
+  assert.match(source, /data-theme-ui="learning-offset-bars"/);
+  assert.match(source, /showValue=\{false\}/);
+  assert.match(source, /handleApplyLearnedOffsetsToCurve/);
+  assert.match(source, /await apiService\.saveFanCurveProfile\(profileID, profileName, mergedCurve, true\);\s*await apiService\.resetLearnedOffsets\(\)/s);
+  assert.match(chartSource, /learningActive/);
+  assert.match(chartSource, /comfortBandBounds/);
+  assert.doesNotMatch(chartSource, /x=\{comfortBandBounds\.high\}/);
+  assert.match(source, /grid-cols-2 gap-3 md:grid-cols-5/);
+});
+
+test('places thermal prediction above learning bias tabs, guards apply-learning and low-RPM, and validates manual gears on save', () => {
+  const advancedSource = readFileSync(new URL('../src/app/components/AdvancedDevicesPanel.tsx', import.meta.url), 'utf8');
+  const learningIndex = source.indexOf('data-theme-card="curve-learning"');
+  const predictionIndex = source.indexOf('data-theme-ui="curve-prediction-row"');
+  const biasTabsIndex = source.indexOf('data-theme-ui="learning-bias-tabs"');
+  assert.ok(learningIndex >= 0 && predictionIndex > learningIndex && biasTabsIndex > predictionIndex);
+
+  assert.match(source, /supportsLowRpmGuidance = speedUnit === 'rpm' && speedRange\.min < RPM_RECOMMENDED_MIN/);
+  assert.match(source, /lowRpmDialogOpen/);
+  assert.match(source, /applyLearningDialogOpen/);
+  assert.match(source, /setApplyLearningDialogOpen\(true\)/);
+  assert.match(source, /gearDraftValidation/);
+  assert.match(source, /deferClamp/);
+  assert.match(advancedSource, /data-theme-card="advanced-gate"/);
+  assert.match(advancedSource, /<m\.div[\s\S]*data-theme-card="advanced-gate"/);
+
+  for (const locale of ['zh-CN', 'en-US', 'ja-JP']) {
+    const messages = JSON.parse(readFileSync(new URL(`../src/app/locales/${locale}/translation.json`, import.meta.url), 'utf8'));
+    const dragHint = messages.fanCurve?.hints?.dragPoint || '';
+    assert.ok(dragHint.length > 0);
+    assert.doesNotMatch(dragHint, /蓝色|blue|ブルー/i);
+    assert.ok(messages.fanCurve?.warning?.lowRpmBody, `${locale} missing lowRpmBody`);
+    assert.ok(messages.fanCurve?.learning?.applyConfirmTitle, `${locale} missing applyConfirmTitle`);
+    assert.ok(messages.fanCurve?.manualGear?.validationRangeOrder, `${locale} missing validationRangeOrder`);
+    assert.ok(messages.fanCurve?.history?.splitTooltip?.title, `${locale} missing splitTooltip.title`);
+    assert.ok(messages.fanCurve?.editor?.undo, `${locale} missing editor.undo`);
+    assert.ok(messages.fanCurve?.editor?.snapLabel, `${locale} missing editor.snapLabel`);
+    assert.ok(messages.fanCurve?.editor?.pointTunerTitle, `${locale} missing editor.pointTunerTitle`);
+  }
+});
+
+test('splits history hover tooltips by chart and adds fuzzy hit-testing, point tuner, step snap, and undo', () => {
+  assert.match(source, /data-theme-ui="history-split-tooltip-toggle"/);
+  assert.match(source, /renderThermalHistoryTooltip/);
+  assert.match(source, /renderPowerHistoryTooltip/);
+  assert.match(source, /data-theme-ui="curve-editor-toolbar"/);
+  assert.match(source, /data-theme-ui="curve-snap-toggle"/);
+  assert.match(source, /data-theme-ui="curve-undo-button"/);
+  assert.match(source, /data-theme-ui="curve-point-tuner"/);
+  assert.match(source, /findClosestCurvePointIndex/);
+  assert.match(source, /monotonicPushedSet/);
 });

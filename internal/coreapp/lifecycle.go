@@ -1,7 +1,9 @@
 package coreapp
 
 import (
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -9,6 +11,7 @@ import (
 	"github.com/Eureka-o/FanControlPortable/internal/config"
 	"github.com/Eureka-o/FanControlPortable/internal/curveprofiles"
 	"github.com/Eureka-o/FanControlPortable/internal/ipc"
+	"github.com/Eureka-o/FanControlPortable/internal/plugins"
 	"github.com/Eureka-o/FanControlPortable/internal/powernotify"
 	"github.com/Eureka-o/FanControlPortable/internal/smartcontrol"
 	"github.com/Eureka-o/FanControlPortable/internal/tray"
@@ -118,24 +121,46 @@ func (a *CoreApp) Start() error {
 	if a.applyCachedLegionFnQSupport(&cfg) {
 		configChanged = true
 	}
-
-	// 将启动迁移和系统自启动状态合并为一次完整配置写入。
-	if upgraded, err := a.autostartManager.EnsureAutoStartTaskHealthy(); err != nil {
-		a.logError("升级自启动任务定义失败: %v", err)
-	} else if upgraded {
-		a.logInfo("已升级自启动任务定义")
-	}
-	a.logInfo("检查Windows自启动状态")
-	actualAutoStart := a.autostartManager.CheckWindowsAutoStart()
-	if actualAutoStart != cfg.WindowsAutoStart {
-		cfg.WindowsAutoStart = actualAutoStart
+	if normalizedRTSS, changed := types.NormalizeRTSSConfig(cfg.RTSS); changed {
+		cfg.RTSS = normalizedRTSS
 		configChanged = true
-		a.logInfo("已同步Windows自启动状态: %v", actualAutoStart)
 	}
+	if a.initStartupTemperatureHistory(&cfg) {
+		configChanged = true
+	}
+
 	if configChanged {
 		if err := a.commitConfigUpdate(cfg, nil); err != nil {
 			a.logError("保存启动归一化配置失败: %v", err)
 		}
+	}
+	if a.pluginManager != nil {
+		pluginsDir := filepath.Join(config.GetInstallDir(), "plugins")
+		configDir := a.pluginConfigDir(cfg)
+		a.pluginManager.SetPluginsDir(pluginsDir, version.Get())
+		a.pluginManager.SetConfigDir(configDir)
+		a.pluginManager.SetDevPluginDirs(cfg.PluginDevPaths)
+		if err := plugins.ApplyPendingStagedOps(pluginsDir, configDir, a.logger); err != nil {
+			a.logError("应用待处理插件操作失败: %v", err)
+		}
+		a.pluginManager.SetCallbacks(
+			func(pluginID, event string, payload json.RawMessage) {
+				if a.ipcServer != nil {
+					a.ipcServer.BroadcastEvent(ipc.EventPluginEvent, ipc.PluginEventPayload{
+						PluginID: pluginID,
+						Event:    event,
+						Payload:  payload,
+					})
+				}
+			},
+			func() {
+				if a.configManager != nil {
+					a.broadcastPluginsUpdate(a.configManager.Get())
+				}
+			},
+		)
+		a.pluginManager.RefreshExternal()
+		a.seedExternalRTSSSettingsIfMissing(cfg)
 	}
 	a.syncManualGearLevelMemory(cfg)
 	a.configureDeviceManager(cfg)
@@ -173,6 +198,7 @@ func (a *CoreApp) Start() error {
 		a.logError("启动 IPC 服务器失败: %v", err)
 		return err
 	}
+	a.startAsyncAutoStartSync()
 	if !a.monitorOnlyActive() && !a.legionFnQSupportChecked.Load() {
 		a.startLegionFnQSupportDetection()
 	}
@@ -183,6 +209,9 @@ func (a *CoreApp) Start() error {
 	a.applyHotkeyBindings(cfg)
 	if !a.monitorOnlyActive() {
 		a.applyPluginConfig(cfg)
+		if a.pluginManager != nil {
+			a.pluginManager.SyncStartupExternal(a.pluginEnabledMap(cfg))
+		}
 	}
 
 	// 注册系统睡眠/唤醒通知：睡眠前主动断开设备/桥接，唤醒后恢复，避免唤醒崩溃。
@@ -261,6 +290,33 @@ func (a *CoreApp) Start() error {
 	}
 
 	return nil
+}
+
+func (a *CoreApp) startAsyncAutoStartSync() {
+	if a.autostartManager == nil || a.configManager == nil || a.stopping.Load() {
+		return
+	}
+	a.safeGo("syncAutoStart@Start", func() {
+		actualAutoStart, upgraded, err := a.autostartManager.InspectAndEnsureAutoStart()
+		if err != nil {
+			a.logError("升级自启动任务定义失败: %v", err)
+		} else if upgraded {
+			a.logInfo("已升级自启动任务定义")
+		}
+		if a.stopping.Load() {
+			return
+		}
+		if a.configManager.Get().WindowsAutoStart == actualAutoStart {
+			return
+		}
+		if _, err := a.commitConfigMutation(func(cfg *types.AppConfig) {
+			cfg.WindowsAutoStart = actualAutoStart
+		}, nil); err != nil {
+			a.logError("同步Windows自启动状态失败: %v", err)
+			return
+		}
+		a.logInfo("已同步Windows自启动状态: %v", actualAutoStart)
+	})
 }
 
 func (a *CoreApp) requestStartupReconnect() {
@@ -473,11 +529,17 @@ func (a *CoreApp) cleanup() {
 	// 进程退出前不卸干净，下次启动就可能装不上钩子。
 	a.stopBlackSharkHostFx()
 
-	select {
-	case a.cleanupChan <- true:
-	default:
-	}
+	a.closeCleanupChan()
 
+}
+
+func (a *CoreApp) closeCleanupChan() {
+	if a == nil || a.cleanupChan == nil {
+		return
+	}
+	a.cleanupOnce.Do(func() {
+		close(a.cleanupChan)
+	})
 }
 
 // 日志辅助方法

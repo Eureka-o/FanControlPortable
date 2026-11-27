@@ -14,6 +14,7 @@ import (
 	"strings"
 	"syscall"
 	"unicode/utf16"
+	"unsafe"
 
 	"github.com/Eureka-o/FanControlPortable/internal/appmeta"
 	"github.com/Eureka-o/FanControlPortable/internal/types"
@@ -275,20 +276,34 @@ func scheduledTaskNeedsUpgrade(definition string) bool {
 	return strings.TrimSpace(settings.ExecutionTimeLimit) != "PT0S"
 }
 
-// EnsureAutoStartTaskHealthy 将旧版命令行任务升级到当前 XML 定义。
-func (m *Manager) EnsureAutoStartTaskHealthy() (bool, error) {
-	taskName := m.scheduledTaskName()
-	if taskName == "" {
-		return false, nil
-	}
+type scheduledTaskAction struct {
+	Actions struct {
+		Exec struct {
+			Command string `xml:"Command"`
+		} `xml:"Exec"`
+	} `xml:"Actions"`
+}
 
+func scheduledTaskCommandFromXML(definition string) string {
+	var parsed scheduledTaskAction
+	if err := parseTaskDefinition(definition, &parsed); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(parsed.Actions.Exec.Command)
+}
+
+func (m *Manager) inspectScheduledTaskXML(taskName string) (string, bool) {
 	cmd := exec.Command("schtasks", "/query", "/tn", taskName, "/xml")
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	output, err := cmd.Output()
 	if err != nil {
-		return false, fmt.Errorf("查询自启动任务定义失败: %v", err)
+		return "", false
 	}
-	if !scheduledTaskNeedsUpgrade(decodeSchtasksOutput(output)) {
+	return decodeSchtasksOutput(output), true
+}
+
+func (m *Manager) upgradeScheduledTaskIfNeeded(taskName, xmlText string) (bool, error) {
+	if !scheduledTaskNeedsUpgrade(xmlText) {
 		return false, nil
 	}
 	if !m.IsRunningAsAdmin() {
@@ -306,6 +321,36 @@ func (m *Manager) EnsureAutoStartTaskHealthy() (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// InspectAndEnsureAutoStart 在单次 XML 查询中检查计划任务自启动状态，并在需要时就地升级旧定义。
+func (m *Manager) InspectAndEnsureAutoStart() (bool, bool, error) {
+	for _, taskName := range []string{appmeta.AppName, appmeta.LegacyAppName} {
+		xmlText, ok := m.inspectScheduledTaskXML(taskName)
+		if !ok {
+			continue
+		}
+		if cmdPath := scheduledTaskCommandFromXML(xmlText); cmdPath != "" && !commandTargetsFanControl(cmdPath) {
+			continue
+		}
+		upgraded, err := m.upgradeScheduledTaskIfNeeded(taskName, xmlText)
+		return true, upgraded, err
+	}
+	return m.checkRegistryAutoStart(), false, nil
+}
+
+// EnsureAutoStartTaskHealthy 将旧版命令行任务升级到当前 XML 定义。
+func (m *Manager) EnsureAutoStartTaskHealthy() (bool, error) {
+	taskName := m.scheduledTaskName()
+	if taskName == "" {
+		return false, nil
+	}
+
+	xmlText, ok := m.inspectScheduledTaskXML(taskName)
+	if !ok {
+		return false, fmt.Errorf("查询自启动任务定义失败")
+	}
+	return m.upgradeScheduledTaskIfNeeded(taskName, xmlText)
 }
 
 // deleteScheduledTask 删除任务计划程序
@@ -620,60 +665,51 @@ func DetectAutoStartLaunch(args []string) bool {
 
 // isLaunchedByTaskScheduler 检查是否由任务计划程序启动
 func isLaunchedByTaskScheduler() bool {
-	// 在Windows上检查父进程
-	cmd := exec.Command("wmic", "process", "where", fmt.Sprintf("ProcessId=%d", os.Getpid()), "get", "ParentProcessId", "/value")
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-
-	output, err := cmd.Output()
-	if err != nil {
-		return false
-	}
-
-	lines := strings.SplitSeq(string(output), "\n")
-	for line := range lines {
-		line = strings.TrimSpace(line)
-		if after, ok := strings.CutPrefix(line, "ParentProcessId="); ok {
-			ppidStr := strings.TrimSpace(after)
-			if ppidStr != "" && ppidStr != "0" {
-				ppid, err := parseIntSafe(ppidStr)
-				if err == nil {
-					return checkParentProcessName(ppid)
-				}
-			}
-		}
-	}
-
-	return false
+	return isTaskSchedulerProcessName(currentParentProcessName())
 }
 
-// checkParentProcessName 检查父进程名称
-func checkParentProcessName(ppid int) bool {
-	cmd := exec.Command("wmic", "process", "where", fmt.Sprintf("ProcessId=%d", ppid), "get", "Name", "/value")
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-
-	output, err := cmd.Output()
+func currentParentProcessName() string {
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
-		return false
+		return ""
 	}
+	defer windows.CloseHandle(snapshot)
 
-	lines := strings.SplitSeq(string(output), "\n")
-	for line := range lines {
-		line = strings.TrimSpace(line)
-		if after, ok := strings.CutPrefix(line, "Name="); ok {
-			processName := strings.ToLower(strings.TrimSpace(after))
-			// 检查是否为任务计划程序相关进程
-			if processName == "taskeng.exe" || processName == "svchost.exe" || processName == "taskhostw.exe" {
-				return true
+	currentPID := uint32(os.Getpid())
+	var parentPID uint32
+	exeByPID := make(map[uint32]string, 128)
+
+	var entry windows.ProcessEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+	if err := windows.Process32First(snapshot, &entry); err != nil {
+		return ""
+	}
+	for {
+		exeName := windows.UTF16ToString(entry.ExeFile[:])
+		if entry.ProcessID == currentPID {
+			parentPID = entry.ParentProcessID
+		}
+		exeByPID[entry.ProcessID] = exeName
+		if parentPID != 0 {
+			if name, ok := exeByPID[parentPID]; ok {
+				return name
 			}
 		}
+		if err := windows.Process32Next(snapshot, &entry); err != nil {
+			break
+		}
 	}
-
-	return false
+	if parentPID == 0 {
+		return ""
+	}
+	return exeByPID[parentPID]
 }
 
-// parseIntSafe 安全解析整数
-func parseIntSafe(s string) (int, error) {
-	var result int
-	_, err := fmt.Sscanf(s, "%d", &result)
-	return result, err
+func isTaskSchedulerProcessName(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "taskeng.exe", "svchost.exe", "taskhostw.exe":
+		return true
+	default:
+		return false
+	}
 }

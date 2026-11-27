@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -71,3 +72,34 @@ func TestSuccessfulTemperatureClearsReadCooldown(t *testing.T) {
 		t.Fatalf("successful temperature left %s of cooldown", remaining)
 	}
 }
+
+type delayedWriteCloser struct {
+	delay time.Duration
+}
+
+func (d *delayedWriteCloser) Write(p []byte) (int, error) {
+	time.Sleep(d.delay)
+	return len(p), nil
+}
+
+func (d *delayedWriteCloser) Close() error { return nil }
+
+func TestSendCommandUnsafeSharesSingleDeadline(t *testing.T) {
+	// Exit 命令超时为 2s；写入消耗 1.5s 后，读取只应再等剩余 ~0.5s，而不应重新计时 2s（总计 ~3.5s）。
+	m := NewManager(testLogger{})
+	m.stdin = &delayedWriteCloser{delay: 1500 * time.Millisecond}
+	m.lineCh = make(chan string)
+
+	started := time.Now()
+	_, err := m.sendCommandUnsafe("Exit", "")
+	elapsed := time.Since(started)
+
+	if err == nil || !strings.Contains(err.Error(), "超时") {
+		t.Fatalf("sendCommandUnsafe() err = %v, want timeout error", err)
+	}
+	if elapsed > 2700*time.Millisecond {
+		t.Fatalf("sendCommandUnsafe() elapsed = %s, want shared <=2s deadline (got write+read double timeout)", elapsed)
+	}
+}
+
+var _ io.WriteCloser = (*delayedWriteCloser)(nil)

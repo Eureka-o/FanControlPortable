@@ -5,26 +5,41 @@ import { types } from '../../../../wailsjs/go/models';
 import { formatSpeedRange, summarizeConnection } from '../devices/profile-utils';
 import { profileLabel } from './device-connection-utils';
 
+export type SettingIconTone = 'default' | 'blue' | 'emerald' | 'amber' | 'purple' | 'rose';
+
 // Shared settings layout primitives keep ControlPanel sections visually consistent.
 export function Section({
   title,
+  description,
   icon: Icon,
+  iconTone = 'blue',
   children,
   className,
   action,
 }: {
   title: string;
+  description?: string;
   icon: React.ComponentType<{ className?: string }>;
+  iconTone?: SettingIconTone;
   children?: React.ReactNode;
   className?: string;
   action?: React.ReactNode;
 }) {
   return (
-    <section data-theme-ui="setting-section" className={clsx('rounded-[22px] border border-border/70 bg-card/92 shadow-sm shadow-black/5 backdrop-blur-xl', className)}>
-      <div data-theme-ui="setting-section-header" className="flex flex-wrap items-center gap-2.5 border-b border-border/50 px-5 py-4">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <Icon className="h-4.5 w-4.5 shrink-0 text-muted-foreground" />
-          <h3 className="text-base font-semibold text-foreground">{title}</h3>
+    <section data-theme-ui="setting-section" className={clsx('rounded-[20px] border border-border/75 bg-card shadow-sm', className)}>
+      <div data-theme-ui="setting-section-header" className="flex flex-wrap items-center gap-3 border-b border-border/55 px-5 py-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <div
+            data-theme-ui="setting-section-icon"
+            data-icon-tone={iconTone}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] bg-muted/70 text-primary"
+          >
+            <Icon className="h-4 w-4 shrink-0" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold tracking-[-0.015em] text-foreground">{title}</h3>
+            {description && <p className="mt-0.5 text-[13px] leading-[1.45] text-muted-foreground">{description}</p>}
+          </div>
         </div>
         {action && <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">{action}</div>}
       </div>
@@ -33,8 +48,33 @@ export function Section({
   );
 }
 
+function containsSwitchControl(node: React.ReactNode, depth = 0): boolean {
+  if (depth > 4 || node == null || typeof node === 'boolean' || typeof node === 'string' || typeof node === 'number') {
+    return false;
+  }
+  if (Array.isArray(node)) {
+    return node.some((child) => containsSwitchControl(child, depth + 1));
+  }
+  if (!React.isValidElement(node)) {
+    return false;
+  }
+  const props = node.props as Record<string, unknown> | undefined;
+  if (props?.['data-theme-ui'] === 'switch') {
+    return true;
+  }
+  const typeObj = node.type as { displayName?: string; name?: string } | undefined;
+  const typeName = typeof node.type === 'function' || typeof node.type === 'object'
+    ? (typeObj?.displayName || typeObj?.name || '')
+    : '';
+  if (typeName === 'ToggleSwitch' || typeName === 'Switch') {
+    return true;
+  }
+  return props?.children ? containsSwitchControl(props.children as React.ReactNode, depth + 1) : false;
+}
+
 export function SettingRow({
   icon,
+  iconTone,
   title,
   description,
   tip,
@@ -42,27 +82,47 @@ export function SettingRow({
   disabled,
 }: {
   icon?: React.ReactNode;
+  iconTone?: SettingIconTone;
   title: React.ReactNode;
   description?: string;
   tip?: string;
   children?: React.ReactNode;
   disabled?: boolean;
 }) {
+  const hasControl = Boolean(children);
+  const hasSwitch = hasControl && containsSwitchControl(children);
   return (
-    <div data-theme-ui="setting-row" className={clsx('flex flex-col gap-4 px-5 py-4 transition-colors duration-200 hover:bg-muted/18 sm:flex-row sm:items-center sm:justify-between', disabled && 'opacity-50')}>
+    <div
+      data-theme-ui="setting-row"
+      data-has-control={hasControl ? 'true' : undefined}
+      data-has-switch={hasSwitch ? 'true' : undefined}
+      className={clsx('flex min-h-[4.25rem] flex-col gap-3.5 px-5 py-4 transition-colors duration-200 hover:bg-muted/22 sm:flex-row sm:items-center sm:justify-between', disabled && 'opacity-50')}
+    >
       <div className="flex min-w-0 flex-1 items-center gap-3">
         {icon && (
-          <div data-theme-ui="setting-row-icon" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-muted-foreground shadow-inner shadow-white/20">
+          <div
+            data-theme-ui="setting-row-icon"
+            data-icon-tone={iconTone}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-muted/70 text-muted-foreground shadow-inner shadow-white/20"
+          >
             {icon}
           </div>
         )}
         <div className="min-w-0">
-          <div className="text-base font-medium text-foreground">{title}</div>
-          {description && <div className="text-sm text-muted-foreground line-clamp-2">{description}</div>}
+          <div className="text-[15px] font-semibold tracking-[-0.01em] text-foreground">{title}</div>
+          {description && <div className="mt-0.5 text-[13px] leading-[1.45] text-muted-foreground line-clamp-2">{description}</div>}
           {tip && <div className="mt-0.5 text-xs text-primary/80">{tip}</div>}
         </div>
       </div>
-      {children && <div data-theme-ui="setting-row-control" className="flex w-full min-w-0 justify-start sm:ml-auto sm:w-auto sm:max-w-[36rem] sm:shrink-0 sm:justify-end">{children}</div>}
+      {children && (
+        <div
+          data-theme-ui="setting-row-control"
+          data-has-switch={hasSwitch ? 'true' : undefined}
+          className="flex w-full min-w-0 justify-start sm:ml-auto sm:w-auto sm:max-w-[36rem] sm:shrink-0 sm:justify-end"
+        >
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -93,8 +153,8 @@ export function HotkeyField({
   return (
     <div className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 md:flex-row md:items-center md:gap-4">
       <div className="min-w-0 flex-1 pr-2">
-        <div className="text-sm text-foreground">{title}</div>
-        <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</div>
+        <div className="text-sm font-medium text-foreground">{title}</div>
+        <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{description}</div>
       </div>
 
       <div className="w-full md:ml-auto md:w-[240px] md:flex-none">
@@ -107,7 +167,7 @@ export function HotkeyField({
             readOnly
             placeholder={placeholder}
             className={clsx(
-              'w-full rounded-lg border bg-background px-3 py-2.5 pr-9 text-center font-sans text-sm text-foreground outline-none transition',
+              'h-9 w-full rounded-lg border bg-background/80 px-3 pr-9 text-center font-sans text-sm text-foreground outline-none transition',
               recording
                 ? 'border-primary shadow-[0_0_0_1px_var(--color-primary)] ring-2 ring-primary/20'
                 : 'border-border/70 hover:border-border',
@@ -134,16 +194,27 @@ export function SelectionField({
   label,
   children,
   hint,
+  hintClassName,
+  hintTitle,
 }: {
   label: string;
   children: React.ReactNode;
   hint?: string;
+  hintClassName?: string;
+  hintTitle?: string;
 }) {
   return (
     <div className="space-y-1.5">
-      <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</div>
+      <div className="text-[12px] font-medium text-muted-foreground">{label}</div>
       {children}
-      {hint && <div className="text-[11px] leading-relaxed text-muted-foreground">{hint}</div>}
+      {hint && (
+        <div
+          title={hintTitle ?? hint}
+          className={clsx('text-[12px] leading-relaxed text-muted-foreground', hintClassName)}
+        >
+          {hint}
+        </div>
+      )}
     </div>
   );
 }
@@ -180,6 +251,7 @@ export function CompatibilitySubmenu({ children }: { children: React.ReactNode }
 
 export function CompatibilitySubmenuRow({
   icon,
+  iconTone,
   title,
   description,
   tip,
@@ -187,6 +259,7 @@ export function CompatibilitySubmenuRow({
   below,
 }: {
   icon?: React.ReactNode;
+  iconTone?: SettingIconTone;
   title: string;
   description?: string;
   tip?: string;
@@ -198,13 +271,17 @@ export function CompatibilitySubmenuRow({
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex min-w-0 items-start gap-3">
           {icon && (
-            <div data-theme-ui="setting-row-icon" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-muted-foreground shadow-inner shadow-white/20">
+            <div
+              data-theme-ui="setting-row-icon"
+              data-icon-tone={iconTone}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-muted/70 text-muted-foreground shadow-inner shadow-white/20"
+            >
               {icon}
             </div>
           )}
           <div className="min-w-0">
-            <div className="text-base font-medium text-foreground">{title}</div>
-            {description && <div className="text-sm leading-relaxed text-muted-foreground">{description}</div>}
+            <div className="text-[15px] font-semibold tracking-[-0.01em] text-foreground">{title}</div>
+            {description && <div className="mt-0.5 text-[13px] leading-[1.45] text-muted-foreground">{description}</div>}
             {tip && <div className="mt-0.5 text-xs leading-relaxed text-primary/80">{tip}</div>}
           </div>
         </div>

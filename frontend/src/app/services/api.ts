@@ -564,6 +564,22 @@ class ApiService {
     return await TestTemperatureReading();
   }
 
+  async setSensorCatalogActive(enabled: boolean): Promise<types.TemperatureData | null> {
+    const fn = (window as any).go?.main?.App?.SetSensorCatalogActive;
+    if (typeof fn !== 'function') {
+      return null;
+    }
+    return (await fn(enabled)) ?? null;
+  }
+
+  async probeGpuSensors(): Promise<types.TemperatureData | null> {
+    const fn = (window as any).go?.main?.App?.ProbeGpuSensors;
+    if (typeof fn !== 'function') {
+      return null;
+    }
+    return (await fn()) ?? null;
+  }
+
   // 桥接程序相关
   async getBridgeProgramStatus(): Promise<any> {
     return await (window as any).go?.main?.App?.GetBridgeProgramStatus();
@@ -696,6 +712,141 @@ class ApiService {
   // 在系统文件管理器中打开主题文件夹，便于用户编辑/新增主题。
   async openThemesFolder(): Promise<void> {
     return await (window as any).go?.main?.App?.OpenThemesFolder?.();
+  }
+
+  // 插件与 RTSS 屏幕显示
+  async getPlugins(): Promise<import('../types/app').PluginInfo[]> {
+    const list = await (window as any).go?.main?.App?.GetPlugins?.();
+    return Array.isArray(list) ? list : [];
+  }
+
+  async refreshPlugins(): Promise<import('../types/app').PluginInfo[]> {
+    const list = await (window as any).go?.main?.App?.RefreshPlugins?.();
+    return Array.isArray(list) ? list : [];
+  }
+
+  async setPluginEnabled(pluginId: string, enabled: boolean): Promise<import('../types/app').PluginInfo[]> {
+    const list = await (window as any).go?.main?.App?.SetPluginEnabled?.(pluginId, enabled);
+    return Array.isArray(list) ? list : [];
+  }
+
+  async openPluginsFolder(): Promise<void> {
+    return await (window as any).go?.main?.App?.OpenPluginsFolder?.();
+  }
+
+  onPluginsUpdate(callback: (plugins: import('../types/app').PluginInfo[]) => void): () => void {
+    return EventsOn('plugins-update', callback);
+  }
+
+  async invokePlugin<T = unknown>(pluginId: string, method: string, payload: unknown = {}): Promise<T> {
+    const raw = await (window as any).go?.main?.App?.InvokePlugin?.(
+      pluginId,
+      method,
+      typeof payload === 'string' ? payload : JSON.stringify(payload ?? {}),
+    );
+    if (typeof raw === 'string') {
+      try {
+        return JSON.parse(raw) as T;
+      } catch {
+        return raw as unknown as T;
+      }
+    }
+    return raw as T;
+  }
+
+  async restartPlugin(pluginId: string): Promise<import('../types/app').PluginInfo[]> {
+    const list = await (window as any).go?.main?.App?.RestartPlugin?.(pluginId);
+    return Array.isArray(list) ? list : [];
+  }
+
+  async getPluginSettings(pluginId: string): Promise<Record<string, unknown>> {
+    const out = await (window as any).go?.main?.App?.GetPluginSettings?.(pluginId);
+    return out && typeof out === 'object' ? (out as Record<string, unknown>) : {};
+  }
+
+  async savePluginSettings(pluginId: string, settings: Record<string, unknown>): Promise<void> {
+    return await (window as any).go?.main?.App?.SavePluginSettings?.(pluginId, settings);
+  }
+
+  async getPluginLogs(pluginId: string): Promise<string[]> {
+    const lines = await (window as any).go?.main?.App?.GetPluginLogs?.(pluginId);
+    return Array.isArray(lines) ? lines : [];
+  }
+
+  async setPluginDevPaths(paths: string[]): Promise<import('../types/app').PluginInfo[]> {
+    const list = await (window as any).go?.main?.App?.SetPluginDevPaths?.(paths);
+    return Array.isArray(list) ? list : [];
+  }
+
+  onPluginEvent(
+    callback: (payload: { pluginId: string; event: string; payload?: unknown }) => void,
+  ): () => void {
+    return EventsOn('plugin-event', callback);
+  }
+
+  async fetchMarketplaceCatalog(
+    catalogUrl = '',
+  ): Promise<import('../types/app').MarketplaceCatalogView | null> {
+    const view = await (window as any).go?.main?.App?.FetchMarketplaceCatalog?.(catalogUrl);
+    return view ?? null;
+  }
+
+  async installMarketplacePlugin(
+    pluginId: string,
+    downloadUrl: string,
+    sha256: string,
+  ): Promise<import('../types/app').MarketplaceInstallResult | null> {
+    const res = await (window as any).go?.main?.App?.InstallMarketplacePlugin?.(pluginId, downloadUrl, sha256);
+    return res ?? null;
+  }
+
+  async uninstallPlugin(
+    pluginId: string,
+    removeData = false,
+  ): Promise<import('../types/app').MarketplaceInstallResult | null> {
+    const res = await (window as any).go?.main?.App?.UninstallPlugin?.(pluginId, removeData);
+    return res ?? null;
+  }
+
+  async installMarketplaceTheme(
+    themeId: string,
+    downloadUrl: string,
+    sha256: string,
+  ): Promise<import('../types/app').MarketplaceInstallResult | null> {
+    const res = await (window as any).go?.main?.App?.InstallMarketplaceTheme?.(themeId, downloadUrl, sha256);
+    return res ?? null;
+  }
+
+  async uninstallTheme(themeId: string): Promise<void> {
+    return await (window as any).go?.main?.App?.UninstallTheme?.(themeId);
+  }
+
+  async importMarketplacePackage(
+    zipPath = '',
+  ): Promise<import('../types/app').MarketplaceInstallResult | null> {
+    const res = await (window as any).go?.main?.App?.ImportMarketplacePackage?.(zipPath);
+    return res ?? null;
+  }
+
+  onMarketplaceProgress(
+    callback: (progress: import('../types/app').MarketplaceProgressEvent) => void,
+  ): () => void {
+    return EventsOn('marketplace-progress', callback);
+  }
+
+  // 窗口可见性同步（隐藏/最小化到托盘时暂停后台高频事件，恢复时补发最新一帧）
+  async setWindowHidden(hidden: boolean): Promise<void> {
+    try {
+      await (window as any)?.go?.main?.App?.SetWindowHidden?.(hidden);
+    } catch {
+      // Ignore when running outside the desktop shell or during teardown.
+    }
+  }
+
+  onWindowVisibilityChange(
+    callback: (payload: { visible?: boolean; historyDirty?: boolean } | boolean) => void,
+  ): () => void {
+    return EventsOn('window-visibility-change', callback);
   }
 
   // 调试事件监听

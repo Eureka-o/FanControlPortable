@@ -19,7 +19,7 @@ const Slider = React.forwardRef<
     */}
     <SliderPrimitive.Track
       data-theme-ui="slider-track"
-      className="relative h-2 w-full grow overflow-hidden rounded-full bg-muted"
+      className="relative h-1.5 w-full grow overflow-hidden rounded-full bg-muted"
       style={{ backgroundImage: "var(--fc-slider-track-image, none)" }}
     >
       <SliderPrimitive.Range
@@ -28,7 +28,7 @@ const Slider = React.forwardRef<
         style={{ display: "var(--fc-slider-range-display, block)" }}
       />
     </SliderPrimitive.Track>
-    <SliderPrimitive.Thumb data-theme-ui="slider-thumb" className="block h-5 w-5 rounded-full border-2 border-primary bg-background shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50" />
+    <SliderPrimitive.Thumb data-theme-ui="slider-thumb" className="block h-4.5 w-4.5 cursor-grab rounded-full border-2 border-primary bg-background shadow-md transition-[transform,colors] hover:scale-110 active:scale-95 active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50" />
   </SliderPrimitive.Root>
 ));
 Slider.displayName = SliderPrimitive.Root.displayName;

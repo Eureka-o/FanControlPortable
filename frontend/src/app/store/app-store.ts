@@ -5,6 +5,7 @@ import {
   cancelPendingTabChange as cancelTabChange,
   completePendingTabChange as completeTabChange,
   requestTabChange,
+  resolveBridgeWarning,
   type AppTab,
   type TimelineEvent,
 } from './app-store-logic';
@@ -152,6 +153,7 @@ const temperatureDataEquals = (left: types.TemperatureData | null, right: types.
     left.gpuModel === right.gpuModel &&
     left.bridgeOk === right.bridgeOk &&
     left.bridgeMessage === right.bridgeMessage &&
+    left.telemetryFailureStage === right.telemetryFailureStage &&
     (left as types.TemperatureData & { telemetryState?: string }).telemetryState === (right as types.TemperatureData & { telemetryState?: string }).telemetryState &&
     sensorListEquals(left.cpuSensors, right.cpuSensors) &&
     sensorListEquals(left.gpuSensors, right.gpuSensors) &&
@@ -302,8 +304,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       gpuPowerSensors: data.gpuPowerSensors ?? current.temperature.gpuPowerSensors,
       gpuDevices: data.gpuDevices ?? current.temperature.gpuDevices,
     } as types.TemperatureData : data;
-    const bridgeMessage = merged?.bridgeMessage?.trim() ?? '';
-    const bridgeWarning = merged?.bridgeOk === false ? bridgeMessage || getBridgeWarningMessage() : null;
+    const bridgeWarning = resolveBridgeWarning(merged, getBridgeWarningMessage());
     if (temperatureDataEquals(current.temperature, merged) && current.bridgeWarning === bridgeWarning) {
       return;
     }
@@ -364,11 +365,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       if (!temperatureHistoryRequestGate.isCurrent(requestGeneration)) {
         return;
       }
-		set({
-			temperatureHistoryEnabled: false,
-			temperatureHistoryPoints: [],
-        temperatureHistoryInitialized: true,
-      });
     } finally {
       if (temperatureHistoryRequestGate.isCurrent(requestGeneration)) {
         set({ temperatureHistoryLoading: false });
@@ -380,9 +376,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ temperatureHistorySaving: true });
     try {
       await apiService.setTemperatureHistoryEnabled(enabled);
+      set({ temperatureHistoryEnabled: enabled });
       await get().loadTemperatureHistory(true);
     } catch (error) {
       console.error('设置温度历史失败:', error);
+      const detail = error instanceof Error ? error.message : String(error);
+      toast.error(i18n.t('fanCurve.history.saveEnabledFailed', { error: detail }));
     } finally {
       set({ temperatureHistorySaving: false });
 		}
@@ -416,6 +415,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
       set((state) => ({
         config: appConfig,
+        temperatureHistoryEnabled: typeof appConfig.temperatureHistoryEnabled === 'boolean'
+          ? appConfig.temperatureHistoryEnabled
+          : state.temperatureHistoryEnabled,
         temperatureHistoryRetentionHours: clampHistoryRetentionHours(appConfig.temperatureHistoryRetentionHours),
         ...applyDeviceSnapshotEvent(state, { type: 'status', status: deviceStatus }),
         monitorOnlyActive: deviceStatus.monitorOnly === true,
@@ -443,6 +445,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const [, debugInfo] = await Promise.all([
         get().refreshDeviceContext(),
         apiService.getDebugInfo().catch(() => null),
+        get().loadTemperatureHistory(true).catch(() => undefined),
       ]);
       set({ legionFnQSupported: debugInfo?.legionFnQSupported === true });
     } finally {
@@ -482,8 +485,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setConfig: (config) => set((state) => {
     const previousProfileId = ((state.config as any)?.activeFanCurveProfileId || '') as string;
     const nextProfileId = ((config as any)?.activeFanCurveProfileId || '') as string;
+    const nextHistoryEnabled = (config as any)?.temperatureHistoryEnabled;
+    const nextRetentionHours = Number((config as any)?.temperatureHistoryRetentionHours);
     return {
       config,
+      ...(typeof nextHistoryEnabled === 'boolean' ? { temperatureHistoryEnabled: nextHistoryEnabled } : {}),
+      ...(Number.isFinite(nextRetentionHours) && nextRetentionHours > 0
+        ? { temperatureHistoryRetentionHours: clampHistoryRetentionHours(nextRetentionHours) }
+        : {}),
       timelineEvents: previousProfileId && nextProfileId && previousProfileId !== nextProfileId
         ? appendTimelineEvent(state.timelineEvents, { timestamp: Date.now(), type: 'profile' })
         : state.timelineEvents,
@@ -616,19 +625,108 @@ export const useAppStore = create<AppStore>((set, get) => ({
       })
     );
 
+    let pendingFanData: types.FanData | null = null;
+    let hasPendingFanData = false;
+    let pendingTemp: types.TemperatureData | null = null;
+    let hasPendingTemp = false;
+    let flushFrame: number | null = null;
+    let flushDisposed = false;
+
+    const flushTelemetry = () => {
+      flushFrame = null;
+      if (flushDisposed) return;
+
+      const nextFanData = hasPendingFanData ? pendingFanData : null;
+      const shouldApplyFan = hasPendingFanData;
+      const nextTemp = hasPendingTemp ? pendingTemp : null;
+      const shouldApplyTemp = hasPendingTemp;
+      hasPendingFanData = false;
+      pendingFanData = null;
+      hasPendingTemp = false;
+      pendingTemp = null;
+
+      if (!shouldApplyFan && !shouldApplyTemp) {
+        return;
+      }
+
+      set((state) => {
+        let patch: Partial<AppStore> | null = null;
+
+        if (shouldApplyFan && nextFanData && state.isConnected && !fanDataEquals(state.fanData, nextFanData)) {
+          patch = {
+            ...applyDeviceSnapshotEvent(state, { type: 'fan-data', fanData: nextFanData }),
+          };
+        }
+
+        if (shouldApplyTemp) {
+          const merged = nextTemp && state.temperature ? {
+            ...nextTemp,
+            cpuSensors: nextTemp.cpuSensors ?? state.temperature.cpuSensors,
+            gpuSensors: nextTemp.gpuSensors ?? state.temperature.gpuSensors,
+            cpuPowerSensors: nextTemp.cpuPowerSensors ?? state.temperature.cpuPowerSensors,
+            gpuPowerSensors: nextTemp.gpuPowerSensors ?? state.temperature.gpuPowerSensors,
+            gpuDevices: nextTemp.gpuDevices ?? state.temperature.gpuDevices,
+          } as types.TemperatureData : nextTemp;
+          const bridgeWarning = resolveBridgeWarning(merged, getBridgeWarningMessage());
+          if (!temperatureDataEquals(state.temperature, merged) || state.bridgeWarning !== bridgeWarning) {
+            patch = {
+              ...(patch || {}),
+              temperature: merged,
+              bridgeWarning,
+            };
+          }
+
+          if (nextTemp) {
+            const fanRpm = Number((patch?.fanData ?? state.fanData)?.currentRpm || 0);
+            const point = createLiveHistoryPoint({
+              updateTime: nextTemp.updateTime,
+              cpuTemp: nextTemp.cpuTemp,
+              gpuTemp: nextTemp.gpuReadState === 'notPolled' ? 0 : nextTemp.gpuTemp,
+              cpuPowerWatts: nextTemp.cpuPowerWatts,
+              gpuPowerWatts: nextTemp.gpuReadState === 'notPolled' ? 0 : nextTemp.gpuPowerWatts,
+            }, fanRpm);
+            if (point) {
+              const points = appendSampledHistoryPoint(state.sessionHistoryPoints, point, {
+                retentionMs: SESSION_HISTORY_RETENTION_MS,
+                limit: SESSION_HISTORY_LIMIT,
+              });
+              if (points !== state.sessionHistoryPoints) {
+                patch = {
+                  ...(patch || {}),
+                  sessionHistoryPoints: points,
+                };
+              }
+            }
+          }
+        }
+
+        return patch ?? state;
+      });
+    };
+
+    const scheduleTelemetryFlush = () => {
+      if (flushFrame !== null) return;
+      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+        flushFrame = window.requestAnimationFrame(flushTelemetry);
+      } else {
+        flushFrame = 1;
+        queueMicrotask(flushTelemetry);
+      }
+    };
+
     unsubscribers.push(
       apiService.onFanDataUpdate((data) => {
-        const current = get();
-		if (!current.isConnected) return;
-        if (fanDataEquals(current.fanData, data)) return;
-        set((state) => applyDeviceSnapshotEvent(state, { type: 'fan-data', fanData: data }));
+        pendingFanData = data;
+        hasPendingFanData = true;
+        scheduleTelemetryFlush();
       })
     );
 
     unsubscribers.push(
       apiService.onTemperatureUpdate((data) => {
-        get().handleTemperaturePayload(data);
-        get().appendSessionHistoryPoint(data);
+        pendingTemp = data;
+        hasPendingTemp = true;
+        scheduleTelemetryFlush();
       })
     );
 
@@ -702,6 +800,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
     );
 
     return () => {
+      flushDisposed = true;
+      if (flushFrame !== null && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(flushFrame);
+      }
+      flushFrame = null;
       unsubscribers.forEach((unsubscribe) => unsubscribe());
     };
   },

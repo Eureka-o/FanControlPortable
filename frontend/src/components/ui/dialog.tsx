@@ -41,7 +41,20 @@ type DialogContentProps = React.ComponentProps<typeof DialogPrimitive.Content> &
   overlayClassName?: string;
 };
 
-function DialogContent({ className, children, hideClose = false, overlayClassName, style, ...props }: DialogContentProps) {
+function DialogContent({
+  className,
+  children,
+  hideClose = false,
+  overlayClassName,
+  style,
+  onPointerDownOutside,
+  onFocusOutside,
+  onInteractOutside,
+  ...props
+}: DialogContentProps) {
+  const isActionMenuPortalTarget = (target: EventTarget | null) =>
+    Boolean((target as Element | null)?.closest?.('[data-action-menu-portal="true"]'));
+
   return (
     <DialogPortal>
       <DialogOverlay className={overlayClassName} />
@@ -53,6 +66,27 @@ function DialogContent({ className, children, hideClose = false, overlayClassNam
           className
         )}
         style={{ ...style, zIndex: "var(--layer-dialog-content)" }}
+        onPointerDownOutside={(event) => {
+          if (isActionMenuPortalTarget(event.target)) {
+            event.preventDefault();
+            return;
+          }
+          onPointerDownOutside?.(event);
+        }}
+        onFocusOutside={(event) => {
+          if (isActionMenuPortalTarget(event.target)) {
+            event.preventDefault();
+            return;
+          }
+          onFocusOutside?.(event);
+        }}
+        onInteractOutside={(event) => {
+          if (isActionMenuPortalTarget(event.target)) {
+            event.preventDefault();
+            return;
+          }
+          onInteractOutside?.(event);
+        }}
         {...props}
       >
         {children}

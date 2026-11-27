@@ -72,7 +72,7 @@ func TestUpdateConfigStartsSceneLoopWhenAddingFirstRule(t *testing.T) {
 	app.cleanupChan = make(chan bool)
 	t.Cleanup(func() {
 		if app.sceneTicker != nil {
-			close(app.cleanupChan)
+			app.closeCleanupChan()
 			app.sceneTicker.Stop()
 		}
 	})

@@ -34,20 +34,21 @@ const SelectContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
 >(({ className, children, position = "popper", style, ...props }, ref) => (
   <SelectPrimitive.Portal>
-    <SelectPrimitive.Content
-      ref={ref}
-      className={cn(
-        "relative z-50 max-h-72 min-w-[8rem] overflow-hidden rounded-xl border border-border bg-card text-foreground shadow-sm",
-        position === "popper" && "translate-y-1",
-        className
-      )}
-      position={position}
-      {...props}
-      style={{ ...style, zIndex: "calc(var(--layer-dialog-content) + 1)" }}
-    >
-      <SelectPrimitive.Viewport className="p-1">{children}</SelectPrimitive.Viewport>
-    </SelectPrimitive.Content>
-  </SelectPrimitive.Portal>
+      <SelectPrimitive.Content
+        ref={ref}
+        data-slot="select-content"
+        className={cn(
+          "relative z-50 max-h-72 min-w-[8rem] overflow-hidden rounded-2xl border border-border bg-popover text-foreground shadow-lg",
+          position === "popper" && "translate-y-1",
+          className
+        )}
+        position={position}
+        {...props}
+        style={{ ...style, zIndex: "calc(var(--layer-dialog-content) + 1)" }}
+      >
+        <SelectPrimitive.Viewport className="p-1">{children}</SelectPrimitive.Viewport>
+      </SelectPrimitive.Content>
+    </SelectPrimitive.Portal>
 ));
 SelectContent.displayName = SelectPrimitive.Content.displayName;
 
@@ -58,7 +59,7 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex w-full cursor-default select-none items-center rounded-md py-2 pl-8 pr-2 text-sm outline-none focus:bg-primary/10 focus:text-primary data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      "relative flex w-full cursor-default select-none items-center rounded-lg py-2 pl-8 pr-2 text-sm outline-none transition-colors focus:bg-primary/10 focus:text-primary data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       className
     )}
     {...props}

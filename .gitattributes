@@ -8,3 +8,6 @@
 # Mark firmware reverse-engineering outputs as generated
 ota/*.asm linguist-generated=true
 ota/*.S linguist-generated=true
+
+# Keep Wails generated bindings consistent across Windows git checkouts and Wails CLI output
+frontend/wailsjs/** text eol=lf

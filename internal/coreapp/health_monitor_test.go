@@ -76,3 +76,30 @@ func TestHealthTransportBackoffEscalatesPerTransport(t *testing.T) {
 		t.Fatal("BLE backoff should not inherit WIFI failure level")
 	}
 }
+
+func TestHealthReconnectBackoffEscalatesAndResets(t *testing.T) {
+	var app CoreApp
+	base := time.Unix(100, 0)
+	atomic.StoreInt64(&app.lastHealthReconnectUnix, base.UnixNano())
+
+	app.healthReconnectFailures.Store(1)
+	if app.shouldRunHealthReconnect(base.Add(healthReconnectCooldown + time.Second)) {
+		t.Fatal("expected first failure backoff (3m) to keep blocking at 91s")
+	}
+	if !app.shouldRunHealthReconnect(base.Add(3*time.Minute + time.Second)) {
+		t.Fatal("expected first failure backoff to allow reconnect after 3m")
+	}
+
+	app.healthReconnectFailures.Store(2)
+	if app.shouldRunHealthReconnect(base.Add(3*time.Minute + time.Second)) {
+		t.Fatal("expected repeated failure backoff (5m) to block at 3m")
+	}
+	if !app.shouldRunHealthReconnect(base.Add(healthReconnectCooldownMax + time.Second)) {
+		t.Fatal("expected repeated failure backoff to allow reconnect after 5m")
+	}
+
+	app.healthReconnectFailures.Store(0)
+	if !app.shouldRunHealthReconnect(base.Add(healthReconnectCooldown + time.Second)) {
+		t.Fatal("expected reset failure backoff to return to 90s cooldown")
+	}
+}

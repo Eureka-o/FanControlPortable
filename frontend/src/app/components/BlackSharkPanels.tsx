@@ -22,7 +22,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, m } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
@@ -601,8 +601,9 @@ function BlackSharkPanelBase() {
                     <div className="flex w-full flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                       <button
                         type="button"
+                        onMouseDown={(event) => event.preventDefault()}
                         onClick={() => setRgbOpen((v) => !v)}
-                        className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
+                        className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-xl text-left outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                       >
                         <div data-theme-ui="setting-row-icon" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-muted-foreground shadow-inner shadow-white/20">
                           <Lightbulb className="h-4 w-4" />
@@ -628,9 +629,10 @@ function BlackSharkPanelBase() {
                         />
                         <button
                           type="button"
+                          onMouseDown={(event) => event.preventDefault()}
                           onClick={() => setRgbOpen((v) => !v)}
                           aria-label={rgbOpen ? t('controlPanel.blackShark.collapse') : t('controlPanel.blackShark.expand')}
-                          className="cursor-pointer p-1"
+                          className="cursor-pointer rounded-lg p-1 outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                         >
                           <ChevronDown className={clsx('h-4 w-4 text-muted-foreground transition-transform duration-200', rgbOpen && 'rotate-180')} />
                         </button>
@@ -639,7 +641,7 @@ function BlackSharkPanelBase() {
 
                     <AnimatePresence initial={false}>
                       {rgbOpen && (
-                        <motion.div
+                        <m.div
                           initial={{ opacity: 0, height: 0 }}
                           animate={{ opacity: 1, height: 'auto' }}
                           exit={{ opacity: 0, height: 0 }}
@@ -811,7 +813,7 @@ function BlackSharkPanelBase() {
                     </div>
                   )}
                           </div>
-                        </motion.div>
+                        </m.div>
                       )}
                     </AnimatePresence>
                   </div>
@@ -1191,8 +1193,9 @@ function BlackSharkLcdSection() {
         <div className="flex w-full flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <button
             type="button"
+            onMouseDown={(event) => event.preventDefault()}
             onClick={() => setLcdOpen((v) => !v)}
-            className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
+            className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-xl text-left outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           >
             <div data-theme-ui="setting-row-icon" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-muted-foreground shadow-inner shadow-white/20">
               <MonitorSmartphone className="h-4 w-4" />
@@ -1223,9 +1226,10 @@ function BlackSharkLcdSection() {
             </Button>
             <button
               type="button"
+              onMouseDown={(event) => event.preventDefault()}
               onClick={() => setLcdOpen((v) => !v)}
               aria-label={lcdOpen ? t('controlPanel.blackShark.collapse') : t('controlPanel.blackShark.expand')}
-              className="cursor-pointer p-1"
+              className="cursor-pointer rounded-lg p-1 outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             >
               <ChevronDown className={clsx('h-4 w-4 text-muted-foreground transition-transform duration-200', lcdOpen && 'rotate-180')} />
             </button>
@@ -1234,7 +1238,7 @@ function BlackSharkLcdSection() {
 
         <AnimatePresence initial={false}>
           {lcdOpen && (
-            <motion.div
+            <m.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
@@ -1273,7 +1277,7 @@ function BlackSharkLcdSection() {
                   </div>
                 ) : null}
               </div>
-            </motion.div>
+            </m.div>
           )}
         </AnimatePresence>
       </div>
@@ -1704,7 +1708,7 @@ function ScreenPanelBase() {
 
       {/* 手动裁剪编辑器。参数与上传同源（同一个 CoverToRGBWith），slackY 用于说明可偏移量。 */}
       {cropFile ? (
-        <div className="space-y-2 rounded-2xl border border-border/60 bg-card/86 shadow-sm shadow-black/5 px-4 py-3">
+        <div className="space-y-2 rounded-[var(--theme-card-inner-radius,14px)] border border-border/60 bg-card/86 shadow-sm shadow-black/5 px-4 py-3">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-medium text-foreground">
               {t('controlPanel.screen.cropTitle')}
@@ -1722,7 +1726,7 @@ function ScreenPanelBase() {
           </div>
 
           <div className="flex items-start gap-3">
-            <div className="flex h-[96px] w-[288px] shrink-0 items-center justify-center overflow-hidden rounded border border-border/70 bg-black/40">
+            <div className="flex h-[96px] w-[288px] shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border/70 bg-black/40">
               {cropPreview?.dataUrl ? (
                 <img
                   src={cropPreview.dataUrl}
@@ -1817,7 +1821,7 @@ function ScreenPanelBase() {
       {/* 设备当前正在使用的图：回读 CRC 反查预设，自定义图如实标注，并标出读取时间。 */}
       {/* 大卡片容器（参考设置页温度基准）：头部缩略图/标题/描述 + 右侧本地上传按钮。 */}
       <div className="px-5 py-4">
-        <div className="rounded-2xl border border-border/70 bg-muted/25 p-4">
+        <div className="rounded-[var(--theme-card-inner-radius,14px)] border border-border/70 bg-muted/25 p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-[50px] w-[150px] shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border/60 bg-muted/30">
@@ -1908,7 +1912,7 @@ function ScreenPanelBase() {
             type="button"
             disabled={busy || !canTransferImages}
             onClick={() => runImageTransfer(() => applyPreset(p.officialPosition))}
-            className="group overflow-hidden rounded-md border border-border/70 text-left transition hover:border-foreground/40 disabled:opacity-60"
+            className="group overflow-hidden rounded-lg border border-border/70 text-left transition hover:border-foreground/40 disabled:opacity-60"
             title={p.name}
           >
             {thumbs[p.officialPosition] ? (
@@ -1938,7 +1942,7 @@ function ScreenPanelBase() {
             return (
               <div
                 key={`history-slot-${slot}`}
-                className="overflow-hidden rounded-md border border-dashed border-border/70"
+                className="overflow-hidden rounded-lg border border-dashed border-border/70"
               >
                 <div className="flex h-[52px] w-full items-center justify-center bg-muted/20">
                   <span className="text-[10px] text-muted-foreground">
@@ -1958,7 +1962,7 @@ function ScreenPanelBase() {
           return (
             <div
               key={item.path}
-              className="relative overflow-hidden rounded-md border border-border/70 transition hover:border-foreground/40"
+              className="relative overflow-hidden rounded-lg border border-border/70 transition hover:border-foreground/40"
             >
               <button
                 type="button"

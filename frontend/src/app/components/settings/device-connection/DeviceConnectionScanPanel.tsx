@@ -1,6 +1,6 @@
 'use client';
 
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, m } from 'framer-motion';
 import { Pause, Play, RadioTower, RotateCw, Search, X } from 'lucide-react';
 import clsx from 'clsx';
 import { type DeviceCandidate, type DeviceScanResult } from '../../../services/api';
@@ -46,12 +46,12 @@ export function DeviceConnectionScanPanel({
     <div data-theme-ui="setting-row" className="px-5 py-4 transition-colors duration-200 hover:bg-muted/18">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 flex-1 items-center gap-3">
-          <div data-theme-ui="setting-row-icon" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-muted-foreground shadow-inner shadow-white/20">
+          <div data-theme-ui="setting-row-icon" data-icon-tone="blue" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-muted/70 text-muted-foreground shadow-inner shadow-white/20">
             <RadioTower className="h-4 w-4 text-primary" />
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="text-base font-medium text-foreground">{t('controlPanel.system.deviceConnection.title')}</div>
+              <div className="text-[15px] font-semibold tracking-[-0.01em] text-foreground">{t('controlPanel.system.deviceConnection.title')}</div>
               <span className={clsx(
                 'rounded-full px-2 py-0.5 text-[11px] font-medium',
                 hasConnectedDevice ? 'bg-emerald-500/12 text-emerald-600' : 'bg-muted text-muted-foreground',
@@ -61,7 +61,7 @@ export function DeviceConnectionScanPanel({
                   : t('controlPanel.system.deviceConnection.statusDisconnected')}
               </span>
             </div>
-            <div className="text-sm text-muted-foreground line-clamp-2">{t('controlPanel.system.deviceConnection.description')}</div>
+            <div className="mt-0.5 text-[13px] leading-[1.45] text-muted-foreground line-clamp-2">{t('controlPanel.system.deviceConnection.description')}</div>
           </div>
         </div>
 
@@ -69,7 +69,7 @@ export function DeviceConnectionScanPanel({
           <div className="flex shrink-0 flex-nowrap items-center justify-end gap-2">
             <AnimatePresence initial={false}>
               {showDeepScan && (
-                <motion.div
+                <m.div
                   initial={{ opacity: 0, x: 12, width: 0 }}
                   animate={{ opacity: 1, x: 0, width: 'auto' }}
                   exit={{ opacity: 0, x: 12, width: 0 }}
@@ -83,7 +83,7 @@ export function DeviceConnectionScanPanel({
                   >
                     {t('controlPanel.system.deviceConnection.wifiDeepScanAction')}
                   </Button>
-                </motion.div>
+                </m.div>
               )}
             </AnimatePresence>
             <Button
@@ -99,7 +99,7 @@ export function DeviceConnectionScanPanel({
           </div>
           <AnimatePresence initial={false}>
             {isDeepScanning && (
-              <motion.div
+              <m.div
                 role="status"
                 aria-live="polite"
                 initial={{ opacity: 0, y: -4 }}
@@ -143,7 +143,7 @@ export function DeviceConnectionScanPanel({
                     style={{ width: `${wifiDiscovery.progressPercent}%` }}
                   />
                 </div>
-              </motion.div>
+              </m.div>
             )}
           </AnimatePresence>
         </div>

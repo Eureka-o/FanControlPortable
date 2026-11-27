@@ -26,6 +26,7 @@ func init() {
 }
 
 var wailsContext *context.Context
+var wailsAppInstance *App
 var ensureCoreServiceRunningMu sync.Mutex
 var monitorOnlySession atomic.Bool
 
@@ -41,6 +42,11 @@ func SetWailsContext(ctx context.Context) {
 	wailsContext = &ctx
 }
 
+// SetWailsApp 注册 GUI App 实例，供单实例回调唤醒时恢复隐藏状态与遥测。
+func SetWailsApp(app *App) {
+	wailsAppInstance = app
+}
+
 // OnSecondInstanceLaunch 处理第二个 GUI 实例启动时的窗口恢复逻辑。
 func OnSecondInstanceLaunch(secondInstanceData options.SecondInstanceData) {
 	println("检测到第二个实例启动，参数:", strings.Join(secondInstanceData.Args, ","))
@@ -48,8 +54,12 @@ func OnSecondInstanceLaunch(secondInstanceData options.SecondInstanceData) {
 
 	if wailsContext != nil {
 		wailsruntime.WindowUnminimise(*wailsContext)
-		wailsruntime.WindowShow(*wailsContext)
-		restorePendingWindowMaximise(*wailsContext)
+		if wailsAppInstance != nil {
+			wailsAppInstance.ShowWindow()
+		} else {
+			wailsruntime.WindowShow(*wailsContext)
+			restorePendingWindowMaximise(*wailsContext)
+		}
 		wailsruntime.WindowSetAlwaysOnTop(*wailsContext, true)
 		go func() {
 			time.Sleep(1 * time.Second)

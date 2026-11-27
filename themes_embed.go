@@ -1,8 +1,6 @@
 package main
 
 import (
-	"embed"
-	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -10,25 +8,11 @@ import (
 	"github.com/Eureka-o/FanControlPortable/internal/theme"
 )
 
-// embeddedThemes 仅内嵌不含自定义字体的基础主题，作为无 themes/ 目录时的安全兜底。
-//
-// 带字体或大图的高级主题（shinchan、xiaoba-deluxe、dune、cyberpunk2077）由安装包/
-// 便携包随 themes/ 目录发布，不内嵌以减少约 2MB 常驻 RSS。
-// 字体资产通过 /theme-assets/ URL 路由由磁盘 themes/ 目录直接服务（见 main.go）。
-//
-// 如需新增高级主题，请将其放入源码 themes/ 目录（发布时随包发布），不必修改此处。
-//
-//go:embed themes/fancontrol-classic themes/xiaoba themes/maodie themes/doro
-var embeddedThemes embed.FS
-
 // newThemeManager 基于当前可执行文件位置构造主题管理器。
+//
+// 所有官方自定义主题均通过在线主题市场（Eureka-o/FanControl-Plugins）按需安装并可自由删除，
+// 不再内嵌至主程序可执行文件中；仅系统内置浅色/深色/跟随系统作为不可删除默认项。
 func newThemeManager() *theme.Manager {
-	// 内置主题：把 embed 根从 "themes" 下沉，使路径形如 "thrm/theme.json"。
-	var builtin fs.FS
-	if sub, err := fs.Sub(embeddedThemes, "themes"); err == nil {
-		builtin = sub
-	}
-
 	// 安装目录下的 themes（与可执行文件同级）。
 	installThemesDir := ""
 	if exePath, err := os.Executable(); err == nil {
@@ -46,5 +30,5 @@ func newThemeManager() *theme.Manager {
 		}
 	}
 
-	return theme.NewManager(installThemesDir, legacyThemeDirs, builtin)
+	return theme.NewManager(installThemesDir, legacyThemeDirs, nil)
 }

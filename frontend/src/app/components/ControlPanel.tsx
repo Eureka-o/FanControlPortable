@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useMemo, memo, type ReactNode } from 'react';
-import { motion, useReducedMotion, type Variants } from 'framer-motion';
+import { m, useReducedMotion, type Variants } from 'framer-motion';
 import {
   Cpu,
   Gpu,
@@ -42,6 +42,7 @@ import DeviceLightingControls from './settings/DeviceLightingControls';
 import DeviceImageTransferControls from './settings/DeviceImageTransferControls';
 import { Section } from './settings/SettingLayout';
 import DeviceConnectionSection from './settings/DeviceConnectionSection';
+import PluginsSection from './settings/PluginsSection';
 import SystemSettingsSectionBase from './settings/SystemSettingsSection';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -56,7 +57,7 @@ interface ControlPanelProps {
   onDeviceContextRefresh?: () => Promise<unknown>;
 }
 
-type SettingsTab = 'device' | 'fan' | 'system';
+type SettingsTab = 'device' | 'fan' | 'system' | 'plugins';
 
 const SMART_START_STOP_OPTIONS = [
   { value: 'off', labelKey: 'controlPanel.options.smartStartStop.off.label', descriptionKey: 'controlPanel.options.smartStartStop.off.description' },
@@ -64,25 +65,50 @@ const SMART_START_STOP_OPTIONS = [
   { value: 'delayed', labelKey: 'controlPanel.options.smartStartStop.delayed.label', descriptionKey: 'controlPanel.options.smartStartStop.delayed.description' },
 ];
 const WIFI_SMART_START_STOP_STANDBY_SPEED_OPTIONS = [1, 2, 5, 10, 15, 20];
-const SETTINGS_PANEL_ENTER_DURATION = 0.17;
-const SETTINGS_PANEL_EXIT_DURATION = 0.13;
+const SETTINGS_TAB_ORDER: Record<SettingsTab, number> = {
+  device: 0,
+  fan: 1,
+  system: 2,
+  plugins: 3,
+};
+const SETTINGS_PANEL_ENTER_DURATION = 0.36;
+const SETTINGS_PANEL_ENTER_DELAY = 0.04;
+const SETTINGS_PANEL_EXIT_DURATION = 0.18;
+const SETTINGS_PANEL_SLIDE_OFFSET = 20;
+const SETTINGS_PANEL_EXIT_OFFSET = 12;
+const SETTINGS_PANEL_EASE: [number, number, number, number] = [0.32, 0.72, 0, 1];
+const SETTINGS_PANEL_EXIT_EASE: [number, number, number, number] = [0.4, 0, 0.2, 1];
 
 function createSettingsPanelVariants(reduceMotion: boolean): Variants {
   return {
-    active: {
-      opacity: reduceMotion ? 1 : [0, 1],
-      y: reduceMotion ? 0 : [8, 0],
+    active: (direction: number) => ({
+      opacity: 1,
+      x: reduceMotion ? 0 : [direction * SETTINGS_PANEL_SLIDE_OFFSET, 0],
       transition: {
-        duration: reduceMotion ? 0 : SETTINGS_PANEL_ENTER_DURATION,
-        ease: [0.22, 1, 0.36, 1],
+        opacity: {
+          duration: reduceMotion ? 0 : SETTINGS_PANEL_ENTER_DURATION - SETTINGS_PANEL_ENTER_DELAY,
+          delay: reduceMotion ? 0 : SETTINGS_PANEL_ENTER_DELAY,
+          ease: SETTINGS_PANEL_EASE,
+        },
+        x: {
+          duration: reduceMotion ? 0 : SETTINGS_PANEL_ENTER_DURATION,
+          ease: SETTINGS_PANEL_EASE,
+        },
       },
-    },
-    inactive: {
-      opacity: reduceMotion ? 0 : [1, 0],
-      y: reduceMotion ? 0 : [0, -6],
+    }),
+    exiting: (direction: number) => ({
+      opacity: 0,
+      x: reduceMotion ? 0 : direction * -SETTINGS_PANEL_EXIT_OFFSET,
       transition: {
         duration: reduceMotion ? 0 : SETTINGS_PANEL_EXIT_DURATION,
-        ease: [0.22, 1, 0.36, 1],
+        ease: SETTINGS_PANEL_EXIT_EASE,
+      },
+    }),
+    hidden: {
+      opacity: 0,
+      x: 0,
+      transition: {
+        duration: 0,
       },
     },
   };
@@ -100,8 +126,9 @@ function formatOverviewTemperature(value?: number, unavailable = false) {
 
 function formatOverviewPower(value?: number, unavailable = false) {
   const watts = Number(value || 0);
-  if (unavailable || !Number.isFinite(watts) || watts <= 0) return '--';
-  return `${watts < 10 ? Math.round(watts * 10) / 10 : Math.round(watts)} W`;
+  if (unavailable || !Number.isFinite(watts) || watts < 0.05) return '--';
+  const rounded = watts < 10 ? Math.round(watts * 10) / 10 : Math.round(watts);
+  return rounded > 0 ? `${rounded} W` : '--';
 }
 
 // 设置页里几块不随遥测变化的大子树 memo 化：父级因 loading/tab 切换重渲时整块跳过。
@@ -201,16 +228,22 @@ const ControlPanelTelemetryOverview = memo(function ControlPanelTelemetryOvervie
   ];
 
   return (
-    <section data-theme-card="settings-overview" className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-      <div className="mb-4 flex items-center gap-2">
-        <Settings className="h-4 w-4 text-muted-foreground" />
-        <h3 className="text-base font-semibold text-foreground">{t('controlPanel.overview.title')}</h3>
+    <section data-theme-card="settings-overview" className="rounded-[20px] border border-border/75 bg-card p-5 shadow-sm">
+      <div className="mb-4 flex items-center gap-2.5">
+        <div data-theme-ui="setting-section-icon" data-icon-tone="blue" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] bg-primary/10 text-primary">
+          <Settings className="h-4 w-4" />
+        </div>
+        <h3 className="text-base font-semibold tracking-[-0.015em] text-foreground">{t('controlPanel.overview.title')}</h3>
       </div>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(220px,0.8fr)]">
-        <div data-theme-card="settings-overview-temperature" className="grid min-h-[10rem] grid-rows-2 divide-y divide-border/55 rounded-xl border border-border/70 bg-muted/30 px-4">
+      <div className="grid grid-cols-1 gap-3.5 md:grid-cols-[minmax(0,1.2fr)_minmax(220px,0.8fr)]">
+        <div data-theme-card="settings-overview-temperature" className="grid min-h-[8.5rem] grid-rows-2 divide-y divide-border/55 rounded-2xl border border-border/70 bg-muted/30 px-4">
           {overviewThermals.map(({ id, label, model, Icon, temperatureValue, powerValue }) => (
-            <div key={id} className="flex min-w-0 items-center gap-3 py-3.5">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background/65 text-muted-foreground shadow-inner shadow-white/15">
+            <div key={id} className="flex min-w-0 items-center gap-3 py-3">
+              <div
+                data-theme-ui="setting-row-icon"
+                data-icon-tone={id === 'cpu' ? 'blue' : 'purple'}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-background/65 text-muted-foreground shadow-inner shadow-white/15"
+              >
                 <Icon className="h-4.5 w-4.5" />
               </div>
               <div className="min-w-0 flex-1">
@@ -242,21 +275,25 @@ const ControlPanelTelemetryOverview = memo(function ControlPanelTelemetryOvervie
           ))}
         </div>
 
-        <div data-theme-card="settings-overview-device" className="grid min-h-[10rem] grid-rows-2 divide-y divide-border/55 rounded-xl border border-border/70 bg-muted/30 px-4">
-          <div className="flex min-w-0 items-center gap-3 py-3.5">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background/65 text-muted-foreground shadow-inner shadow-white/15">
+        <div data-theme-card="settings-overview-device" className="grid min-h-[8.5rem] grid-rows-2 divide-y divide-border/55 rounded-2xl border border-border/70 bg-muted/30 px-4">
+          <div className="flex min-w-0 items-center gap-3 py-3">
+            <div
+              data-theme-ui="setting-row-icon"
+              data-icon-tone="emerald"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-background/65 text-muted-foreground shadow-inner shadow-white/15"
+            >
               <Radio className="h-4.5 w-4.5" />
             </div>
             <div className="min-w-0 flex-1">
               <div title={overviewConnectionName} className="line-clamp-2 break-words text-sm font-semibold leading-snug text-foreground">{overviewConnectionName}</div>
               <div className="mt-1.5 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
-                <span className={clsx('h-2 w-2 shrink-0 rounded-full', isConnected ? 'bg-emerald-500' : 'bg-muted-foreground/45')} />
+                <span className={clsx('h-2 w-2 shrink-0 rounded-full', isConnected ? 'bg-emerald-500 ring-4 ring-emerald-500/15' : 'bg-muted-foreground/45')} />
                 <span className="truncate">{overviewConnectionDetail}</span>
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 items-center gap-4 py-3.5">
+          <div className="grid grid-cols-2 items-center gap-4 py-2.5">
             <div className="min-w-0">
               <div className="text-[11px] text-muted-foreground">{t('controlPanel.overview.currentRpm')}</div>
               <div className="mt-0.5 truncate text-base font-semibold tabular-nums text-foreground">{overviewFanSpeed ?? '--'}{overviewSpeedLabel}</div>
@@ -288,11 +325,23 @@ export default function ControlPanel({
   const reduceMotion = useReducedMotion();
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('device');
+  const [previousSettingsTab, setPreviousSettingsTab] = useState<SettingsTab | null>(null);
+  const [settingsTabDirection, setSettingsTabDirection] = useState<1 | -1>(1);
+  const [isSettingsTabAnimating, setIsSettingsTabAnimating] = useState(false);
   const [mountedSettingsTabs, setMountedSettingsTabs] = useState<Record<SettingsTab, boolean>>({
     device: true,
     fan: false,
     system: false,
+    plugins: false,
   });
+  useEffect(() => {
+    if (!isSettingsTabAnimating) return;
+    const timer = window.setTimeout(
+      () => setIsSettingsTabAnimating(false),
+      Math.round(SETTINGS_PANEL_ENTER_DURATION * 1000) + 40,
+    );
+    return () => window.clearTimeout(timer);
+  }, [activeSettingsTab, isSettingsTabAnimating]);
   // 遥测不再作为 props 进入 ControlPanel；只有 fanData.transport 仍被读取（连接回退与上下文键），
   // 用窄 selector 只订阅这一个字段，字段不变就不重渲。
   const fanDataTransport = useAppStore((state) => state.fanData?.transport ?? null);
@@ -377,6 +426,7 @@ export default function ControlPanel({
     { id: 'device', label: t('controlPanel.device.sectionTitle') },
     { id: 'fan', label: t('controlPanel.fan.sectionTitle') },
     { id: 'system', label: t('controlPanel.system.sectionTitle') },
+    { id: 'plugins', label: t('controlPanel.plugins.sectionTitle') },
   ];
   const smartStartStopOptions = useMemo(
     () => SMART_START_STOP_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey), description: t(item.descriptionKey) })),
@@ -586,12 +636,13 @@ export default function ControlPanel({
 
   const settingsPanelContent: Record<SettingsTab, ReactNode> = {
     device: (
-      <>
+      <div className="space-y-5">
         {deviceFeaturePanelElement}
         {showDeviceImageTransfer && (
           <Section
             title={t('controlPanel.device.groups.imageTransfer')}
             icon={Monitor}
+            iconTone="blue"
           >
             <div className="px-5 py-4">
               <DeviceImageTransferControls
@@ -602,7 +653,10 @@ export default function ControlPanel({
             </div>
           </Section>
         )}
-      </>
+        {isBlackSharkDevice && <BlackSharkPanel />}
+        {isBlackSharkDevice && <ScenePanel />}
+        {isBlackSharkDevice && <ScreenPanel />}
+      </div>
     ),
     fan: (
       // 黑鲨也走同一套 FanControlSection；四档散热曲线与「曲线」页重复，不再单列。
@@ -621,11 +675,17 @@ export default function ControlPanel({
         onConfigChange={onConfigChange}
       />
     ),
+    plugins: (
+      <PluginsSection
+        config={config}
+        onConfigChange={onConfigChange}
+      />
+    ),
   };
 
   return (
     <>
-      <div data-theme-section="settings-page" data-page-reveal="cards" className="space-y-4">
+      <div data-theme-section="settings-page" data-page-reveal="cards" className="space-y-5">
         <ControlPanelTelemetryOverview
           config={config}
           isConnected={isConnected}
@@ -638,8 +698,18 @@ export default function ControlPanel({
           data-theme-ui="settings-tabs"
           role="tablist"
           aria-label={t('controlPanel.system.sectionTitle')}
-          className="grid grid-cols-3 gap-1 rounded-[18px] border border-border/70 bg-card/92 p-1.5 shadow-sm shadow-black/5 backdrop-blur-xl"
+          className="grid grid-cols-4 gap-1 rounded-[18px] relative border border-border/70 bg-card/92 p-1.5 shadow-sm shadow-black/5"
         >
+          <span
+            aria-hidden="true"
+            className={clsx(
+              'settings-tab-active-pill pointer-events-none absolute bottom-1.5 left-1.5 top-1.5 w-[calc((100%-1.5rem)/4)] rounded-[12px]',
+              reduceMotion ? 'transition-none' : 'transition-transform duration-[360ms] ease-[cubic-bezier(0.32,0.72,0,1)]',
+            )}
+            style={{
+              transform: `translateX(calc(${Math.max(0, settingsTabs.findIndex((tab) => tab.id === activeSettingsTab))} * (100% + 0.25rem)))`,
+            }}
+          />
           {settingsTabs.map(({ id, label }) => (
             <button
               key={id}
@@ -649,13 +719,18 @@ export default function ControlPanel({
               role="tab"
               aria-selected={activeSettingsTab === id}
               aria-controls={`settings-panel-${id}`}
+              onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
                 if (activeSettingsTab === id) return;
-                setMountedSettingsTabs((previous) => previous[id] ? previous : { ...previous, [id]: true });
+                const nextDirection: 1 | -1 = SETTINGS_TAB_ORDER[id] > SETTINGS_TAB_ORDER[activeSettingsTab] ? 1 : -1;
+                setSettingsTabDirection(nextDirection);
+                setPreviousSettingsTab(activeSettingsTab);
+                setIsSettingsTabAnimating(!reduceMotion);
+                setMountedSettingsTabs((previous) => (previous[id] ? previous : { ...previous, [id]: true }));
                 setActiveSettingsTab(id);
               }}
               className={clsx(
-                'relative min-w-0 rounded-xl px-3 py-2.5 text-sm font-medium',
+                'relative z-10 min-w-0 rounded-xl px-3 py-2 text-[14px] font-semibold tracking-[-0.01em] outline-none transition-colors duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
                 activeSettingsTab === id
                   ? 'text-primary'
                   : 'text-sidebar-foreground/62 hover:bg-sidebar-accent hover:text-sidebar-foreground',
@@ -667,46 +742,46 @@ export default function ControlPanel({
         </div>
 
         <div data-theme-ui="settings-panels" className="relative">
-          {settingsTabs.filter(({ id }) => mountedSettingsTabs[id]).map(({ id }) => {
-            const active = activeSettingsTab === id;
-            return (
-              <motion.div
-                key={id}
-                id={`settings-panel-${id}`}
-                data-theme-ui="settings-panel"
-                data-state={active ? 'active' : 'inactive'}
-                role="tabpanel"
-                aria-labelledby={`settings-tab-${id}`}
-                aria-hidden={activeSettingsTab !== id}
-                tabIndex={active ? 0 : -1}
-                inert={active ? undefined : true}
-                initial={id === 'device' ? false : { opacity: 0, y: reduceMotion ? 0 : 8 }}
-                animate={active ? 'active' : 'inactive'}
-                variants={settingsPanelVariants}
-                className={clsx(
-                  'w-full will-change-[opacity,transform]',
-                  active ? 'relative' : 'pointer-events-none absolute inset-x-0 top-0',
-                )}
-              >
-                {settingsPanelContent[id]}
-              </motion.div>
-            );
-          })}
+          <div className="-mx-3 -my-2 overflow-clip px-3 py-2">
+            <div className="relative">
+              {settingsTabs.filter(({ id }) => mountedSettingsTabs[id]).map(({ id }) => {
+                const active = activeSettingsTab === id;
+                const panelState = active ? 'active' : previousSettingsTab === id ? 'exiting' : 'hidden';
+                return (
+                  <m.div
+                    key={id}
+                    id={`settings-panel-${id}`}
+                    data-theme-ui="settings-panel"
+                    data-state={active ? 'active' : 'inactive'}
+                    role="tabpanel"
+                    aria-labelledby={`settings-tab-${id}`}
+                    aria-hidden={activeSettingsTab !== id}
+                    tabIndex={-1}
+                    inert={active ? undefined : true}
+                    custom={settingsTabDirection}
+                    initial={id === 'device' ? false : { opacity: 0, x: reduceMotion ? 0 : settingsTabDirection * SETTINGS_PANEL_SLIDE_OFFSET }}
+                    animate={panelState}
+                    variants={settingsPanelVariants}
+                    className={clsx(
+                      'w-full outline-none',
+                      isSettingsTabAnimating && panelState !== 'hidden' && 'will-change-[opacity,transform]',
+                      active ? 'relative' : 'pointer-events-none absolute inset-x-0 top-0',
+                      active ? 'z-10' : 'z-0',
+                    )}
+                  >
+                    {settingsPanelContent[id]}
+                  </m.div>
+                );
+              })}
+            </div>
+          </div>
         </div>
         {!isConnected && (
-          <div data-theme-card="settings-offline-tip" className="flex items-center gap-2 rounded-xl border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+          <div data-theme-card="settings-offline-tip" className="flex items-center gap-2.5 rounded-2xl border border-amber-500/25 bg-amber-500/8 px-4 py-3 text-[13px] leading-[1.45] text-amber-700 dark:text-amber-300">
             <TriangleAlert className="h-4 w-4 shrink-0" />
             {t('controlPanel.offline.message')}
           </div>
         )}
-
-        {isBlackSharkDevice && <BlackSharkPanel />}
-
-        {/* 情景：按前台进程自动切换档位/灯效，只对黑鲨有意义。 */}
-        {isBlackSharkDevice && <ScenePanel />}
-
-        {/* 屏幕/屏保图像：十张官方精选 + 本地上传。同样只对黑鲨有意义 */}
-        {isBlackSharkDevice && <ScreenPanel />}
 
         <DeviceDebugPanel
           config={config}
